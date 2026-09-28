@@ -373,13 +373,14 @@ describe("Technicals tab", () => {
     expect(screen.getByRole("region", { name: /^S&P 500/ })).toHaveTextContent("7,706");
   });
 
-  it("a failed /technicals keeps the sector card's labels and says Awaiting refresh; the vol column stays the PROTOTYPE", async () => {
+  it("a failed /technicals keeps the vol and sector cards' labels and says Awaiting refresh (Codex R-03: never the PROTOTYPE)", async () => {
     stubDesk({ "/api/desk/technicals": deskError(503, "not wired") });
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("Awaiting refresh"));
     expect(screen.getByRole("region", { name: /Sector leadership/ })).not.toHaveTextContent("XLK");
-    await waitFor(() => expect(screen.getByRole("region", { name: "What protection costs right now" })).toHaveAttribute("data-prototype", "protection"));
-    expect(screen.getByRole("region", { name: "What protection costs right now" })).not.toHaveTextContent("Awaiting refresh");
+    await waitFor(() => expect(screen.getByRole("region", { name: "What protection costs right now" })).toHaveTextContent("Awaiting refresh"));
+    expect(screen.getByRole("region", { name: "What protection costs right now" })).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
+    expect(screen.getByRole("region", { name: "What protection costs right now" })).not.toHaveTextContent("6.8");
   });
 
   it("the vol column is the S&P's: /technicals naming another instrument draws no PROTOTYPE (§1.0.3)", async () => {
@@ -411,9 +412,9 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
     stubDesk({ "/api/desk/technicals": deskAwaiting("no generation stored yet.") });
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^Signals/ })).toHaveTextContent("no generation stored yet."));
-    // The vol column is the PROTOTYPE, which asks nothing of /technicals (§1.0.3).
-    expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection");
-    for (const name of [/^S&P 500/, /^Signals/, /^Sector leadership/]) {
+    // Codex R-03: a route served awaiting keeps the vol card too, with the route's reason; never the PROTOTYPE.
+    expect(screen.getByRole("region", { name: /^What protection costs right now/ })).not.toHaveAttribute("data-prototype");
+    for (const name of [/^S&P 500/, /^Signals/, /^What protection costs right now/, /^Sector leadership/]) {
       const card = screen.getByRole("region", { name });
       expect(within(card).getAllByText("no generation stored yet.")).toHaveLength(1);
       expect(card.textContent).not.toMatch(/\d+×|Reliable|No edge/);
@@ -430,5 +431,40 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
     expect(within(season).getAllByText("no generation stored yet.")).toHaveLength(1);
     expect(season.textContent).not.toMatch(/\d+\.\d|%/);
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
+  });
+});
+
+describe("Codex R-03: the protection PROTOTYPE stands only in a ready answer's not-yet-served vol block", () => {
+  const vol = () => screen.getByRole("region", { name: /^What protection costs right now/ });
+  const illustrative = /\+6\.8 pts|0\.84%|96\.7%|74th percentile|Illustrative values/;
+
+  it("/technicals served awaiting: the vol card keeps its labels and the route's reason, Not yet served; no illustrative figure", async () => {
+    stubDesk({ "/api/desk/technicals": deskAwaiting("no generation stored yet.") });
+    renderTab();
+    await waitFor(() => expect(vol()).toHaveTextContent("no generation stored yet."));
+    expect(vol()).not.toHaveAttribute("data-prototype");
+    expect(vol()).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
+    expect(within(vol()).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(vol().textContent).not.toMatch(illustrative);
+  });
+
+  it("/technicals failed: the vol card keeps its labels and says Awaiting refresh; no illustrative figure", async () => {
+    stubDesk({ "/api/desk/technicals": deskError(503, "not wired") });
+    renderTab();
+    await waitFor(() => expect(vol()).toHaveTextContent("Awaiting refresh"));
+    expect(vol()).not.toHaveAttribute("data-prototype");
+    expect(vol()).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
+    expect(vol().textContent).not.toMatch(illustrative);
+  });
+
+  it("a ready answer without the vol block: the vol card awaits a refresh; the PROTOTYPE needs the block served awaiting", async () => {
+    const { vol: _v, ...noVol } = technicals as Record<string, unknown>;
+    void _v;
+    stubDesk({ "/api/desk/technicals": () => noVol });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^S&P 500/ })).toHaveTextContent("7,706"));
+    await waitFor(() => expect(vol()).toHaveTextContent("Awaiting refresh"));
+    expect(vol()).not.toHaveAttribute("data-prototype");
+    expect(vol().textContent).not.toMatch(illustrative);
   });
 });

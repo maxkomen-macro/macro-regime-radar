@@ -46,7 +46,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Overview: VIX "gap vs realized" and the vol band word | LIVE (desk/fill-compute) | the S&P's 21-day realized volatility (`src/analytics/technicals.realized_vol`) and the home page's VIX words (§12.1 `tiles.vol`) |
 | Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
-| Technicals: vol column ("What protection costs right now") | PROTOTYPE (§1.0.3) until `/technicals` serves its vol block; UNAVAILABLE for an instrument other than the S&P | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
+| Technicals: vol column ("What protection costs right now") | PROTOTYPE (§1.0.3) while a ready `/technicals` serves its vol block awaiting as not yet served; otherwise the LIVE card in its own state (UNAVAILABLE, awaiting); UNAVAILABLE for an instrument other than the S&P | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
 | Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
 | Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
@@ -146,7 +146,11 @@ is not served; its numbers are illustrative, and it says so in one place.
 6. **In the block's place.** A PROTOTYPE card stands where the block it
    prototypes stands, and gives way to the LIVE card once that block is
    served (`ready`, or `awaiting` with a reason beginning "Awaiting
-   refresh"). It asks the API nothing.
+   refresh"). It asks the API nothing. Where a served block decides it, it
+   stands only in a ready answer that serves that block awaiting as not yet
+   served; a route that is loading, awaiting or failed, or an answer
+   without the block, keeps the LIVE card in that state and never falls
+   back to illustrative figures (Codex R-03).
 7. **Outside the claims.** A page's claims about its served data (Data
    Pipeline's "Nothing is synthetic") cover its served panels, not its
    PROTOTYPE cards; §1.0.1's lists are unchanged: a prototyped block stays
@@ -388,10 +392,12 @@ Signals; bottom-middle = Sector leadership; bottom-right = RSI; a third row
 (desk/fill-compute) = MACD across the vol column and the middle, seasonality
 on the right.
 
-**What protection costs right now** (vol column): PROTOTYPE (§1.0.3), shown
-for the S&P only, once `/technicals` has answered without serving its `vol`
-block (awaiting on Monday); a served block (ready, or awaiting a refresh)
-draws the LIVE card below instead. Labels: PUTS vs CALLS · 1 MONTH OUT ·
+**What protection costs right now** (vol column): PROTOTYPE (§1.0.3), for
+the S&P only, when `/technicals` answers ready and serves its `vol` block
+awaiting as not yet served (Monday). Every other state draws the LIVE card
+below in that state: loading (quiet), the route awaiting (its reason, `○ Not
+yet served`) or failed (Awaiting refresh), an answer without the block
+(Awaiting refresh), the block ready, or awaiting a refresh (Codex R-03). Labels: PUTS vs CALLS · 1 MONTH OUT ·
 WHAT OPTIONS EXPECT vs WHAT HAPPENED · 1 MONTH · 3 MONTHS · 6 MONTHS · SKEW ·
 WHERE IT SITS. The PROTOTYPE reads `vol.json` (§12.13's vol shape) and
 `proto-protection.json`: the 25-delta put and call a month out (vol, strike

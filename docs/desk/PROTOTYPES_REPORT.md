@@ -53,11 +53,12 @@ prints), `prototypes/black-scholes.ts`.
 
 ### 2 · Technicals "What protection costs right now" (`ProtectionCard`)
 
-In the vol column, for the S&P only, once `/technicals` has answered
-without serving its `vol` block (Monday: awaiting, "needs stored SPY option
-snapshots…"). A served block (ready, or awaiting a refresh) keeps the LIVE
-card; before `/technicals` answers, the LIVE card stays quiet, so a served
-block never flashes the prototype first. A `/technicals` naming another
+In the vol column, for the S&P only, when `/technicals` answers ready and
+serves its `vol` block awaiting as not yet served (Monday: "needs stored SPY
+option snapshots…"). Every other state keeps the LIVE card in that state:
+loading (quiet, so a served block never flashes the prototype first), the
+route awaiting or failed, an answer without the block, the block served
+ready or awaiting a refresh (Codex R-03). A `/technicals` naming another
 instrument draws the LIVE card (§12.7 says every field is the S&P's).
 
 - PUTS vs CALLS · 1 MONTH OUT: `+6.8 pts` (vol.json's skew); the 25-delta
@@ -353,7 +354,8 @@ the rebase onto desk/books).
 | Finding | Fix | Test (Codex's repro) | Commit |
 |---|---|---|---|
 | R-01 Positioning's summaries hid what they cover; a name without data counted as not crowded; CRWV 0% / MSFT 100% printed NaN | The weighted figures say what they cover (weight and names); a name without data reads "no data" and is in no count; a figure without a positive covered weight is "—" with the reason | CRWV 50% / MSFT 50%, MSFT 100%, CRWV 0% / MSFT 100% (`positioning.test.ts`, `BasketHedgePage.test.tsx`) | `fffb83d` |
-| R-02 "Hedge with options" priced any hedge ratio: at 0.10 the spread's 85% strike moved to −50% of the ETF and the rows printed NaN | Each structure is priced only inside its domain (a hedge ratio from 0.25 to 4 for the ETF and basket routes, strikes from 50% to 100% of spot, a positive vol, R² in (0, 1], finite results); outside it the row prints its reason and no number, and the route's line names no strike outside the domain | hedge_ratio 0.10 (`options.test.ts`, `OptionsHedgeCard.test.tsx`), and 0.25, NaN, R² 0, a zero vol | @@R02@@ |
+| R-02 "Hedge with options" priced any hedge ratio: at 0.10 the spread's 85% strike moved to −50% of the ETF and the rows printed NaN | Each structure is priced only inside its domain (a hedge ratio from 0.25 to 4 for the ETF and basket routes, strikes from 50% to 100% of spot, a positive vol, R² in (0, 1], finite results); outside it the row prints its reason and no number, and the route's line names no strike outside the domain | hedge_ratio 0.10 (`options.test.ts`, `OptionsHedgeCard.test.tsx`), and 0.25, NaN, R² 0, a zero vol | `e553dfa` |
+| R-03 The protection card's switch fell back to the illustrative figures when `/technicals` was awaiting or failed | The PROTOTYPE stands only when a ready answer serves the vol block awaiting as not yet served; an awaiting or failed route, or an answer without the block, keeps the LIVE card's awaiting or unavailable state | `/technicals` served awaiting, `/technicals` failed 503, a ready answer without the vol block (`TechnicalsPage.test.tsx`) | the R-03 commit (the head) |
 
 ## Open for the owner
 

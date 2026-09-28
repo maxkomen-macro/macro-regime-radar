@@ -6,7 +6,8 @@
  * (§12.5, the rows in `signals_allowlist` order). Grid:
  * the vol card spans the left column; price and signals on top; sector
  * leadership and RSI below; MACD and seasonality in a third row (desk/fill-compute). The vol column is a
- * PROTOTYPE card (§1.0.3, ../prototypes/ProtectionCard) until /technicals serves its vol block. Every number is a served field, formatted, and
+ * PROTOTYPE card (§1.0.3, ../prototypes/ProtectionCard) while a ready /technicals serves its vol
+ * block awaiting as not yet served, and the LIVE card in every other state. Every number is a served field, formatted, and
  * dated by its own served dates; the trend's words spell the served
  * `trend.state` (§3).
  * A card stays quiet while its first answer is on its way, and keeps its
@@ -16,6 +17,7 @@
 
 import { useState } from "react";
 import { unavailableOf, useLedger, useTechnicals } from "../data/api";
+import type { Unavailable } from "../data/envelope";
 import { droppedOf } from "../data/schema";
 import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, VolResponse } from "../data/types";
 import { nyToday } from "../DeskSidebar";
@@ -148,14 +150,16 @@ export function isSpx(t: TechnicalsResponse | undefined): boolean {
 }
 
 /**
- * §3, §1.0.3: once /technicals has answered (a payload, an awaiting route or an error), the vol column is the
- * PROTOTYPE card ("What protection costs right now", for the S&P only) unless the answer serves the vol block: a
- * block served ready, or awaiting a refresh of what is live, keeps the LIVE card. Before the answer the LIVE card
- * stays quiet, so a served block never flashes the PROTOTYPE first.
+ * §3, §1.0.3 (Codex R-03): the vol column is the PROTOTYPE card ("What protection costs right now") only when
+ * /technicals answered ready, for the S&P, and served its vol block awaiting as not yet served. Everything else
+ * keeps the LIVE card in its own state: loading (quiet), the route awaiting (its reason) or failed (Awaiting
+ * refresh), an answer without the block (Awaiting refresh), the block ready, or awaiting a refresh of what is
+ * live. An awaiting or failed answer never falls back to the illustrative figures.
  */
-export function volIsPrototype(t: TechnicalsResponse | undefined, answered: boolean): boolean {
-  if (!answered || !isSpx(t)) return false;
-  return !t?.vol && !isAwaitingRefresh(t?._blocks?.vol);
+export function volIsPrototype(t: TechnicalsResponse | undefined, routeOff: Unavailable | null, failed: boolean): boolean {
+  if (!t || routeOff || failed || !isSpx(t)) return false;
+  const block = t._blocks?.vol;
+  return !t.vol && !!block && !isAwaitingRefresh(block);
 }
 
 // ── Price and its two trend lines ─────────────────────────────────────────
@@ -642,7 +646,7 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
       <div className="te-grid">
         {/* §1.0.3: the PROTOTYPE stands in the vol column until the vol block is served; a served block's card keeps
             its labels and prints its reason when awaiting (§1.0.2). */}
-        {volIsPrototype(t, !!t || tq.isError) ? (
+        {volIsPrototype(t, routeOff, tq.isError) ? (
           <ProtectionCard />
         ) : (
           <Unserved block={volOff}>
