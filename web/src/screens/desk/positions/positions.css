@@ -79,6 +79,13 @@
   font-family: var(--dk-sans) !important;
   font-size: 14px !important;
 }
+/* Its suggestions are wider than the narrow field, so each shows its name and listing (the live check found
+   them cut to the field's width); inline styles pin the list to the field's edges, hence !important. */
+.pm-isearch [role="listbox"] {
+  right: auto !important;
+  min-width: 100%;
+  width: min(440px, calc(100vw - 32px));
+}
 .pm-gate {
   flex: 1;
   padding: 14px 14px 16px;
