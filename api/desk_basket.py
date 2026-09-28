@@ -220,7 +220,7 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         "rebalances": priced["rebalances"],
         "total_return": priced["total_return"],
         "legs": [{k: l[k] for k in ("symbol", "target_weight", "weight_now", "first_close", "price_end", "return",
-                                    "contribution", "dollars", "adv_usd", "adv_window", "days_to_trade")}
+                                    "contribution", "dollars", "adv_usd", "adv_window", "adv_missing", "days_to_trade")}
                  for l in priced["legs"]],
         "concentration": priced["concentration"],
         "liquidity": priced["liquidity"],

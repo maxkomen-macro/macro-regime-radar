@@ -329,6 +329,8 @@ function LiquidityCard({ p, state }: { p: BasketPriceResponse | undefined; state
   const worst = p?.liquidity?.binding;
   return (
     <TradeCard className="bh-liq" title="Liquidity" sub={p && fin(p.notional) ? `days to trade ${usd(p.notional)} at 20% of volume` : "days to trade at 20% of volume"} lead={p ? liquidityLead(p) : null} state={state}>
+      {/* Codex R-04: a name without its 20 sessions of dollar volume leaves the basket's figure unserved, and says why. */}
+      {state === "ready" && p?.liquidity?.reason ? <p className="bh-lead">{`The basket's days to trade are not served: ${p.liquidity.reason}.`}</p> : null}
       {ready ? (
         <table className="bh-mini bh-liq-table">
           <caption className="dk-sr">Days to trade each name at 20% of its 20-day average dollar volume</caption>
@@ -346,7 +348,7 @@ function LiquidityCard({ p, state }: { p: BasketPriceResponse | undefined; state
               .map((l) => (
                 <tr key={l.symbol} data-binding={l.symbol === worst || undefined}>
                   <th scope="row">{l.symbol}</th>
-                  <td>{fin(l.adv_usd) ? usd(l.adv_usd, true) : "—"}</td>
+                  <td title={fin(l.adv_usd) ? undefined : `${l.adv_missing ?? "some"} of the 20 sessions have no dollar volume`}>{fin(l.adv_usd) ? usd(l.adv_usd, true) : "—"}</td>
                   <td>{fin(l.dollars) ? usd(l.dollars, true) : "—"}</td>
                   <td>{fin(l.days_to_trade) ? daysText(l.days_to_trade) : "—"}</td>
                 </tr>

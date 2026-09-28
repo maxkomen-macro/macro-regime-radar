@@ -93,13 +93,35 @@ def test_a_session_one_name_lacks_is_dropped_never_filled():
     assert r["index"] == pytest.approx([100.0, 105.0, 115.0, 120.0])
 
 
-def test_liquidity_needs_a_full_window_of_dollar_volume():
+def test_codex_r04_one_name_without_adv_leaves_the_basket_figure_unserved():
+    """Codex's repro: $1 million, 50/50, A's ADV $1 million, one missing volume for B. The basket named A the
+    slowest at 2.5 days while B's days were null; the basket-wide figure now needs every name's."""
     h = two_stocks()
     h["B"] = H(D5, [20, 20, 22, 24, 22], [400.0, None, 400.0, 400.0, 400.0])
     r = bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL, adv_sessions=5)
-    assert r["legs"][1]["adv_usd"] is None and r["legs"][1]["days_to_trade"] is None
-    assert r["liquidity"]["binding"] == "A" and r["liquidity"]["basket_days"] == pytest.approx(2.5)
+    assert r["legs"][1]["adv_usd"] is None and r["legs"][1]["days_to_trade"] is None and r["legs"][1]["adv_missing"] == 1
+    assert r["legs"][0]["days_to_trade"] == pytest.approx(2.5)
+    q = r["liquidity"]
+    assert q["basket_days"] is None and q["binding"] is None and q["missing"] == ["B"]
+    assert q["reason"] == "B has no dollar volume on every one of the 5 sessions from 2026-01-28 to 2026-02-03; the basket's figure needs every name's"
     assert r["legs"][1]["adv_window"] == {"start": D5[0], "end": D5[4], "n": 4}
+
+
+def test_codex_r05_adv_reads_the_trailing_20_xnys_sessions_not_the_last_20_rows():
+    """Codex's repro: the 21 XNYS sessions from January 2 to February 2, 2026 with January 16 removed, $1 million
+    a day otherwise. The last 20 rows looked complete; the trailing 20 sessions include January 16, so the ADV
+    is not served and says one session is missing."""
+    days = [d for d in _xnys("2026-01-02", "2026-02-02")]
+    assert len(days) == 21
+    kept = [d for d in days if d != "2026-01-16"]
+    h = {"A": H(kept, [10.0] * 20, [1e6] * 20)}
+    r = bk.price_basket(h, {"A": 1.0}, "hold", 1e6, sessions=CAL)
+    leg = r["legs"][0]
+    assert leg["adv_usd"] is None and leg["adv_missing"] == 1
+    assert leg["adv_window"] == {"start": "2026-01-05", "end": "2026-02-02", "n": 19}
+    assert r["liquidity"]["basket_days"] is None and r["liquidity"]["missing"] == ["A"]
+    full = bk.price_basket({"A": H(days, [10.0] * 21, [1e6] * 21)}, {"A": 1.0}, "hold", 1e6, sessions=CAL)
+    assert full["legs"][0]["adv_usd"] == pytest.approx(1e6) and full["liquidity"]["binding"] == "A"
 
 
 def test_pairwise_mean_corr_by_hand():

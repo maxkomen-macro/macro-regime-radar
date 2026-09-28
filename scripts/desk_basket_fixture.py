@@ -45,43 +45,52 @@ def request_key(legs: list[tuple[str, str]], method: str, notional: str) -> str:
     return f"{','.join(f'{s}:{w}' for s, w in legs)}|{method}|{notional}"
 
 
-def yahoo(symbols: list[str], through: str) -> dict:
-    """Two years and a margin of Yahoo daily bars per symbol, through `through`."""
-    import yfinance as yf
-
+def yahoo(symbols: list[str], through: str, cache: Path | None = None) -> dict:
+    """Two years and a margin of Yahoo daily bars per symbol, through `through`.
+    Yahoo re-adjusts its closes on every download (the 7th digit moves), so
+    `cache` (a JSON file outside the repo) keeps one download: when it holds a
+    symbol, that is used; otherwise the symbol is downloaded and added."""
     from src.desk import basket as bk
 
+    saved = json.loads(cache.read_text()) if cache and cache.exists() else {}
     out = {}
     for s in symbols:
-        df = yf.download(s, period="2y", interval="1d", auto_adjust=False, progress=False, threads=False)
-        if df.empty:
-            raise SystemExit(f"Yahoo returned nothing for {s}")
-        df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+        if s not in saved:
+            import yfinance as yf
+
+            df = yf.download(s, period="2y", interval="1d", auto_adjust=False, progress=False, threads=False)
+            if df.empty:
+                raise SystemExit(f"Yahoo returned nothing for {s}")
+            df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+            rows = []
+            for ts, row in df.iterrows():
+                adj, raw, vol = float(row["Adj Close"]), float(row["Close"]), float(row["Volume"])
+                rows.append([ts.strftime("%Y-%m-%d"), adj, raw, vol])
+            saved[s] = rows
         dates, close, dv = [], [], []
-        for ts, row in df.iterrows():
-            d = ts.strftime("%Y-%m-%d")
-            if d > through:
-                continue
-            adj, raw, vol = float(row["Adj Close"]), float(row["Close"]), float(row["Volume"])
-            if not (math.isfinite(adj) and adj > 0):
+        for d, adj, raw, vol in saved[s]:
+            if d > through or not (math.isfinite(adj) and adj > 0):
                 continue
             dates.append(d)
             close.append(adj)
             dv.append(raw * vol if math.isfinite(raw) and math.isfinite(vol) and vol > 0 else None)
         out[s] = bk.History(tuple(dates), tuple(close), tuple(dv))
         print(f"{s}: {dates[0]} → {dates[-1]} ({len(dates)} sessions)")
+    if cache:
+        cache.write_text(json.dumps(saved))
     return out
 
 
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--through", default="2026-09-23")
+    ap.add_argument("--cache", type=Path, default=None, help="a JSON file outside the repo that keeps one Yahoo download")
     args = ap.parse_args()
     from api import desk_basket as db
 
     symbols = sorted({s for legs, _, _ in REQUESTS for s, _ in legs} | {sym for sym, _ in db.BENCHMARKS.values()}
                      | set(getattr(db, "HEDGE_ETFS", ())))
-    hist = yahoo(symbols, args.through)
+    hist = yahoo(symbols, args.through, args.cache)
     note = (f"Real closes: Yahoo daily history through {args.through}, priced by api/desk_basket's own functions "
             "(scripts/desk_basket_fixture.py). The API prices from EODHD.")
     prices, hedges = {}, {}

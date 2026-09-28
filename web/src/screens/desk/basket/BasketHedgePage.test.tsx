@@ -15,6 +15,7 @@ import sample from "../../../fixtures/desk/baskets.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import { deskFixture } from "../../../fixtures/desk";
+import basketPrice from "../../../fixtures/desk/basket-price.json";
 import { SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
 import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
 
@@ -92,7 +93,7 @@ describe("Basket & Hedge tab", () => {
     expect(rows[0]).toHaveAttribute("aria-current", "true");
     expect(rows[0]).toHaveTextContent("top pick");
     const stress = within(hedge).getByRole("region", { name: /^Stress test/ });
-    expect(stress).toHaveTextContent("If QQQ falls 10% the basket loses $170,542 unhedged and makes $5,810 hedged with XLK; if SPY falls 10% the basket loses $238,851 unhedged and makes $1,923 hedged with XLK.");
+    expect(stress).toHaveTextContent("If QQQ falls 10% the basket loses $170,542 unhedged and makes $5,810 hedged with XLK; if SPY falls 10% the basket loses $238,851 unhedged and makes $1,924 hedged with XLK.");
     expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     // The options slot keeps its title, modes and labels, and prints why it is not served (§1.0.2).
     const h = optionsCard();
@@ -122,6 +123,22 @@ describe("Basket & Hedge tab", () => {
     expect(nvda).toHaveTextContent(/NVDA\s*Nvidia\s*21\.2%\s*\+106\.1%/);
     // Every card of steps 2 and 3 leads with its answer in one sentence.
     for (const card of document.querySelectorAll(".bh-trades .dk-card, .bh-etfs, .bh-stress")) expect(card.querySelector(".bh-lead"), card.querySelector("h3")?.textContent ?? "").not.toBeNull();
+  });
+
+  it("Codex R-04: a leg without 20 sessions of dollar volume leaves the basket's days to trade unserved, and says why", async () => {
+    seed();
+    const legsKey = "NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000";
+    const answer = JSON.parse(JSON.stringify((basketPrice as { answers: Record<string, Record<string, unknown>> }).answers[legsKey]));
+    const smci = (answer.legs as { symbol: string; adv_usd: number | null; days_to_trade: number | null; adv_missing: number }[]).find((l) => l.symbol === "SMCI")!;
+    Object.assign(smci, { adv_usd: null, days_to_trade: null, adv_missing: 2 });
+    answer.liquidity = { ...answer.liquidity, basket_days: null, binding: null, missing: ["SMCI"], reason: "SMCI has no dollar volume on every one of the 20 sessions from 2026-08-26 to 2026-09-23; the basket's figure needs every name's" };
+    stubDesk({ "/api/desk/basket/price": () => answer });
+    renderTab();
+    await loaded();
+    const liq = await screen.findByRole("region", { name: /^Liquidity/ });
+    await waitFor(() => expect(liq).toHaveTextContent("The basket's days to trade are not served: SMCI has no dollar volume on every one of the 20 sessions"));
+    expect(liq).not.toHaveTextContent("the slowest name to trade is");
+    expect(within(liq).getByRole("rowheader", { name: "SMCI" }).closest("tr")).toHaveTextContent(/SMCI\s*—/);
   });
 
   it("asks nothing for a basket whose weights are not at 100%, and says what prices it", async () => {

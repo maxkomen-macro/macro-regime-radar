@@ -849,6 +849,8 @@ export interface BasketLegPriced {
   /** 20-session average of unadjusted close × volume. */
   adv_usd: number | null;
   adv_window: Window | null;
+  /** How many of the trailing 20 XNYS sessions have no dollar volume (Codex R-05); `adv_usd` is null unless 0. */
+  adv_missing?: number | null;
   /** Days to trade `dollars` at 20% of `adv_usd`. */
   days_to_trade: number | null;
 }
@@ -939,7 +941,8 @@ export interface BasketPriceResponse extends Envelope {
   total_return: number | null;
   legs?: BasketLegPriced[];
   concentration?: { top3_share: number | null; top3: string[]; effective_n: number | null; avg_pairwise_corr: number | null; corr_window: Window | null };
-  liquidity?: { participation: number | null; adv_sessions: number | null; basket_days: number | null; binding: string | null };
+  /** `basket_days` and `binding` are null, with `reason`, when any name in `missing` has no ADV (Codex R-04). */
+  liquidity?: { participation: number | null; adv_sessions: number | null; basket_days: number | null; binding: string | null; missing?: string[]; reason?: string | null };
   index?: BasketIndex;
   benchmarks?: { qqq?: BasketBenchmark; spy?: BasketBenchmark };
   compare?: { "6m"?: { base_date: string | null; points: ComparePoint[] }; "1y"?: { base_date: string | null; points: ComparePoint[] } };

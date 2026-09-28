@@ -631,9 +631,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     missing_sessions: l("s!"),
     rebalances: "n",
     total_return: "n",
-    legs: l(o({ symbol: "s!", target_weight: "n", weight_now: "n", first_close: "s?", price_end: "n", return: "n", contribution: "n", dollars: "n", adv_usd: "n", adv_window: span, days_to_trade: "n" })),
+    legs: l(o({ symbol: "s!", target_weight: "n", weight_now: "n", first_close: "s?", price_end: "n", return: "n", contribution: "n", dollars: "n", adv_usd: "n", adv_window: span, adv_missing: "n", days_to_trade: "n" })),
     concentration: o({ top3_share: "n", top3: l("s!"), effective_n: "n", avg_pairwise_corr: "n", corr_window: span }),
-    liquidity: o({ participation: "n", adv_sessions: "n", basket_days: "n", binding: "s?" }),
+    liquidity: o({ participation: "n", adv_sessions: "n", basket_days: "n", binding: "s?", missing: l("s!"), reason: "s?" }),
     // The index card reads nothing without its session.
     index: o({
       price: "n",

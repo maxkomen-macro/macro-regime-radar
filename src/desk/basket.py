@@ -26,10 +26,12 @@ The method, in the order the page states it:
   the effective number of names `1 / Σ w²`, and the average of the pairwise
   Pearson correlations of the names' daily returns over the last 252 index
   sessions (all of them when fewer, at least 60).
-- **Liquidity**: a name's 20-day average dollar volume is the mean of its
-  last 20 sessions' unadjusted close × shares traded; the days to trade it are
-  its dollars at target weight of the notional over 20% of that average; the
-  basket's figure is the largest.
+- **Liquidity**: a name's 20-day average dollar volume is the mean of
+  unadjusted close × shares traded over the trailing 20 XNYS sessions ending
+  at the index's last session, and needs one on every one of them (Codex
+  R-05); the days to trade it are its dollars at target weight of the notional
+  over 20% of that average; the basket's figure is the largest, and is not
+  served, with its reason, when any name has none (R-04).
 
 Prices are split- and dividend-adjusted closes on the XNYS session calendar
 (passed in: `sessions`). A daily return is a simple return between two
@@ -244,18 +246,24 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
     corr = pairwise_mean_corr(rets[use]) if n_corr >= CORR_MIN_SESSIONS else None
     corr_window = {"start": cal[int(use[0]) - 1], "end": cal[int(use[-1])], "n": int(n_corr)} if n_corr >= 1 else None
 
-    # Liquidity: each name's own last 20 sessions through the index's last session.
+    # Liquidity: the trailing 20 XNYS sessions ending at the index's last session, every one of them with
+    # a dollar volume (Codex R-05); the basket's figure needs every name's (R-04).
+    adv_rows = list(range(max(0, i_end - adv_sessions + 1), i_end + 1))
+    adv_window = {"start": cal[adv_rows[0]], "end": cal[adv_rows[-1]]}
     legs = []
     worst: tuple[float, str] | None = None
+    missing_adv: list[str] = []
     for j, s in enumerate(symbols):
         h = histories[s]
-        upto = [i for i, d in enumerate(h.dates) if d <= cal[i_end]][-adv_sessions:]
-        dv = [h.dollar_volume[i] for i in upto]
-        have = [v for v in dv if v is not None and math.isfinite(v) and v > 0]
-        adv = float(np.mean(have)) if len(have) == adv_sessions else None
+        dv_at = dict(zip(h.dates, h.dollar_volume))
+        vals = [dv_at.get(cal[r]) for r in adv_rows]
+        have = [v for v in vals if v is not None and math.isfinite(v) and v > 0]
+        adv = float(np.mean(have)) if len(adv_rows) == adv_sessions and len(have) == adv_sessions else None
         dollars = float(target[j] * notional)
         days = dollars / (PARTICIPATION * adv) if adv else None
-        if days is not None and (worst is None or days > worst[0]):
+        if adv is None:
+            missing_adv.append(s)
+        elif worst is None or days > worst[0]:
             worst = (days, s)
         legs.append({
             "symbol": s,
@@ -269,9 +277,16 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
             "shares_now": float(shares[j]),
             "dollars": dollars,
             "adv_usd": adv,
-            "adv_window": {"start": h.dates[upto[0]], "end": h.dates[upto[-1]], "n": len(have)} if upto else None,
+            "adv_window": {**adv_window, "n": len(have)},
+            "adv_missing": adv_sessions - len(have),
             "days_to_trade": days,
         })
+    liquidity_reason = None
+    if missing_adv:
+        who = ", ".join(missing_adv)
+        liquidity_reason = (f"{who} {'has' if len(missing_adv) == 1 else 'have'} no dollar volume on every one of the "
+                            f"{adv_sessions} sessions from {adv_window['start']} to {adv_window['end']}; "
+                            "the basket's figure needs every name's")
     return {
         "method": method,
         "notional": float(notional),
@@ -300,8 +315,10 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
         "liquidity": {
             "participation": PARTICIPATION,
             "adv_sessions": adv_sessions,
-            "basket_days": worst[0] if worst else None,
-            "binding": worst[1] if worst else None,
+            "basket_days": None if missing_adv else (worst[0] if worst else None),
+            "binding": None if missing_adv else (worst[1] if worst else None),
+            "missing": missing_adv,
+            "reason": liquidity_reason,
         },
     }
 
