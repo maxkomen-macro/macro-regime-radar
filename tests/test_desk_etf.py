@@ -458,3 +458,23 @@ def test_the_macro_route_serves_the_correlations_and_keeps_the_matrix_awaiting(t
     assert m["data"]["matrix"]["unavailable"]["reason"] == "the 12-asset matrix's assets and method are not specified yet."
     for sym in CORR_ORDER:
         assert "Macro" in pipe.feeds_of(sym), sym
+
+
+# ── Codex R-01: no definitive ranking when a sector's return is unavailable ──
+
+def test_codex_r01_the_ranking_says_how_many_sectors_it_ranks_and_names_the_rest(tmp_path, monkeypatch):
+    """Codex's repro: one sector without the history for the window (XLC
+    listed inside it) and one without its latest close (XLE). The served
+    leadership ranks the nine with data, says so (`ranked_n`), and names the
+    two others with their reasons (`missing`), in the same order as the rows."""
+    days = store.sessions()
+    t = max(store.closes(_db(tmp_path, "probe.db"))["SPY"])
+    i = days.index(t)
+    d = _item(monkeypatch, _db(tmp_path, starts={"XLC": days[i - 30]}, drop={"XLE": (t,)}))["sectors"]["data"]
+    assert d["ranked_n"] == 9 == sum(r["rel_ret"] is not None for r in d["leadership"])
+    assert d["missing"] == [
+        {"etf": "XLC", "name": "Communications", "reason": f"no close on {days[i - 60]}: its history starts {days[i - 30]}"},
+        {"etf": "XLE", "name": "Energy", "reason": f"no close stored for {t}"},
+    ]
+    full = _item(monkeypatch, _db(tmp_path, "full.db"))["sectors"]["data"]
+    assert (full["ranked_n"], full["missing"]) == (11, [])

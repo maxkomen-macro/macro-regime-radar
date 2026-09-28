@@ -656,6 +656,10 @@ export interface SectorsResponse extends Envelope {
   band?: number;
   benchmark?: { etf: string; name: string; ret: number | null };
   leadership?: SectorRow[];
+  /** How many sectors the ranking holds: those with a return over the window (Codex R-01). */
+  ranked_n?: number;
+  /** The sectors without one, each with why; the ranking is only among the others. */
+  missing?: { etf: string; name: string; reason: string }[];
   pattern?: SectorPattern;
   date?: string;
   freq?: string;

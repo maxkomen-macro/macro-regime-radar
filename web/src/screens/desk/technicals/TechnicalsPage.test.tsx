@@ -150,6 +150,22 @@ describe("Technicals tab", () => {
     expect(within(within(card).getByRole("list", { name: /All eleven/ })).getAllByRole("listitem")).toHaveLength(11);
   });
 
+  it("Codex R-01: a sector without a return is shown with why, never hidden, and the ends are among the sectors with data", async () => {
+    const reason = "no close stored for 2026-09-23";
+    const block = (technicals.sectors as { data: { leadership: { etf: string; rel_ret: number | null }[] } }).data;
+    const xlk = { ...block.leadership.find((r) => r.etf === "XLK")!, rel_ret: null, ret: null, reason };
+    const data = { ...block, leadership: [...block.leadership.filter((r) => r.etf !== "XLK"), xlk], ranked_n: 10, missing: [{ etf: "XLK", name: "Technology", reason }] };
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, sectors: { status: "ready", data, unavailable: null } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Sector leadership/ });
+    const list = await within(card).findByRole("list", { name: /top three, middle and bottom three, then the sectors without data/ });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(8);
+    expect(items[7]).toHaveTextContent(`XLKTechnot available · ${reason}`);
+    expect(card).toHaveTextContent("Energy and Health care leading; Industrials and Utilities lagging, among the 10 sectors with data");
+    expect(within(card).getByRole("note")).toHaveTextContent(`Not ranked, without data over the window: XLK Technology (${reason}).`);
+  });
+
   it("the sectors block served awaiting a refresh keeps the card's title, prints the reason once and badges Awaiting refresh (§1.7)", async () => {
     const reason = "Awaiting refresh: the full refresh stores XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY; this database predates it.";
     stubDesk({ "/api/desk/technicals": () => ({ ...technicals, sectors: { status: "awaiting", data: null, unavailable: { reason, until: null } } }) });

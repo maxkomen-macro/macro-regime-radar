@@ -20,7 +20,7 @@ import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, Vo
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { capitalize, dayLong, dayShort, grouped, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, grouped, leadershipGaps, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -322,11 +322,12 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
 
 // ── Sector leadership (seven of eleven; §12.14, desk/fill-etf) ────────────
 
-/** "Technology and Industrials leading; Staples and Utilities lagging": the served ranking's two ends, named. */
-export function endsLine(rows: readonly { name: string }[]): string {
+/** "Technology and Industrials leading; Staples and Utilities lagging": the served ranking's two ends, named;
+ * with `among` ("among the 10 sectors with data") when some sectors have no return (Codex R-01). */
+export function endsLine(rows: readonly { name: string }[], among = ""): string {
   if (rows.length < 4) return "";
   const two = (a: { name: string }, b: { name: string }) => `${a.name} and ${b.name}`;
-  return `${two(rows[0], rows[1])} leading; ${two(rows[rows.length - 2], rows[rows.length - 1])} lagging`;
+  return `${two(rows[0], rows[1])} leading; ${two(rows[rows.length - 2], rows[rows.length - 1])} lagging${among ? `, ${among}` : ""}`;
 }
 
 /** The seven the card shows (§3): the top three, the middle one, the bottom three. */
@@ -345,6 +346,10 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
   const toRow = (r: Row) => ({ key: r.etf, ticker: r.etf, name: r.short ?? "", value: fin(r.rel_ret) ? r.rel_ret : null, note: r.reason ?? null, title: "log return, ×100" });
   const lo = rows.length ? rows[rows.length - 1].rel_ret : 0;
   const hi = rows.length ? rows[0].rel_ret : 0;
+  // Codex R-01: a sector without a return is never hidden: its row follows the seven, with why, and the
+  // ranking says it is only among the sectors with data.
+  const gaps = leadershipGaps(s);
+  const without = served.filter((r) => !fin(r.rel_ret));
   const unserved = useUnserved();
   if (unserved) return <UnservedCard headingId="te-sect-title" className="te-sectors" title="Sector leadership · 3-month relative strength vs S&P" block={unserved} advanced />;
   return (
@@ -354,10 +359,20 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
           Sector leadership · {s && fin(s.window_months) ? `${s.window_months}-month` : "3-month"} relative strength vs S&amp;P
         </h2>
       </div>
-      {state === "ready" && endsLine(rows) ? <p className="te-sect-read">{endsLine(rows)}</p> : null}
+      {state === "ready" && endsLine(rows) ? <p className="te-sect-read">{endsLine(rows, gaps.among)}</p> : null}
       {state === "ready" && rows.length ? (
         <>
-          <RankBars label="Sector ETFs against the S&P, top three, middle and bottom three" rows={sevenOf(rows).map(toRow)} lo={lo} hi={hi} />
+          <RankBars
+            label={`Sector ETFs against the S&P, top three, middle and bottom three${without.length ? ", then the sectors without data" : ""}`}
+            rows={[...sevenOf(rows), ...without].map(toRow)}
+            lo={lo}
+            hi={hi}
+          />
+          {gaps.note ? (
+            <p className="dk-missing" role="note">
+              {gaps.note}
+            </p>
+          ) : null}
           {s?.window?.end ? (
             <p className="dk-asof">
               {`${fin(s.window.n) ? s.window.n : 60} sessions to ${dayShort(s.window.end)} · log returns ×100 · ${(s.providers ?? []).join("/") || "asset_prices"}`}

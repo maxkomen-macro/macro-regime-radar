@@ -251,6 +251,8 @@ const SECTORS = {
   band: "n",
   benchmark: o({ etf: "s!", name: "s", ret: "n" }),
   leadership: l(o({ etf: "s!", name: "s!", short: "s", group: "s?", rel_ret: "n", ret: "n", first: "s?", reason: "s?" })),
+  ranked_n: "n",
+  missing: l(o({ etf: "s!", name: "s", reason: "s" })),
   pattern: o({ rule: "s", band: "n", cyclicals: l("s"), defensives: l("s"), word: e(["cyclical", "defensive", "mixed"], { nul: true }), spread: "n", reason: "s?" }),
   date: "s",
   freq: "s",
@@ -276,8 +278,6 @@ const SECTORS = {
     source: "s",
     providers: l("s"),
   }),
-  error: "s",
-  missing: l("s"),
 } as const;
 
 export const SCHEMAS: Readonly<Record<string, Obj>> = {

@@ -271,7 +271,8 @@ SECTOR_PATTERN = obj(rule=Const("sector-pattern-v1"), band=Const(0.01), cyclical
 LEADERSHIP = dict(
     window_months=Const(3), window=obj(start=DATE, end=DATE, n=Const(60)), compared_on=DATE,
     unit=Const("log_return"), band=Const(0.01), benchmark=obj(etf=Const("SPY"), name=STR, ret=NUM),
-    leadership=Arr(SECTOR_ROW, min=11, max=11), pattern=SECTOR_PATTERN,
+    leadership=Arr(SECTOR_ROW, min=11, max=11), ranked_n=INT,
+    missing=Arr(obj(etf=STR, name=STR, reason=STR), max=11), pattern=SECTOR_PATTERN,
     date=DATE, freq=Const("daily"), source=Const("asset_prices"), providers=Arr(STR),
 )
 _SPAN = obj(start=DATE, end=DATE, n=INT)

@@ -14,7 +14,7 @@ import { unavailableOf, useSectors } from "../data/api";
 import type { AboveAverage, RelPoint, SectorPattern, SectorsResponse } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { dayShort, endDay, pct } from "../kit/format";
+import { dayShort, endDay, leadershipGaps, pct } from "../kit/format";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars, { relTone } from "../kit/RankBars";
@@ -79,18 +79,25 @@ function Leadership({ s, state }: { s: SectorsResponse | undefined; state: State
   const topV = top && fin(top.rel_ret) ? top.rel_ret : null;
   const bottomV = bottom && fin(bottom.rel_ret) ? bottom.rel_ret : null;
   const pat = patternWords(s?.pattern);
+  // Codex R-01: with a sector's return not available, the ranking is only among the others; it says so and names them.
+  const gaps = leadershipGaps(s);
+  const among = gaps.among ? ` · ${gaps.among}` : "";
   return (
     <section className="dk-card sc-card" aria-labelledby="sc-lead" aria-busy={quiet}>
-      <CardHead id="sc-lead" title="Sector leadership" sub={`${windowWord(s)} return relative to the S&P · all eleven`} />
+      <CardHead
+        id="sc-lead"
+        title="Sector leadership"
+        sub={`${windowWord(s)} return relative to the S&P · ${gaps.missing.length ? `${gaps.ranked} of ${rows.length} with data` : "all eleven"}`}
+      />
       {quiet ? null : (
         <StatRow cols={3}>
-          <Stat label="Leading" awaiting={topV == null} value={top?.name} tone={topV != null ? relTone(topV) : undefined} sub={topV != null ? <span title={LOG_TIP}>{pct(topV)} vs the index</span> : undefined} />
+          <Stat label="Leading" awaiting={topV == null} value={top?.name} tone={topV != null ? relTone(topV) : undefined} sub={topV != null ? <span title={LOG_TIP}>{pct(topV)} vs the index{among}</span> : undefined} />
           <Stat
             label="Lagging"
             awaiting={bottomV == null}
             value={bottom?.name}
             tone={bottomV != null ? relTone(bottomV) : undefined}
-            sub={bottomV != null ? <span data-tone={bottomV < 0 ? "red" : undefined} title={LOG_TIP}>{pct(bottomV)} vs the index</span> : undefined}
+            sub={bottomV != null ? <span data-tone={bottomV < 0 ? "red" : undefined} title={LOG_TIP}>{pct(bottomV)} vs the index{among}</span> : undefined}
           />
           {/* §12.14: the served word by its named rule; its reason when a group member is not served. */}
           <Stat label="Pattern" awaiting={!pat} value={pat?.value} sub={pat?.sub} why={s?.pattern?.reason ?? undefined} />
@@ -113,6 +120,11 @@ function Leadership({ s, state }: { s: SectorsResponse | undefined; state: State
               <i data-tone="red" /> more than 1% behind
             </span>
           </p>
+          {gaps.note ? (
+            <p className="dk-missing" role="note">
+              {gaps.note}
+            </p>
+          ) : null}
           <p className="sc-window dk-asof">{windowLine(s)}</p>
         </>
       ) : quiet ? null : (

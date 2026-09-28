@@ -152,6 +152,38 @@ describe("Sectors tab", () => {
   });
 });
 
+describe("Codex R-01: a sector without a return", () => {
+  const reason = "no close on 2026-06-29: its history starts 2026-08-01";
+  const xlc = { ...sectors.leadership.find((r) => r.etf === "XLC")!, rel_ret: null, ret: null, reason };
+  const partial = { ...sectors, leadership: [...sectors.leadership.filter((r) => r.etf !== "XLC"), xlc], ranked_n: 10, missing: [{ etf: "XLC", name: "Communications", reason }] };
+  it("the ranking says it is among the sectors with data and names the one without, with its reason", async () => {
+    stubDesk({ "/api/desk/sectors": () => partial });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Sector leadership/ })).toHaveTextContent("10 of 11 with data"));
+    const lead = screen.getByRole("region", { name: /^Sector leadership/ });
+    expect(lead).toHaveTextContent(/Leading\s*Energy\s*\+12\.0% vs the index · among the 10 sectors with data/);
+    expect(lead).toHaveTextContent(/Lagging\s*Utilities\s*−17\.7% vs the index · among the 10 sectors with data/);
+    expect(within(lead).getByRole("note")).toHaveTextContent(`Not ranked, without data over the window: XLC Communications (${reason}).`);
+    const items = within(within(lead).getByRole("list", { name: /All eleven/ })).getAllByRole("listitem");
+    expect(items[10]).toHaveTextContent(`XLCCommunicationsnot available · ${reason}`);
+  });
+  it("an answer without ranked_n and missing still qualifies the ranking, from the rows served without a return", async () => {
+    const { ranked_n: _n, missing: _m, ...older } = partial;
+    void [_n, _m];
+    stubDesk({ "/api/desk/sectors": () => older });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Sector leadership/ })).toHaveTextContent("among the 10 sectors with data"));
+    expect(within(screen.getByRole("region", { name: /^Sector leadership/ })).getByRole("note")).toHaveTextContent("XLC Communications");
+  });
+  it("with every sector served nothing is qualified and no note is drawn", async () => {
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Sector leadership/ })).toHaveTextContent("Energy"));
+    const lead = screen.getByRole("region", { name: /^Sector leadership/ });
+    expect(lead).not.toHaveTextContent("with data");
+    expect(within(lead).queryByRole("note")).toBeNull();
+  });
+});
+
 describe("the pattern words and the window line (§12.14)", () => {
   const p = (word: SectorPattern["word"], spread: number | null): SectorPattern => ({ ...(sectors.pattern as SectorPattern), word, spread });
   it("each word with its sub-line from the served spread; nothing without a word", () => {

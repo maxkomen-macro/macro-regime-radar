@@ -358,7 +358,10 @@ seven of the eleven (the top three, the middle one, the bottom three), each
 `rel_ret` × 100 with the tooltip "log return, ×100" (§1.9), green above
 +`band`, red below −`band`, gray within; all eleven under Advanced. A stamp
 under the bars: "60 sessions to <window.end> · log returns ×100 ·
-<providers>". A row served null prints "not available · <reason>".
+<providers>". A row served null prints "not available · <reason>". A
+sector without `rel_ret` is never hidden (Codex R-01): its row follows the
+seven, the sub-line adds ", among the <ranked_n> sectors with data", and
+the note of §7 names it with its reason.
 
 **Momentum · RSI**: UNAVAILABLE (§1.0; no served envelope, §1.0.2). Labels
 kept: NOW · LAST ABOVE 70 · LAST BELOW 30. PNG 02's two RSI context boxes are
@@ -583,7 +586,12 @@ when the word is null). All eleven bars in the served order, each `rel_ret` ×
 available · <reason>", never a value or "below". Key: more than 1% ahead ·
 within 1% · more than 1% behind. Stamp: "60 sessions to <window.end> (from
 <window.start>) · log returns ×100 · SPY <benchmark.ret> over the same
-sessions".
+sessions". When `missing` is not empty (Codex R-01) the ranking is not
+presented as complete: the subtitle reads "<ranked_n> of 11 with data",
+LEADING's and LAGGING's sub-lines end "· among the <ranked_n> sectors with
+data", and a note under the bars names each missing sector with its reason
+("Not ranked, without data over the window: XLC Communications
+(<reason>).").
 
 **Breadth** (`is the rally wide or narrow? · of 11 sectors`), the `/sectors`
 `breadth` block (§12.14), of the eleven sector ETFs only. Stats: ABOVE 50-DAY
@@ -1328,6 +1336,8 @@ close is a gap, never filled. Adjusted closes, stored by the full refresh
 | `leadership[].ret` | number | required, nullable | log fraction | `window` | N: ln(P(end) / P(start)) |
 | `leadership[].first` | date | required, nullable | — | — | S: the ETF's first stored close (XLC 2018-06-19, XLRE 2015-10-08) |
 | `leadership[].reason` | string | required, nullable | — | — | N: non-null exactly when `rel_ret` is null: "no close on <date>: its history starts <first>", "no close stored for <date>", or "not stored in this database" |
+| `ranked_n` | integer | required | sectors | `window` | N (Codex R-01): how many rows carry `rel_ret`; the ranking is only among them |
+| `missing` | array of `{etf, name, reason}` | required (may be empty) | — | — | N (Codex R-01): the rows without `rel_ret`, in the rows' order, each with its `reason` |
 | `pattern.rule`, `pattern.band` | `"sector-pattern-v1"`, `0.01` | required | — | — | A |
 | `pattern.cyclicals`, `pattern.defensives` | string[] | required | — | — | A: XLB, XLE, XLF, XLI, XLK, XLY; XLP, XLU, XLV (XLC and XLRE in neither) |
 | `pattern.spread` | number | required, nullable | log fraction | `window` | N: the cyclicals' mean `rel_ret` less the defensives'; null unless all nine are served |

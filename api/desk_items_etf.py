@@ -193,6 +193,8 @@ def leadership(store: Store) -> dict:
                      "first": store.first.get(tick.lower()), "reason": why})
     served = sorted((r for r in rows if r["rel_ret"] is not None), key=lambda r: (-r["rel_ret"], r["etf"]))
     rows = served + [r for r in rows if r["rel_ret"] is None]
+    # Codex R-01: the ranking is only among the sectors with data; the rest are named with their reason
+    missing = [{"etf": r["etf"], "name": r["name"], "reason": r["reason"]} for r in rows if r["rel_ret"] is None]
     return {
         "window_months": WINDOW_MONTHS,
         "window": {"start": store.iso[t0], "end": store.iso[t], "n": WINDOW_SESSIONS},
@@ -201,6 +203,8 @@ def leadership(store: Store) -> dict:
         "band": BAND,
         "benchmark": {"etf": "SPY", "name": "S&P 500 ETF", "ret": spy},
         "leadership": rows,
+        "ranked_n": len(served),
+        "missing": missing,
         "pattern": pattern(rows),
         "date": store.iso[t],
         "freq": "daily",

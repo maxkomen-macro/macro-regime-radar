@@ -1106,6 +1106,13 @@
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+/* Codex R-01: the sectors a ranking leaves out, named with why, in the card's secondary text. */
+.dk-missing {
+  font-size: 12.5px;
+  line-height: 16px;
+  color: var(--dk-t3);
+  margin: 8px 0 0;
+}
 /* A card's as-of stamp (desk/fill-etf): what a served statistic covers and when, as the vol card's source line. */
 .dk-asof {
   font-family: var(--dk-mono);
