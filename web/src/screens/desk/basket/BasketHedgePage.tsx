@@ -18,7 +18,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { dayShort, pct, pctPlain } from "../kit/format";
 import type { BasketPriceResponse } from "../data/types";
-import { basketLead } from "./trades";
+import { asOfMismatch, basketLead } from "./trades";
 import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
 import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
@@ -536,12 +536,16 @@ function StepTwo({ local, q, state, range, setRange, names }: { local: SavedBask
   const why = !local ? "Open or start a basket to price it." : !local.legs.length ? "Add a ticker and save the basket to price it." : !sumsToHundred(local.legs) ? "Save the basket with its weights at exactly 100% to price it." : null;
   return (
     <section className="bh-step" aria-labelledby={hid}>
-      <h2 className="bh-step-title" id={hid}>
-        <span className="bh-step-n" aria-hidden="true">
-          2
-        </span>
-        How the basket trades <span className="bh-step-sub">technicals against the Nasdaq and the S&amp;P, contribution, concentration, liquidity</span>
-      </h2>
+      <div className="bh-step-head">
+        <h2 className="bh-step-title" id={hid}>
+          <span className="bh-step-n" aria-hidden="true">
+            2
+          </span>
+          How the basket trades <span className="bh-step-sub">technicals against the Nasdaq and the S&amp;P, contribution, concentration, liquidity</span>
+        </h2>
+        {/* Codex R-08: each step carries its own answer's date. */}
+        {q.data ? <LiveBadge className="bh-step-badge" parts={[q.data.provider ?? null, q.data.prices_as_of ? `prices ${dayShort(q.data.prices_as_of)}` : null]} /> : null}
+      </div>
       {why ? (
         <p className="bh-why">{why}</p>
       ) : (
@@ -562,19 +566,27 @@ function StepTwo({ local, q, state, range, setRange, names }: { local: SavedBask
 }
 
 /** Step 3 (§10): hedge it; the ETF hedge and the stress test for the saved basket, then the options slot. */
-function StepThree({ local, q }: { local: SavedBasket | null; q: ReturnType<typeof useBasketHedge> }) {
+function StepThree({ local, q, priceAsOf }: { local: SavedBasket | null; q: ReturnType<typeof useBasketHedge>; priceAsOf: string | null | undefined }) {
   const hid = useId();
   const priced = !!priceParams(local);
   const state = q.data ? "ready" : q.isError || !priced ? "awaiting" : "loading";
   return (
     <section className="bh-step" aria-labelledby={hid}>
-      <h2 className="bh-step-title" id={hid}>
-        <span className="bh-step-n" aria-hidden="true">
-          3
-        </span>
-        Hedge it <span className="bh-step-sub">the closest ETF and what it does in a 10% fall, then options</span>
-      </h2>
+      <div className="bh-step-head">
+        <h2 className="bh-step-title" id={hid}>
+          <span className="bh-step-n" aria-hidden="true">
+            3
+          </span>
+          Hedge it <span className="bh-step-sub">the closest ETF and what it does in a 10% fall, then options</span>
+        </h2>
+        {q.data ? <LiveBadge className="bh-step-badge" parts={[q.data.provider ?? null, q.data.prices_as_of ? `prices ${dayShort(q.data.prices_as_of)}` : null]} /> : null}
+      </div>
       {!priced ? <p className="bh-why">A saved basket at exactly 100% is hedged here.</p> : null}
+      {asOfMismatch(priceAsOf, q.data?.prices_as_of) ? (
+        <p className="bh-why bh-mismatch" role="status">
+          {asOfMismatch(priceAsOf, q.data?.prices_as_of)}
+        </p>
+      ) : null}
       {q.isError ? (
         <p className="bh-why" role="status">
           {`The hedge could not be computed: ${q.error.message}`}{" "}
@@ -669,7 +681,7 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
         <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} priced={pq.data} />
       </StepOne>
       <StepTwo local={local} q={pq} state={state} range={range} setRange={setRange} names={names} />
-      <StepThree local={local} q={hq} />
+      <StepThree local={local} q={hq} priceAsOf={pq.data?.prices_as_of} />
     </div>
   );
 }

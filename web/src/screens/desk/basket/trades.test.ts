@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import type { BasketHedgeResponse, BasketPriceResponse } from "../data/types";
-import { excludedWords, hedgeLead, pnlWords, stressLead, compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
+import { asOfMismatch, stressWindowWords, excludedWords, hedgeLead, pnlWords, stressLead, compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
 
 const ANSWERS = (basketPrice as unknown as { answers: Record<string, BasketPriceResponse> }).answers;
 const SAMPLE = ANSWERS["NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000"];
@@ -83,5 +83,21 @@ describe("Basket & Hedge's lead sentences", () => {
     expect(excludedWords([{ symbol: "SPLT", n: 1, reason: "no adjusted close from the provider" }])).toBe("Left out: SPLT, 1 session (no adjusted close from the provider).");
     expect(excludedWords([])).toBeNull();
     expect(excludedWords(undefined)).toBeNull();
+  });
+
+  it("Codex R-09: the stress footnote says the window it was fitted on, never one year for a 60-session fit", () => {
+    const h = HEDGES[PRESET];
+    expect(stressWindowWords(h)).toBe("Betas fitted on the 252 sessions from Sep 22, 2025 to Sep 23, 2026 (one year), on which the basket, SMH and the shock all trade. No convexity, no costs.");
+    const w = { start: "2026-06-26", end: "2026-09-23", n: 60 };
+    const young = { ...h, etfs: h.etfs!.map((e, i) => (i === 0 ? { ...e, basis: "60d" as const } : e)), stress: h.stress!.map((s) => ({ ...s, window: w })) };
+    const words = stressWindowWords(young)!;
+    expect(words).toContain("the 60 sessions from Jun 26, 2026 to Sep 23, 2026 (60 sessions, fewer than a year of shared returns)");
+    expect(words).not.toMatch(/one year|one-year/i);
+  });
+
+  it("Codex R-08: a hedge answered at another session than the price says so", () => {
+    expect(asOfMismatch("2026-09-25", "2026-09-24")).toBe("The hedge reads prices through Sep 24, 2026; the basket above reads them through Sep 25, 2026. The two were answered at different sessions.");
+    expect(asOfMismatch("2026-09-25", "2026-09-25")).toBeNull();
+    expect(asOfMismatch(undefined, "2026-09-25")).toBeNull();
   });
 });

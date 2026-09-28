@@ -5,7 +5,7 @@
  * whose numbers are not all served says what is missing instead. Pure.
  */
 
-import type { BasketHedgeResponse, BasketIndex, BasketLegPriced, BasketMethod, BasketPriceResponse, ComparePoint, TrendState } from "../data/types";
+import type { BasketHedgeResponse, BasketIndex, BasketLegPriced, BasketMethod, BasketPriceResponse, ComparePoint, StressRow, TrendState } from "../data/types";
 import { dayLong, dayShort, grouped, num, nyToday, pct, pctPlain } from "../kit/format";
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -245,4 +245,22 @@ export function excludedWords(ex: readonly { symbol: string; n: number | null; r
   const rows = (ex ?? []).filter((e) => fin(e.n) && (e.n as number) > 0);
   if (!rows.length) return null;
   return `Left out: ${rows.map((e) => `${e.symbol}, ${e.n} ${e.n === 1 ? "session" : "sessions"}${e.reason ? ` (${e.reason})` : ""}`).join("; ")}.`;
+}
+
+/** The stress card's footnote from the served windows and basis (Codex R-09): never "one-year" for a 60-session fit. */
+export function stressWindowWords(h: BasketHedgeResponse): string | null {
+  const rows = (h.stress ?? []).filter((s) => s.window && s.window.start && s.window.end && fin(s.window.n));
+  if (!rows.length) return null;
+  const basis = h.etfs?.find((e) => e.symbol === h.top)?.basis;
+  const span = (w: NonNullable<StressRow["window"]>) => `the ${w.n} sessions from ${dayLong(w.start)} to ${dayLong(w.end)}`;
+  const same = rows.every((s) => s.window!.start === rows[0].window!.start && s.window!.end === rows[0].window!.end && s.window!.n === rows[0].window!.n);
+  const where = same ? span(rows[0].window!) : rows.map((s) => `${s.shock}: ${span(s.window!)}`).join("; ");
+  const length = basis === "1y" ? "one year" : basis === "60d" ? "60 sessions, fewer than a year of shared returns" : null;
+  return `Betas fitted on ${where}${length ? ` (${length})` : ""}, on which the basket, ${h.top ?? "the ETF"} and the shock all trade. No convexity, no costs.`;
+}
+
+/** When the hedge and the price answers read different sessions, the page says so (Codex R-08). */
+export function asOfMismatch(priceAsOf: string | null | undefined, hedgeAsOf: string | null | undefined): string | null {
+  if (!priceAsOf || !hedgeAsOf || priceAsOf === hedgeAsOf) return null;
+  return `The hedge reads prices through ${dayLong(hedgeAsOf)}; the basket above reads them through ${dayLong(priceAsOf)}. The two were answered at different sessions.`;
 }

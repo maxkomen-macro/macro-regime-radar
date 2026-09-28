@@ -655,3 +655,15 @@ td.bh-live[data-tone="down"] {
 .bh-mom-charts .dk-stat-label {
   margin: 0;
 }
+
+/* Each step's own answer date (Codex R-08). */
+.bh-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px 14px;
+}
+.bh-mismatch {
+  color: var(--dk-amber);
+}

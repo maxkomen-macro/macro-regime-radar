@@ -894,7 +894,14 @@ fields of §12.14:
   notional) · VOL LEFT · VOL CUT; the top pick marked "top pick" on the
   Reliable tint with a green edge.
 - **Stress test**: QQQ −10% and SPY −10%: the basket's move, unhedged P&L,
-  the short leg's P&L, hedged P&L; linear in the fitted one-year betas.
+  the short leg's P&L, hedged P&L; linear in betas fitted on one shared
+  window, which the footnote names from the served `window` and `basis`
+  ("the 252 sessions from … to … (one year)"; never "one year" for a
+  60-session fit, Codex R-09).
+
+Steps 2 and 3 each carry their own answer's `● Live · <provider> · prices
+<prices_as_of>`; when `/basket/hedge` and `/basket/price` answer different
+sessions, step 3 says so in amber (Codex R-08).
 - **Hedge with options**: the slot for the options card (desk/prototypes).
   UNAVAILABLE here: title, subtitle, the three mode labels (Protect the
   basket, Express the S&P lean, Neutralize NDX beta) and HEDGE RATIO · COST

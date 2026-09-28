@@ -16,6 +16,7 @@ import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import { deskFixture } from "../../../fixtures/desk";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
+import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import { SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
 import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
 
@@ -139,6 +140,22 @@ describe("Basket & Hedge tab", () => {
     await waitFor(() => expect(liq).toHaveTextContent("The basket's days to trade are not served: SMCI has no dollar volume on every one of the 20 sessions"));
     expect(liq).not.toHaveTextContent("the slowest name to trade is");
     expect(within(liq).getByRole("rowheader", { name: "SMCI" }).closest("tr")).toHaveTextContent(/SMCI\s*—/);
+  });
+
+  it("Codex R-08: each step shows its own answer's date, and a hedge from another session is disclosed", async () => {
+    seed();
+    const legsKey = "NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000";
+    const hedgeAnswer = { ...(basketHedge as { answers: Record<string, Record<string, unknown>> }).answers[legsKey], prices_as_of: "2026-09-22" };
+    stubDesk({ "/api/desk/basket/hedge": () => hedgeAnswer });
+    renderTab();
+    await loaded();
+    const step2 = await screen.findByRole("region", { name: /^How the basket trades/ });
+    const step3 = screen.getByRole("region", { name: /^Hedge it/ });
+    await waitFor(() => expect(step3).toHaveTextContent("The hedge reads prices through Sep 22, 2026; the basket above reads them through Sep 23, 2026."));
+    expect(within(step2).getAllByTestId("dk-live")[0]).toHaveTextContent("Live · Yahoo · prices Sep 23");
+    expect(within(step3).getAllByTestId("dk-live")[0]).toHaveTextContent("Live · Yahoo · prices Sep 22");
+    // R-09: the stress footnote names its window.
+    expect(within(step3).getByRole("region", { name: /^Stress test/ })).toHaveTextContent("Betas fitted on the 252 sessions from Sep 22, 2025 to Sep 23, 2026 (one year)");
   });
 
   it("asks nothing for a basket whose weights are not at 100%, and says what prices it", async () => {

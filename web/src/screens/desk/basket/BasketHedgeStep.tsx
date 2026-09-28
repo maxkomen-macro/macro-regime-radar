@@ -14,7 +14,7 @@ import { useId, type ReactNode } from "react";
 import type { BasketHedgeResponse, HedgeEtf } from "../data/types";
 import { num, pct, pctPlain } from "../kit/format";
 import { AdvancedPanel, Awaiting, NotServedBadge, Stat, StatRow, Unserved, UnservedLine, cx, useAdvanced } from "../kit/ui";
-import { excludedWords, hedgeLead, stressLead, usd } from "./trades";
+import { excludedWords, hedgeLead, stressLead, stressWindowWords, usd } from "./trades";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -136,7 +136,7 @@ function StressCard({ h, state }: { h: BasketHedgeResponse | undefined; state: S
       )}
       {state === "ready" && rows.length ? (
         <p className="bh-foot-note">
-          The basket moves its beta to the benchmark times the move; the short moves the ETF's own beta to it (one for the benchmark itself). One-year betas; no convexity, no costs.
+          The basket moves its beta to the benchmark times the move; the short moves the ETF&apos;s own beta to it (one for the benchmark itself). {h ? stressWindowWords(h) : null}
         </p>
       ) : null}
     </HedgeCard>
