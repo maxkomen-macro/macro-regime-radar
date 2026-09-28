@@ -12,7 +12,7 @@ import DeskShell from "../DeskShell";
 import regime from "../../../fixtures/desk/regime.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { classifierWords, flipTone, flipWords, meantNote, mom, momSigned, printedWords, REGIMES, returnWords, runs, trendTone } from "./RegimePage";
+import { classifierWords, flipTone, flipWords, meantNote, mom, momSigned, otherWords, printedWords, publishedPrintWords, publishedTail, REGIMES, returnWords, runs, trendTone } from "./RegimePage";
 
 type Over = Record<string, unknown>;
 /** The fixture with some blocks replaced (or removed with `undefined`). */
@@ -78,14 +78,30 @@ describe("Regime words", () => {
     expect(flipWords("cpi", p)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
     expect(flipWords("indpro", { ...p, threshold_mom: -0.0002, flips_to: "Stagflation" })).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation, effective from the Nov 2026 label.");
   });
-  it("desk/fill-compute: a print already made is said against the row the card reads from (the fixture's July row)", () => {
-    // The API's answer on the audit's store: from the July Goldilocks row, August's two prints are stored.
-    expect(regime.next_prints.basis).toEqual({ month: "2026-07", label: "Goldilocks" });
-    expect(flipWords("cpi", regime.next_prints.cpi as never)).toBeNull();
-    expect(printedWords("cpi", regime.next_prints.cpi as never)).toBe("the Aug 2026 print (+0.40% m/m) flipped inflation to rising.");
-    expect(printedWords("indpro", regime.next_prints.indpro as never)).toBe("the Aug 2026 print (+0.02% m/m) kept growth rising.");
+  it("Codex R-05: published rows and upcoming prints apart, each print against its own month (the fixture's July row)", () => {
+    // The API's answer on the audit's store: from the July Goldilocks row, the August row is published with its two prints,
+    // and the upcoming prints are September's, read from the August row.
+    const np = regime.next_prints;
+    expect(np.basis).toEqual({ month: "2026-07", label: "Goldilocks" });
+    expect(np.upcoming_from).toEqual({ month: "2026-08", label: "Overheating" });
+    expect(publishedPrintWords("cpi", np.published[0].cpi as never)).toBe("the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising");
+    expect(publishedPrintWords("indpro", np.published[0].indpro as never)).toBe("the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising");
+    expect(publishedTail(np.published[0] as never)).toBe(
+      ", the label from Oct 2026: the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising; the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising.",
+    );
+    expect(np.cpi.reference_month).toBe("2026-09");
+    expect(flipWords("cpi", np.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
     expect([momSigned(-0.0012), momSigned(0.00396)]).toEqual(["−0.12%", "+0.40%"]);
-    expect(printedWords("cpi", { ...regime.next_prints.cpi, printed_mom: null } as never)).toBeNull();
+    // A series that has already printed the upcoming month (the row waits on the other): said as printed.
+    const printed = { printed_mom: 0.00396, printed_direction: "rising" as const, from_direction: "falling" as const, reference_month: "2026-09" };
+    expect(printedWords("cpi", printed)).toBe("the Sep 2026 print (+0.40% m/m) flipped inflation to rising.");
+    expect(printedWords("cpi", { ...printed, printed_mom: null })).toBeNull();
+  });
+  it("Codex R-06: the other axis a flip reads is said as published, or as an assumption", () => {
+    const other = { axis: "growth", series: "INDPRO", reference_month: "2026-09", direction: "rising" as const, status: "assumed" as const };
+    expect(otherWords({ other })).toBe("Assumes growth stays rising; the Sep 2026 INDPRO print is not out yet.");
+    expect(otherWords({ other: { ...other, direction: "falling", status: "published" } })).toBe("The Sep 2026 INDPRO print has growth falling.");
+    expect(otherWords({ other: null })).toBeNull();
   });
   it("`>` flips a falling axis to rising (v3 §9.3)", () => {
     const p = { threshold_mom: 0.004, operator: ">" as const, flips_to: "Overheating", first_effective_month: "2026-11" };
@@ -213,11 +229,18 @@ describe("Regime tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("Oct 14"));
     // §5 (desk/fill-compute): read from the row WHERE WE ARE shows, the July Goldilocks row, and the card says which.
     expect(card.querySelector(".rg-from")).toHaveTextContent("from the Jul 2026 row · Goldilocks");
-    expect(card.querySelector(".rg-next-row")).toHaveTextContent("Already printed: the Aug 2026 row reads Overheating, the label from Oct 2026.");
-    expect(card).toHaveTextContent(/Next CPI\s*Oct 14\s*the Aug 2026 print \(\+0\.40% m\/m\) flipped inflation to rising\./);
+    // Codex R-05: the August row, already published, with its own prints; then the upcoming prints, September's, each
+    // with its own release (the CPI's on Oct 14), read from the August row.
+    expect(card.querySelector(".rg-next-row")).toHaveTextContent(
+      "Already published: the Aug 2026 row reads Overheating, the label from Oct 2026: the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising; the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising.",
+    );
+    expect(card).toHaveTextContent("next prints, from the Aug 2026 row · Overheating");
+    expect(card).toHaveTextContent(
+      /Next CPI\s*Oct 14\s*Sep 2026 print · a print ≤ −0\.39% m\/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label\. Assumes growth stays rising; the Sep 2026 INDPRO print is not out yet\./,
+    );
     // §5: the calendar has no INDPRO release, so its date says so.
-    expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · the Aug 2026 print \(\+0\.02% m\/m\) kept growth rising\./);
-    expect(card).not.toHaveTextContent(/flips inflation to falling/);
+    expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · Sep 2026 print · a print ≤ −0\.02% m\/m flips growth to falling → Stagflation/);
+    expect(card).not.toHaveTextContent("Already printed");
     // The API's answer on the audit's store (Q9): August's month after is September, not over yet.
     // Codex R-01: each change dated by the month it took effect (its stamp two months before), with the S&P over that month.
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
@@ -228,6 +251,12 @@ describe("Regime tab", () => {
       "Aug 2025Stagflation → Overheating · Jun row+1.9%",
     ]);
     expect(card).toHaveTextContent("Last five of 123 regime changes · S&P over the month each took effect");
+  });
+  it("Codex R-05: a release that is out but not stored yet says so, beside its own month", async () => {
+    stubDesk({ "/api/desk/regime": () => served({ next_prints: { ...regime.next_prints, cpi: { ...regime.next_prints.cpi, released: true } } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /What would change it/ });
+    await waitFor(() => expect(card).toHaveTextContent(/Next CPI\s*Oct 14\s*Sep 2026 print, released, not stored yet · a print ≤ −0\.39% m\/m/));
   });
   it("Codex R-08: a window not complete yet and a missing historical close each say their own reason", async () => {
     const rows = regime.changes.rows.map((c, i) => (i === 2 ? { ...c, spx_1m: null, spx_1m_status: "missing" } : c));
@@ -358,12 +387,13 @@ describe("both cards read one label (desk/fill-compute): the flip text matches W
         release_date: axis === "inflation" ? "2026-10-14" : null, reference_month: "2026-08", series: sid, threshold_mom: 0.001,
         operator: a[axis] === "rising" ? "<=" : ">", flips_to: axis === "inflation" ? regimeOf(a.growth, flip(a.inflation)) : regimeOf(flip(a.growth), a.inflation),
         first_effective_month: "2026-10", from_direction: a[axis], printed_mom: null, printed_direction: null, freq: "monthly", source: sid,
+        other: { axis: axis === "inflation" ? "growth" : "inflation", series: axis === "inflation" ? "INDPRO" : "CPIAUCSL", reference_month: "2026-08", direction: axis === "inflation" ? a.growth : a.inflation, status: "assumed" },
       });
       stubDesk({
         "/api/desk/regime": () => ({
           ...regime,
           current: { ...regime.current, label, growth: a.growth, inflation: a.inflation, latest_print: "2026-07" },
-          next_prints: { basis: { month: "2026-07", label }, next_row: null, cpi: next("inflation", "CPIAUCSL"), indpro: next("growth", "INDPRO") },
+          next_prints: { basis: { month: "2026-07", label }, published: [], upcoming_from: { month: "2026-07", label }, cpi: next("inflation", "CPIAUCSL"), indpro: next("growth", "INDPRO") },
         }),
       });
       renderTab();

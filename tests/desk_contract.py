@@ -245,12 +245,20 @@ LEDGER = obj(
 
 # ── §12.6 GET /regime ───────────────────────────────────────────────────────
 
+PRINT_SERIES = E("CPIAUCSL", "INDPRO")
+# Codex R-05: an upcoming print, its release bound to its own reference month; R-06: the other axis it assumes.
 NEXT_PRINT = obj(
-    release_date=null(DATE), reference_month=MONTH, series=E("CPIAUCSL", "INDPRO"),
+    release_date=null(DATE), released=null(BOOL), reference_month=MONTH, series=PRINT_SERIES,
     threshold_mom=null(NUM), operator=E("<=", ">"), flips_to=null(REGIME), first_effective_month=MONTH,
     from_direction=DIRECTION, printed_mom=null(NUM), printed_direction=null(DIRECTION),
+    other=obj(axis=E("growth", "inflation"), series=PRINT_SERIES, reference_month=MONTH, direction=DIRECTION,
+              status=E("published", "assumed")),
     freq=Const("monthly"), source=STR,
 )
+# Codex R-05: a stored row after the one shown, already published, with the two prints that made it.
+PUBLISHED_PRINT = obj(reference_month=MONTH, series=PRINT_SERIES, mom=null(NUM), direction=null(DIRECTION),
+                      from_direction=null(DIRECTION))
+PUBLISHED_ROW = obj(month=MONTH, label=REGIME, first_effective_month=MONTH, cpi=PUBLISHED_PRINT, indpro=PUBLISHED_PRINT)
 REGIME_ROUTE = obj(
     current=Block(Obj(dict(REGIME_TILE_FIELDS, latest_print=MONTH,
                            classifier=null(obj(month=MONTH, label=REGIME, odds=null(FRAC), agrees=BOOL))))),
@@ -267,7 +275,8 @@ REGIME_ROUTE = obj(
     ))),
     next_prints=Block(obj(
         basis=obj(month=MONTH, label=REGIME),
-        next_row=null(obj(month=MONTH, label=REGIME, first_effective_month=MONTH)),
+        published=Arr(PUBLISHED_ROW, max=2),
+        upcoming_from=obj(month=MONTH, label=REGIME),
         cpi=null(NEXT_PRINT), indpro=null(NEXT_PRINT),
     )),
     # Codex R-01, R-04, R-07, R-08 (desk/fill-compute): each label over the month it governed (K−2), the

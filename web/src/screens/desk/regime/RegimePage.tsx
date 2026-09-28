@@ -12,7 +12,7 @@
 import type { ReactNode } from "react";
 import { unavailableOf, useRegime } from "../data/api";
 import { droppedOf } from "../data/schema";
-import type { Read, RegimeResponse, NextPrint as NextPrintRow } from "../data/types";
+import type { Read, RegimeResponse, NextPrint as NextPrintRow, PublishedPrint, PublishedRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
@@ -447,13 +447,53 @@ export function printedWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "prin
   return `the ${monthYear(p.reference_month)} print (${momSigned(p.printed_mom)} m/m) ${to === from ? `kept ${what} ${to}` : `flipped ${what} to ${to}`}.`;
 }
 
+const SERIES_NAME = { cpi: "CPI", indpro: "INDPRO" } as const;
+
+/**
+ * Codex R-05: one print that made a published row, against its own month: "the Aug 2026 CPI print (+0.40% m/m)
+ * flipped inflation to rising". Null without the axis it gave.
+ */
+export function publishedPrintWords(kind: "cpi" | "indpro", p: PublishedPrint | null | undefined): string | null {
+  const to = trend(p?.direction);
+  if (!p || !to || !monthYear(p.reference_month)) return null;
+  const from = trend(p.from_direction);
+  const what = kind === "cpi" ? "inflation" : "growth";
+  const move = fin(p.mom) ? ` (${momSigned(p.mom)} m/m)` : "";
+  return `the ${monthYear(p.reference_month)} ${SERIES_NAME[kind]} print${move} ${!from ? `left ${what} ${to}` : to === from ? `kept ${what} ${to}` : `flipped ${what} to ${to}`}`;
+}
+
+/** Codex R-05: what follows a published row's label: the month it governs from and the prints that made it. */
+export function publishedTail(row: PublishedRow): string {
+  const prints = [publishedPrintWords("cpi", row.cpi), publishedPrintWords("indpro", row.indpro)].filter(Boolean);
+  const from = monthYear(row.first_effective_month) ? `, the label from ${monthYear(row.first_effective_month)}` : "";
+  return `${from}${prints.length ? `: ${prints.join("; ")}` : ""}.`;
+}
+
+/**
+ * Codex R-06: the other axis a projected flip reads. Published for that month: said as a fact; not yet out: the
+ * assumption is said as one. Null without it.
+ */
+export function otherWords(p: Pick<NextPrintRow, "other">): string | null {
+  const o = p.other;
+  const dir = trend(o?.direction);
+  if (!o || !dir || !monthYear(o.reference_month)) return null;
+  const name = o.series === "INDPRO" ? "INDPRO" : "CPI";
+  return o.status === "published"
+    ? `The ${monthYear(o.reference_month)} ${name} print has ${o.axis} ${dir}.`
+    : `Assumes ${o.axis} stays ${dir}; the ${monthYear(o.reference_month)} ${name} print is not out yet.`;
+}
+
 function NextPrint({ label, kind, p }: { label: string; kind: "cpi" | "indpro"; p: NextPrintRow | null | undefined }) {
-  const words = p ? (printedWords(kind, p) ?? flipWords(kind, p)) : null;
-  if (!p || !words) return <Stat label={label} awaiting />;
-  // §5: the release date, "release date unavailable" when the calendar has no record.
+  // Codex R-05: an upcoming print, read against its own month and release; a print this series has already made for
+  // that month (the row waits on the other series) is said as printed.
+  const printed = p ? printedWords(kind, p) : null;
+  const flip = p ? flipWords(kind, p) : null;
+  if (!p || !(printed || flip) || !monthYear(p.reference_month)) return <Stat label={label} awaiting />;
   const date = dayShort(p.release_date);
-  // The dash for a date not served is no signal, so it takes no color.
-  // A print already made describes the next row, not this release: the date keeps no regime's color.
+  const head = `${monthYear(p.reference_month)} print${p.released && !printed ? ", released, not stored yet" : ""}`;
+  const other = otherWords(p);
+  const words = printed ? `${head} · ${printed}` : `${head} · ${flip}${other ? ` ${other}` : ""}`;
+  // The dash for a date not served is no signal, so it takes no color; a print already made takes none either.
   return <Stat label={label} value={date || "—"} tone={date && p.flips_to && fin(p.threshold_mom) ? flipTone(p.flips_to) : undefined} sub={date ? words : `release date unavailable · ${words}`} />;
 }
 
@@ -500,11 +540,17 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
         <>
           {/* §5 (desk/fill-compute): read from the row WHERE WE ARE shows, so both cards read one label. */}
           <p className="rg-from">{np?.basis && monthYear(np.basis.month) ? `from the ${monthYear(np.basis.month)} row · ${np.basis.label}` : "from the row governing today"}</p>
-          {np?.next_row && monthYear(np.next_row.month) ? (
-            <p className="rg-next-row">
-              Already printed: the {monthYear(np.next_row.month)} row reads <b data-tone={REGIME_KEY[np.next_row.label]}>{np.next_row.label}</b>
-              {monthYear(np.next_row.first_effective_month) ? `, the label from ${monthYear(np.next_row.first_effective_month)}` : ""}.
-            </p>
+          {/* Codex R-05: the rows already published after the one shown, apart from the prints still to come. */}
+          {(Array.isArray(np?.published) ? np.published : []).map((row) =>
+            monthYear(row.month) ? (
+              <p key={row.month} className="rg-next-row">
+                Already published: the {monthYear(row.month)} row reads <b data-tone={REGIME_KEY[row.label]}>{row.label}</b>
+                {publishedTail(row)}
+              </p>
+            ) : null,
+          )}
+          {np?.upcoming_from && np.basis && np.upcoming_from.month !== np.basis.month && monthYear(np.upcoming_from.month) ? (
+            <p className="rg-from">{`next prints, from the ${monthYear(np.upcoming_from.month)} row · ${np.upcoming_from.label}`}</p>
           ) : null}
           {npOff ? (
             <Unserved block={npOff}>

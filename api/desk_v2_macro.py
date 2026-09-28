@@ -152,21 +152,39 @@ def release_date(times: list[str], now: datetime) -> str | None:
     return None
 
 
+def release_for(times: list[str], reference_month: str, now: datetime) -> tuple[str | None, bool | None]:
+    """Codex R-05: the release of one reference month, never the next release
+    whatever it covers. A monthly print for month M is released during M+1,
+    so the release is the first stored one whose New York date falls in M+1;
+    with whether it is out at `now`. (None, None) when the calendar has none."""
+    after = months_before(reference_month, -1)
+    for stamp in times:
+        t = _utc(stamp)
+        if t is not None and month_of(t.astimezone(cal.NY).date()) == after:
+            return t.astimezone(cal.NY).date().isoformat(), t <= now
+    return None, None
+
+
 def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime, basis_month: str) -> dict:
-    """§12.6 `next_prints.data`, read from `basis_month`, the K−2 row `current`
-    shows (desk/fill-compute: both cards read one label): the item's reading
-    from that row, each series with the release date of its next print as of
-    `now` (null for INDPRO: no such event is stored). Awaiting (S-27) when the
-    item holds no reading from that row."""
+    """§12.6 `next_prints.data` for `basis_month`, the K−2 row `current` shows
+    (desk/fill-compute: both cards read one label). Codex R-05: the rows after
+    it that are already published, with the prints that made them, apart from
+    the upcoming prints, each with the release of its own reference month and
+    whether that release is out at `now`. Awaiting (S-27) when the item holds
+    no reading from that row."""
     if not value.get("ok"):
         raise env.Awaiting(value["reason"])
     read = value["data"]["by_basis"].get(basis_month)
     if read is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
-    out = {"basis": read["basis"], "next_row": read["next_row"]}
+    out = {"basis": read["basis"], "published": read["published"], "upcoming_from": read["upcoming_from"]}
     for k, _sid, _axis, _event in NEXT_PRINT_KEYS:
         p = read[k]
-        out[k] = None if p is None else {"release_date": release_date(times.get(k, []), now), **p}
+        if p is None:
+            out[k] = None
+            continue
+        date_, released = release_for(times.get(k, []), p["reference_month"], now)
+        out[k] = {"release_date": date_, "released": released, **p}
     return out
 
 

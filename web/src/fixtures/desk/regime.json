@@ -301,36 +301,72 @@
    "month": "2026-07",
    "label": "Goldilocks"
   },
-  "next_row": {
+  "published": [
+   {
+    "month": "2026-08",
+    "label": "Overheating",
+    "first_effective_month": "2026-10",
+    "cpi": {
+     "reference_month": "2026-08",
+     "series": "CPIAUCSL",
+     "mom": 0.003960181843858157,
+     "direction": "rising",
+     "from_direction": "falling"
+    },
+    "indpro": {
+     "reference_month": "2026-08",
+     "series": "INDPRO",
+     "mom": 0.00022126169630087844,
+     "direction": "rising",
+     "from_direction": "rising"
+    }
+   }
+  ],
+  "upcoming_from": {
    "month": "2026-08",
-   "label": "Overheating",
-   "first_effective_month": "2026-10"
+   "label": "Overheating"
   },
   "cpi": {
    "release_date": "2026-10-14",
-   "reference_month": "2026-08",
+   "released": false,
+   "reference_month": "2026-09",
    "series": "CPIAUCSL",
-   "threshold_mom": null,
-   "operator": ">",
-   "flips_to": null,
-   "first_effective_month": "2026-10",
-   "from_direction": "falling",
-   "printed_mom": 0.003960181843858157,
-   "printed_direction": "rising",
+   "threshold_mom": -0.003944560666325425,
+   "operator": "<=",
+   "flips_to": "Goldilocks",
+   "first_effective_month": "2026-11",
+   "from_direction": "rising",
+   "printed_mom": null,
+   "printed_direction": null,
+   "other": {
+    "axis": "growth",
+    "series": "INDPRO",
+    "reference_month": "2026-09",
+    "direction": "rising",
+    "status": "assumed"
+   },
    "freq": "monthly",
    "source": "CPIAUCSL"
   },
   "indpro": {
    "release_date": null,
-   "reference_month": "2026-08",
+   "released": null,
+   "reference_month": "2026-09",
    "series": "INDPRO",
-   "threshold_mom": null,
+   "threshold_mom": -0.00022121275039244104,
    "operator": "<=",
-   "flips_to": null,
-   "first_effective_month": "2026-10",
+   "flips_to": "Stagflation",
+   "first_effective_month": "2026-11",
    "from_direction": "rising",
-   "printed_mom": 0.00022126169630087844,
-   "printed_direction": "rising",
+   "printed_mom": null,
+   "printed_direction": null,
+   "other": {
+    "axis": "inflation",
+    "series": "CPIAUCSL",
+    "reference_month": "2026-09",
+    "direction": "rising",
+    "status": "assumed"
+   },
    "freq": "monthly",
    "source": "INDPRO"
   }

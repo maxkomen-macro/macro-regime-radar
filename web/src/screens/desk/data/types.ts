@@ -523,8 +523,11 @@ export interface StudyEventsResponse extends Envelope {
 // ── §12.5 /regime ─────────────────────────────────────────────────────────
 
 /** §12.6: the next print of one series and the move that would flip its axis. */
+/** §12.6: an upcoming print, read from the newest stored row (`upcoming_from`). Codex R-05: `release_date` is the
+ * release of `reference_month` itself, `released` whether it is out; R-06: `other` is the other axis the flip assumes. */
 export interface NextPrint {
   release_date: string | null;
+  released?: boolean | null;
   reference_month: string;
   series: string;
   threshold_mom: number | null;
@@ -536,8 +539,27 @@ export interface NextPrint {
   /** When the series has already printed `reference_month`: that print's m/m change and the axis it gave the next row. */
   printed_mom?: number | null;
   printed_direction?: "rising" | "falling" | null;
+  other?: { axis: string; series: string; reference_month: string; direction: "rising" | "falling"; status: "published" | "assumed" } | null;
   freq?: string;
   source?: string;
+}
+
+/** Codex R-05: one print that made a published row: its own month, its m/m change, the axis it gave and the one before. */
+export interface PublishedPrint {
+  reference_month: string;
+  series?: string;
+  mom: number | null;
+  direction: "rising" | "falling" | null;
+  from_direction: "rising" | "falling" | null;
+}
+
+/** Codex R-05: a stored row after the one the page shows, already published, with the prints that made it. */
+export interface PublishedRow {
+  month: string;
+  label: string;
+  first_effective_month: string;
+  cpi?: PublishedPrint | null;
+  indpro?: PublishedPrint | null;
 }
 
 /** §12.6 (Codex R-01, R-04): one regime's stored labels, and over the months they governed (two after each stamp) the
@@ -601,10 +623,12 @@ export interface RegimeResponse extends Envelope {
     freq?: string;
     source?: string;
   };
-  /** §12.6 (desk/fill-compute): read from `basis`, the same K−2 row `current` shows; `next_row` is the stored row after it, when there is one. */
+  /** §12.6 (desk/fill-compute; Codex R-05): `basis` is the K−2 row `current` shows; `published`, the stored rows after it;
+   * the upcoming prints read from `upcoming_from`, the newest row, each against its own month and release. */
   next_prints?: {
     basis?: { month: string; label: string } | null;
-    next_row?: { month: string; label: string; first_effective_month: string } | null;
+    published?: PublishedRow[];
+    upcoming_from?: { month: string; label: string } | null;
     cpi?: NextPrint | null;
     indpro?: NextPrint | null;
   };

@@ -239,9 +239,16 @@ const nextPrint = o(
     from_direction: e(["rising", "falling"], { nul: true }),
     printed_mom: "n",
     printed_direction: e(["rising", "falling"], { nul: true }),
+    // Codex R-05, R-06: whether the print's own release is out, and the other axis the flip reads.
+    released: "b?",
+    other: o({ axis: "s!", series: "s", reference_month: "s!", direction: e(["rising", "falling"], { req: true }), status: e(["published", "assumed"], { req: true }) }, { nul: true }),
     freq: "s",
     source: "s",
   },
+  { nul: true },
+);
+const publishedPrint = o(
+  { reference_month: "s!", series: "s", mom: "n", direction: e(["rising", "falling"], { nul: true }), from_direction: e(["rising", "falling"], { nul: true }) },
   { nul: true },
 );
 // §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
@@ -430,7 +437,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     }),
     next_prints: o({
       basis: o({ month: "s!", label: "s!" }, { nul: true }),
-      next_row: o({ month: "s!", label: "s!", first_effective_month: "s!" }, { nul: true }),
+      published: l(o({ month: "s!", label: "s!", first_effective_month: "s!", cpi: publishedPrint, indpro: publishedPrint })),
+      upcoming_from: o({ month: "s!", label: "s!" }, { nul: true }),
       cpi: nextPrint,
       indpro: nextPrint,
     }),

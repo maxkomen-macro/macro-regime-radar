@@ -491,6 +491,38 @@ def test_a_series_that_already_printed_the_next_month_is_not_evaluable(tmp_path,
     assert np_["cpi"]["threshold_mom"] is None and np_["cpi"]["flips_to"] is None
     assert np_["cpi"]["operator"] in ("<=", ">") and np_["cpi"]["reference_month"] == v2m.months_before(rows[-1]["month"], -1)
     assert np_["indpro"]["threshold_mom"] is not None and np_["indpro"]["flips_to"] is not None
+    # Codex R-06: CPI's m+1 print is out, so INDPRO's flip reads it, not the basis row's sign
+    assert np_["indpro"]["other"]["status"] == "published" and np_["cpi"]["other"]["status"] == "assumed"
+
+
+def test_codex_r06_a_flip_uses_the_other_axis_already_published_for_that_month(tmp_path, classifier):
+    """Codex R-06: the flip a print would cause was the label with the other axis
+    held at the basis row's sign, even when the other series had already printed
+    that month the other way. Here growth and inflation rise through m; INDPRO's
+    m+1 print is out and turns growth falling; CPI's is not. A CPI print across
+    its threshold gives Recession Risk (growth falling, inflation falling), not
+    Goldilocks, and the real classifier agrees."""
+    growth, infl = _levels(100.0, UP), _levels(250.0, UP)
+    months = pd.date_range("2026-02-01", periods=len(growth), freq="MS")
+    nxt = months[-1] + pd.offsets.MonthBegin(1)
+    g_next = growth[-2] * 0.99  # below the joint row before m: growth falling at m+1
+    path = _oracle_store(tmp_path, classifier, growth, infl, extra={"INDPRO": pd.Series([g_next], index=[nxt])})
+    np_, rows = _next(path)
+    latest, cpi = rows[-1], np_["cpi"]
+    assert latest["label"] == "Overheating" and cpi["operator"] == "<="
+    assert cpi["other"] == {"axis": "growth", "series": "INDPRO", "reference_month": nxt.strftime("%Y-%m"),
+                            "direction": "falling", "status": "published"}
+    assert cpi["flips_to"] == "Recession Risk"
+    joint = pd.DataFrame({"growth": pd.Series(growth + [g_next], index=list(months) + [nxt]),
+                          "inflation": pd.Series(infl + [infl[-2] * (1 - 1e-4)], index=list(months) + [nxt])})
+    got = classifier.classify_regime(classifier.compute_trends(joint["growth"]).iloc[-1],
+                                     classifier.compute_trends(joint["inflation"]).iloc[-1])
+    assert got == cpi["flips_to"]
+    # unpublished, the same flip is qualified as an assumption: growth kept rising, so Goldilocks
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    np0, _ = _next(_oracle_store(plain, classifier, growth, infl))
+    assert np0["cpi"]["other"]["status"] == "assumed" and np0["cpi"]["flips_to"] == "Goldilocks"
 
 
 def test_the_mirrors_are_the_classifiers():
@@ -508,29 +540,41 @@ def test_the_mirrors_are_the_classifiers():
 
 # ── The release date (per response) ─────────────────────────────────────────
 
-def test_the_release_date_is_the_first_stored_release_after_now(hermetic, monkeypatch):
-    """§12.6: `release_date` follows the response's own "now" (plan §0.5),
-    inside one generation; INDPRO has no stored release event."""
-    cases = ((datetime(2026, 9, 26, 15, 0, tzinfo=timezone.utc), "2026-10-14"),
-             (datetime(2026, 10, 14, 12, 29, tzinfo=timezone.utc), "2026-10-14"),
-             (datetime(2026, 10, 14, 12, 30, tzinfo=timezone.utc), "2026-11-10"))
-    for now, want in cases:
+def test_codex_r05_each_release_date_is_its_own_reference_months(hermetic, monkeypatch):
+    """Codex R-05: the release date was the first stored release after "now",
+    whatever month it covered, beside a threshold for a different month. The
+    hermetic store's newest row is August; the next CPI print is September's,
+    released in October: on Sep 5 the next stored release is Sep 11 (August's
+    print), and after Oct 14 12:30 it is Nov 10 (October's); neither is
+    September's. Each upcoming print now carries its own month's release, and
+    whether it is out."""
+    cases = ((datetime(2026, 9, 5, 15, 0, tzinfo=timezone.utc), False),
+             (datetime(2026, 10, 14, 12, 29, tzinfo=timezone.utc), False),
+             (datetime(2026, 10, 14, 12, 30, tzinfo=timezone.utc), True))
+    for now, out in cases:
         at(monkeypatch, now)
         d = get_regime()["data"]["next_prints"]["data"]
-        assert d["cpi"]["release_date"] == want, now
-        assert d["indpro"]["release_date"] is None
+        assert d["upcoming_from"]["month"] == "2026-08"
+        assert (d["cpi"]["reference_month"], d["cpi"]["release_date"], d["cpi"]["released"]) == ("2026-09", "2026-10-14", out), now
+        assert (d["indpro"]["release_date"], d["indpro"]["released"]) == (None, None)
+    # on Sep 5 the page shows the July row: the August row is already published, apart from the upcoming prints
+    at(monkeypatch, datetime(2026, 9, 5, 15, 0, tzinfo=timezone.utc))
+    d = get_regime()["data"]["next_prints"]["data"]
+    assert d["basis"]["month"] == "2026-07" and [r["month"] for r in d["published"]] == ["2026-08"]
+    assert d["published"][0]["cpi"]["reference_month"] == "2026-08"
     # past the last stored release: none (and in Feb 2027 the K−2 row is not stored, so the block awaits with `current`)
-    times = hermetic.current.results["desk_regime"]["release_times"]["cpi"]
-    assert v2m.release_date(times, datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc)) is None
     at(monkeypatch, datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]
     assert d["next_prints"]["status"] == d["current"]["status"] == "awaiting"
 
 
-def test_release_date_reads_new_york_dates():
-    assert v2m.release_date(["2026-10-15T03:30:00Z"], datetime(2026, 10, 1, tzinfo=timezone.utc)) == "2026-10-14"
-    assert v2m.release_date(["not a time", "2026-11-10 13:30:00"], datetime(2026, 10, 1, tzinfo=timezone.utc)) == "2026-11-10"
-    assert v2m.release_date([], datetime(2026, 10, 1, tzinfo=timezone.utc)) is None
+def test_release_for_binds_a_reference_month_to_its_release_in_new_york_dates():
+    times = ["2026-09-11T12:30:00Z", "2026-10-15T03:30:00Z", "2026-11-10 13:30:00", "not a time"]
+    now = datetime(2026, 10, 1, tzinfo=timezone.utc)
+    assert v2m.release_for(times, "2026-09", now) == ("2026-10-14", False)  # 03:30 UTC Oct 15 is Oct 14 in New York
+    assert v2m.release_for(times, "2026-08", now) == ("2026-09-11", True)
+    assert v2m.release_for(times, "2026-10", now) == ("2026-11-10", False)
+    assert v2m.release_for(times, "2026-12", now) == (None, None)
 
 
 # ── Real stores ─────────────────────────────────────────────────────────────
@@ -889,6 +933,7 @@ def test_the_flip_text_matches_the_displayed_label_for_every_regime(tmp_path, in
     d = get_regime()["data"]
     cur, np_ = d["current"]["data"], d["next_prints"]["data"]
     assert np_["basis"] == {"month": cur["print"], "label": cur["label"]} and cur["label"] == label
+    assert np_["published"] == [] and np_["upcoming_from"] == np_["basis"]
     growth, inflation = REGIME_AXES[label]
     assert (cur["growth"], cur["inflation"]) == (growth, inflation)
     cpi, ind = np_["cpi"], np_["indpro"]
@@ -912,13 +957,16 @@ def test_a_print_already_made_is_said_from_the_displayed_row(tmp_path, install_w
     basis, after = rows[-2], rows[-1]
     np_, _ = _next(path, basis["month"])
     assert np_["basis"] == {"month": basis["month"], "label": basis["label"]}
-    assert np_["next_row"] == {"month": after["month"], "label": after["label"],
-                               "first_effective_month": v2m.months_before(after["month"], -2)}
-    cpi = np_["cpi"]
-    assert cpi["threshold_mom"] is None and cpi["flips_to"] is None
-    assert cpi["printed_mom"] == pytest.approx(infl[-1] / infl[-2] - 1, rel=1e-12)
-    assert cpi["printed_direction"] == items.direction(after["inflation_trend"])
+    # Codex R-05: the row after it is published, with the prints that made it, apart from the upcoming prints
+    (pub,) = np_["published"]
+    assert (pub["month"], pub["label"], pub["first_effective_month"]) == (after["month"], after["label"], v2m.months_before(after["month"], -2))
+    cpi = pub["cpi"]
+    assert cpi["reference_month"] == after["month"] and cpi["mom"] == pytest.approx(infl[-1] / infl[-2] - 1, rel=1e-12)
+    assert cpi["direction"] == items.direction(after["inflation_trend"])
     assert cpi["from_direction"] == items.direction(basis["inflation_trend"])
+    # the upcoming prints read from the newest row, for the month after it
+    assert np_["upcoming_from"] == {"month": after["month"], "label": after["label"]}
+    assert np_["cpi"]["reference_month"] == v2m.months_before(after["month"], -1) and np_["cpi"]["threshold_mom"] is not None
 
 
 def test_the_routes_next_print_keys_mirror_the_items():
