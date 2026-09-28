@@ -33,7 +33,9 @@ import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } 
 import { checkAnswer, schemaFor } from "./schema";
 import type { BasketHedgeResponse, BasketPriceResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
-const BASE: string = import.meta.env.VITE_API_BASE ?? "";
+// `import.meta.env` is Vite's; the e2e specs load this module in Node through the kit (kit/ui reads DeskApiError
+// here since desk/usability §14.12), where it is undefined, so the read is guarded.
+const BASE: string = import.meta.env?.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
 /** §12.2: the moves that ask no window (a cross, an RSI crossing). */
 const NO_WINDOW: readonly string[] = ["cross_above", "cross_below", "rsi_above_70", "rsi_below_30"];
