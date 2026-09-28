@@ -2248,3 +2248,22 @@ Desk →** beside **Open the terminal →**, the same size and weight, in the ma
 site's colors (the landing page is not a Desk page), linking to
 `/desk/overview`.
 
+### 14.9 Deep links
+
+Every question and every stateful view is in the address, and the address
+opened cold reproduces the screen (the Desk / Client view, `?view=client`, and
+the walkthrough, `?tour=`, were already there):
+
+| Page | Address carries |
+|---|---|
+| Event Study | the question (`preset=` and `horizon=`, or the six slots), the open Advanced panel (`adv=1`), the saved-questions tab (`mode=saved`) |
+| Technicals | the instrument (`symbol=`), the chart's range (`range=6m\|3y`; 1Y is the default and is not written) |
+| Signal Ledger | the filter chip (`filter=firing\|reliable\|spx\|cross`) |
+| Data Pipeline | the search (`q=`) and the open group (`group=`); a cold `q=` opens its series' group |
+| Position Monitor | the form (`new=1`), a carried study (`from=`, the slots), basket (`basket=`) or instrument (`instrument=`), the open row (`open=`) |
+| Basket & Hedge | the open basket (`basket=`), a ticker to add (`add=`) |
+| Build Notes | the section (`#bn-…`) |
+
+A filter, a range and the Advanced panel replace the history entry; a new
+question pushes one.
+

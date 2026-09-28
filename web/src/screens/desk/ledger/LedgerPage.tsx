@@ -7,7 +7,7 @@
  */
 
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { unavailableOf, useLedger } from "../data/api";
 import { droppedOf } from "../data/schema";
 import type { LedgerRow } from "../data/types";
@@ -21,6 +21,7 @@ import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
 
 export type Filter = "all" | "firing" | "reliable" | "spx" | "cross";
+const FILTER_IDS: readonly Filter[] = ["all", "firing", "reliable", "spx", "cross"];
 
 /** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
 export const isAvailable = (r: LedgerRow) => r.available !== false;
@@ -140,7 +141,19 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
   const unserved = unavailableOf(q.error);
   const [scrollRef, scrolls] = useOverflows<HTMLDivElement>();
-  const [filter, setFilter] = useState<Filter>("all");
+  // desk/usability §14.9: the filter lives in the address (`?filter=`), so a link opens the same rows.
+  const [search, setSearch] = useSearchParams();
+  const filter: Filter = (FILTER_IDS as readonly string[]).includes(search.get("filter") ?? "") ? (search.get("filter") as Filter) : "all";
+  const setFilter = (f: Filter) =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        if (f === "all") q.delete("filter");
+        else q.set("filter", f);
+        return q;
+      },
+      { replace: true },
+    );
   const l = q.data;
   const rows = Array.isArray(l?.signals) ? l.signals : [];
   // Codex R-16: rows the boundary could not read are said, and no count is read from the rest.

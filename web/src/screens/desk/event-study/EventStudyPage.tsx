@@ -82,8 +82,25 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const [unreadable] = useState(() => unreadableSaved().length);
   const [draft, setDraft] = useState<Question | null>("question" in ask ? ask.question : null);
   const [dirty, setDirty] = useState(false);
-  const [mode, setMode] = useState<Mode>("preset" in ask ? "common" : "build");
-  const [adv, setAdv] = useState(false);
+  // desk/usability §14.9: the open Advanced panel and the saved-questions tab live in the address too.
+  const asked = search.get("mode");
+  const [mode, setModeState] = useState<Mode>(asked === "saved" || asked === "build" || asked === "common" ? asked : "preset" in ask ? "common" : "build");
+  const setParam = (k: string, v: string | null) =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        if (v === null) q.delete(k);
+        else q.set(k, v);
+        return q;
+      },
+      { replace: true },
+    );
+  const setMode = (m: Mode) => {
+    setModeState(m);
+    setParam("mode", m === "saved" ? "saved" : null);
+  };
+  const adv = search.get("adv") === "1";
+  const setAdv = (f: (open: boolean) => boolean) => setParam("adv", f(adv) ? "1" : null);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState("");
   const advId = useId();

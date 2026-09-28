@@ -285,4 +285,46 @@ test.describe("desk usability", () => {
     await expect(page).toHaveURL(/\/desk\/overview$/);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Overview");
   });
+
+  // ── Item 9: deep links reproduce the screen cold ─────────────────────────
+
+  test("item 9 (1 of 3): an Event Study question, its horizon and the open Advanced panel, opened cold", async ({ page }) => {
+    await open(page, "/desk/event-study?shock=gold&window=60&move=up2s&while=none&target=spx&horizon=5&adv=1");
+    await expect(page.getByLabel("Shock")).toHaveValue("gold");
+    await expect(page.getByLabel("Window")).toHaveValue("60");
+    await expect(page.getByLabel("Over the next")).toHaveValue("5");
+    await expect(page.getByRole("region", { name: "The answer" })).toContainText("at 1 week");
+    await expect(page.getByRole("region", { name: "Advanced" })).toBeVisible();
+    await expect(page.getByRole("region", { name: "Advanced" })).toContainText("All 23 events");
+    // Closing Advanced leaves the address, and the question stays.
+    await page.getByRole("complementary", { name: "Verdict and detail" }).getByTestId("dk-advanced").click();
+    await expect(page).not.toHaveURL(/adv=1/);
+    await expect(page).toHaveURL(/shock=gold&window=60/);
+  });
+
+  test("item 9 (2 of 3): Technicals for a symbol at a range, opened cold", async ({ page }) => {
+    await open(page, "/desk/technicals?symbol=GLD&range=3y");
+    const price = page.getByRole("region", { name: /^GLD · SPDR Gold Shares/ });
+    await expect(price.getByRole("button", { name: "3Y" })).toHaveAttribute("aria-pressed", "true");
+    await expect(price.getByRole("img", { name: /3Y/ })).toBeVisible();
+    await price.getByRole("button", { name: "6M" }).click();
+    await expect(page).toHaveURL(/symbol=GLD&range=6m$/);
+  });
+
+  test("item 9 (3 of 3): a Signal Ledger filter, opened cold", async ({ page }) => {
+    await open(page, "/desk/signal-ledger?filter=reliable");
+    await expect(page.getByRole("button", { name: /^Reliable only/ })).toHaveAttribute("aria-pressed", "true");
+    const rows = page.locator(".lg-table tbody tr");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.first()).toContainText("S&P golden cross");
+  });
+
+  test("item 9: the other stateful views live in the address too (Data Pipeline's search, the Position Monitor's form)", async ({ page }) => {
+    await open(page, "/desk/data-pipeline?q=DGS10");
+    await expect(page.getByLabel("Find a series")).toHaveValue("DGS10");
+    await expect(page.getByRole("region", { name: "Rates series" }).locator("tr[data-hit]")).toContainText("DGS10");
+    await open(page, "/desk/position-monitor?new=1&instrument=NVDA");
+    await expect(page.getByRole("combobox", { name: "Instrument", exact: true })).toHaveValue("NVDA");
+    await expect(page.getByText(/Discipline gate/)).toBeVisible();
+  });
 });

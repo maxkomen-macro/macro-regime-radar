@@ -220,8 +220,25 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
   const p = q.data;
   const groups = useMemo(() => (Array.isArray(p?.groups) ? p.groups : []), [p]);
   const [search, setSearch] = useSearchParams();
-  const [text, setText] = useState("");
+  // desk/usability §14.9: the search lives in the address (`?q=`), so a link opens the same series.
+  const text = search.get("q") ?? "";
   const [hit, setHit] = useState<{ group: string; id: string } | null>(null);
+  // Opened cold on `?q=`, the search is found once the groups arrive, and its group opens.
+  useEffect(() => {
+    if (!text.trim() || !groups.length) return;
+    const found = findSeries(groups, text);
+    setHit(found);
+    if (found && search.get("group") !== slugOf(found.group))
+      setSearch(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("group", slugOf(found.group));
+          return next;
+        },
+        { replace: true },
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
   const opened = search.get("group");
   // A group the boundary could not read has no count of its own, so then no total is claimed (Codex R-16).
   const lostGroups = droppedOf(p, "groups");
@@ -240,18 +257,18 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
       { replace: true },
     );
   const onSearch = (v: string) => {
-    setText(v);
     const found = findSeries(groups, v);
     setHit(found);
-    if (found)
-      setSearch(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("group", slugOf(found.group));
-          return next;
-        },
-        { replace: true },
-      );
+    setSearch(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (v) next.set("q", v);
+        else next.delete("q");
+        if (found) next.set("group", slugOf(found.group));
+        return next;
+      },
+      { replace: true },
+    );
   };
   // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
   const unserved = unavailableOf(q.error);
