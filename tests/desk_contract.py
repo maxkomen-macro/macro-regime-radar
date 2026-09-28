@@ -113,6 +113,8 @@ WINDOW = E(5, 20, 60)
 DIRECTION = E("rising", "falling")
 FEED_STATE = E("current", "stale", "missing")
 TREND_STATE = E("above_both", "below_both", "mixed", "unavailable")
+# Codex R-08: a return is complete, its window not complete yet (pending), or missing a stored close.
+RETURN_STATUS = E("complete", "pending", "missing")
 CROSS = obj(kind=E("golden", "death"), date=DATE)
 UNAVAILABLE = obj(reason=STR, until=null(STR))
 BAND_EDGES_RECESSION = Const([0.20, 0.40])
@@ -268,15 +270,20 @@ REGIME_ROUTE = obj(
         next_row=null(obj(month=MONTH, label=REGIME, first_effective_month=MONTH)),
         cpi=null(NEXT_PRINT), indpro=null(NEXT_PRINT),
     )),
+    # Codex R-01, R-04, R-07, R-08 (desk/fill-compute): each label over the month it governed (K−2), the
+    # return sample and the VIX coverage apart from the label count, each change by its effective month.
     stats=Block(obj(
-        rows=Arr(obj(regime=REGIME, months=INT, spx_n=INT, spx_median_mo=null(NUM), spx_mean_mo=null(NUM),
-                     up_pct=null(FRAC), vix_avg=null(NUM), vix_days=INT), min=4, max=4),
-        window=MONTH_SPAN, freq=Const("monthly"), source=STR,
+        rows=Arr(obj(regime=REGIME, months=INT, spx_n=INT, spx_pending=INT, spx_missing=INT, spx_median_mo=null(NUM),
+                     spx_mean_mo=null(NUM), up_pct=null(FRAC), vix_avg=null(NUM), vix_days=INT, vix_sessions=INT), min=4, max=4),
+        window=MONTH_SPAN, governed=MONTH_SPAN, lag_months=Const(2),
+        totals=obj(months=INT, spx_n=INT, spx_pending=INT, spx_missing=INT, vix_days=INT, vix_sessions=INT),
+        vix_coverage=obj(stored=BOOL, first=null(DATE), last=null(DATE), off_session_dropped=INT, invalid=INT),
+        freq=Const("monthly"), source=STR,
     )),
     changes=Block(obj(
-        rows=Arr(obj(month=MONTH, to=REGIME, from_month=MONTH, spx_1m=null(NUM), spx_1m_month=MONTH,
-                     **{"from": REGIME}), max=5),
-        n=INT, window=MONTH_SPAN, freq=Const("monthly"), source=STR,
+        rows=Arr(obj(effective_month=MONTH, stamp_month=MONTH, to=REGIME, from_month=MONTH, spx_1m=null(NUM),
+                     spx_1m_status=RETURN_STATUS, **{"from": REGIME}), max=5),
+        n=INT, window=MONTH_SPAN, lag_months=Const(2), freq=Const("monthly"), source=STR,
     )),
 )
 

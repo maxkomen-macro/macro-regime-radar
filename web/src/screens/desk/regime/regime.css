@@ -184,29 +184,38 @@
   font-size: 14px;
 }
 .rg-col-regime {
-  width: 27%;
+  width: 23%;
 }
 .rg-col-months {
-  width: 11.9%;
+  width: 10%;
+}
+.rg-col-n {
+  width: 9%;
 }
 .rg-col-spx {
-  width: 16.6%;
-}
-.rg-col-up {
-  width: 12.9%;
-}
-.rg-col-vix {
-  width: 14.6%;
+  width: 13%;
 }
 .rg-col-mean {
-  width: 17%;
+  width: 12%;
 }
-/* The six columns scroll in their own region at a phone's width; the page never scrolls sideways. */
+.rg-col-up {
+  width: 9%;
+}
+.rg-col-vix {
+  width: 11%;
+}
+.rg-col-days {
+  width: 13%;
+}
+/* The eight columns scroll in their own region at a phone's width; the page never scrolls sideways. */
 .rg-table-wrap {
   overflow-x: auto;
   max-width: 100%;
 }
 .rg-meant-note {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   margin-top: 10px;
   font-size: 12px;
   line-height: 16px;
@@ -304,6 +313,10 @@
 .rg-changes li > :last-child {
   font-family: var(--dk-mono);
   font-size: 13px;
+}
+.rg-stamp {
+  font-size: 12px;
+  color: var(--dk-t3);
 }
 .rg-month {
   font-family: var(--dk-mono);

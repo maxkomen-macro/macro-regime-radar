@@ -350,13 +350,22 @@ def recession_block(ctx: dict) -> dict:
 
 
 # ── What each regime has meant, and the last changes (desk/fill-compute) ───
-# FRAME3_DATA_AUDIT.md §2.4's method: every stored regimes row counts once, as
-# stored (Q8's months, Q9's changes: a row whose label differs from the
-# previous stored row's), no K−2 lag. Each row is paired with its own calendar
-# month of the S&P and the VIX: a label describes the market of its month, it
-# does not trade it (the label is known only after the month's prints).
+# Codex R-01: measured from when each regime was known, the engine's K−2 rule.
+# A row stamped M needs the prints published during M+1, so it governs month
+# M+2 (a session in month K reads the row stamped K−2): each stored label is
+# paired with the S&P's return and the VIX of the month it governed, and a
+# change is dated by the month it took effect. Every stored row counts once
+# (Q8's labels, Q9's changes: a row whose label differs from the previous
+# stored row's).
 REGIME_ORDER = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
 CHANGES_SHOWN = 5
+
+
+def governed_month(stamp: str) -> str:
+    """The month a row stamped `stamp` governs (event_study.REGIME_LAG_MONTHS later)."""
+    from src.desk import event_study as es
+
+    return _month_after(stamp, es.REGIME_LAG_MONTHS)
 
 
 def month_closes(spx: Any) -> Any:
@@ -390,15 +399,62 @@ def month_returns(spx: Any) -> dict[str, float]:
     return {str(m): float(v) for m, v in r.items()}
 
 
-def month_vix(vix: Any) -> dict[str, tuple[float, int]]:
-    """Each calendar month's stored VIX closes: (their sum, their count)."""
-    out: dict[str, tuple[float, int]] = {}
-    for d, v in vix.items():
+RETURN_STATUSES = ("complete", "pending", "missing")
+
+
+class MonthReturns:
+    """Each month's S&P return and its status (Codex R-08): `complete` with a
+    value; `pending` when the month's window is not complete yet (its last
+    XNYS session is after the newest stored close, or the month is later
+    still); `missing` when the window is complete but a close it needs (the
+    month's last session's, or the previous month's) is not stored."""
+
+    def __init__(self, spx: Any) -> None:
+        import pandas as pd
+
+        from src.analytics import technicals
+
+        al = month_closes(spx)
+        self.values = {str(m): float(v) for m, v in technicals.monthly_returns(al).dropna().items()}
+        idx = al.index
+        self.month_end = {str(m): d.strftime("%Y-%m-%d") for m, d in pd.Series(idx, index=idx).groupby(idx.to_period("M")).max().items()}
+        closes = al.dropna()
+        self.newest = closes.index[-1].strftime("%Y-%m-%d") if len(closes) else ""
+        self.first_month = str(idx[0].to_period("M")) if len(idx) else ""
+
+    def status(self, month: str) -> tuple[str, float | None]:
+        if month in self.values:
+            return "complete", self.values[month]
+        end = self.month_end.get(month)
+        if month > max(self.month_end, default=""):
+            return "pending", None
+        if end is not None and end > self.newest:
+            return "pending", None
+        return "missing", None
+
+
+def month_vix(vix: Any, *, through: str | None = None) -> tuple[dict[str, dict], dict]:
+    """Codex R-07: the VIX aligned on the XNYS calendar and validated as the
+    engine does for every input (src/desk/event_study.align, validate_values)
+    before aggregating. Per calendar month: the sum and count of the stored
+    closes on its sessions, and the sessions the month has within the stored
+    span; with the rows set aside (off-session, invalid) counted apart."""
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    start, end = vix.index[0].strftime("%Y-%m-%d"), vix.index[-1].strftime("%Y-%m-%d")
+    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
+    al, off, _missing = es.align(vix, sessions)
+    al, bad, _why = es.validate_values(al, registry.get("vix"))
+    out: dict[str, dict] = {}
+    for d, v in al.items():
+        m = d.strftime("%Y-%m")
+        cell = out.setdefault(m, {"sum": 0.0, "days": 0, "sessions": 0})
+        cell["sessions"] += 1
         if v == v:
-            m = d.strftime("%Y-%m")
-            total, n = out.get(m, (0.0, 0))
-            out[m] = (total + float(v), n + 1)
-    return out
+            cell["sum"] += float(v)
+            cell["days"] += 1
+    return out, {"first": start, "last": end, "off_session_dropped": int(off), "invalid": int(bad)}
 
 
 def _levels(conn: sqlite3.Connection) -> tuple[Any, Any]:
@@ -421,53 +477,76 @@ def _levels(conn: sqlite3.Connection) -> tuple[Any, Any]:
 
 
 def regime_stats(rows: list[dict], spx: Any, vix: Any) -> dict:
-    """§12.6 `stats.data` (desk/fill-compute): per regime, its stored months,
-    the S&P's median and mean simple monthly return and the share of months up
-    over those with a complete month, and the mean of the VIX's daily closes
-    in those months; with the VIX not stored (`vix` None), `vix_avg` null and
-    `vix_days` 0."""
+    """§12.6 `stats.data` (desk/fill-compute; Codex R-01, R-04, R-07): per
+    regime, its stored labels (`months`), and over the months those labels
+    governed (`governed_month`): the S&P's median and mean simple monthly
+    return and the share up over `spx_n` complete months, with the governed
+    months whose window is not complete yet (`spx_pending`) and those missing
+    a close (`spx_missing`) counted apart; the mean of the VIX's validated
+    closes on the sessions of the complete governed months (`vix_days` of
+    `vix_sessions`). With the VIX not stored (`vix` None), `vix_avg` null and
+    the VIX counts 0."""
     import statistics
 
     if not rows:
         raise absent()
-    rets, vx = month_returns(spx), (month_vix(vix) if vix is not None else {})
+    returns = MonthReturns(spx)
+    vx, vix_cov = month_vix(vix) if vix is not None else ({}, None)
     out = []
     for label in REGIME_ORDER:
-        months = [r["month"] for r in rows if r["label"] == label]
-        r_ = [rets[m] for m in months if m in rets]
-        total = sum(vx[m][0] for m in months if m in vx)
-        days = sum(vx[m][1] for m in months if m in vx)
+        governed = [governed_month(r["month"]) for r in rows if r["label"] == label]
+        status = [returns.status(g) for g in governed]
+        r_ = [v for st, v in status if st == "complete"]
+        done = [g for g, (st, _v) in zip(governed, status) if st != "pending"]
+        total = sum(vx[g]["sum"] for g in done if g in vx)
+        days = sum(vx[g]["days"] for g in done if g in vx)
+        sessions = sum(vx[g]["sessions"] for g in done if g in vx)
         out.append({
-            "regime": label, "months": len(months), "spx_n": len(r_),
+            "regime": label, "months": len(governed), "spx_n": len(r_),
+            "spx_pending": sum(1 for st, _ in status if st == "pending"),
+            "spx_missing": sum(1 for st, _ in status if st == "missing"),
             "spx_median_mo": statistics.median(r_) if r_ else None,
             "spx_mean_mo": statistics.fmean(r_) if r_ else None,
             "up_pct": sum(1 for x in r_ if x > 0) / len(r_) if r_ else None,
-            "vix_avg": total / days if days else None, "vix_days": days,
+            "vix_avg": total / days if days else None, "vix_days": days, "vix_sessions": sessions,
         })
+    from src.desk import event_study as es
     from src.desk import series as registry
 
     v = registry.get("vix")
     vix_source = f"{v.series_id} ({v.table})" if vix is not None else f"{v.series_id} ({v.table}) not stored yet"
     return {"rows": out, "window": {"start": rows[0]["month"], "end": rows[-1]["month"], "n": len(rows)},
+            "governed": {"start": governed_month(rows[0]["month"]), "end": governed_month(rows[-1]["month"]), "n": len(rows)},
+            "lag_months": es.REGIME_LAG_MONTHS,
+            "totals": {k: sum(r[k] for r in out) for k in ("months", "spx_n", "spx_pending", "spx_missing", "vix_days", "vix_sessions")},
+            "vix_coverage": {"stored": vix is not None, **(vix_cov or {"first": None, "last": None, "off_session_dropped": 0, "invalid": 0})},
             "freq": "monthly", "source": f"regimes table (src/regime.py); asset_prices ^GSPC; {vix_source}"}
 
 
 def regime_changes(rows: list[dict], spx: Any) -> dict:
-    """§12.6 `changes.data` (desk/fill-compute): every stored row whose label
-    differs from the previous stored row's (Q9), the last five newest first,
-    each with the S&P's simple return over the calendar month after it (null
-    until that month is over); `n` counts them all."""
+    """§12.6 `changes.data` (desk/fill-compute; Codex R-01, R-08): every stored
+    row whose label differs from the previous stored row's (Q9), the last five
+    newest first, each dated by the month it took effect (`effective_month`,
+    the month the new label governed) with the S&P's simple return over that
+    month and its status (`MonthReturns.status`); `n` counts them all."""
     if not rows:
         raise absent()
-    rets = month_returns(spx)
+    returns = MonthReturns(spx)
     changes = [(prev, row) for prev, row in zip(rows, rows[1:]) if prev["label"] != row["label"]]
     shown = []
     for prev, row in reversed(changes[-CHANGES_SHOWN:]):
-        after = _month_after(row["month"])
-        shown.append({"month": row["month"], "from": prev["label"], "to": row["label"], "from_month": prev["month"],
-                      "spx_1m": rets.get(after), "spx_1m_month": after})
+        effective = governed_month(row["month"])
+        st, value = returns.status(effective)
+        shown.append({"effective_month": effective, "stamp_month": row["month"], "from": prev["label"], "to": row["label"],
+                      "from_month": prev["month"], "spx_1m": value, "spx_1m_status": st})
     return {"rows": shown, "n": len(changes), "window": {"start": rows[0]["month"], "end": rows[-1]["month"], "n": len(rows)},
-            "freq": "monthly", "source": "regimes table (src/regime.py); asset_prices ^GSPC"}
+            "lag_months": _lag(), "freq": "monthly", "source": "regimes table (src/regime.py); asset_prices ^GSPC"}
+
+
+def _lag() -> int:
+    from src.desk import event_study as es
+
+    return es.REGIME_LAG_MONTHS
 
 
 def desk_regime(ctx: dict) -> dict:

@@ -50,7 +50,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
 | Event Study: the line without the condition (`without_condition`) | UNAVAILABLE | conditional-versus-unconditional comparison is not defined (v4 B-11, C-01) |
 | Regime: current label, history strip, recession score, next prints | LIVE | — |
-| Regime: "What each regime has meant" table, and the S&P a month after each change | LIVE (desk/fill-compute) | FRAME3_DATA_AUDIT.md §2.4's method: every stored row, as stamped, with its own calendar month of the S&P and the VIX (§12.6 `stats`, `changes`) |
+| Regime: "What each regime has meant" table, and the S&P over the month each change took effect | LIVE (desk/fill-compute) | every stored row measured from when it was known (Codex R-01): each label with the S&P and the VIX of the month it governed, two months after its stamp, the return sample and VIX coverage served apart from the label count (§12.6 `stats`, `changes`) |
 | Macro: yield curve | LIVE with 2y, 10y and 2s10s; 3m, 5y and 30y LIVE once DGS3MO, DGS5 and DGS30 are registered (§12.8) | v2 D-16 |
 | Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
 | Macro: stock–bond correlation (SPY against TLT, 60 daily log returns) | LIVE (desk/fill-etf, §12.8) | — |
@@ -74,7 +74,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
-- Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P the month after each.
+- Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, and what moves with the S&P.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
@@ -546,15 +546,26 @@ indicators against NBER recession dates, trained <training.start> to
 on the site, and it is labeled as one wherever it appears." Footer
 `Advanced ▸` disabled, "not yet served".
 
-**What each regime has meant** (desk/fill-compute), from `/regime` `stats`.
-Sub-label "since <window.start year> · <window.n> stored months, each with its
-own month of the S&P and the VIX". Columns REGIME / MONTHS / S&P MEDIAN / S&P
-MEAN / UP / VIX AVG: `months`; `spx_median_mo` and `spx_mean_mo` (simple
-monthly returns, × 100, signed); `up_pct`; `vix_avg` (one decimal). The
-current label's row is marked. PNG 04's STOCK–BOND column is not drawn: no
-bond price series is stored (§6). A footnote says what a row is: "Labels as
-stored, each paired with its own calendar month; a label is known only after
-its month's prints, so this describes, it does not time." No read box.
+**What each regime has meant** (desk/fill-compute; Codex R-01, R-04, R-07), from
+`/regime` `stats`. Measured from when each regime was known: a row stamped M
+needs the prints published during M+1, so it governs month M+2 (the engine's
+K−2 rule), and each label is paired with the S&P's return and the VIX of the
+month it governed. Sub-label "since <window.start year> · measured from when
+each regime was known, <window.n> stored labels". Columns REGIME / MONTHS /
+S&P N / S&P MEDIAN / S&P MEAN / UP / VIX AVG / VIX DAYS: `months` (the stored
+labels); `spx_n` (the complete governed months, the returns' own sample);
+`spx_median_mo` and `spx_mean_mo` (simple monthly returns, × 100, signed);
+`up_pct`; `vix_avg` (one decimal); `vix_days` (tooltip "of <vix_sessions>
+sessions due"). The current label's row is marked. PNG 04's STOCK–BOND
+column is not drawn: no bond price series is stored (§6). The note under the
+table, from `totals` and `vix_coverage` only: "Measured from when each regime
+was known: each label is paired with the month it governed, <lag_months>
+months after its stamp, the month a session reads it for." · "S&P: <spx_n>
+complete months of <months> labels; <spx_pending> months not over yet;
+<spx_missing> months missing a month-end close." (each clause only when
+non-zero) · "VIX: <vix_days> of <vix_sessions> sessions stored; <n> stored
+rows set aside as off-session or invalid." ("VIX: not stored yet; the next
+full refresh stores it." while `vix_coverage.stored` is false). No read box.
 
 **What would change it** (`the next two prints`). Both cards read one label
 (desk/fill-compute, the owner's brief, superseding item 14's ruling that read
@@ -572,11 +583,15 @@ falling, `>` a falling axis to rising; v3 §9.3), or, for a print already made,
 "the <Mon YYYY> print (<printed_mom × 100, two decimals, signed>% m/m) flipped
 <axis> to <printed_direction>." (or "kept <axis> <printed_direction>." when it
 equals `from_direction`). Every flip starts from the displayed label: a
-test holds it for all four regimes. LAST FIVE REGIME CHANGES · S&P A MONTH LATER
-(desk/fill-compute), from `/regime` `changes`: each row "<Mon YYYY> ·
-<from> → <to> · <spx_1m>" (the S&P's simple return over `spx_1m_month`, the
-calendar month after the change; "month not over" while null); the list's
-label reads "Last five of <n> regime changes · S&P a month later".
+test holds it for all four regimes. LAST FIVE REGIME CHANGES · S&P OVER THE
+MONTH EACH TOOK EFFECT (desk/fill-compute; Codex R-01, R-08), from `/regime`
+`changes`: each row "<effective_month, Mon YYYY> · <from> → <to> · <stamp
+month> row · <spx_1m>" (the S&P's simple return over the month the change
+took effect, the stamp plus the lag); a null return says its status's own
+words: "month not over" (`pending`, the window not complete yet) or "a
+month-end close is missing" (`missing`, a historical close not stored). The
+list's label reads "Last five of <n> regime changes · S&P over the month each
+took effect".
 
 ---
 
@@ -1299,20 +1314,23 @@ cells; booleans `true` / `false`.
 | `next_prints.data.<k>.first_effective_month` | month | required | — | — | N: `reference_month` + 2 months |
 | `next_prints.data.<k>.freq`, `.source` | `"monthly"`, string | required | — | — | A: `"monthly"`, the FRED series id; the release date's source is `event_calendar` |
 | `stats` | block envelope | required | — | — | — |
-| `stats.data.rows` | array of 4, in the order Goldilocks, Overheating, Stagflation, Recession Risk | required | — | monthly · `regimes`, `asset_prices` ^GSPC, the registry's `vix` | N regime statistics (desk/fill-compute; FRAME3_DATA_AUDIT.md §2.4's method): every stored regimes row counts once, as stamped, no K−2 lag |
-| `stats.data.rows[].regime`, `months` | regime label, integer | required | months | — | S: the stored rows with that label (Q8) |
-| `stats.data.rows[].spx_n` | integer | required | months | — | N: those months with a complete S&P month: the close on the month's last XNYS session and on the previous month's last XNYS session both stored |
-| `stats.data.rows[].spx_median_mo`, `spx_mean_mo` | fraction | required, nullable (null when `spx_n` is 0) | simple return | — | N: median and mean of close(last session of m) / close(last session of m − 1) − 1 over the `spx_n` months |
+| `stats.data.rows` | array of 4, in the order Goldilocks, Overheating, Stagflation, Recession Risk | required | — | monthly · `regimes`, `asset_prices` ^GSPC, the registry's `vix` | N regime statistics (desk/fill-compute; Codex R-01): every stored regimes row counts once, measured over the month it governed, its stamp + `lag_months` (the engine's `REGIME_LAG_MONTHS`, 2: a session in month K reads the row stamped K − 2) |
+| `stats.data.rows[].regime`, `months` | regime label, integer | required | labels | — | S: the stored rows with that label (Q8) |
+| `stats.data.rows[].spx_n`, `spx_pending`, `spx_missing` | integer | required | months | — | N (Codex R-04, R-08): of those labels' governed months, the complete ones (the close on the month's last XNYS session and on the previous month's last XNYS session both stored), those whose window is not complete yet (the month's last session after the newest stored close, or a later month), and those complete by date but missing a close |
+| `stats.data.rows[].spx_median_mo`, `spx_mean_mo` | fraction | required, nullable (null when `spx_n` is 0) | simple return | — | N: median and mean of close(last session of g) / close(last session of g − 1) − 1 over the `spx_n` governed months |
 | `stats.data.rows[].up_pct` | fraction | required, nullable | — | — | N: the share of the `spx_n` months above zero |
-| `stats.data.rows[].vix_avg`, `vix_days` | number, integer | required (`vix_avg` nullable when `vix_days` is 0) | VIX points, sessions | — | N: the mean of every stored VIX daily close (`asset_prices` ^VIX) dated in those months, and how many there are; `vix_avg` null and `vix_days` 0 while ^VIX is not stored (a store before its first full refresh after desk/fill-compute), the S&P columns served and `source` saying so |
-| `stats.data.window` | `{start, end, n}` | required | months | — | S: the first and last stored rows and their count |
+| `stats.data.rows[].vix_avg`, `vix_days`, `vix_sessions` | number, integer, integer | required (`vix_avg` nullable when `vix_days` is 0) | VIX points, sessions | — | N (Codex R-07, R-04): the VIX (`asset_prices` ^VIX) aligned on the XNYS calendar and validated as every engine input is (`event_study.align`, `validate_values`); over the sessions of the governed months that are not pending, the mean of the stored closes, how many there are, and how many sessions were due; null and 0 while ^VIX is not stored (a store before its first full refresh after desk/fill-compute), the S&P columns served and `source` saying so |
+| `stats.data.window`, `governed` | `{start, end, n}` | required | months | — | S: the first and last stored rows (stamps) and their count; the first and last governed months |
+| `stats.data.lag_months` | `2` | required | months | — | A: the engine's `REGIME_LAG_MONTHS` |
+| `stats.data.totals` | `{months, spx_n, spx_pending, spx_missing, vix_days, vix_sessions}` | required | — | — | N: the four rows' sums, for the note under the table |
+| `stats.data.vix_coverage` | `{stored, first, last, off_session_dropped, invalid}` | required | —, date, date, rows, rows | — | N (Codex R-07): whether ^VIX is stored, its first and last stored dates, and the stored rows the aligned reader set aside (on a day XNYS did not trade; a non-finite or non-positive value) |
 | `stats.data.freq`, `.source` | `"monthly"`, string | required | — | — | A |
 | `changes` | block envelope | required | — | — | — |
 | `changes.data.rows` | array of ≤ 5, newest first | required | — | monthly · `regimes`, `asset_prices` ^GSPC | N (desk/fill-compute): the stored rows whose label differs from the previous stored row's (Q9; a missing month is not bridged into a change of its own, the change is dated by the row that carries the new label) |
-| `changes.data.rows[].month`, `from`, `to`, `from_month` | month, regime label, regime label, month | required | — | — | S: the row, the previous stored row's label, its label, the previous stored row's month |
-| `changes.data.rows[].spx_1m`, `spx_1m_month` | fraction, month | required (`spx_1m` nullable until that month is over) | simple return | — | N: the S&P's simple return over the calendar month after `month`, on the rule of `stats` |
+| `changes.data.rows[].effective_month`, `stamp_month`, `from`, `to`, `from_month` | month, month, regime label, regime label, month | required | — | — | N (Codex R-01): the month the new label took effect (its stamp + `lag_months`); S: the row's stamp, the previous stored row's label, its label, the previous stored row's month |
+| `changes.data.rows[].spx_1m`, `spx_1m_status` | fraction, `"complete"` \| `"pending"` \| `"missing"` | required (`spx_1m` nullable unless complete) | simple return | — | N (Codex R-08): the S&P's simple return over `effective_month`, on the rule of `stats`; `pending` while its window is not complete yet, `missing` when a close it needs is not stored |
 | `changes.data.n` | integer | required | changes | — | N: every change in the stored rows |
-| `changes.data.window`, `.freq`, `.source` | `{start, end, n}`, `"monthly"`, string | required | — | — | A |
+| `changes.data.window`, `.lag_months`, `.freq`, `.source` | `{start, end, n}`, `2`, `"monthly"`, string | required | — | — | A |
 
 ### 12.7 `GET /technicals`
 
@@ -1626,7 +1644,8 @@ Each is a new calculation from stored data, listed in §12 with its rule:
 - the S&P's seasonality by calendar month, `src/analytics/technicals.monthly_returns` and `monthly_seasonality`
   (symbol-agnostic; the regime table's month returns now read the same `monthly_returns`), served by `/technicals`
   `seasonality` (§12.7; the owner's item 10);
-- what each regime has meant and the last five changes on `/regime` (`stats`, `changes`, §12.6), on the audit's §2.4 method;
+- what each regime has meant and the last five changes on `/regime` (`stats`, `changes`, §12.6), on the audit's §2.4 method
+  with the K−2 availability lag (Codex R-01: each label over the month it governed, each change by its effective month);
 - the VIX read from `asset_prices` ^VIX (^GSPC's path) instead of FRED VIXCLS, and `stale` judged per study by its inputs'
   publication cadence (§12.2, §12.5; the owner's item 7). A store its first full refresh after desk/fill-compute has not
   reached holds no ^VIX rows: the vol tile awaits with the engine's words ("awaiting the next full refresh"), the VIX

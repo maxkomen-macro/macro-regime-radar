@@ -297,6 +297,33 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
   );
 }
 
+const MEANT_LABELS = ["Regime", "Months", "S&P n", "S&P median", "S&P mean", "Up", "VIX avg", "VIX days"];
+
+const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * Codex R-01, R-04, R-07: the note under the table, from the served totals only: what each number measures (each
+ * label over the month it governed, when it was known), the S&P's complete months against the labels, and the
+ * VIX's stored sessions against those due, with what was set aside. Null without totals.
+ */
+export function meantNote(block: RegimeResponse["stats"]): string[] | null {
+  const t = block?.totals;
+  if (!t || !fin(t.months) || !fin(t.spx_n)) return null;
+  const lag = fin(block?.lag_months) ? block.lag_months : 2;
+  const out = [`Measured from when each regime was known: each label is paired with the month it governed, ${lag} months after its stamp, the month a session reads it for.`];
+  const spx = [`S&P: ${t.spx_n} complete months of ${t.months} labels`];
+  if (fin(t.spx_pending) && t.spx_pending > 0) spx.push(`${plural(t.spx_pending, "month")} not over yet`);
+  if (fin(t.spx_missing) && t.spx_missing > 0) spx.push(`${plural(t.spx_missing, "month")} missing a month-end close`);
+  out.push(`${spx.join("; ")}.`);
+  const cov = block?.vix_coverage;
+  if (cov && !cov.stored) out.push("VIX: not stored yet; the next full refresh stores it.");
+  else if (fin(t.vix_days) && fin(t.vix_sessions)) {
+    const set = (fin(cov?.off_session_dropped) ? cov.off_session_dropped : 0) + (fin(cov?.invalid) ? cov.invalid : 0);
+    out.push(`VIX: ${t.vix_days} of ${t.vix_sessions} sessions stored${set > 0 ? `; ${plural(set, "stored row")} set aside as off-session or invalid` : ""}.`);
+  }
+  return out;
+}
+
 function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
@@ -304,13 +331,15 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
   const block = r?.stats;
   const stats = Array.isArray(block?.rows) ? block.rows : [];
   const since = year(block?.window?.start) || "1996";
+  const note = meantNote(block);
   const unserved = useBlockUnserved(r, "stats");
-  if (unserved) return <UnservedCard headingId="rg-meant" className="rg-card" title="What each regime has meant" sub={`since ${since}`} labels={["Regime", "Months", "S&P median", "S&P mean", "Up", "VIX avg"]} block={unserved} advanced />;
+  if (unserved) return <UnservedCard headingId="rg-meant" className="rg-card" title="What each regime has meant" sub={`since ${since}`} labels={MEANT_LABELS} block={unserved} advanced />;
+  const count = (x: number | null | undefined) => (fin(x) ? x : "—");
   return (
     <Card
       id="rg-meant"
       title="What each regime has meant"
-      sub={`since ${since}${fin(block?.window?.n) ? ` · ${block.window.n} stored months, each with its own month of the S&P and the VIX` : ""}`}
+      sub={`since ${since} · measured from when each regime was known${fin(block?.window?.n) ? `, ${block.window.n} stored labels` : ""}`}
       busy={quiet}
       footer={<AdvancedPanel adv={adv} items="by regime: sector leaders · curve shape · credit spreads · skew (since 2023)" missing="The by-regime sector, curve, credit and skew tables are not served yet." />}
     >
@@ -320,19 +349,20 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
           <colgroup>
             <col className="rg-col-regime" />
             <col className="rg-col-months" />
+            <col className="rg-col-n" />
             <col className="rg-col-spx" />
             <col className="rg-col-mean" />
             <col className="rg-col-up" />
             <col className="rg-col-vix" />
+            <col className="rg-col-days" />
           </colgroup>
           <thead>
             <tr>
-              <th scope="col">Regime</th>
-              <th scope="col">Months</th>
-              <th scope="col">S&amp;P median</th>
-              <th scope="col">S&amp;P mean</th>
-              <th scope="col">Up</th>
-              <th scope="col">VIX avg</th>
+              {MEANT_LABELS.map((l) => (
+                <th key={l} scope="col">
+                  {l}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -342,11 +372,14 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
                   <i className="rg-dot" data-tone={REGIME_KEY[s.regime] ?? "gray"} aria-hidden="true" />
                   {s.regime}
                 </th>
-                <td>{fin(s.months) ? s.months : "—"}</td>
+                <td>{count(s.months)}</td>
+                {/* Codex R-04: the returns' own sample, apart from the labels. */}
+                <td>{count(s.spx_n)}</td>
                 <td>{fin(s.spx_median_mo) ? <Signed value={s.spx_median_mo}>{pct(s.spx_median_mo)}</Signed> : "—"}</td>
                 <td>{fin(s.spx_mean_mo) ? <Signed value={s.spx_mean_mo}>{pct(s.spx_mean_mo)}</Signed> : "—"}</td>
                 <td>{fin(s.up_pct) ? pctPlain(s.up_pct) : "—"}</td>
                 <td>{fin(s.vix_avg) ? num(s.vix_avg) : "—"}</td>
+                <td title={fin(s.vix_sessions) ? `of ${s.vix_sessions} sessions due` : undefined}>{count(s.vix_days)}</td>
               </tr>
             ))}
           </tbody>
@@ -355,7 +388,13 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
       ) : null}
       {!stats.length && !quiet ? <Awaiting>what each regime has meant</Awaiting> : null}
       <DroppedNote n={droppedOf(block, "rows")} one="regime row" />
-      {stats.length ? <p className="rg-meant-note">Labels as stored, each paired with its own calendar month; a label is known only after its month&apos;s prints, so this describes, it does not time.</p> : null}
+      {stats.length && note ? (
+        <div className="rg-meant-note">
+          {note.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
+      ) : null}
       <ServedRead read={r?.reads?.stats} />
     </Card>
   );
@@ -418,6 +457,26 @@ function NextPrint({ label, kind, p }: { label: string; kind: "cpi" | "indpro"; 
   return <Stat label={label} value={date || "—"} tone={date && p.flips_to && fin(p.threshold_mom) ? flipTone(p.flips_to) : undefined} sub={date ? words : `release date unavailable · ${words}`} />;
 }
 
+/** Codex R-08: each status its own words: a window not complete yet, and a historical close not stored. */
+export function returnWords(status: string | null | undefined): string {
+  return status === "pending" ? "month not over" : status === "missing" ? "a month-end close is missing" : "not served";
+}
+
+function ChangeReturn({ c }: { c: NonNullable<RegimeResponse["changes"]>["rows"][number] }) {
+  // §5: the S&P over the month the change took effect.
+  if (fin(c.spx_1m) && (c.spx_1m_status ?? "complete") === "complete")
+    return (
+      <Signed value={c.spx_1m} title={`S&P over ${monthYear(c.effective_month)}`}>
+        {pct(c.spx_1m)}
+      </Signed>
+    );
+  return (
+    <span className="rg-pending" data-status={c.spx_1m_status ?? undefined}>
+      {returnWords(c.spx_1m_status)}
+    </span>
+  );
+}
+
 function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
@@ -461,19 +520,20 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
               <NextPrint label="Next INDPRO" kind="indpro" p={np?.indpro} />
             </StatRow>
           )}
-          <p className="dk-stat-label rg-changes-h">{fin(nChanges) ? `Last five of ${nChanges} regime changes` : "Last five regime changes"} · S&amp;P a month later</p>
+          <p className="dk-stat-label rg-changes-h">{fin(nChanges) ? `Last five of ${nChanges} regime changes` : "Last five regime changes"} · S&amp;P over the month each took effect</p>
           {chOff ? (
             <UnservedLine block={chOff} />
           ) : changes.length ? (
             <ul className="rg-changes">
               {changes.map((c) => (
-                <li key={c.month}>
-                  <span className="rg-month">{`${monthShort(c.month)} ${year(c.month)}`}</span>
+                <li key={c.effective_month}>
+                  {/* Codex R-01: dated by the month the change took effect, the stamp two months before. */}
+                  <span className="rg-month">{`${monthShort(c.effective_month)} ${year(c.effective_month)}`}</span>
                   <span>
                     {c.from} → {c.to}
+                    {c.stamp_month && monthYear(c.stamp_month) ? <span className="rg-stamp"> · {monthShort(c.stamp_month)} row</span> : null}
                   </span>
-                  {/* §5: the S&P over the calendar month after the change; "month not over" until it is. */}
-                  {fin(c.spx_1m) ? <Signed value={c.spx_1m} title={c.spx_1m_month ? `S&P over ${monthYear(c.spx_1m_month)}` : undefined}>{pct(c.spx_1m)}</Signed> : <span className="rg-pending">month not over</span>}
+                  <ChangeReturn c={c} />
                 </li>
               ))}
             </ul>

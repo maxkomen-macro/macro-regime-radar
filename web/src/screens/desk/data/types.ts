@@ -538,25 +538,35 @@ export interface NextPrint {
   source?: string;
 }
 
+/** §12.6 (Codex R-01, R-04): one regime's stored labels, and over the months they governed (two after each stamp) the
+ * S&P's complete months (`spx_n`), those not over yet or missing a close, and the VIX's stored sessions of the sessions due. */
 export interface RegimeStat {
   regime: string;
   months: number | null;
   spx_n?: number | null;
+  spx_pending?: number | null;
+  spx_missing?: number | null;
   spx_median_mo: number | null;
   spx_mean_mo: number | null;
   up_pct: number | null;
   vix_avg: number | null;
   vix_days?: number | null;
+  vix_sessions?: number | null;
 }
 
+/** §12.6 (Codex R-08): a return with its window complete, not complete yet, or missing a stored close. */
+export type ReturnStatus = "complete" | "pending" | "missing";
+
+/** §12.6 (Codex R-01): a change dated by the month it took effect, the stamp two months before. */
 export interface RegimeChange {
-  month: string;
+  effective_month: string;
+  stamp_month?: string | null;
   from: string;
   to: string;
   from_month?: string | null;
-  /** The S&P's simple return over `spx_1m_month`, the calendar month after the change; null until it is over. */
+  /** The S&P's simple return over `effective_month`, the first month the new label governed. */
   spx_1m: number | null;
-  spx_1m_month?: string | null;
+  spx_1m_status?: ReturnStatus | null;
 }
 
 export interface RegimeResponse extends Envelope {
@@ -579,7 +589,16 @@ export interface RegimeResponse extends Envelope {
     methodology?: string;
   };
   /** §12.6 (desk/fill-compute): every stored row as stamped, with its own month of the S&P (simple returns) and the VIX. */
-  stats?: { rows: RegimeStat[]; window?: { start: string; end: string; n: number }; freq?: string; source?: string };
+  stats?: {
+    rows: RegimeStat[];
+    window?: { start: string; end: string; n: number };
+    governed?: { start: string; end: string; n: number };
+    lag_months?: number | null;
+    totals?: { months: number | null; spx_n: number | null; spx_pending: number | null; spx_missing: number | null; vix_days: number | null; vix_sessions: number | null };
+    vix_coverage?: { stored: boolean; first: string | null; last: string | null; off_session_dropped: number | null; invalid: number | null };
+    freq?: string;
+    source?: string;
+  };
   /** §12.6 (desk/fill-compute): read from `basis`, the same K−2 row `current` shows; `next_row` is the stored row after it, when there is one. */
   next_prints?: {
     basis?: { month: string; label: string } | null;
@@ -588,7 +607,7 @@ export interface RegimeResponse extends Envelope {
     indpro?: NextPrint | null;
   };
   /** §12.6 (desk/fill-compute): the last five changes, newest first, and how many there are. */
-  changes?: { rows: RegimeChange[]; n?: number | null; window?: { start: string; end: string; n: number }; freq?: string; source?: string };
+  changes?: { rows: RegimeChange[]; n?: number | null; window?: { start: string; end: string; n: number }; lag_months?: number | null; freq?: string; source?: string };
   /** PROPOSED (§12.13): the cards' sentences (`stats`, `changes`). */
   reads?: { stats?: Read; changes?: Read };
 }

@@ -12,7 +12,7 @@ import DeskShell from "../DeskShell";
 import regime from "../../../fixtures/desk/regime.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { classifierWords, flipTone, flipWords, mom, momSigned, printedWords, REGIMES, runs, trendTone } from "./RegimePage";
+import { classifierWords, flipTone, flipWords, meantNote, mom, momSigned, printedWords, REGIMES, returnWords, runs, trendTone } from "./RegimePage";
 
 type Over = Record<string, unknown>;
 /** The fixture with some blocks replaced (or removed with `undefined`). */
@@ -43,6 +43,16 @@ afterEach(() => {
 });
 
 describe("Regime words", () => {
+  it("Codex R-04, R-08: the table's note names what is not in it, and each return status has its own words", () => {
+    const t = { months: 10, spx_n: 7, spx_pending: 1, spx_missing: 2, vix_days: 150, vix_sessions: 152 };
+    const lines = meantNote({ rows: [], lag_months: 2, totals: t, vix_coverage: { stored: true, first: null, last: null, off_session_dropped: 1, invalid: 0 } });
+    expect(lines?.slice(1)).toEqual([
+      "S&P: 7 complete months of 10 labels; 1 month not over yet; 2 months missing a month-end close.",
+      "VIX: 150 of 152 sessions stored; 1 stored row set aside as off-session or invalid.",
+    ]);
+    expect(meantNote({ rows: [] })).toBeNull();
+    expect([returnWords("pending"), returnWords("missing")]).toEqual(["month not over", "a month-end close is missing"]);
+  });
   it("groups the monthly history into runs", () => {
     const r = runs(regime.history);
     // The stored rows (the audit's store): five years of Overheating and Stagflation turns, then the July Goldilocks row and August's Overheating.
@@ -169,23 +179,32 @@ describe("Regime tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What each regime has meant/ });
     await waitFor(() => expect(within(card).getAllByRole("row")).toHaveLength(5));
-    expect(within(card).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Regime", "Months", "S&P median", "S&P mean", "Up", "VIX avg"]);
+    expect(within(card).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Regime", "Months", "S&P n", "S&P median", "S&P mean", "Up", "VIX avg", "VIX days"]);
     const cur = within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true");
-    // The current row is the governing (K−2) label, Goldilocks; its numbers are the API's on the audit's store.
-    expect(cur?.textContent).toBe("Goldilocks27+0.7%+0.1%56%18.0");
-    expect(within(card).getAllByRole("row")[2].textContent).toBe("Overheating213+1.5%+1.2%66%19.5");
-    expect(card).toHaveTextContent("since 1996 · 363 stored months, each with its own month of the S&P and the VIX");
-    expect(card).toHaveTextContent("Labels as stored, each paired with its own calendar month");
+    // The current row is the governing (K−2) label, Goldilocks; its numbers are the API's on the audit's store, each label over
+    // the month it governed (Codex R-01): 27 labels, 26 complete months (September not over), the VIX on 539 sessions.
+    expect(cur?.textContent).toBe("Goldilocks2726+1.2%+0.6%65%16.9539");
+    expect(within(card).getAllByRole("row")[2].textContent).toBe("Overheating213212+1.3%+1.0%63%19.74463");
+    expect(card).toHaveTextContent("since 1996 · measured from when each regime was known, 363 stored labels");
+    // Codex R-04, R-07: the return sample and the VIX coverage apart from the label count, and what is not in them.
+    const note = [...card.querySelectorAll(".rg-meant-note p")].map((p) => p.textContent);
+    expect(note).toEqual([
+      "Measured from when each regime was known: each label is paired with the month it governed, 2 months after its stamp, the month a session reads it for.",
+      "S&P: 361 complete months of 363 labels; 2 months not over yet.",
+      "VIX: 7568 of 7568 sessions stored; 2 stored rows set aside as off-session or invalid.",
+    ]);
     // No read is served (§1.4), and no stock–bond column: no bond price series is stored (§6).
     expect(card).not.toHaveTextContent(/Read for the desk|Stock–bond|not yet defined/);
   });
   it("before the store's first full refresh stores ^VIX, the S&P columns are served and the VIX column is a dash", async () => {
-    const rows = regime.stats.rows.map((r) => ({ ...r, vix_avg: null, vix_days: 0 }));
-    stubDesk({ "/api/desk/regime": () => served({ stats: { ...regime.stats, rows } }) });
+    const rows = regime.stats.rows.map((r) => ({ ...r, vix_avg: null, vix_days: 0, vix_sessions: 0 }));
+    const stats = { ...regime.stats, rows, totals: { ...regime.stats.totals, vix_days: 0, vix_sessions: 0 }, vix_coverage: { stored: false, first: null, last: null, off_session_dropped: 0, invalid: 0 } };
+    stubDesk({ "/api/desk/regime": () => served({ stats }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /What each regime has meant/ });
     await waitFor(() => expect(within(card).getAllByRole("row")).toHaveLength(5));
-    expect(within(card).getAllByRole("row")[1].textContent).toBe("Goldilocks27+0.7%+0.1%56%—");
+    expect(within(card).getAllByRole("row")[1].textContent).toBe("Goldilocks2726+1.2%+0.6%65%—0");
+    expect(card).toHaveTextContent("VIX: not stored yet; the next full refresh stores it.");
     expect(card).not.toHaveTextContent("Awaiting refresh");
   });
   it("what would change it: the next prints, and the last five changes with the S&P the month after each", async () => {
@@ -200,14 +219,27 @@ describe("Regime tab", () => {
     expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · the Aug 2026 print \(\+0\.02% m\/m\) kept growth rising\./);
     expect(card).not.toHaveTextContent(/flips inflation to falling/);
     // The API's answer on the audit's store (Q9): August's month after is September, not over yet.
+    // Codex R-01: each change dated by the month it took effect (its stamp two months before), with the S&P over that month.
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "Aug 2026Goldilocks → Overheatingmonth not over",
-      "Jul 2026Overheating → Goldilocks+2.6%",
-      "Jan 2026Stagflation → Overheating−0.9%",
-      "Sep 2025Overheating → Stagflation+2.3%",
-      "Jun 2025Stagflation → Overheating+2.2%",
+      "Oct 2026Goldilocks → Overheating · Aug rowmonth not over",
+      "Sep 2026Overheating → Goldilocks · Jul rowmonth not over",
+      "Mar 2026Stagflation → Overheating · Jan row−5.1%",
+      "Nov 2025Overheating → Stagflation · Sep row+0.1%",
+      "Aug 2025Stagflation → Overheating · Jun row+1.9%",
     ]);
-    expect(card).toHaveTextContent("Last five of 123 regime changes · S&P a month later");
+    expect(card).toHaveTextContent("Last five of 123 regime changes · S&P over the month each took effect");
+  });
+  it("Codex R-08: a window not complete yet and a missing historical close each say their own reason", async () => {
+    const rows = regime.changes.rows.map((c, i) => (i === 2 ? { ...c, spx_1m: null, spx_1m_status: "missing" } : c));
+    stubDesk({ "/api/desk/regime": () => served({ changes: { ...regime.changes, rows } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /What would change it/ });
+    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(5));
+    const items = within(card).getAllByRole("listitem");
+    expect(items[0]).toHaveTextContent("month not over");
+    expect(items[2]).toHaveTextContent("a month-end close is missing");
+    expect(items[2]).not.toHaveTextContent("month not over");
+    expect(items[2].querySelector("[data-status]")?.getAttribute("data-status")).toBe("missing");
   });
   it("the bands follow band_edges, and a missing band word is left out", async () => {
     stubDesk({ "/api/desk/regime": () => served({ recession: { ...regime.recession, band: null, band_edges: [0.3, 0.6] } }) });
@@ -249,7 +281,7 @@ describe("Regime tab", () => {
     const change = screen.getByRole("region", { name: /What would change it/ });
     expect(change).toHaveTextContent(/Next CPI\s*Awaiting refresh/);
     expect(change).toHaveTextContent(/Next INDPRO\s*Awaiting refresh/);
-    expect(change).toHaveTextContent(/S&P a month later\s*Awaiting refresh/);
+    expect(change).toHaveTextContent(/S&P over the month each took effect\s*Awaiting refresh/);
   });
 
   it("null trends and a null probability: no broken sentence, the stats say Awaiting refresh", async () => {

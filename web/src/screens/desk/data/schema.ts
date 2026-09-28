@@ -416,8 +416,15 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       methodology: "s",
     }),
     stats: o({
-      rows: l(o({ regime: "s!", months: "n", spx_n: "n", spx_median_mo: "n", spx_mean_mo: "n", up_pct: "n", vix_avg: "n", vix_days: "n" }), { req: true }),
+      rows: l(
+        o({ regime: "s!", months: "n", spx_n: "n", spx_pending: "n", spx_missing: "n", spx_median_mo: "n", spx_mean_mo: "n", up_pct: "n", vix_avg: "n", vix_days: "n", vix_sessions: "n" }),
+        { req: true },
+      ),
       window: o({ start: "s!", end: "s!", n: "n!" }),
+      governed: o({ start: "s!", end: "s!", n: "n!" }),
+      lag_months: "n",
+      totals: o({ months: "n", spx_n: "n", spx_pending: "n", spx_missing: "n", vix_days: "n", vix_sessions: "n" }),
+      vix_coverage: o({ stored: "b!", first: "s?", last: "s?", off_session_dropped: "n", invalid: "n" }),
       freq: "s",
       source: "s",
     }),
@@ -428,9 +435,10 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       indpro: nextPrint,
     }),
     changes: o({
-      rows: l(o({ month: "s!", from: "s!", to: "s!", from_month: "s?", spx_1m: "n", spx_1m_month: "s?" }), { req: true }),
+      rows: l(o({ effective_month: "s!", stamp_month: "s?", from: "s!", to: "s!", from_month: "s?", spx_1m: "n", spx_1m_status: e(["complete", "pending", "missing"], { nul: true }) }), { req: true }),
       n: "n",
       window: o({ start: "s!", end: "s!", n: "n!" }),
+      lag_months: "n",
       freq: "s",
       source: "s",
     }),

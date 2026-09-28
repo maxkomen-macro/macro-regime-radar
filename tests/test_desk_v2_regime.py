@@ -717,36 +717,107 @@ def test_month_returns_are_last_session_closes_and_skip_an_unfinished_month():
     assert "2026-07" not in held and "2026-08" not in held  # a missing month-end close voids both months it closes
 
 
-def test_the_stats_and_the_changes_follow_the_audits_method():
+FACTORS = {"2025-12": 1.00, "2026-01": 1.01, "2026-02": 1.02, "2026-03": 0.97, "2026-04": 1.04, "2026-05": 0.95,
+           "2026-06": 1.06, "2026-07": 1.07}
+
+
+def _stepped_spx(through: str = "2026-07-31"):
+    """Every session of a month at one price, so each month's return is exactly its factor less one."""
     import pandas as pd
 
     from src.desk import event_study as es
 
-    sessions = es.sessions_between(es.session_calendar("2025-12-01", "2026-06-30"), "2025-12-01", "2026-06-30")
-    spx = pd.Series([100.0 * (1.01 ** i) for i in range(len(sessions))], index=sessions)
-    vix = pd.Series(20.0, index=sessions)
-    vix[vix.index.month == 3] = 30.0
-    rows = _rows([("2026-01", "Goldilocks"), ("2026-02", "Goldilocks"), ("2026-03", "Stagflation"),
-                  ("2026-05", "Stagflation"), ("2026-06", "Overheating")])  # April missing
-    st = items.regime_stats(rows, spx, vix)
+    sessions = es.sessions_between(es.session_calendar("2025-12-01", through), "2025-12-01", through)
+    out = []
+    for d in sessions:
+        m = d.strftime("%Y-%m")
+        out.append(100.0 * float(pd.Series([FACTORS[k] for k in FACTORS if k <= m]).prod()))
+    return pd.Series(out, index=sessions), sessions
+
+
+STEP_ROWS = [("2026-01", "Goldilocks"), ("2026-02", "Goldilocks"), ("2026-03", "Stagflation"),
+             ("2026-05", "Stagflation"), ("2026-06", "Overheating")]  # April missing
+
+
+def test_codex_r01_each_label_is_measured_over_the_month_it_governed():
+    """Codex R-01: a label stamped M is known only once M+1's prints are out, and a
+    session in month K reads the row stamped K−2 (the engine's rule). Pairing a label
+    with its own month credited it with a month traded before it existed. Each label
+    is now measured over the month it governed: Goldilocks (stamped Jan, Feb) over
+    March and April, not January and February."""
+    import statistics
+
+    spx, _ = _stepped_spx()
+    st = items.regime_stats(_rows(STEP_ROWS), spx, None)
     by = {r["regime"]: r for r in st["rows"]}
-    assert [r["regime"] for r in st["rows"]] == ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"]
-    assert (by["Goldilocks"]["months"], by["Stagflation"]["months"], by["Recession Risk"]["months"]) == (2, 2, 0)
-    assert by["Recession Risk"]["spx_median_mo"] is None and by["Recession Risk"]["vix_avg"] is None
-    assert by["Stagflation"]["vix_avg"] == pytest.approx(25.0, rel=0.1) and by["Goldilocks"]["up_pct"] == 1.0
+    g = by["Goldilocks"]
+    assert (g["months"], g["spx_n"], g["spx_pending"], g["spx_missing"]) == (2, 2, 0, 0)
+    assert g["spx_median_mo"] == pytest.approx(statistics.median([-0.03, 0.04])) and g["up_pct"] == 0.5  # March, April
+    s_ = by["Stagflation"]  # stamped March and May: May and July
+    assert s_["spx_mean_mo"] == pytest.approx((-0.05 + 0.07) / 2) and s_["spx_n"] == 2
+    o = by["Overheating"]  # stamped June: August, not over in the store
+    assert (o["months"], o["spx_n"], o["spx_pending"], o["spx_median_mo"]) == (1, 0, 1, None)
+    assert st["governed"] == {"start": "2026-03", "end": "2026-08", "n": 5} and st["lag_months"] == 2
     assert st["window"] == {"start": "2026-01", "end": "2026-06", "n": 5}
-    ch = items.regime_changes(rows, spx)
-    assert ch["n"] == 2 and [(c["month"], c["from"], c["to"], c["from_month"]) for c in ch["rows"]] == [
-        ("2026-06", "Stagflation", "Overheating", "2026-05"), ("2026-03", "Goldilocks", "Stagflation", "2026-02")]
-    assert ch["rows"][0]["spx_1m_month"] == "2026-07" and ch["rows"][0]["spx_1m"] is None
-    assert ch["rows"][1]["spx_1m"] is not None and ch["rows"][1]["spx_1m_month"] == "2026-04"
+
+
+def test_codex_r01_a_change_is_dated_by_the_month_it_took_effect():
+    spx, _ = _stepped_spx()
+    ch = items.regime_changes(_rows(STEP_ROWS), spx)
+    assert ch["n"] == 2 and ch["lag_months"] == 2
+    assert [(c["effective_month"], c["stamp_month"], c["from"], c["to"], c["from_month"]) for c in ch["rows"]] == [
+        ("2026-08", "2026-06", "Stagflation", "Overheating", "2026-05"), ("2026-05", "2026-03", "Goldilocks", "Stagflation", "2026-02")]
+    assert (ch["rows"][1]["spx_1m"], ch["rows"][1]["spx_1m_status"]) == (pytest.approx(-0.05), "complete")  # May
+    assert (ch["rows"][0]["spx_1m"], ch["rows"][0]["spx_1m_status"]) == (None, "pending")  # August is not over
+
+
+def test_codex_r08_a_missing_close_is_not_a_window_still_open():
+    """Codex R-08: a return null because its window is not complete yet and one null
+    because a historical close is not stored were one state ("month not over")."""
+    spx, sessions = _stepped_spx()
+    may_end = max(d for d in sessions if d.strftime("%Y-%m") == "2026-05")
+    ch = items.regime_changes(_rows(STEP_ROWS), spx.drop(may_end))
+    assert [(c["effective_month"], c["spx_1m"], c["spx_1m_status"]) for c in ch["rows"]] == [
+        ("2026-08", None, "pending"), ("2026-05", None, "missing")]
+    st = items.regime_stats(_rows(STEP_ROWS), spx.drop(may_end), None)
+    by = {r["regime"]: r for r in st["rows"]}
+    assert (by["Stagflation"]["spx_n"], by["Stagflation"]["spx_missing"]) == (1, 1)  # May missing, July complete
+    mid = _stepped_spx("2026-07-15")[0]  # July's window not complete yet in the store
+    assert items.MonthReturns(mid).status("2026-07") == ("pending", None)
+    assert items.MonthReturns(mid).status("2026-06") == ("complete", pytest.approx(0.06))
+
+
+def test_codex_r04_r07_the_vix_is_validated_aligned_and_its_coverage_served():
+    """Codex R-07: the VIX is aligned on the XNYS calendar and validated like every
+    engine input before it is averaged; an off-session row and an invalid value are
+    set aside and counted. Codex R-04: its stored sessions are served apart from the
+    label count, against the sessions due in the complete governed months."""
+    import pandas as pd
+
+    spx, sessions = _stepped_spx()
+    vix = pd.Series([10.0 + d.month for d in sessions], index=sessions)
+    march = [d for d in sessions if d.strftime("%Y-%m") == "2026-03"]
+    april = [d for d in sessions if d.strftime("%Y-%m") == "2026-04"]
+    vix[march[3]] = -1.0                                   # invalid for a logged series
+    vix = pd.concat([vix, pd.Series([99.0], index=[pd.Timestamp("2026-03-07")])]).sort_index()  # a Saturday
+    st = items.regime_stats(_rows(STEP_ROWS), spx, vix)
+    g = {r["regime"]: r for r in st["rows"]}["Goldilocks"]
+    assert (g["vix_days"], g["vix_sessions"]) == (len(march) + len(april) - 1, len(march) + len(april))
+    assert g["vix_avg"] == pytest.approx((13.0 * (len(march) - 1) + 14.0 * len(april)) / (len(march) + len(april) - 1))
+    assert st["vix_coverage"] == {"stored": True, "first": "2025-12-01", "last": "2026-07-31", "off_session_dropped": 1, "invalid": 1}
+    o = {r["regime"]: r for r in st["rows"]}["Overheating"]
+    assert (o["vix_days"], o["vix_sessions"], o["vix_avg"]) == (0, 0, None)  # August is not over: no VIX from it either
+    assert st["totals"]["vix_days"] == sum(r["vix_days"] for r in st["rows"]) and st["totals"]["spx_pending"] == 1
+    none = items.regime_stats(_rows(STEP_ROWS), spx, None)
+    assert none["vix_coverage"]["stored"] is False and all(r["vix_avg"] is None for r in none["rows"])
 
 
 @pytest.mark.parametrize("path", [PUBLISHED], ids=["published"])
 def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, monkeypatch, tmp_path):
-    """FRAME3_DATA_AUDIT.md §2.4 on the audit's store: Q8's months, Q9's 123 changes and its last five. The
-    store predates the ^VIX close (desk/fill-compute, item 7), so its VIX column is null until the next full
-    refresh stores it; with that close added the refresh's way (tests/desk_vix.py), Q8's VIX average."""
+    """FRAME3_DATA_AUDIT.md §2.4 on the audit's store: Q8's labels and Q9's 123 changes, each measured over the
+    month it governed (Codex R-01). The store predates the ^VIX close (desk/fill-compute, item 7), so its VIX
+    column is null until the next full refresh stores it; with that close added the refresh's way
+    (tests/desk_vix.py, from the store's own VIXCLS rows), the VIX over the governed months."""
     if not path.exists() or path.stat().st_size == 0:
         pytest.skip(f"{path.name} is not in this tree")
     from tests.desk_vix import with_vix_close
@@ -759,24 +830,29 @@ def test_the_stats_and_the_changes_on_the_audits_store(path, install_worker, mon
     if d["stats"]["data"]["rows"][0]["vix_days"] == 0:
         before = d["stats"]["data"]
         assert all(r["vix_avg"] is None and r["vix_days"] == 0 for r in before["rows"]) and "not stored yet" in before["source"]
-        assert before["rows"][0]["spx_n"] == 27 and d["changes"]["status"] == "ready"
+        assert before["rows"][0]["spx_n"] == 26 and before["vix_coverage"]["stored"] is False and d["changes"]["status"] == "ready"
         serve(install_worker, monkeypatch, with_vix_close(path, tmp_path / "with-vix.db"))
     at(monkeypatch, datetime(2026, 9, 24, 16, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]
     if d["history"][-1]["month"] != "2026-08":
         pytest.skip("not the audit's store")
     st, ch = d["stats"]["data"], d["changes"]["data"]
-    assert [(r["regime"], r["months"]) for r in st["rows"]] == [("Goldilocks", 27), ("Overheating", 213),
-                                                                ("Stagflation", 102), ("Recession Risk", 21)]
+    assert [(r["regime"], r["months"], r["spx_n"], r["spx_pending"]) for r in st["rows"]] == [
+        ("Goldilocks", 27, 26, 1), ("Overheating", 213, 212, 1), ("Stagflation", 102, 102, 0), ("Recession Risk", 21, 21, 0)]
     assert st["window"] == {"start": "1996-05", "end": "2026-08", "n": 363}
-    assert ch["n"] == 123 and [(c["month"], c["from"], c["to"]) for c in ch["rows"]] == [
-        ("2026-08", "Goldilocks", "Overheating"), ("2026-07", "Overheating", "Goldilocks"),
-        ("2026-01", "Stagflation", "Overheating"), ("2025-09", "Overheating", "Stagflation"),
-        ("2025-06", "Stagflation", "Overheating")]
-    assert ch["rows"][1]["spx_1m"] == pytest.approx(0.0262252682664592, rel=1e-12)  # Aug 2026, by SQL
-    assert st["rows"][0]["vix_avg"] == pytest.approx(18.0074645390071, rel=1e-12)   # 564 VIX days, by SQL
-    assert st["rows"][0]["vix_days"] == 564
-
+    assert st["governed"] == {"start": "1996-07", "end": "2026-10", "n": 363}
+    # Goldilocks over its governed months, checked against a month-end resample and the stored VIXCLS rows
+    g = st["rows"][0]
+    assert (g["spx_median_mo"], g["spx_mean_mo"], g["up_pct"]) == (
+        pytest.approx(0.0118291114849147, rel=1e-9), pytest.approx(0.0061619848236379, rel=1e-9), pytest.approx(17 / 26))
+    assert g["vix_avg"] == pytest.approx(16.85300556586271, rel=1e-12) and (g["vix_days"], g["vix_sessions"]) == (539, 539)
+    # Codex R-07: FRED's VIX copy carries 34 rows on days XNYS did not trade; the aligned reader sets them aside
+    assert st["vix_coverage"]["off_session_dropped"] == 34 and st["totals"]["vix_days"] == 7566 and st["totals"]["vix_sessions"] == 7568
+    assert ch["n"] == 123 and [(c["effective_month"], c["stamp_month"], c["from"], c["to"], c["spx_1m_status"]) for c in ch["rows"]] == [
+        ("2026-10", "2026-08", "Goldilocks", "Overheating", "pending"), ("2026-09", "2026-07", "Overheating", "Goldilocks", "pending"),
+        ("2026-03", "2026-01", "Stagflation", "Overheating", "complete"), ("2025-11", "2025-09", "Overheating", "Stagflation", "complete"),
+        ("2025-08", "2025-06", "Stagflation", "Overheating", "complete")]
+    assert ch["rows"][2]["spx_1m"] == pytest.approx(-0.050932690968577, rel=1e-12)  # March 2026
 
 
 # ── Both cards read one label (desk/fill-compute) ───────────────────────────

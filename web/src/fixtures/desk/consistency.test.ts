@@ -63,7 +63,9 @@ describe("the study's events and the regime fixture (Codex R-05)", () => {
     const changes = months.slice(1).flatMap((m, i) => (m.regime !== months[i].regime ? [{ month: m.month, from: months[i].regime, to: m.regime }] : []));
     const served = regime.changes;
     expect(served.n).toBe(changes.length);
-    expect(served.rows.map((c) => ({ month: c.month, from: c.from, to: c.to }))).toEqual(changes.slice(-5).reverse());
+    // Codex R-01: each change is served by its stamp and dated by the month it took effect, the stamp plus the lag.
+    expect(served.rows.map((c) => ({ month: c.stamp_month, from: c.from, to: c.to }))).toEqual(changes.slice(-5).reverse());
+    for (const c of served.rows) expect(c.effective_month).toBe(monthBefore(c.stamp_month, -record.lag_months));
   });
 
   it("the record is one row a month but the one month the store lacks, and its last 60 rows are /regime's history exactly", () => {
