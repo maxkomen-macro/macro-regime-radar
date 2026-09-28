@@ -220,6 +220,44 @@ def test_candles_2y_asks_again_while_the_days_close_is_not_posted(up, monkeypatc
     assert up.paths().count("/api/eod/NVDA.US") == 2
 
 
+def test_codex_r13_a_stale_daily_entry_is_refreshed_once_under_concurrency(up, monkeypatch):
+    """Codex's repro: an entry older than DAILY_RETRY_S whose last bar precedes the completed session, and four
+    concurrent daily_bars("SPY") calls. The refresh ran outside the single-flight lock and made four upstream
+    computations; the staleness decision and the refresh now share the key's lock: one."""
+    import threading
+    import time as _time
+
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")
+    up.script["/api/eod/SPY.US"] = [(200, _daily_rows(["2026-09-23", "2026-09-24"]))]
+    market.daily_bars("SPY")
+    key = "SPY:2Y:2026-09-25"
+    stamp, value = market._daily_cache._data[key]
+    market._daily_cache._data[key] = (stamp - market.DAILY_RETRY_S - 60, value)  # older than the retry wait
+    up.script["/api/eod/SPY.US"] = [(200, _daily_rows(["2026-09-23", "2026-09-24", "2026-09-25"]))]
+    calls = []
+    real = market._daily_compute
+
+    def slow(inst, session):
+        calls.append(session)
+        _time.sleep(0.2)
+        return real(inst, session)
+
+    monkeypatch.setattr(market, "_daily_compute", slow)
+    gate = threading.Barrier(4)
+    out = []
+
+    def one():
+        gate.wait()
+        out.append(market.daily_bars("SPY")["bars"][-1]["ts"][:10])
+
+    threads = [threading.Thread(target=one) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert calls == ["2026-09-25"] and out == ["2026-09-25"] * 4
+
+
 def test_route_range_2y_returns_daily_bars(up, monkeypatch):
     """The route over the mocked upstream: /api/market/candles/{SYM}?range=2Y answers daily bars
     (the user's check against the live API: 2Y and 3Y used to be refused, 5Y is weekly)."""

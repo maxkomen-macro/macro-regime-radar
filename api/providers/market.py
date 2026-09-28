@@ -307,11 +307,10 @@ def daily_bars(symbol: str) -> dict:
         raise UnknownSymbol("api", str(exc)) from exc
     session = last_session()
     key = f"{inst.canonical}:{DAILY_RANGE}:{session}"
-    out = _daily_cache.get(key, lambda: _daily_compute(inst, session))
-    if out["bars"][-1]["ts"][:10] < session and (_daily_cache.age(key) or 0.0) > DAILY_RETRY_S:
-        out = _daily_compute(inst, session)
-        _daily_cache.put(key, out)
-    return out
+    # An answer still missing the session's close is asked again after DAILY_RETRY_S; the decision and the
+    # refresh happen under the key's own single-flight lock (Codex R-13), so concurrent requests make one call.
+    return _daily_cache.get(key, lambda: _daily_compute(inst, session),
+                            stale=lambda v, age: v["bars"][-1]["ts"][:10] < session and age > DAILY_RETRY_S)
 
 
 def refresh_candles(symbol: str, range_key: str, margin_s: float) -> bool:

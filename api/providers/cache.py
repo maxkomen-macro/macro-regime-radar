@@ -24,12 +24,17 @@ class KeyedTTLCache:
                 self._locks[key] = threading.Lock()
             return self._locks[key]
 
-    def get(self, key: str, compute: Callable[[], Any], ttl: float | None = None) -> Any:
+    def get(self, key: str, compute: Callable[[], Any], ttl: float | None = None,
+            stale: Callable[[Any, float], bool] | None = None) -> Any:
+        """The key's value within its TTL, else `compute()`'s, one computation per
+        key at a time. `stale(value, age)` (desk/books, Codex R-13) makes a
+        value-dependent staleness decision under the same per-key lock, so the
+        refresh it asks for is single-flight too."""
         limit = ttl if ttl is not None else self.ttl
         with self._lock_for(key):
             hit = self._data.get(key)
             now = time.monotonic()
-            if hit is not None and now - hit[0] <= limit:
+            if hit is not None and now - hit[0] <= limit and not (stale is not None and stale(hit[1], now - hit[0])):
                 return hit[1]
             value = compute()
             with self._gate:
