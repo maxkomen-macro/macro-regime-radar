@@ -1191,6 +1191,9 @@ The two RSI rows (desk/fill-compute): the engine's `kind` `rsi` on the S&P,
 the RSI of §12.7 crossing strictly above 70 (strictly below 30) on a session
 whose preceding session's RSI was defined and not in that zone, a 14-session
 cooldown after each retained crossing, entry and horizons as every S&P study.
+A session is eligible, as an event or as a baseline candidate, only where its
+RSI and the preceding session's are both defined (Codex R-02): the first
+session after an RSI re-seed can hold no crossing, so it is neither.
 Their client labels are drafted by this branch and await the owner's
 approval (item 15 approved the other 13).
 

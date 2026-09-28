@@ -1672,6 +1672,34 @@ def test_rsi_crossings_are_strict_skip_a_gap_and_keep_a_14_session_cooldown():
     assert np.flatnonzero(es.rsi_zone_mask(low, "below")).tolist() == [2, 4]
 
 
+def test_codex_r02_a_session_whose_preceding_rsi_is_undefined_is_neither_event_nor_baseline(tmp_path):
+    """Codex R-02: the eligibility mask events and baseline share required only
+    the session's own RSI, so the first session after an RSI re-seed (its
+    preceding RSI undefined, so no crossing can be judged there) entered the
+    baseline. Both RSIs are now required."""
+    import sqlite3
+
+    import numpy as np
+    import pandas as pd
+
+    from src.analytics import technicals
+
+    path = _synthetic_db(tmp_path / "gap.db")
+    with sqlite3.connect(path) as c:
+        c.execute("DELETE FROM asset_prices WHERE symbol = '^GSPC' AND date = '2015-06-10'")
+    _out, _table, trace = es.run_traced(es.Query(kind="rsi", cross="above", target="spx"), path)
+    with sqlite3.connect(path) as c:
+        stored = dict(c.execute("SELECT date, close FROM asset_prices WHERE symbol = '^GSPC' AND interval = '1d'").fetchall())
+    closes = pd.Series([stored.get(d, np.nan) for d in trace.sessions], dtype=float)
+    r = technicals.rsi(closes).to_numpy()
+    ok = np.isfinite(r)
+    both = ok & np.concatenate([[False], ok[:-1]])
+    assert not (trace.evaluable & ~both).any(), "an eligible session without both RSIs"
+    reseed = int(trace.sessions.index("2015-06-10")) + 15  # 14 changes after the gap: the first defined RSI
+    assert ok[reseed] and not ok[reseed - 1]
+    assert not trace.evaluable[reseed] and trace.evaluable[reseed + 1]
+
+
 def test_an_rsi_study_runs_on_the_engine_and_hashes_apart(synth):
     q = es.Query(kind="rsi", cross="above", target="spx")
     out, table, trace = es.run_traced(q, synth)

@@ -1273,7 +1273,10 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
         ev_pos, n_raw = rsi_crossings(r, q.cross or "above", q.w)
         n_shocks = int(len(ev_pos))
         w = q.w
-        input_ok = r.notna()
+        # Codex R-02 (desk/fill-compute): a session is eligible, as an event or a baseline candidate, only
+        # where a crossing could be judged there: its RSI and the preceding session's both defined (the
+        # crossing rule reads both), so the first session after an RSI re-seed is neither.
+        input_ok = r.notna() & r.shift(1).notna()
         level = RSI_UPPER if q.cross == "above" else RSI_LOWER
         study_label = f"S&P 500 {RSI_PERIOD}-session RSI (Wilder) crossing {q.cross} {level:g}, strict"
         z = None
