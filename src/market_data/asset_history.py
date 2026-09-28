@@ -83,6 +83,12 @@ _EODHD_OVERRIDES: dict[str, str | None] = {
     "DX-Y.NYB": "DXY.INDX",
 }
 
+# Every column the step writes (DDL above). scripts/validate_db.py's publication fingerprint of the table
+# (_asset_prices_fingerprint) hashes the table's columns and every stored value of each, volume included,
+# so a volume-only correction, or the column's arrival on a table that predates it, publishes
+# (desk/fill-etf, Codex R-02; pinned column by column by tests/test_validate_db.py).
+STORED_COLUMNS = ("symbol", "interval", "date", "close", "provider", "volume")
+
 MAX_HISTORY_START = "1970-01-01"  # the monthly series were yfinance period="max"
 DESK_HISTORY_START = "1990-01-01"  # desk/fill-etf: before every Desk ETF's first close, so the provider serves its whole history
 

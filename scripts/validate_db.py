@@ -121,7 +121,9 @@ FINGERPRINT_SQL = {
     "raw_series": "SELECT series_id, date, value FROM raw_series ORDER BY series_id, date",
     "market_daily": "SELECT symbol, date, close FROM market_daily ORDER BY symbol, date",
     "source_watermarks": "SELECT source, last_obs, last_value FROM source_watermarks ORDER BY source",
-    # Adjusted closes are restated back through history after every dividend.
+    # Adjusted closes are restated back through history after every dividend. inspect() replaces this
+    # with _asset_prices_fingerprint, which adds the table's columns and every stored column, volume
+    # included (desk/fill-etf, Codex R-02); this query is the layout that predates the volume column.
     "asset_prices": "SELECT symbol, interval, date, close FROM asset_prices ORDER BY symbol, interval, date",
     # FRED revises a daily observation in place (desk/event-study); inspect() replaces this with
     # _desk_fingerprints, which adds each row's readability (Codex R-20, V-39)
@@ -188,6 +190,25 @@ def _desk_fingerprints(conn: sqlite3.Connection, as_of: str) -> tuple[str, dict[
         table.update(repr((sid, d, v, bool(readable))).encode())
         per.setdefault(sid, hashlib.sha256()).update(repr((d, v, bool(readable))).encode())
     return table.hexdigest()[:16], {sid: h.hexdigest()[:16] for sid, h in per.items()}
+
+
+def _asset_prices_fingerprint(conn: sqlite3.Connection) -> str:
+    """asset_prices' publication fingerprint (desk/fill-etf, Codex R-02): the
+    table's columns, then every value of every column in table order, so a
+    volume-only correction (or a provider's, or a close's) is new content, and
+    so is the volume column's arrival on a published table that predates it
+    (src/market_data/asset_history.ensure_table adds it, NULL). A table in the
+    older layout, without the column, fingerprints over its own columns. A
+    query that fails raises, as _fingerprint's (Codex R-23)."""
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(asset_prices)")]
+    if not cols:
+        raise sqlite3.OperationalError("asset_prices has no columns to fingerprint")
+    h = hashlib.sha256()
+    h.update(repr(("columns", tuple(cols))).encode())
+    select = ", ".join('"' + c.replace('"', '""') + '"' for c in cols)
+    for row in conn.execute(f"SELECT {select} FROM asset_prices ORDER BY symbol, interval, date"):
+        h.update(repr(tuple(row)).encode())
+    return h.hexdigest()[:16]
 
 
 def _fingerprint(conn: sqlite3.Connection, sql: str) -> str:
@@ -272,8 +293,10 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
         # "not executed" and fails validation, never a table that did not change
         out["fingerprints"] = {}
         for t, sql in FINGERPRINT_SQL.items():
-            if t in out["tables"] and t != "desk_series":
+            if t in out["tables"] and t not in ("desk_series", "asset_prices"):
                 out["fingerprints"][t] = _mandatory(out, f"{t} fingerprint", None, lambda sql=sql: _fingerprint(conn, sql))
+        if "asset_prices" in out["tables"]:  # Codex R-02: every column, volume included, and the layout
+            out["fingerprints"]["asset_prices"] = _mandatory(out, "asset_prices fingerprint", None, lambda: _asset_prices_fingerprint(conn))
         if "desk_series" in out["tables"]:  # Codex R-20: content and readability-deciding provenance
             cut_fp = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()
             desk_fp = _mandatory(out, "desk_series fingerprint", None, lambda: _desk_fingerprints(conn, cut_fp))
