@@ -420,7 +420,8 @@ COMPARE_POINT = obj(date=DATE, basket=null(NUM), qqq=null(NUM), spy=null(NUM), r
                     rs_spy=null(NUM), rs_spy_ma50=null(NUM))
 BASKET_PRICE = obj(
     method=E("hold", "monthly"), notional=NUM, provider=STR, source=STR, freq=Const("daily"),
-    prices_as_of=DATE, history_from=DATE, start=DATE, start_binding=Arr(STR, min=1), start_is_first_close=BOOL,
+    prices_as_of=DATE, history_from=DATE, start=DATE, start_kind=E("first_close", "history", "gap"),
+    start_binding=Arr(STR, min=1), start_is_first_close=BOOL, start_gap_session=null(DATE),
     end=DATE, sessions=INT, missing_sessions=Arr(DATE), rebalances=INT, total_return=NUM,
     legs=Arr(obj(symbol=STR, target_weight=FRAC, weight_now=FRAC, first_close=DATE, price_end=NUM, **{"return": NUM},
                  contribution=NUM, dollars=NUM, adv_usd=null(NUM), adv_window=null(SPAN), days_to_trade=null(NUM)), min=1),

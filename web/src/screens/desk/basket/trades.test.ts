@@ -35,6 +35,8 @@ describe("Basket & Hedge's lead sentences", () => {
     expect(startSentence(SAMPLE)).toBe("Base 100 on Mar 28, 2025, the first session every name has a price (CRWV's first close).");
     expect(startWhy({ start_binding: ["CRWV", "NBIS"], start_is_first_close: true })).toBe("the first closes of CRWV and NBIS");
     expect(startWhy({ start_binding: ["NVDA", "AVGO"], start_is_first_close: false })).toBe("the start of the daily history the API reads");
+    // Codex R-03: a start after a gap names the session the name had no close on.
+    expect(startWhy({ start_binding: ["A"], start_is_first_close: false, start_kind: "gap", start_gap_session: "2026-01-29" })).toBe("A has no close on Jan 29, 2026");
   });
 
   it("a sentence whose numbers are not served is not written", () => {

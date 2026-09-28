@@ -141,6 +141,22 @@ def fetch(symbols: list[str]) -> dict[str, Any]:
     return out
 
 
+def calendar_for(histories: Mapping[str, Any]) -> list[str]:
+    """The XNYS sessions the engine reads (Codex R-02, R-06): from the earliest
+    close fetched through the end of the month after the latest, so a
+    month-end in the data is known as one. The engine's exchange_calendars
+    calendar (src/desk/event_study), never the stored rows."""
+    import pandas as pd
+
+    from src.desk import event_study as es
+
+    start = min(h.dates[0] for h in histories.values() if h.dates)
+    end = max(h.dates[-1] for h in histories.values() if h.dates)
+    beyond = (pd.Timestamp(end) + pd.offsets.MonthEnd(2)).strftime("%Y-%m-%d")
+    cal = es.session_calendar(start, end)
+    return [d.strftime("%Y-%m-%d") for d in es.sessions_between(cal, start, beyond)]
+
+
 def _f(x: Any) -> float | None:
     return float(x) if isinstance(x, (int, float)) and math.isfinite(x) else None
 
@@ -156,8 +172,9 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
     from src.desk import technicals as tech
 
     names = {s: histories[s] for s, _ in legs}
+    sessions = calendar_for(histories)
     try:
-        priced = bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional)
+        priced = bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional, sessions=sessions)
     except bk.BasketError as exc:
         raise env.Unsupported(str(exc)) from exc
     level = dict(zip(priced["dates"], priced["index"]))
@@ -175,7 +192,7 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         h = histories[sym]
         row: dict[str, Any] = {"symbol": sym, "label": label, "price": h.close[-1], "date": h.dates[-1]}
         for w, n in bk.WINDOWS.items():
-            r = bk.regression(level, bench_levels[k], n)
+            r = bk.regression(level, bench_levels[k], n, sessions)
             row[f"beta_{w}"], row[f"corr_{w}"] = r["beta"], r["corr"]
             row[f"window_{w}"] = r["window"]
             row[f"reason_{w}"] = r["reason"]
@@ -193,8 +210,10 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         "prices_as_of": priced["end"],
         "history_from": min(h.dates[0] for h in names.values()),
         "start": priced["start"],
+        "start_kind": priced["start_kind"],
         "start_binding": priced["start_binding"],
         "start_is_first_close": priced["start_is_first_close"],
+        "start_gap_session": priced["start_gap_session"],
         "end": priced["end"],
         "sessions": priced["sessions"],
         "missing_sessions": priced["missing_sessions"],
@@ -218,13 +237,14 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
     from src.desk import basket as bk
 
     names = {s: histories[s] for s, _ in legs}
+    sessions = calendar_for(histories)
     try:
-        priced = bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional)
+        priced = bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional, sessions=sessions)
     except bk.BasketError as exc:
         raise env.Unsupported(str(exc)) from exc
     level = dict(zip(priced["dates"], priced["index"]))
     etf_levels = {sym: dict(zip(histories[sym].dates, histories[sym].close)) for sym in HEDGE_ETFS}
-    rows = bk.hedge_rows(level, etf_levels, notional)
+    rows = bk.hedge_rows(level, etf_levels, notional, sessions)
     for r in rows:
         r["label"] = HEDGE_ETFS[r["symbol"]]
     top = next((r for r in rows if r["hedge_ratio"] is not None), None)
@@ -241,7 +261,7 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         "etfs": rows,
         "top": top["symbol"] if top else None,
         "stress": bk.stress(level, shocks, top["symbol"] if top else None, etf_levels[top["symbol"]] if top else None,
-                            top["hedge_ratio"] if top else None, top["basis"] if top else None, notional),
+                            top["hedge_ratio"] if top else None, top["basis"] if top else None, notional, sessions),
     }
 
 

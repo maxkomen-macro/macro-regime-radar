@@ -1666,7 +1666,11 @@ adding to 100 (within 1e-6), at most 25 names, none twice; `method` = `hold`
 (default 1000000). Prices: `api/providers/market.daily_bars`, EODHD's daily
 bars (`/api/market/candles/{SYM}?range=2Y`): two years, split- and
 dividend-adjusted closes with volume, completed New York sessions only,
-cached per ticker per session. The envelope's `generation_id` and `as_of`
+cached per ticker per session. Every series sits on the XNYS calendar
+(`exchange_calendars`, through the end of the month after the last close):
+a daily return is a simple return between two consecutive sessions that
+both have a close, a gap is a missing return (Codex R-02), and a
+month-end is the month's last XNYS session (R-06). The envelope's `generation_id` and `as_of`
 are the served generation's, as on every Desk route; the prices carry their
 own date (`prices_as_of`). The route shares the provider calls' concurrency
 ceiling. No block envelopes.
@@ -1679,12 +1683,14 @@ ceiling. No block envelopes.
 | `freq` | `"daily"` | required | — | — | A |
 | `prices_as_of` | date | required | — | the index's last session | N |
 | `history_from` | date | required | — | the earliest first close fetched | S |
-| `start` | date | required | — | — | N `src/desk/basket.common_start`: the first session every name has a close; base 100 |
-| `start_binding` | string[] | required | — | — | N: the names whose first close `start` is |
-| `start_is_first_close` | boolean | required | — | — | N: true when `start` is later than another name's first close (a listing, e.g. CRWV in March 2025); false when every history starts there |
+| `start` | date | required | — | — | N `src/desk/basket.price_basket`: the first XNYS session every name has a close, the session the share counts are bought at (Codex R-03); base 100 |
+| `start_kind` | `"first_close"` \| `"history"` \| `"gap"` | required | — | — | N: a later first close than another name's (a listing, e.g. CRWV in March 2025); the start of every history alike; or a session after a name's missing close |
+| `start_binding` | string[] | required | — | — | N: the names whose first close `start` is; for a gap, the names with no close on `start_gap_session` |
+| `start_is_first_close` | boolean | required | — | — | N: `start_kind` is `first_close` |
+| `start_gap_session` | date | required, nullable | — | — | N: for a gap, the session before `start` |
 | `end`, `sessions` | date, integer | required | — | — | N: the last index session; how many index sessions |
 | `missing_sessions` | date[] | required | — | — | N: sessions after `start` on which some name has no close; they are not index sessions, never filled |
-| `rebalances` | integer | required | — | — | N: 1 for `hold`; for `monthly` the start plus each calendar month's last index session |
+| `rebalances` | integer | required | — | — | N: 1 for `hold`; for `monthly` the start plus each completed month (its last XNYS session no later than `end`, the final session included), at the basket's last index session that month |
 | `total_return` | number | required | fraction | `start` to `end` | N |
 | `legs[]` | `{symbol, target_weight, weight_now, first_close, price_end, return, contribution, dollars, adv_usd, adv_window, days_to_trade}` | required | fractions; USD; days | — | N `price_basket`: `contribution` sums to `total_return`; `adv_usd` the mean of the last 20 sessions' unadjusted close × volume (null without 20); `days_to_trade` = `target_weight × notional / (0.20 × adv_usd)` |
 | `concentration` | `{top3_share, top3, effective_n, avg_pairwise_corr, corr_window}` | required | fraction; names | at `end` | N: weights at the last close; `effective_n` = 1 / Σ w²; the mean pairwise Pearson correlation of daily simple returns over the last 252 index sessions (all when fewer, null under 60) |

@@ -928,6 +928,10 @@ export interface BasketPriceResponse extends Envelope {
   start_binding?: string[];
   /** True when the start is a later first close than another name's (a listing); false when every history starts there. */
   start_is_first_close?: boolean;
+  /** Why the start is where it is (Codex R-03): a later first close, the start of every history, or a gap (a name had no close on the session before). */
+  start_kind?: "first_close" | "history" | "gap";
+  /** For a gap: the session before the start that `start_binding` had no close on. */
+  start_gap_session?: string | null;
   end?: string;
   sessions: number | null;
   missing_sessions?: string[];

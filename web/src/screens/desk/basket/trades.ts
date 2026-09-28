@@ -22,8 +22,10 @@ export function methodSentence(m: BasketMethod | undefined): string {
 }
 
 /** Why the index starts where it does: the names whose first close it is, or the start of the history. */
-export function startWhy(p: Pick<BasketPriceResponse, "start_binding" | "start_is_first_close">): string {
+export function startWhy(p: Pick<BasketPriceResponse, "start_binding" | "start_is_first_close" | "start_kind" | "start_gap_session">): string {
   const who = p.start_binding ?? [];
+  // Codex R-03: a start after a gap says whose close was missing, and on which session.
+  if (p.start_kind === "gap" && who.length && p.start_gap_session) return `${listWords(who)} ${who.length === 1 ? "has" : "have"} no close on ${dayLong(p.start_gap_session)}`;
   if (p.start_is_first_close && who.length) return who.length === 1 ? `${who[0]}'s first close` : `the first closes of ${listWords(who)}`;
   return "the start of the daily history the API reads";
 }

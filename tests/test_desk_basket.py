@@ -14,6 +14,16 @@ from src.desk import basket as bk
 D5 = ("2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03")
 
 
+def _xnys(start: str, end: str) -> list[str]:
+    from src.desk import event_study as es
+
+    return [d.strftime("%Y-%m-%d") for d in es.sessions_between(es.session_calendar(start, end), start, end)]
+
+
+# The XNYS calendar the engine reads (the API passes exchange_calendars' sessions).
+CAL = _xnys("2026-01-02", "2026-03-31")
+
+
 def H(dates, close, dv=None):
     return bk.History(tuple(dates), tuple(float(c) for c in close), tuple(dv if dv is not None else [None] * len(dates)))
 
@@ -24,7 +34,7 @@ def two_stocks():
 
 
 def test_hand_checked_buy_and_hold_two_stocks_five_sessions():
-    r = bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5}, "hold", 1000.0, adv_sessions=5)
+    r = bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL, adv_sessions=5)
     # Shares at the start: A 500 / 10 = 50, B 500 / 20 = 25.
     # Value: 50·10 + 25·20 = 1000; 550 + 500 = 1050; 600 + 550 = 1150; 550 + 600 = 1150; 650 + 550 = 1200.
     assert r["index"] == pytest.approx([100.0, 105.0, 115.0, 115.0, 120.0])
@@ -51,7 +61,7 @@ def test_hand_checked_buy_and_hold_two_stocks_five_sessions():
 
 
 def test_hand_checked_monthly_rebalance_two_stocks_five_sessions():
-    r = bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5}, "monthly", 1000.0, adv_sessions=5)
+    r = bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5}, "monthly", 1000.0, sessions=CAL, adv_sessions=5)
     # Jan 30 is January's last session: the counts reset there to half of 1150 each.
     # A 575 / 12 = 47.916667, B 575 / 22 = 26.136364.
     # Feb 2: 47.916667·11 + 26.136364·24 = 527.083333 + 627.272727 = 1154.356061.
@@ -68,17 +78,17 @@ def test_hand_checked_monthly_rebalance_two_stocks_five_sessions():
 
 def test_the_start_is_the_first_session_every_name_has_a_close_and_says_whose():
     h = {"OLD": H(D5, [10, 11, 12, 11, 13]), "NEW": H(D5[2:], [5, 6, 7])}
-    r = bk.price_basket(h, {"OLD": 0.6, "NEW": 0.4}, "hold", 100.0)
+    r = bk.price_basket(h, {"OLD": 0.6, "NEW": 0.4}, "hold", 100.0, sessions=CAL)
     assert r["start"] == "2026-01-30" and r["start_binding"] == ["NEW"] and r["start_is_first_close"] is True
     # OLD 60 / 12 = 5 shares, NEW 40 / 5 = 8: 100, 5·11 + 8·6 = 103, 5·13 + 8·7 = 121.
     assert r["index"] == pytest.approx([100.0, 103.0, 121.0])
-    same = bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5})
+    same = bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5}, sessions=CAL)
     assert same["start_binding"] == ["A", "B"] and same["start_is_first_close"] is False
 
 
 def test_a_session_one_name_lacks_is_dropped_never_filled():
     h = {"A": H(D5, [10, 11, 12, 11, 13]), "B": H(D5[:3] + D5[4:], [20, 20, 22, 22])}
-    r = bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 1000.0)
+    r = bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL)
     assert r["dates"] == [D5[0], D5[1], D5[2], D5[4]] and r["missing_sessions"] == [D5[3]]
     assert r["index"] == pytest.approx([100.0, 105.0, 115.0, 120.0])
 
@@ -86,7 +96,7 @@ def test_a_session_one_name_lacks_is_dropped_never_filled():
 def test_liquidity_needs_a_full_window_of_dollar_volume():
     h = two_stocks()
     h["B"] = H(D5, [20, 20, 22, 24, 22], [400.0, None, 400.0, 400.0, 400.0])
-    r = bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 1000.0, adv_sessions=5)
+    r = bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL, adv_sessions=5)
     assert r["legs"][1]["adv_usd"] is None and r["legs"][1]["days_to_trade"] is None
     assert r["liquidity"]["binding"] == "A" and r["liquidity"]["basket_days"] == pytest.approx(2.5)
     assert r["legs"][1]["adv_window"] == {"start": D5[0], "end": D5[4], "n": 4}
@@ -107,7 +117,7 @@ def test_the_correlation_reads_the_last_252_returns_and_needs_60():
     common = rng.normal(0, 0.01, n - 1)
     lv = lambda eps: np.concatenate([[100.0], 100.0 * np.cumprod(1 + common + eps)])
     h = {s: H(dates, lv(rng.normal(0, 0.01, n - 1))) for s in ("A", "B", "C")}
-    r = bk.price_basket(h, {"A": 0.5, "B": 0.25, "C": 0.25})
+    r = bk.price_basket(h, {"A": 0.5, "B": 0.25, "C": 0.25}, sessions=dates)
     c = r["concentration"]
     assert c["corr_window"] == {"start": dates[-253], "end": dates[-1], "n": 252}
     px = np.column_stack([h[s].close for s in "ABC"])
@@ -115,14 +125,14 @@ def test_the_correlation_reads_the_last_252_returns_and_needs_60():
     cc = np.corrcoef(rets[-252:], rowvar=False)
     assert c["avg_pairwise_corr"] == pytest.approx((cc[0, 1] + cc[0, 2] + cc[1, 2]) / 3)
     short = {s: H(dates[:61], h[s].close[:61]) for s in "ABC"}
-    assert bk.price_basket(short, {"A": 0.5, "B": 0.25, "C": 0.25})["concentration"]["avg_pairwise_corr"] is not None
+    assert bk.price_basket(short, {"A": 0.5, "B": 0.25, "C": 0.25}, sessions=dates)["concentration"]["avg_pairwise_corr"] is not None
     shorter = {s: H(dates[:60], h[s].close[:60]) for s in "ABC"}
-    assert bk.price_basket(shorter, {"A": 0.5, "B": 0.25, "C": 0.25})["concentration"]["avg_pairwise_corr"] is None
+    assert bk.price_basket(shorter, {"A": 0.5, "B": 0.25, "C": 0.25}, sessions=dates)["concentration"]["avg_pairwise_corr"] is None
 
 
 def test_top_three_and_effective_names_read_the_weights_at_the_last_close():
     h = {s: H(D5, [10, 10, 10, 10, 10 * (1 + i)]) for i, s in enumerate("ABCD")}
-    r = bk.price_basket(h, {s: 0.25 for s in "ABCD"}, "hold", 1000.0)
+    r = bk.price_basket(h, {s: 0.25 for s in "ABCD"}, "hold", 1000.0, sessions=CAL)
     # Last close: A 250, B 500, C 750, D 1000 of 2500: weights .1 .2 .3 .4.
     assert [round(l["weight_now"], 12) for l in r["legs"]] == [0.1, 0.2, 0.3, 0.4]
     assert r["concentration"]["top3"] == ["D", "C", "B"] and r["concentration"]["top3_share"] == pytest.approx(0.9)
@@ -143,13 +153,13 @@ def test_weights_must_be_positive_and_add_to_one(weights, words):
 def test_refusals_name_what_is_wrong():
     h = two_stocks()
     with pytest.raises(bk.BasketError, match="method"):
-        bk.price_basket(h, {"A": 0.5, "B": 0.5}, "weekly")
+        bk.price_basket(h, {"A": 0.5, "B": 0.5}, "weekly", sessions=CAL)
     with pytest.raises(bk.BasketError, match="notional"):
-        bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 0)
+        bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 0, sessions=CAL)
     with pytest.raises(bk.BasketError, match="different symbols"):
-        bk.price_basket(h, {"A": 0.5, "C": 0.5})
+        bk.price_basket(h, {"A": 0.5, "C": 0.5}, sessions=CAL)
     with pytest.raises(bk.BasketError, match="share no session"):
-        bk.price_basket({"A": H(D5[:2], [1, 2]), "B": H(D5[3:], [1, 2])}, {"A": 0.5, "B": 0.5})
+        bk.price_basket({"A": H(D5[:2], [1, 2]), "B": H(D5[3:], [1, 2])}, {"A": 0.5, "B": 0.5}, sessions=CAL)
     with pytest.raises(bk.BasketError, match="positive"):
         H(D5[:2], [1, -2])
     with pytest.raises(bk.BasketError, match="ascending"):
@@ -170,7 +180,7 @@ def test_regression_by_hand_a_basket_that_moves_twice_its_benchmark():
     dates = [f"S{i:03d}" for i in range(61)]
     rng = np.random.default_rng(1)
     x = rng.normal(0, 0.01, 60)
-    r = bk.regression(_levels(dates, 2 * x), _levels(dates, x), 60)
+    r = bk.regression(_levels(dates, 2 * x), _levels(dates, x), 60, dates)
     assert r["beta"] == pytest.approx(2.0) and r["corr"] == pytest.approx(1.0) and r["r2"] == pytest.approx(1.0)
     assert r["resid_vol"] == pytest.approx(0.0, abs=1e-12) and r["vol_reduction"] == pytest.approx(1.0)
     assert r["vol"] == pytest.approx(2 * r["vol_x"])
@@ -181,12 +191,12 @@ def test_regression_needs_a_full_window_and_reads_only_common_sessions():
     dates = [f"S{i:03d}" for i in range(40)]
     y = _levels(dates, np.full(39, 0.01))
     x = _levels(dates[5:], np.full(34, 0.005))
-    r = bk.regression(y, x, 60)
+    r = bk.regression(y, x, 60, dates)
     assert r["beta"] is None and r["window"] == {"start": "S005", "end": "S039", "n": 34}
     assert r["reason"] == "needs 60 daily returns; there are 34 since S005"
-    # A session one side lacks: the return spans the gap on both sides alike.
-    common, ry, rx = bk.paired_returns({"a": 1.0, "b": 2.0, "c": 3.0}, {"a": 10.0, "c": 20.0})
-    assert common == ["a", "c"] and list(ry) == [2.0] and list(rx) == [1.0]
+    # A session one side lacks is a missing return on both sides, never one spanning the gap (Codex R-02).
+    rows, ry, rx = bk.paired_returns({"a": 1.0, "b": 2.0, "c": 3.0, "d": 6.0}, {"a": 10.0, "c": 20.0, "d": 30.0}, ["a", "b", "c", "d"])
+    assert list(rows) == [3] and list(ry) == [1.0] and list(rx) == [0.5]
 
 
 def test_relative_series_by_hand():
@@ -203,3 +213,46 @@ def test_relative_series_by_hand():
     # The ratio's 50-session average needs 50 slots with both closes.
     early = bk.relative_series(sessions, basket, {"qqq": bench}, {"r": sessions[:3]})["r"]["points"]
     assert all(p["rs_qqq_ma50"] is None for p in early)
+
+
+# ── Codex R-02, R-03, R-06: the XNYS calendar ─────────────────────────────────
+
+def test_codex_r02_a_missing_session_is_a_missing_return_not_a_two_day_one():
+    """Codex's repro: January 26-30, benchmark 100, 110, 121, 108.9, 114.345 and basket 100, missing, 144,
+    115.2, 149.76. Intersecting dates first made a two-session return and a beta of 2.0513; the two valid
+    one-session returns are the basket's -20% and +30% against -10% and +5%: beta 0.5 / 0.15 = 3.3333."""
+    days = ["2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30"]
+    bench = dict(zip(days, [100, 110, 121, 108.9, 114.345]))
+    basket = dict(zip([days[0], *days[2:]], [100, 144, 115.2, 149.76]))
+    r = bk.regression(basket, bench, 2, CAL)
+    assert r["beta"] == pytest.approx(10 / 3) and r["window"] == {"start": "2026-01-28", "end": "2026-01-30", "n": 2}
+    three = bk.regression(basket, bench, 3, CAL)
+    assert three["beta"] is None and three["reason"] == "needs 3 daily returns; there are 2 since 2026-01-28"
+
+
+def test_codex_r03_the_start_is_the_first_session_the_basket_is_bought_at():
+    """Codex's repro: A closes on January 28 and 30, B on January 29 and 30, equal weights. The start said
+    January 29 while the purchase was at January 30's closes; it is January 30, because A has no close on
+    the 29th."""
+    h = {"A": H(["2026-01-28", "2026-01-30"], [10, 12]), "B": H(["2026-01-29", "2026-01-30"], [20, 22])}
+    r = bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL)
+    assert r["start"] == "2026-01-30" and r["dates"] == ["2026-01-30"] and r["index"] == [100.0]
+    assert r["start_kind"] == "gap" and r["start_binding"] == ["A"] and r["start_gap_session"] == "2026-01-29"
+    assert r["start_is_first_close"] is False
+    assert [l["price_start"] for l in r["legs"]] == [12.0, 22.0]
+
+
+def test_codex_r06_the_final_session_rebalances_when_it_is_the_month_end():
+    """Codex's repro: January 28-30, A 100, 200, 200 and B 100, 100, 100, equal targets, monthly. January 30
+    is January's last session (the calendar shows February 2 next), so the counts reset there and the weights
+    at the last close are 50% / 50%; appending an unchanged February 2 no longer changes January's answer."""
+    days = ["2026-01-28", "2026-01-29", "2026-01-30"]
+    h = {"A": H(days, [100, 200, 200]), "B": H(days, [100, 100, 100])}
+    r = bk.price_basket(h, {"A": 0.5, "B": 0.5}, "monthly", 1000.0, sessions=CAL)
+    assert [round(l["weight_now"], 12) for l in r["legs"]] == [0.5, 0.5] and r["rebalances"] == 2
+    h2 = {"A": H([*days, "2026-02-02"], [100, 200, 200, 200]), "B": H([*days, "2026-02-02"], [100, 100, 100, 100])}
+    r2 = bk.price_basket(h2, {"A": 0.5, "B": 0.5}, "monthly", 1000.0, sessions=CAL)
+    assert [round(l["weight_now"], 12) for l in r2["legs"]] == [0.5, 0.5]
+    # A month still in progress does not rebalance: with the calendar ending at January 29 nothing shows the month over.
+    r3 = bk.price_basket({"A": H(days[:2], [100, 200]), "B": H(days[:2], [100, 100])}, {"A": 0.5, "B": 0.5}, "monthly", 1000.0, sessions=CAL)
+    assert r3["rebalances"] == 1 and round(r3["legs"][0]["weight_now"], 6) == round(2 / 3, 6)

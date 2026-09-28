@@ -6,16 +6,19 @@ histories (api/providers/market.daily_bars) and serves what these return.
 
 The method, in the order the page states it:
 
-- **The index.** Base 100 on the first session on which every name has a
-  close (`start`), and defined on every later session on which every name has
-  a close. A session on which one name has no close is not an index session
-  (counted in `missing_sessions`); nothing is filled in.
+- **The index.** Base 100 on the first calendar session on which every name
+  has a close (`start`, the session the share counts are bought at, R-03),
+  and defined on every later session on which every name has a close. A
+  session on which one name has no close is not an index session (counted in
+  `missing_sessions`); nothing is filled in.
 - **Buy-and-hold** (`hold`, the default): the target weights become share
   counts at the start's closes, `shares_i = w_i × notional / P_i(start)`, and
   the counts never change, so each name's weight drifts with its price.
 - **Monthly rebalance** (`monthly`): the same at the start, then at the close
-  of each calendar month's last index session the counts are reset so each
-  name is back at its target weight of the basket's value that day.
+  of each completed month (its last XNYS session by the calendar, the final
+  observation included when it is one; R-06), at the basket's last index
+  session that month, the counts are reset so each name is back at its target
+  weight of the basket's value that day.
 - **Contribution to return** of a name: the sum over holding periods of its
   share count times its price change, over the notional, so the names add up
   to the index's return exactly.
@@ -28,8 +31,10 @@ The method, in the order the page states it:
   its dollars at target weight of the notional over 20% of that average; the
   basket's figure is the largest.
 
-Prices are split- and dividend-adjusted closes; daily returns are simple
-returns between consecutive index sessions.
+Prices are split- and dividend-adjusted closes on the XNYS session calendar
+(passed in: `sessions`). A daily return is a simple return between two
+consecutive calendar sessions that both have a close; a missing session is a
+missing return, never one spanning two sessions (Codex R-02).
 """
 
 from __future__ import annotations
@@ -88,58 +93,75 @@ def check_weights(weights: Mapping[str, float]) -> dict[str, float]:
     return out
 
 
-def common_start(histories: Mapping[str, History]) -> tuple[str, list[str], bool]:
-    """The first session every name has a close, the names whose first close
-    it is, and whether it is a later first close than another name's (a
-    listing, or a history that begins later) rather than the start of every
-    history alike."""
-    firsts = {s: h.dates[0] for s, h in histories.items() if h.dates}
-    if len(firsts) != len(histories):
-        empty = sorted(set(histories) - set(firsts))
-        raise BasketError(f"no daily history for {', '.join(empty)}")
-    start = max(firsts.values())
-    binding = sorted(s for s, d in firsts.items() if d == start)
-    return start, binding, start > min(firsts.values())
+def on_calendar(levels: Mapping[str, float], sessions: Sequence[str]) -> np.ndarray:
+    """A level series on the session calendar: NaN on a session it has no value for."""
+    return np.array([levels.get(d, np.nan) for d in sessions], dtype=float)
 
 
-def index_sessions(histories: Mapping[str, History], start: str) -> tuple[list[str], list[str]]:
-    """The index's sessions (on or after `start`, every name with a close) and
-    the sessions dropped because some name had none (a session at least one
-    name traded, after the start and up to the last index session)."""
-    sets = [set(h.dates) for h in histories.values()]
-    common = sorted(d for d in set.intersection(*sets) if d >= start)
-    if not common:
-        raise BasketError("the names share no session")
-    union = set().union(*sets)
-    dropped = sorted(d for d in union if start <= d <= common[-1] and d not in set(common))
-    return common, dropped
-
-
-def _prices(histories: Mapping[str, History], symbols: Sequence[str], dates: Sequence[str]) -> np.ndarray:
-    """A (sessions × names) matrix of adjusted closes on `dates`."""
-    out = np.empty((len(dates), len(symbols)))
-    for j, s in enumerate(symbols):
-        h = histories[s]
-        at = dict(zip(h.dates, h.close))
-        out[:, j] = [at[d] for d in dates]
+def session_returns(level: np.ndarray) -> np.ndarray:
+    """One-session simple returns on the calendar (Codex R-02): row t is
+    P_t / P_{t-1} - 1 and NaN unless both sessions have a value, so a gap is
+    missing, never a return spanning two sessions; row 0 is NaN."""
+    level = np.asarray(level, dtype=float)
+    out = np.full(len(level), np.nan)
+    if len(level) > 1:
+        with np.errstate(invalid="ignore", divide="ignore"):
+            out[1:] = level[1:] / level[:-1] - 1.0
     return out
 
 
-def rebalance_rows(dates: Sequence[str], method: str) -> list[int]:
-    """Row numbers where the share counts are set: the start, and for the
-    monthly method the last index session of each calendar month before the
-    final session."""
+def month_end_sessions(sessions: Sequence[str]) -> set[str]:
+    """Each calendar month's last session, for the months the calendar shows
+    complete: a session in a later month follows it (Codex R-06)."""
+    return {a for a, b in zip(sessions, sessions[1:]) if a[:7] != b[:7]}
+
+
+def _check_calendar(sessions: Sequence[str]) -> list[str]:
+    cal = list(sessions)
+    if not cal or any(b <= a for a, b in zip(cal, cal[1:])):
+        raise BasketError("the session calendar is empty or not strictly ascending")
+    return cal
+
+
+def _on_calendar_matrix(histories: Mapping[str, History], symbols: Sequence[str], cal: Sequence[str]) -> tuple[np.ndarray, dict[str, int]]:
+    """A (sessions × names) matrix of adjusted closes on the calendar, NaN where
+    a name has no close, and each name's count of dates that are not sessions
+    (left out)."""
+    pos = {d: i for i, d in enumerate(cal)}
+    px = np.full((len(cal), len(symbols)), np.nan)
+    off: dict[str, int] = {}
+    for j, s in enumerate(symbols):
+        h = histories[s]
+        if not h.dates:
+            raise BasketError(f"no daily history for {s}")
+        for d, c in zip(h.dates, h.close):
+            i = pos.get(d)
+            if i is None:
+                off[s] = off.get(s, 0) + 1
+            else:
+                px[i, j] = c
+    return px, off
+
+
+def rebalance_rows(cal: Sequence[str], index_rows: Sequence[int], method: str) -> list[int]:
+    """Calendar rows where the share counts are set: the start, and for the
+    monthly method each completed month's month-end (its last XNYS session by
+    the calendar), at the basket's last index session in that month; the
+    final observation is one when it is the month's last session (Codex R-06)."""
     if method not in METHODS:
         raise BasketError(f"the method {method!r} is not one of {', '.join(METHODS)}")
-    rows = [0]
+    rows = [int(index_rows[0])]
     if method == "monthly":
-        rows += [i for i in range(1, len(dates) - 1) if dates[i][:7] != dates[i + 1][:7]]
+        last = int(index_rows[-1])
+        ends = {d[:7]: d for d in month_end_sessions(cal)}
+        by_month: dict[str, int] = {}
+        for r in index_rows:
+            by_month[cal[r][:7]] = int(r)  # the month's last index session
+        for month, r in sorted(by_month.items(), key=lambda kv: kv[1]):
+            d = ends.get(month)
+            if d is not None and d <= cal[last] and r > rows[0]:
+                rows.append(r)
     return rows
-
-
-def simple_returns(level: np.ndarray) -> np.ndarray:
-    """Daily simple returns between consecutive rows (one fewer than rows)."""
-    return level[1:] / level[:-1] - 1.0
 
 
 def pairwise_mean_corr(returns: np.ndarray) -> float | None:
@@ -157,9 +179,11 @@ def pairwise_mean_corr(returns: np.ndarray) -> float | None:
 
 
 def price_basket(histories: Mapping[str, History], weights: Mapping[str, float], method: str = DEFAULT_METHOD,
-                 notional: float = DEFAULT_NOTIONAL, *, adv_sessions: int = ADV_SESSIONS) -> dict:
+                 notional: float = DEFAULT_NOTIONAL, *, sessions: Sequence[str], adv_sessions: int = ADV_SESSIONS) -> dict:
     """The basket priced as one index. `weights` are fractions adding to 1,
-    keyed like `histories`, in the basket's order. Returns plain numbers and
+    keyed like `histories`, in the basket's order; `sessions` is the XNYS
+    calendar over the histories, running at least one session into the month
+    after the last close (so a month-end is known). Returns plain numbers and
     ISO dates (see the module docstring for every rule). `adv_sessions` is the
     dollar-volume window (20; a test may shorten it)."""
     w = check_weights(weights)
@@ -167,42 +191,65 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
         raise BasketError("the weights and the histories name different symbols")
     if not (isinstance(notional, (int, float)) and math.isfinite(notional) and notional > 0):
         raise BasketError("the notional is not a positive number")
+    cal = _check_calendar(sessions)
     symbols = list(w)
     target = np.array([w[s] for s in symbols])
-    start, binding, later = common_start(histories)
-    dates, dropped = index_sessions(histories, start)
-    px = _prices(histories, symbols, dates)
-    rows = rebalance_rows(dates, method)
+    px, off = _on_calendar_matrix(histories, symbols, cal)
+    present = np.all(np.isfinite(px), axis=1)
+    idx = np.flatnonzero(present)
+    if not len(idx):
+        raise BasketError("the names share no session")
+    i0, i_end = int(idx[0]), int(idx[-1])
 
-    # Share counts per holding period, the basket's value on every session, and contributions.
-    value = np.empty(len(dates))
+    # The start is the first session every name has a close, the one the share counts are bought at
+    # (Codex R-03), and why it is there.
+    firsts = {s: cal[int(np.flatnonzero(np.isfinite(px[:, j]))[0])] for j, s in enumerate(symbols) if np.isfinite(px[:, j]).any()}
+    start = cal[i0]
+    latest_first = max(firsts.values())
+    gap_session = None
+    if start == latest_first:
+        kind = "first_close" if latest_first > min(firsts.values()) else "history"
+        binding = sorted(s for s, d in firsts.items() if d == start)
+    else:
+        kind = "gap"
+        gap_session = cal[i0 - 1]
+        binding = sorted(s for j, s in enumerate(symbols) if not np.isfinite(px[i0 - 1, j]))
+    missing = [cal[i] for i in range(i0, i_end + 1) if not present[i]]
+    rows = rebalance_rows(cal, idx, method)
+
+    # Share counts per holding period, the basket's value on every index session, and contributions.
+    value = np.full(len(cal), np.nan)
     contrib = np.zeros(len(symbols))
-    shares = target * notional / px[0]
-    bounds = rows + [len(dates) - 1]
+    shares = target * notional / px[i0]
     periods = []
     for k, r in enumerate(rows):
         if k > 0:
             shares = target * value[r] / px[r]
-        end = bounds[k + 1]
-        value[r:end + 1] = px[r:end + 1] @ shares
-        contrib += shares * (px[end] - px[r]) / notional
-        periods.append({"from": dates[r], "to": dates[end]})
-    index = 100.0 * value / notional
-    weight_now = shares * px[-1] / value[-1]
+        seg_end = rows[k + 1] if k + 1 < len(rows) else i_end
+        seg = idx[(idx >= r) & (idx <= seg_end)]
+        value[seg] = px[seg] @ shares
+        contrib += shares * (px[seg_end] - px[r]) / notional
+        if seg_end > r:
+            periods.append({"from": cal[r], "to": cal[seg_end]})
+    weight_now = shares * px[i_end] / value[i_end]
+    dates = [cal[i] for i in idx]
+    index = 100.0 * value[idx] / notional
 
-    # Concentration at the last close.
+    # Concentration at the last close; the correlation reads one-session returns every name has (R-02).
     order = np.argsort(-weight_now, kind="stable")
-    rets = simple_returns(px)
-    n_corr = min(CORR_SESSIONS, len(rets))
-    corr = pairwise_mean_corr(rets[-n_corr:]) if n_corr >= CORR_MIN_SESSIONS else None
-    corr_window = {"start": dates[-n_corr - 1], "end": dates[-1], "n": int(n_corr)} if n_corr >= 1 else None
+    rets = np.column_stack([session_returns(px[:, j]) for j in range(len(symbols))])
+    ok = np.flatnonzero(np.all(np.isfinite(rets), axis=1) & (np.arange(len(cal)) <= i_end))
+    n_corr = min(CORR_SESSIONS, len(ok))
+    use = ok[-n_corr:] if n_corr else ok[:0]
+    corr = pairwise_mean_corr(rets[use]) if n_corr >= CORR_MIN_SESSIONS else None
+    corr_window = {"start": cal[int(use[0]) - 1], "end": cal[int(use[-1])], "n": int(n_corr)} if n_corr >= 1 else None
 
     # Liquidity: each name's own last 20 sessions through the index's last session.
     legs = []
     worst: tuple[float, str] | None = None
     for j, s in enumerate(symbols):
         h = histories[s]
-        upto = [i for i, d in enumerate(h.dates) if d <= dates[-1]][-adv_sessions:]
+        upto = [i for i, d in enumerate(h.dates) if d <= cal[i_end]][-adv_sessions:]
         dv = [h.dollar_volume[i] for i in upto]
         have = [v for v in dv if v is not None and math.isfinite(v) and v > 0]
         adv = float(np.mean(have)) if len(have) == adv_sessions else None
@@ -214,10 +261,10 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
             "symbol": s,
             "target_weight": float(target[j]),
             "weight_now": float(weight_now[j]),
-            "first_close": h.dates[0],
-            "price_start": float(px[0, j]),
-            "price_end": float(px[-1, j]),
-            "return": float(px[-1, j] / px[0, j] - 1.0),
+            "first_close": firsts[s],
+            "price_start": float(px[i0, j]),
+            "price_end": float(px[i_end, j]),
+            "return": float(px[i_end, j] / px[i0, j] - 1.0),
             "contribution": float(contrib[j]),
             "shares_now": float(shares[j]),
             "dollars": dollars,
@@ -229,14 +276,17 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
         "method": method,
         "notional": float(notional),
         "start": start,
+        "start_kind": kind,
         "start_binding": binding,
-        "start_is_first_close": later,
-        "end": dates[-1],
+        "start_is_first_close": kind == "first_close",
+        "start_gap_session": gap_session,
+        "end": cal[i_end],
         "sessions": len(dates),
-        "missing_sessions": dropped,
+        "missing_sessions": missing,
+        "off_session": off,
         "rebalances": len(rows),
         "periods": periods,
-        "dates": list(dates),
+        "dates": dates,
         "index": [float(x) for x in index],
         "total_return": float(index[-1] / 100.0 - 1.0),
         "legs": legs,
@@ -266,46 +316,52 @@ WINDOWS = {"1y": 252, "60d": 60}
 RS_MA = 50
 
 
-def paired_returns(y: Mapping[str, float], x: Mapping[str, float]) -> tuple[list[str], np.ndarray, np.ndarray]:
-    """The common dates, and the two series' returns between consecutive common
-    dates (each return dated by its end; one fewer than the dates)."""
-    common = sorted(set(y) & set(x))
-    ly = np.array([y[d] for d in common], dtype=float)
-    lx = np.array([x[d] for d in common], dtype=float)
-    if len(common) < 2:
-        return common, np.empty(0), np.empty(0)
-    return common, ly[1:] / ly[:-1] - 1.0, lx[1:] / lx[:-1] - 1.0
+def paired_returns(y: Mapping[str, float], x: Mapping[str, float], sessions: Sequence[str],
+                   cutoff: str | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """The calendar rows where both series have a one-session return (Codex
+    R-02: each series' returns are taken on the XNYS calendar first, a gap
+    staying missing), and those returns. Rows after `cutoff` are left out."""
+    ry = session_returns(on_calendar(y, sessions))
+    rx = session_returns(on_calendar(x, sessions))
+    ok = np.isfinite(ry) & np.isfinite(rx)
+    if cutoff is not None:
+        ok &= np.array([d <= cutoff for d in sessions])
+    rows = np.flatnonzero(ok)
+    return rows, ry[rows], rx[rows]
 
 
-def regression(y: Mapping[str, float], x: Mapping[str, float], n: int) -> dict:
-    """y's daily returns against x's over the last n common returns: beta
-    (cov / var of x), Pearson correlation, R², each side's annualized
-    volatility (sample standard deviation × √252), and the volatility of
-    `y − beta × x`, what is left after shorting beta of x per unit of y. With
-    fewer than n returns every statistic is None and `reason` says how many
-    there are."""
-    common, ry, rx = paired_returns(y, x)
-    have = len(ry)
+def regression(y: Mapping[str, float], x: Mapping[str, float], n: int, sessions: Sequence[str],
+               cutoff: str | None = None) -> dict:
+    """y's one-session returns against x's over the last n calendar sessions
+    both have a return for: beta (cov / var of x), Pearson correlation, R²,
+    each side's annualized volatility (sample standard deviation × √252), and
+    the volatility of `y − beta × x`, what is left after shorting beta of x per
+    unit of y. With fewer than n such returns every statistic is None and
+    `reason` says how many there are. The window runs from the session before
+    its first return to its last."""
+    cal = list(sessions)
+    rows, ry, rx = paired_returns(y, x, cal, cutoff)
+    have = len(rows)
     if have < n:
-        since = common[0] if common else None
+        since = cal[int(rows[0]) - 1] if have else None
         return {"beta": None, "corr": None, "r2": None, "vol": None, "vol_x": None, "resid_vol": None,
-                "vol_reduction": None, "window": {"start": since, "end": common[-1] if common else None, "n": have},
+                "vol_reduction": None, "window": {"start": since, "end": cal[int(rows[-1])] if have else None, "n": have},
                 "reason": f"needs {n} daily returns; there are {have}" + (f" since {since}" if since else "")}
-    ry, rx = ry[-n:], rx[-n:]
+    rows, ry, rx = rows[-n:], ry[-n:], rx[-n:]
+    window = {"start": cal[int(rows[0]) - 1], "end": cal[int(rows[-1])], "n": n}
     vx, vy = float(np.var(rx, ddof=1)), float(np.var(ry, ddof=1))
     cov = float(np.cov(ry, rx, ddof=1)[0, 1])
     ann = math.sqrt(252.0)
     if vx == 0.0 or vy == 0.0:
         return {"beta": None, "corr": None, "r2": None, "vol": math.sqrt(vy) * ann, "vol_x": math.sqrt(vx) * ann,
-                "resid_vol": None, "vol_reduction": None, "window": {"start": common[-n - 1], "end": common[-1], "n": n},
+                "resid_vol": None, "vol_reduction": None, "window": window,
                 "reason": "one of the two did not move over the window"}
     beta = cov / vx
     corr = cov / math.sqrt(vx * vy)
     resid = float(np.std(ry - beta * rx, ddof=1)) * ann
     vol = math.sqrt(vy) * ann
     return {"beta": beta, "corr": corr, "r2": corr * corr, "vol": vol, "vol_x": math.sqrt(vx) * ann,
-            "resid_vol": resid, "vol_reduction": 1.0 - resid / vol,
-            "window": {"start": common[-n - 1], "end": common[-1], "n": n}, "reason": None}
+            "resid_vol": resid, "vol_reduction": 1.0 - resid / vol, "window": window, "reason": None}
 
 
 def _rolling_mean(v: np.ndarray, w: int) -> np.ndarray:
@@ -363,13 +419,14 @@ def relative_series(sessions: Sequence[str], basket: Mapping[str, float], bench:
 STRESS_MOVE = -0.10
 
 
-def hedge_rows(basket: Mapping[str, float], etfs: Mapping[str, Mapping[str, float]], notional: float) -> list[dict]:
+def hedge_rows(basket: Mapping[str, float], etfs: Mapping[str, Mapping[str, float]], notional: float,
+               sessions: Sequence[str]) -> list[dict]:
     """One row per ETF, ranked: R² over a year first (60 days when no ETF has
     a year), then the ETF's order. Each row carries both windows' fits and
     `basis`, the window its hedge ratio, dollars and volatilities come from."""
     rows = []
     for order, (sym, levels) in enumerate(etfs.items()):
-        fits = {w: regression(basket, levels, n) for w, n in WINDOWS.items()}
+        fits = {w: regression(basket, levels, n, sessions) for w, n in WINDOWS.items()}
         basis = "1y" if fits["1y"]["beta"] is not None else "60d" if fits["60d"]["beta"] is not None else None
         head = fits[basis] if basis else None
         rows.append({
@@ -396,7 +453,7 @@ def hedge_rows(basket: Mapping[str, float], etfs: Mapping[str, Mapping[str, floa
 
 def stress(basket: Mapping[str, float], shocks: Mapping[str, Mapping[str, float]], top: str | None,
            top_levels: Mapping[str, float] | None, top_ratio: float | None, basis: str | None, notional: float,
-           move: float = STRESS_MOVE) -> list[dict]:
+           sessions: Sequence[str], move: float = STRESS_MOVE) -> list[dict]:
     """The basket's P&L if a benchmark moves `move` (−10%), linear in the
     fitted betas over `basis`'s window: unhedged, notional × β(basket,
     benchmark) × move; the hedge, short `top_ratio` × notional of the top
@@ -408,14 +465,14 @@ def stress(basket: Mapping[str, float], shocks: Mapping[str, Mapping[str, float]
         row = {"shock": sym, "move": move, "window": None, "basket_beta": None, "basket_move": None, "unhedged_usd": None,
                "hedge": top, "hedge_beta": None, "hedge_move": None, "hedge_usd": None, "hedged_usd": None, "hedged_move": None}
         if n is not None:
-            fb = regression(basket, levels, n)
+            fb = regression(basket, levels, n, sessions)
             row["window"] = fb["window"]
             if fb["beta"] is not None:
                 row["basket_beta"] = fb["beta"]
                 row["basket_move"] = fb["beta"] * move
                 row["unhedged_usd"] = notional * fb["beta"] * move
                 if top is not None and top_levels is not None and top_ratio is not None:
-                    be = 1.0 if top == sym else regression(top_levels, levels, n)["beta"]
+                    be = 1.0 if top == sym else regression(top_levels, levels, n, sessions)["beta"]
                     if be is not None:
                         row["hedge_beta"] = be
                         row["hedge_move"] = be * move

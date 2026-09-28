@@ -105,7 +105,7 @@ def test_the_index_is_the_engines_and_its_technicals_are_the_shared_function(ser
 
     d = price(legs="NVDA:50,AVGO:50").json()["data"]
     h = {s: desk_basket.history_of(_bars(s)) for s in ("NVDA", "AVGO")}
-    ref = bk.price_basket(h, {"NVDA": 0.5, "AVGO": 0.5})
+    ref = bk.price_basket(h, {"NVDA": 0.5, "AVGO": 0.5}, sessions=desk_basket.calendar_for(h))
     assert d["total_return"] == pytest.approx(ref["total_return"]) and d["start"] == SESSIONS[0]
     assert d["index"]["price"] == pytest.approx(ref["index"][-1]) and d["method"] == "hold" and d["notional"] == 1e6
     # Two years of sessions: the 200-day average is there across the whole one-year chart.
@@ -220,14 +220,15 @@ def test_the_stress_is_linear_in_the_fitted_betas(served):
 
     d = hedge(legs="NVDA:50,AVGO:50").json()["data"]
     h = {s: desk_basket.history_of(_bars(s)) for s in ("NVDA", "AVGO", "QQQ", "SPY", d["top"])}
-    ref = bk.price_basket({s: h[s] for s in ("NVDA", "AVGO")}, {"NVDA": 0.5, "AVGO": 0.5})
+    cal = desk_basket.calendar_for(h)
+    ref = bk.price_basket({s: h[s] for s in ("NVDA", "AVGO")}, {"NVDA": 0.5, "AVGO": 0.5}, sessions=cal)
     level = dict(zip(ref["dates"], ref["index"]))
     top_lv = dict(zip(h[d["top"]].dates, h[d["top"]].close))
     ratio = d["etfs"][0]["hedge_ratio"]
     for s in d["stress"]:
         bench = dict(zip(h[s["shock"]].dates, h[s["shock"]].close))
-        bb = bk.regression(level, bench, 252)["beta"]
-        be = 1.0 if s["shock"] == d["top"] else bk.regression(top_lv, bench, 252)["beta"]
+        bb = bk.regression(level, bench, 252, cal)["beta"]
+        be = 1.0 if s["shock"] == d["top"] else bk.regression(top_lv, bench, 252, cal)["beta"]
         assert s["unhedged_usd"] == pytest.approx(1e6 * bb * -0.1)
         assert s["hedged_usd"] == pytest.approx(1e6 * (bb - ratio * be) * -0.1)
         assert s["hedged_move"] == pytest.approx(s["hedged_usd"] / 1e6)
