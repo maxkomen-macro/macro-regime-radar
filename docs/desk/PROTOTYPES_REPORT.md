@@ -1,18 +1,32 @@
 # PROTOTYPES_REPORT.md — desk/prototypes
 
-Branch `desk/prototypes` (worktree `mrr-proto`), cut from main `4394e59`; head `08d1f7a` before this report.
-One commit per item, a small test commit, then this report. **Nothing is pushed.**
+Branch `desk/prototypes` (worktree `mrr-proto`), cut from main `4394e59`,
+**rebased onto origin/main `83a9f46` (desk/books merged) on 2026-09-28**. One
+commit per item, then the Codex fixes, the Build Notes section, the three
+commits that followed the rebase, and this report. **Nothing is pushed.**
+The shas below are the rebased ones; the pre-rebase shas are in the rebase
+section at the end.
 
 | # | Commit | What |
 |---|---|---|
-| 1 | `d33ea20` | The PROTOTYPE state (spec §1.0.3), `PrototypeFootnote` / `PrototypeCard`, and the three tests |
-| 2 | `2684125` | Technicals "What protection costs right now" |
-| 3 | `10f631b` | Basket & Hedge "Hedge with options" |
-| 4 | `f54ea4c` | Basket & Hedge "Positioning" |
-| 5 | `7aeef07` | Basket & Hedge "Event study on this basket" |
-| 6 | `d1e0ab4` | Data Pipeline "Sync to Snowflake" |
-| 7 | `3f856db` | Build Notes "Prototypes, and how I would build them" |
-| 8 | `08d1f7a` | The prototype page checks wait for a loaded machine; `markers.ts` imports tidied |
+| 1 | `cbb982a` | The PROTOTYPE state (spec §1.0.3), `PrototypeFootnote` / `PrototypeCard`, and the three tests |
+| 2 | `a3e4936` | Technicals "What protection costs right now" |
+| 3 | `ef251ed` | Basket & Hedge "Hedge with options" |
+| 4 | `0a41e0d` | Basket & Hedge "Positioning" |
+| 5 | `53e865e` | Basket & Hedge "Event study on this basket" |
+| 6 | `061cea3` | Data Pipeline "Sync to Snowflake" |
+| 7 | `1669d86` | Build Notes "Prototypes, and how I would build them" |
+| 8 | `cff82f2` | The prototype page checks wait for a loaded machine; `markers.ts` imports tidied |
+| 9 | `d673f3f` | This report's first version, its shots, the CLAUDE.md note |
+| R-01 | `d715c36` | Positioning says what its figures cover (Codex) |
+| R-02 | `397a10c` | Hedge with options prices each structure only inside its domain (Codex) |
+| R-03 | `8a95386` | The protection prototype stands only in a not-yet-served vol block (Codex) |
+| 10 | `5fe3b73` | Build Notes "How this was built" |
+| 11 | `144b1e3` | Its wording, to what the gates were |
+| 12 | `dbfcdfa` | **After the rebase:** Hedge with options reads step 3's served `/basket/hedge` answer, in desk/books' options slot |
+| 13 | `5e9a559` | **After the rebase:** Data Pipeline's subtitle, Build Notes' two sentences, Positioning's "(illustrative)" headers |
+| 14 | `09f9b36` | **After the rebase:** those headers keep Positioning's table inside its card |
+| 15 | this commit | The report's rebase section, the live shots |
 
 ## What a PROTOTYPE card is (spec §1.0.3)
 
@@ -76,19 +90,25 @@ instrument draws the LIVE card (§12.7 says every field is the S&P's).
 
 ### 3 · Basket & Hedge "Hedge with options" (`OptionsHedgeCard`)
 
-The hedge's step 3, under the two cards, for the basket open (none when no
-basket is saved). The inputs row, `● from your basket · live`, reads the
-basket engine's fields as desk/books serves them in `GET /basket/hedge`
-(§12.15 on that branch): NOTIONAL `$1.0M` (`notional`), TOP HEDGE ETF `XLK`
-(`top`, "first of 8 by R², ahead of SMH at 0.68"), HEDGE RATIO `1.38` (that
-row's `hedge_ratio`), R² `0.69` (its `r2_1y`, 252 sessions to Sep 23). Until
-desk/books is on main, those come from `proto-books-basket.json`, desk/books'
-own fixture answer for the sample basket (real Yahoo closes); any other
-basket reads "Awaiting refresh" and nothing is priced.
+In desk/books' step 3, in its options slot (`data-slot="hedge-options"`,
+`BasketHedgeStep.tsx`), across the step's width under the ETF hedge and the
+stress test. The inputs row, `● from your basket · live`, reads the step's own
+`GET /basket/hedge` answer (§12.16), the one the ETF table and the stress
+test print, through `inputsFrom`: NOTIONAL (`notional`), TOP HEDGE ETF
+(`top`, "first of 8 by R², ahead of <next> at <its R²>"), HEDGE RATIO (that
+row's `hedge_ratio`), R² (that row's, on its `basis` window, with the
+window), and `basket_vol` in Advanced. While the answer is on its way the row
+reads "Awaiting refresh" and nothing is priced; an answer with no top pick
+prices nothing and says so; with no answer to read (no basket saved at
+exactly 100%, or the request failed) the slot keeps desk/books' plain reason.
+On a local API over real EODHD closes the row read `$1.0M · SOXX · 1.10 ·
+0.86` for the preset (see "After the rebase" below).
 
 Three routes, each as a 1M 95 put, a 3M 95 put and a 1M 95/85 put spread,
 with cost in % and $ of notional, breakeven (the basket's fall by expiry
-that repays the premium) and the payoff at expiry if the basket falls 10%:
+that repays the premium) and the payoff at expiry if the basket falls 10%.
+For the sample basket on the fixture server's answer (desk/books'
+`basket-hedge.json`, real Yahoo closes through Sep 23: XLK, 1.38, R² 0.69):
 
 | Route | 1M 95 put | 3M 95 put | 1M 95/85 spread | at −10% |
 |---|---|---|---|---|
@@ -120,7 +140,9 @@ SHORT INTEREST 5.3% of float weighted, DAYS TO COVER 1.8, CROWDED 4 of 7
 covers ("weighted over all 7 names"; for a basket with other names "weighted
 over 50% of the basket (1 of 2 names)"), a name without data reads "no
 data" and is in no count, and a figure with no covered weight is "—" with
-the reason (Codex R-01). Footnote: "…In production: exchange short-interest
+the reason (Codex R-01). The three illustrative numeric columns' headers end
+"(illustrative)", on a line of their own under the column's name (weight is
+the basket's own). In step 3, below the options slot, left. Footnote: "…In production: exchange short-interest
 files, OCC open interest, 13F holdings."
 
 ### 5 · Basket & Hedge "Event study on this basket" (`BasketStudyCard`)
@@ -133,7 +155,9 @@ month), MEDIAN AT A MONTH +3.1% vs +2.2%, VERDICT Suggestive, which is §1.5's
 rule v1 applied to the card's own numbers (40 ≥ 10; interval −1.4% to +3.6%
 spans zero, so no exclusion; the excess leans up at 5, 10 and 20). The why
 line in §12.2's template; the index from Jun 2014, names joining as they
-list. Drawn for the sample basket alone. Footnote: "…In production: the
+list. Drawn for the sample basket alone (its legs now travel in
+`proto-basket-study.json`, pinned equal to `baskets.json`'s first basket by a
+test). In step 3, below the options slot, right. Footnote: "…In production: the
 existing engine run on the basket index series."
 
 ### 6 · Data Pipeline "Sync to Snowflake" (`SnowflakeSyncCard`)
@@ -178,6 +202,9 @@ must not conflict"), the build and the same pytest files; the full pytest
 and the full Desk e2e ran once, at the head, under
 `/tmp/mrr-full-gates.lock`.
 
+These rows gated the pre-rebase commits (their shas; the map is in the
+rebase section). The rebased head's gates follow the table.
+
 | # | Commit | tsc | vitest | build | Desk e2e (fixtures) | pytest |
 |---|---|---|---|---|---|---|
 | 1 | `d33ea20` | ok | 125 files, 1,546/1,546 ¹ | ok | 55/55 | full: 1,588 passed, 2 failed (the known `test_asset_history` pair) |
@@ -190,7 +217,22 @@ and the full Desk e2e ran once, at the head, under
 | 8 | `08d1f7a` | ok | 131 files, 1,588/1,588 (2 workers) | ok | (at the head, below) | desk files: 656/656 (after the memory pause, load about 4) |
 | head | `08d1f7a` | | | build ok | **56/56**, `--workers=1`, under the lock | **full: 1,588 passed, 2 failed (the known `test_asset_history` pair)**, single process, under the lock |
 
-The final run held `/tmp/mrr-full-gates.lock` from 21:03 to 21:14 (full
+**At the rebased code head `09f9b36`** (2026-09-28; the report commit after
+it changes only this file and PNGs under `docs/desk/shots/`):
+
+| Gate | Result |
+|---|---|
+| tsc | ok |
+| vitest, `--maxWorkers=2 --minWorkers=1` | 134 files, 1,662/1,662 |
+| build | ok |
+| full pytest (single process, `--ignore=tests/test_streamlit_backports.py`), under the lock | 1,766 passed, 1 skipped, 2 failed: the known `test_asset_history` DB-copy pair (`…the_endpoint_says_the_histories_are_not_stored`, `…validate_requires_the_table_in_full_mode_only`) |
+| full Desk e2e, `--workers=1`, `DESK_FIXTURES=1 vite` from a `git archive` of `09f9b36` (listener cwd checked), under the lock | **57/57** |
+
+The lock was held 00:47 to 01:00 (pytest 10 min 44 s, e2e 2 min 24 s) and
+released; no test process of this session was left running. Nothing failed
+under load that passed alone this time (load average about 6).
+
+Before the rebase, the final run held `/tmp/mrr-full-gates.lock` from 21:03 to 21:14 (full
 pytest 8 min 36 s, the Desk e2e 2 min 23 s) and released it; no test
 process of this session was left running.
 
@@ -225,7 +267,8 @@ them 8 s and the test 30 s.
    exactly those fields (`inputsFrom`). An earlier draft of item 3 used a
    guessed shape (SMH, $10M) and then §12.14's QQQ/SPY betas; both were
    replaced before the commit, which is why item 3 was re-committed on
-   item 2 (nothing had been pushed).
+   item 2 (nothing had been pushed). After the rebase the stand-in is gone
+   and `inputsFrom` reads the served answer (commit 12).
 2. **Strikes on the ETF route.** "A 1M put … a 1M 95/85 put spread" on an ETF
    the basket moves 1.38 times would, at 95% of the ETF, protect the basket
    only below −6.9% before premium and pay 3.1% at −10% (the basket put
@@ -235,22 +278,24 @@ them 8 s and the test 30 s.
    basket level and differ in cost, coverage and basis risk. Advanced says so.
 3. **Where the options card sits.** desk/books puts the page in three steps and
    leaves an `OptionsSlot` titled "Hedge with options" with
-   `data-slot="hedge-options"` in step 3. That layout is not on main, so on
-   this branch the card sits under the two cards; at the rebase it replaces
-   `OptionsSlot`.
+   `data-slot="hedge-options"` in step 3. Before the rebase that layout was
+   not on main, so the card sat under the two cards; now it fills the slot
+   while the step has an answer to read, and `OptionsSlot` keeps the slot
+   otherwise.
 4. **"Nothing is synthetic."** Data Pipeline's subtitle (§11's exact words,
    "Every panel in Desk resolves to a row here. Nothing is synthetic; nothing
-   is re-derived in the browser.") now sits above a PROTOTYPE card whose
-   values are illustrative and computed in the browser. The tree's words are
-   kept; spec §1.0.3 rule 7 scopes such claims to the served panels. Owner
-   call below.
+   is re-derived in the browser.") sat above a PROTOTYPE card whose values
+   are illustrative and computed in the browser. Reworded by the owner at the
+   rebase (commit 13): "Every live number comes from stored data; prototype
+   cards are marked." The subtitle's third sentence, "Nothing is re-derived
+   in the browser.", stays (see the open calls).
 5. **Build Notes' own sentences.** The owner's section "What's live, and why
    the rest isn't yet" says of options "A number without that isn't
    auditable, so there isn't one" and of basket pricing "It's absent until
-   it's right." Both now read beside illustrative numbers. They are the
-   owner's prose, so they are kept; the new section, placed right after them,
-   says the prototypes change nothing in the list and none of their numbers
-   is served. Owner call below.
+   it's right; the card has its slot on the page." Both read beside
+   illustrative numbers. Reworded by the owner at the rebase (commit 13):
+   each now reads "Where a number isn't computed yet, the card says so or is
+   a marked prototype."
 6. **§1.0.1's lists** (printed word for word by Build Notes) are unchanged: a
    prototyped block stays "Designed, not yet served" (§1.0.3 rule 7).
 7. **"No fixture value appears outside a PROTOTYPE card in the production
@@ -279,10 +324,11 @@ them 8 s and the test 30 s.
     column to be the PROTOTYPE; the Basket test finds the basket card with
     `exact: true` (the prototype cards' names contain "basket").
 12. **Positioning after the rebase** keeps working for any basket (a name
-    without an illustrative row shows none); the event study is drawn for
-    the sample basket only and says so for any other.
+    without an illustrative row reads "no data"); the event study is drawn
+    for the sample basket only and says so for any other, including the
+    preset desk/books now seeds (see the open calls).
 
-## Run against the real API (definition of done)
+## Run against the real API, before the rebase (definition of done)
 
 Setup: a `git archive` of item 7's tree (commit 8 changes only a test and an
 import order, nothing that renders) served by Vite **without**
@@ -300,7 +346,7 @@ before this branch; `real-*` are this branch on the real API).
 |---|---|---|
 | Technicals · What protection costs right now | **PROTOTYPE** | Render serves `/technicals` with `vol` awaiting ("needs stored SPY option snapshots and a versioned skew method."), so the prototype stands in the column beside the live price (7,743, Sep 25), averages and signals; no badge, footnote last. The LIVE card's path (a served vol block) is unchanged but cannot be exercised: no API serves the block. `real-technicals-page.png`, `real-technicals-protection.png` |
 | Basket & Hedge · Hedge with options: the three routes | **PROTOTYPE** | Priced in the browser at the stated vols; footnote last. `real-basket-options-hedge.png`, `real-basket-page.png` |
-| Basket & Hedge · Hedge with options: the inputs row "from your basket · live" | **FAILED** | It shows $1.0M, XLK, 1.38, 0.69 on the real API, but those come from `proto-books-basket.json`, not from the API: the deployed API (main) has no basket engine: `/api/desk/basket/hedge` and `/api/desk/basket/price` both answer the awaiting stub ("basket pricing and option structures not yet defined in the engine.", the first through `/basket/:id`), and the page made no `/basket/*` request. The values are desk/books' real-closes fixture for this basket, but a row labelled live that works only with a fixture counts as FAILED. It becomes LIVE at the rebase onto desk/books once that is deployed (see the rebase list). |
+| Basket & Hedge · Hedge with options: the inputs row "from your basket · live" | **FAILED** | It shows $1.0M, XLK, 1.38, 0.69 on the real API, but those come from `proto-books-basket.json`, not from the API: the deployed API (main) has no basket engine: `/api/desk/basket/hedge` and `/api/desk/basket/price` both answer the awaiting stub ("basket pricing and option structures not yet defined in the engine.", the first through `/basket/:id`), and the page made no `/basket/*` request. The values are desk/books' real-closes fixture for this basket, but a row labelled live that works only with a fixture counts as FAILED. Superseded after the rebase: **LIVE-verified** on a local API (the section after the rebase). |
 | Basket & Hedge · Positioning | **PROTOTYPE** | `real-basket-positioning.png` |
 | Basket & Hedge · Event study on this basket | **PROTOTYPE** | `real-basket-study.png` |
 | Data Pipeline · Sync to Snowflake | **PROTOTYPE** | Last run, and a replay caught at the merge step. `real-pipeline-snowflake-sync.png`, `real-pipeline-snowflake-sync-replay.png`, `real-pipeline-page.png` (the live inventory, 22 series, and the header "Last full refresh Sep 27, 17:28 UTC · validation passed" from Render beside it) |
@@ -317,32 +363,84 @@ other eight 0). The console showed two things that predate this branch: the
 dev server's `snapshot/latest.json` 404, and a React setState warning in
 Position Monitor.
 
-## At the rebase onto desk/books
+## The rebase onto origin/main `83a9f46` (desk/books merged)
 
-desk/books (tip `125258c` when this was written; its §12.15, the
-`hedge-options` slot and its fixture answer for the sample basket are the
-ones this branch copies, checked byte for byte) and this branch
-both change `docs/desk/DESK_FRAME3_SPEC.md`, `web/e2e/desk.spec.ts`,
-`web/src/fixtures/desk/PROVENANCE.md`, `BasketHedgePage.tsx` and its test,
-`EventStudyPage.test.tsx` (this branch: the revoke wait), `TechnicalsPage.tsx`
-(desk/books moved the chart to `kit/TrendChart`; this branch changed the vol
-column) and `web/src/styles/desk2.css`. At the rebase:
+`git fetch origin && git rebase origin/main`, 2026-09-28. Fourteen commits
+replayed; seven stopped on conflicts. "Main" below is `83a9f46`'s side.
 
-1. In desk/books' `BasketHedgeStep.tsx`, replace `OptionsSlot` with
-   `OptionsHedgeCard`, passing step 3's `useBasketHedge` answer; in
-   `OptionsHedgeCard`, take the inputs from `inputsFrom(answer, basket)`
-   instead of `basketInputs(basket)`. Delete `proto-books-basket.json`,
-   `basketInputs` and `sampleBasket`'s use of the stand-in, and the
-   stand-in's rows in PROVENANCE and the tests; keep the card's
-   `data-prototype`, its footnote and the "from your basket · live" row.
-   Then the row is LIVE for every saved basket and the "Awaiting refresh"
-   state follows the served answer.
-2. Put Positioning and the basket event study in step 3 (or a fourth step)
-   under the options card; they need no served input.
-3. Re-run `prototypes.test.tsx`: its import scan will flag a LIVE module that
-   reads the stand-in if one is left behind.
-4. Re-run the real-API check above with desk/books deployed: the inputs row
-   is then LIVE-verified or it is not.
+| Replayed commit | Conflicted file | Resolution |
+|---|---|---|
+| 1 PROTOTYPE state | `web/src/screens/desk/event-study/EventStudyPage.test.tsx` | **Main's file, whole.** Both sides fixed the same leak (the export test's `URL.revokeObjectURL` stub restored while the download's revoke timer was pending): this branch waited for the revoke, main's timer-leak fix covers it. Main's fix is kept; the file is identical to main's. |
+| 2 Technicals | `web/src/screens/desk/technicals/TechnicalsPage.tsx` | Main's code (desk/fill-etf's sectors, desk/fill-compute's RSI, MACD, seasonality, desk/books' `kit/TrendChart`) plus this branch's vol-column switch; the header comment names both. |
+| | `…/TechnicalsPage.test.tsx` | Main's tests, with this branch's vol assertions merged into main's "vol awaiting, sectors ready" test: the vol column is the PROTOTYPE, the sector card reads its bars. |
+| | `docs/desk/DESK_FRAME3_SPEC.md` | This branch's vol row; main's LIVE rows for sector bars, RSI, MACD and seasonality. |
+| | `web/src/fixtures/desk/PROVENANCE.md` | Both sides' rows. |
+| | `web/e2e/desk.spec.ts` | Main's Technicals test, with the vol column checked as the PROTOTYPE. |
+| 3 Hedge with options | `web/src/screens/desk/basket/BasketHedgePage.tsx` | **Main's page** (the three steps, named baskets, the preset, `?add=`, `BasketTrades`, `BasketHedgeStep`); this branch's under-the-cards block dropped. The card mounts in desk/books' slot instead: `BasketHedgeStep.tsx` (not conflicted) takes the saved basket and renders `OptionsHedgeCard` in `data-slot="hedge-options"`. Header comment extended. |
+| | `docs/desk/DESK_FRAME3_SPEC.md` | Main's two LIVE basket rows; main's "Hedge with options UNAVAILABLE" row replaced by the PROTOTYPE row (inputs LIVE from the basket engine). |
+| | `web/e2e/desk.spec.ts` | Main's Basket test; its "the options slot is plain" lines now check the slot holds the PROTOTYPE (its one button, Advanced, acts; three routes; no badge). Title updated. |
+| 4 Positioning | `BasketHedgePage.tsx`, the spec, `desk.spec.ts` | Positioning renders in step 3 below the slot (`pr-below`), for the basket open; spec row "(step 3, below the options slot)"; the e2e check scoped to step 3. |
+| 5 Event study on this basket | `BasketHedgePage.tsx`, the spec | Beside Positioning in step 3. The auto-merge left the card's import twice; folded into this commit by a fixup, so no commit fails to compile. |
+| R-03 | `TechnicalsPage.tsx`, the spec | R-03's header words over main's (MACD and seasonality kept); R-03's vol row over the merged table, main's four LIVE rows kept. |
+
+The other seven commits (6, 7, 8, 9, R-01, R-02, 10, 11) applied cleanly.
+Sha map, pre-rebase → rebased: `d33ea20`→`cbb982a`, `2684125`→`a3e4936`,
+`10f631b`→`ef251ed`, `f54ea4c`→`0a41e0d`, `7aeef07`→`53e865e`,
+`d1e0ab4`→`061cea3`, `3f856db`→`1669d86`, `08d1f7a`→`cff82f2`,
+`24daa38`→`d673f3f`, `fffb83d`→`d715c36`, `e553dfa`→`397a10c`,
+`abaf9ed`→`8a95386`, `f440b42`→`5fe3b73`, `9952f77`→`144b1e3`.
+
+Then, as asked, three new commits:
+
+- **12 `dbfcdfa`, the inputs row on the served answer.** `OptionsHedgeCard`
+  takes step 3's `useBasketHedge` answer and reads it through `inputsFrom`;
+  `BasketHedgeStep` shows the card while that answer is on its way or has
+  answered, and desk/books' `OptionsSlot` (its reason) when there is none to
+  read. The card spans the step (`.pr-options-slot`). Deleted:
+  `proto-books-basket.json`, `basketInputs`, the stand-in's PROVENANCE row
+  and tests. The sample basket the event study is drawn for moved into
+  `proto-basket-study.json`; the options markers are priced from the fixture
+  server's answer. New tests: `inputsFrom` on the served answer (and on a
+  missing answer, top, ratio, notional or window), the card's three input
+  states, R-02's 0.10 case built from a served answer, the page's slot both
+  ways, main's step-3 test on the new slot.
+- **13 `5e9a559`, the owner's wording.** Data Pipeline: "Nothing is
+  synthetic" → "Every live number comes from stored data; prototype cards
+  are marked." (`desk-sections.ts`, spec §1.0.3 rule 7 and §11). Build
+  Notes: "A number without that isn't auditable, so there isn't one." and
+  "It's absent until it's right; the card has its slot on the page." → each
+  "Where a number isn't computed yet, the card says so or is a marked
+  prototype." Positioning: "(illustrative)" on short interest, days to cover
+  and put/call OI. The "How this was built" section is unchanged.
+- **14 `09f9b36`, a layout fix found on the live run.** At 1440 the new
+  headers and the preset's longer company names ran Positioning's table 76 px
+  past its half-width card, cutting off the Crowding flags. The note now sits
+  under the column's name in lowercase sans, and a company name wraps under
+  its ticker. Measured live: 563 px of table in a 563 px box.
+
+## After the rebase: run against a local API (definition of done)
+
+Render still serves main before desk/books (`/api/desk/basket/hedge` answers
+the awaiting stub, engine `23014d0`), so this branch's API ran locally
+(`127.0.0.1:8397`, the published DB copy in `data/`) through desk/books'
+harness: its EODHD client's transport relays each daily-bar request to
+Render's real EODHD bars (`/api/market/candles/{SYM}?range=1Y`), since the
+token lives only on Render. The web app ran from this worktree with Vite
+**without** `DESK_FIXTURES`, proxying to it (`VITE_PROXY_TARGET`, port 5397;
+both listeners' working directories checked). One year of bars means the
+hedge is ranked on 60 sessions, and the card says so. A fresh browser gets
+desk/books' preset; the sample basket was then saved as a visitor would.
+
+| Card | Verdict | Evidence |
+|---|---|---|
+| Basket & Hedge · Hedge with options: the inputs row "from your basket · live" | **LIVE-verified** | Preset: the page's `/basket/hedge` answer was `ready`, EODHD, prices Sep 25, notional 1,000,000, top SOXX, hedge ratio 1.0998, basis 60d, R² 0.8624, window Jul 1 to Sep 25 (60), basket vol 57.7%; the row printed "$1.0M · AI Infrastructure 10 · SOXX, first of 8 by R², ahead of SMH at 0.84 · 1.10 · 0.86, 60 sessions to Sep 25". Sample basket: SMH, 0.9124, R² 0.7345 served; "SMH … ahead of SOXX at 0.68 · 0.91 · 0.73" printed. The page loaded no `basket-hedge.json` (its only fixture modules were the three `proto-*.json` the prototypes own). `live-preset-options-hedge-1440.png`, `live-preset-options-hedge-390.png`, `live-sample-options-hedge-1440.png`, `live-preset-step3-1440.png` |
+| Basket & Hedge · Hedge with options: the three routes | **PROTOTYPE** | Priced in the browser from the live inputs (for the preset: puts on SOXX, strikes 95.5%/86.4% of SOXX; NVDA, AVGO, AMD at 30%; the OTC put); footnote last. Same shots. |
+| Basket & Hedge · Positioning (headers, layout) | **PROTOTYPE** | Headers "Short int. (illustrative)", "Days to cover (illustrative)", "Put/call OI (illustrative)"; the preset's four names without a row read "no data" (6 of 10 covered, and the figures say so). `live-preset-positioning-1440.png`, `live-sample-positioning-1440.png` |
+| Basket & Hedge · Event study on this basket | **PROTOTYPE** | Filled for the sample basket; for the preset it keeps its labels and names the sample (`live-preset-step3-1440.png`). |
+| Data Pipeline · subtitle | **LIVE-verified** | "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. Nothing is re-derived in the browser." `live-pipeline-subtitle.png` |
+| Build Notes · the two sentences | **LIVE-verified** | Both bullets read "Where a number isn't computed yet, the card says so or is a marked prototype." (2 matches on the page, rendered from the file). `live-build-notes-two-sentences.png` |
+
+No card touched by the rebase or after it is FAILED.
 
 ## Codex round on 24daa38 (DO NOT PUSH, three findings)
 
@@ -359,20 +457,24 @@ the rebase onto desk/books).
 
 ## Open for the owner
 
-1. **Merge order.** Do not merge this branch before desk/books: its inputs
-   row says "live" and, until the rebase, reads a stand-in (the FAILED row
-   above). Rebase onto desk/books, switch `inputsFrom` on, re-run the gates
-   and the real-API check with desk/books deployed.
-2. **Data Pipeline's subtitle**, "Nothing is synthetic; nothing is re-derived
-   in the browser.", now sits above a prototype. Keep (the rule scopes it to
-   served panels), or reword to cover the prototype.
-3. **Build Notes' two sentences** ("…so there isn't one.", "It's absent
-   until it's right.") read against the prototype cards. The new section
-   reconciles them; reword if you prefer.
+1. **Merge.** desk/books is merged and this branch sits on it; the inputs row
+   is LIVE-verified on a local API. On Render it goes live when main with
+   desk/books is deployed there (Render serves `23014d0` today).
+2. **The preset and two prototypes.** desk/books seeds "AI Infrastructure 10"
+   on a first visit. The event study is drawn only for the 7-name sample
+   basket, so on the preset it shows its labels and names a basket the
+   visitor does not have (the file is `web/src/fixtures/desk/baskets.json`,
+   importable); Positioning has no row for AMD, TSM, MU or NBIS and says so.
+   Redrawing both for the preset is a fixture change, not done here.
+3. **"Nothing is re-derived in the browser."** The subtitle's last sentence
+   now follows "prototype cards are marked", but the options card is priced
+   in the browser. Rule 7 scopes it to live numbers; reword if you prefer
+   ("No live number is re-derived in the browser.").
 4. **Illustrative numbers on real tickers.** Positioning prints short
    interest and 13F shares for NVDA, AVGO, CRWV and the rest; they are
-   illustrative, footnoted as such, and could be mistaken for facts in a
-   screenshot without its footnote.
+   illustrative, now marked in the column headers as well as the footnote.
 5. **Wording I chose:** the footnote lines for "Hedge with options" and "Sync
-   to Snowflake" (the brief gave the other three), and the effort estimates
-   in Build Notes.
+   to Snowflake" (the brief gave the other three), the effort estimates in
+   Build Notes, and the two empty states of the options card ("Nothing is
+   priced until the basket's inputs arrive.", "The ETF hedge names no top
+   pick for this basket, so nothing is priced.").
