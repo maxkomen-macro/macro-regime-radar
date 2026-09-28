@@ -225,11 +225,26 @@
     null
    ]
   ],
+  "horizon": 60,
   "window": {
    "start": "2026-07-02",
    "end": "2026-09-25",
    "n": 60
   },
+  "coverage": [
+   60,
+   null,
+   60,
+   null,
+   null,
+   null,
+   60,
+   60,
+   60,
+   60,
+   null,
+   null
+  ],
   "lead": {
    "text": "The highest pair is IEF and LQD at +0.96 and the lowest SPY and GLD at +0.37.",
    "rule": "matrix-lead-v1",

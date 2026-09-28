@@ -151,3 +151,59 @@ rebuilds the repro from the finding's description.
 Still open (not a finding): a stored asset whose valid closes all predate
 another's first close leaves no common session, and the block awaits. Which
 asset to set aside then is a policy call I haven't made.
+
+## Rebase onto origin/main `83a9f46` (2026-09-28)
+
+Codex returned PUSH OK on R-01 to R-03. I ran `git fetch origin && git rebase
+origin/main`, with the pre-rebase head kept as
+`backup/matrix-pre-rebase-e4c4dd8`.
+
+**The tree differs from the instruction.** The owner wrote that
+desk/prototypes and desk/usability are merged. After the fetch, origin/main
+is `83a9f46`, the desk/books merge (#11), and `git ls-remote` agrees.
+Neither branch is in it:
+- desk/prototypes (`3ae4a22`) sits on top of `83a9f46` locally but is not
+  merged.
+- desk/usability is being rebased onto `83a9f46` in another worktree
+  (`mrr-usability`, interactive rebase in progress).
+
+So this rebase is onto `83a9f46`. U's no-dead-control guard and page purpose
+lines are not in this tree, and can't be checked against Macro yet. Macro
+carries no disabled control (`b1ba2a2`) and no Advanced control on the
+correlation card. The matrix card has none either.
+
+**Conflicts, and how each was resolved:**
+
+| File | Commit replayed | Conflict | Resolution |
+|---|---|---|---|
+| `docs/desk/BUILD_NOTES.md` | `5dab92e` (the matrix) | "What I'd build next": desk/books reworded the options clause ("the vol card and the options hedge on a basket can go live"); this branch removed "the 12-asset correlation matrix" from the list | desk/books' wording, without the matrix |
+| `web/src/fixtures/desk/PROVENANCE.md` | `5dab92e` | the fixture table: desk/books added the `basket-price.json`/`basket-hedge.json` row beside the deferred-shapes row this branch rewrote (`vol.json` only, `deferred-macro.json` removed) | both rows: this branch's `vol.json` row, then desk/books' basket row |
+| `docs/desk/BUILD_NOTES.md` | `b1ba2a2` (no Advanced control) | the same sentence again: this branch adds the rolling-window and by-regime correlations | desk/books' options wording plus this branch's item |
+
+Everything else merged without conflict. After the rebase I checked the
+seams by hand:
+- the pipeline's reader lists and `NO_LIVE_READER`;
+- the spec's §12 numbering, where desk/books added §12.15 and §12.16 and
+  §12.8 and §12.13 are unchanged;
+- the envelope's deferred tables.
+
+The fixtures, rebuilt on the fixture store at the rebased head, differ from
+the committed ones by zero bytes, and the fixture-store parity test passes.
+
+**Commit map:**
+
+| Before | After |
+|---|---|
+| `5dab92e` | `5b03d5b` |
+| `3aab397` | `6bc4290` |
+| `b1ba2a2` | `ea9a5ef` |
+| `effcd04` | `c125e20` |
+| `9f4f81d` | `80d7a99` |
+| `e4c4dd8` | `3b615a5` |
+
+**Shots retaken** on `3b615a5` against the local API, for both runs. Each
+`<run>-macro.json` now carries `horizon`, `window.n` and `coverage`:
+- `post-refresh`: horizon 60, window Jul 2 to Sep 25 with n 60, coverage 60
+  for all twelve, 144 cells with 0 mismatches.
+- `pre-refresh`: the six assets not yet stored have null coverage, and the
+  other six have 60.

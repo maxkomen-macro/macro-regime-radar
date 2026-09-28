@@ -200,11 +200,26 @@
     1
    ]
   ],
+  "horizon": 60,
   "window": {
    "start": "2026-07-02",
    "end": "2026-09-25",
    "n": 60
   },
+  "coverage": [
+   60,
+   60,
+   60,
+   60,
+   60,
+   60,
+   60,
+   60,
+   60,
+   60,
+   60,
+   60
+  ],
   "lead": {
    "text": "Treasuries are not hedging equities (SPY and TLT at +0.48); the highest pair is IEF and LQD at +0.96 and the lowest SPY and ^VIX at −0.74.",
    "rule": "matrix-lead-v1",
