@@ -34,4 +34,16 @@ describe("the basket the prototypes are drawn for", () => {
     // The fixture tests' sample basket is another basket.
     expect(isDrawnFor((baskets as { baskets: SavedBasket[] }).baskets[0].legs)).toBe(false);
   });
+
+  it("Codex R-04: ten legs at 10% are not enough; a symbol twice is another basket", () => {
+    // Codex's repro: "NVDA only", ten NVDA legs at 10%.
+    expect(isDrawnFor(Array.from({ length: 10 }, () => ({ symbol: "NVDA", weight: "10" })))).toBe(false);
+    // Nine of the preset's names with one of them twice, and the tenth missing.
+    const legs = PRESET.legs.map((l) => ({ symbol: l.symbol, weight: l.weight }));
+    expect(isDrawnFor([...legs.slice(0, 9), { symbol: "NVDA", weight: "10" }])).toBe(false);
+    // The preset plus a duplicate of one of its names.
+    expect(isDrawnFor([...legs, { symbol: "AMD", weight: "10" }])).toBe(false);
+    // A weight that is not a number never matches.
+    expect(isDrawnFor(legs.map((l, i) => (i === 0 ? { ...l, weight: "ten" } : l)))).toBe(false);
+  });
 });

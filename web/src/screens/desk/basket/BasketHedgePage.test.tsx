@@ -621,6 +621,30 @@ describe("Event study on this basket (PROTOTYPE, §1.0.3): as an Event Study ans
   });
 });
 
+describe("Codex R-04: a basket that repeats a symbol is not the preset", () => {
+  it("ten NVDA legs imported as \"NVDA only\": both prototypes print the one line and no figure", async () => {
+    renderTab();
+    await loaded();
+    const b = basketCard();
+    const nvdaOnly = { id: "local-1", name: "NVDA only", legs: Array.from({ length: 10 }, () => ({ symbol: "NVDA", name: "NVIDIA", weight: "10" })), saved_at: "2026-09-28T00:00:00Z" };
+    const json = JSON.stringify({ kind: "mrr.desk.baskets", version: 1, baskets: [nvdaOnly] });
+    const file = new File([json], "nvda-only.json", { type: "application/json" });
+    // jsdom's File has no text(); a browser's does.
+    Object.defineProperty(file, "text", { value: () => Promise.resolve(json) });
+    fireEvent.change(within(b).getByLabelText("Import saved baskets"), { target: { files: [file] } });
+    await waitFor(() => expect(stored().map((x) => x.name)).toEqual(["AI Infrastructure 10", "NVDA only"]));
+    fireEvent.change(within(b).getByLabelText("Basket"), { target: { value: stored()[1].id } });
+    await waitFor(() => expect(within(basketCard()).getByLabelText("Basket")).toHaveDisplayValue("NVDA only"));
+    for (const name of [/^Positioning/, /^Event study on this basket/]) {
+      const c = await screen.findByRole("region", { name });
+      await waitFor(() => expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset."));
+      expect(within(c).queryByRole("table")).toBeNull();
+      expect(within(c).queryByRole("img")).toBeNull();
+      expect(c.textContent).not.toMatch(/\d%|of float|names with data|Crowded (long|short)|Suggestive|falls 2σ over 5 days, it was/);
+    }
+  });
+});
+
 describe("Codex R-01: Positioning never prints NaN or counts a name without data (the probes are other baskets now)", () => {
   const basket = (legs: { symbol: string; name: string | null; weight: number }[]) => [{ id: "local-1", name: "Probe", legs, saved_at: "2026-09-22T20:00:00Z" }];
 

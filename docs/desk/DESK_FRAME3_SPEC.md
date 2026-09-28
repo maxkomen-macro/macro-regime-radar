@@ -1049,9 +1049,10 @@ basket."
 Both cards below are drawn for desk/books' first-visit preset, AI
 Infrastructure 10 (NVDA AVGO AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each;
 `web/src/screens/desk/prototypes/drawn-for.ts`), so a first visit sees every
-name with illustrative values. A basket is the preset when it holds those
-names at those weights, in any order; its name, method and notional do not
-decide it. Any other basket keeps each card's title, stat labels (valued
+name with illustrative values. A basket is the preset only when its legs are
+exactly that symbol–weight mapping: ten unique symbols, each at 10%, in any
+order; a symbol held twice is another basket (Codex R-04). Its name, method
+and notional do not decide it. Any other basket keeps each card's title, stat labels (valued
 "—") and footnote, and prints one line: "Illustrative values are shown for
 the AI Infrastructure 10 preset."
 

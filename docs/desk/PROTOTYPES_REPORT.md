@@ -28,7 +28,8 @@ section at the end.
 | 14 | `09f9b36` | **After the rebase:** those headers keep Positioning's table inside its card |
 | 15 | `3ae4a22` | The report's rebase section, the live shots |
 | 16 | `0bcb5d4` | **Before review:** Positioning and the event study drawn for the AI Infrastructure 10 preset; one line for any other basket |
-| 17 | this commit | **Before review:** Data Pipeline's subtitle ends "No live number is re-derived in the browser." |
+| 17 | `09d2111` | **Before review:** Data Pipeline's subtitle ends "No live number is re-derived in the browser." |
+| R-04 | this commit | The preset matcher takes exactly the preset's symbol–weight mapping, no symbol twice (Codex) |
 
 ## What a PROTOTYPE card is (spec §1.0.3)
 
@@ -463,6 +464,19 @@ the rebase onto desk/books).
 | R-01 Positioning's summaries hid what they cover; a name without data counted as not crowded; CRWV 0% / MSFT 100% printed NaN | The weighted figures say what they cover (weight and names); a name without data reads "no data" and is in no count; a figure without a positive covered weight is "—" with the reason | CRWV 50% / MSFT 50%, MSFT 100%, CRWV 0% / MSFT 100% (`positioning.test.ts`, `BasketHedgePage.test.tsx`) | `fffb83d` |
 | R-02 "Hedge with options" priced any hedge ratio: at 0.10 the spread's 85% strike moved to −50% of the ETF and the rows printed NaN | Each structure is priced only inside its domain (a hedge ratio from 0.25 to 4 for the ETF and basket routes, strikes from 50% to 100% of spot, a positive vol, R² in (0, 1], finite results); outside it the row prints its reason and no number, and the route's line names no strike outside the domain | hedge_ratio 0.10 (`options.test.ts`, `OptionsHedgeCard.test.tsx`), and 0.25, NaN, R² 0, a zero vol | `e553dfa` |
 | R-03 The protection card's switch fell back to the illustrative figures when `/technicals` was awaiting or failed | The PROTOTYPE stands only when a ready answer serves the vol block awaiting as not yet served; an awaiting or failed route, or an answer without the block, keeps the LIVE card's awaiting or unavailable state | `/technicals` served awaiting, `/technicals` failed 503, a ready answer without the vol block (`TechnicalsPage.test.tsx`) | the R-03 commit (the head) |
+
+## Codex R-04 (blocking, on the preset matcher)
+
+`isDrawnFor` compared the leg count and each leg's weight, so a basket of ten
+NVDA legs at 10% (Codex's repro, imported as "NVDA only") passed as the
+preset and drew all ten names' figures for it. The matcher now builds the
+basket's own symbol–weight map, refuses a symbol seen twice, and requires the
+map to equal the preset's (ten unique symbols at 10%, order-insensitive);
+anything else takes the one-line state. Tests from the repro, both failing on
+the old matcher: `drawn-for.test.ts` (ten NVDA legs; nine names with NVDA
+twice; the preset plus AMD twice; a weight that is not a number) and
+`BasketHedgePage.test.tsx` (the "NVDA only" file through Import JSON, then
+opened: both cards print the one line, no table, no chart, no figure).
 
 ## Open for the owner
 
