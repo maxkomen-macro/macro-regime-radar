@@ -268,4 +268,21 @@ test.describe("desk usability", () => {
     await page.getByRole("navigation", { name: "Start here" }).getByRole("link", { name: /Technicals/ }).click();
     await expect(page).toHaveURL(/\/desk\/technicals$/);
   });
+
+  // ── Item 8: the landing page's way in ────────────────────────────────────
+
+  test("item 8: the landing page offers Analyst Desk → beside Open the terminal, to the Desk's Overview", async ({ page }) => {
+    await open(page, "/");
+    const terminal = page.getByRole("link", { name: "Open the terminal →" });
+    const desk = page.getByRole("link", { name: "Analyst Desk →" });
+    await expect(desk).toBeVisible();
+    await expect(desk).toHaveAttribute("href", "/desk/overview");
+    // Beside it: the same row, right after it.
+    const [t, d] = await Promise.all([terminal.boundingBox(), desk.boundingBox()]);
+    expect(Math.abs(t!.y - d!.y)).toBeLessThanOrEqual(4);
+    expect(d!.x).toBeGreaterThan(t!.x);
+    await desk.click();
+    await expect(page).toHaveURL(/\/desk\/overview$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Overview");
+  });
 });

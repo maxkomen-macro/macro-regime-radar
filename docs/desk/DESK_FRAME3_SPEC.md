@@ -2241,3 +2241,10 @@ each with one short phrase (read the market, build the exposure, check the
 trend, test the idea). Green numbered circles; the arrows gray; on a phone
 the steps wrap and the page never scrolls sideways.
 
+### 14.8 The way in from the landing page
+
+The landing page (`/`, `web/src/screens/LandingPage.tsx`) carries **Analyst
+Desk →** beside **Open the terminal →**, the same size and weight, in the main
+site's colors (the landing page is not a Desk page), linking to
+`/desk/overview`.
+
