@@ -372,4 +372,41 @@ test.describe("desk usability", () => {
     await open(page, "/desk/event-study");
     await expect(page.locator(".es-tip").first()).toHaveAttribute("data-tip", GLOSSARY.sigma.text);
   });
+
+  test("item 12: one endpoint forced to fail: its cards say Couldn't load · Retry, the rest renders, Retry recovers", async ({ page }) => {
+    // Technicals reads /technicals and the Ledger: the Ledger fails, so only the Signals card fails.
+    await open(page, "/desk/technicals", { "/api/desk/ledger": { status: 500, body: { detail: "forced failure" } } });
+    const main = page.getByRole("main");
+    const signals = main.getByRole("region", { name: /^Signals/ });
+    await expect(signals.getByTestId("dk-failed")).toHaveText("Couldn't load · Retry");
+    await expect(main.getByTestId("dk-failed")).toHaveCount(1);
+    await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("RSI (14)");
+    await expect(main.getByRole("region", { name: /S&P 500 price/ }).getByRole("img").first()).toBeVisible();
+    await expect(main).not.toContainText("Awaiting refresh");
+    // The Ledger answers again: Retry fills the card.
+    await page.route(
+      (u) => u.pathname === "/api/desk/ledger",
+      (route) => {
+        const reply = deskFixture("GET", "/api/desk/ledger")!;
+        return route.fulfill({ status: reply.status, contentType: reply.contentType, body: reply.body });
+      },
+    );
+    await signals.getByRole("button", { name: "Retry" }).click();
+    await expect(signals.getByRole("listitem").first()).toBeVisible();
+    await expect(main.getByTestId("dk-failed")).toHaveCount(0);
+
+    // Macro reads one endpoint: all four cards fail, the page's title, header and sidebar stand.
+    await open(page, "/desk/macro", { "/api/desk/macro": { status: 503, body: { detail: "forced failure" } } });
+    await expect(main.getByTestId("dk-failed")).toHaveCount(4);
+    for (const l of ["10-year", "2s10s", "HY spread", "Today"]) await expect(main).toContainText(l);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Macro & Correlations");
+    await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+
+    // The Overview's tiles and active signals fail with /overview; the monitored positions (this browser's) still render.
+    await open(page, "/desk/overview", { "/api/desk/overview": { status: 500, body: { detail: "forced failure" } } });
+    await expect(main.getByTestId("dk-failed")).toHaveCount(6);
+    await expect(main.getByTestId("ov-since")).toContainText("Couldn't load · Retry");
+    await expect(main.getByRole("region", { name: /^Monitored/ })).toBeVisible();
+    expect(await auditPalette(page)).toEqual([]);
+  });
 });

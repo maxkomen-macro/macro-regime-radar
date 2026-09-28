@@ -281,9 +281,11 @@ describe("Macro tab", () => {
     stubDesk({ "/api/desk/macro": deskError(503, "warming") });
     renderTab();
     const card = await screen.findByRole("region", { name: /Yield curve/ });
-    await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
     expect(card).toHaveTextContent("10-year");
     expect(card).not.toHaveTextContent("4.21");
+    // §14.12: each of the four cards says so once.
+    expect(screen.getAllByTestId("dk-failed")).toHaveLength(4);
   });
 });
 

@@ -18,7 +18,7 @@ import { droppedOf } from "../data/schema";
 import type { PipelineGroup } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { Awaiting, DroppedNote, droppedWords, Unserved, LoadingLine } from "../kit/ui";
+import { Awaiting, DroppedNote, droppedWords, Unserved, LoadingLine, FailedScope } from "../kit/ui";
 import { dayLong, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
@@ -297,6 +297,7 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
           </ol>
         </section>
         <div className="pl-grid">
+          <FailedScope q={q}>
           <section className="dk-card pl-inventory" aria-labelledby="pl-inv-title" aria-busy={!p && !q.isError}>
             <div className="pl-card-head">
               <h2 className="dk-card-title" id="pl-inv-title">
@@ -325,6 +326,7 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
             <DroppedNote n={lostGroups} one="group" />
             <p className="pl-mono-note">Click a group to expand · search jumps to a series and opens its group · new series land in a group automatically</p>
           </section>
+          </FailedScope>
           <Bridge />
         </div>
         {/* §11, §1.0.3: the sync the bridge card's schema is for, as a PROTOTYPE; the DDL and the CSV above are real. */}

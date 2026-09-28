@@ -386,14 +386,17 @@ describe("Technicals tab", () => {
     expect(screen.getByRole("region", { name: /^S&P 500/ })).toHaveTextContent("7,706");
   });
 
-  it("a failed /technicals keeps the vol and sector cards' labels and says Awaiting refresh (Codex R-03: never the PROTOTYPE)", async () => {
+  it("a failed /technicals keeps the vol and sector cards' labels and says Couldn't load · Retry (§14.12; Codex R-03: never the PROTOTYPE)", async () => {
     stubDesk({ "/api/desk/technicals": deskError(503, "not wired") });
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("Awaiting refresh"));
-    expect(screen.getByRole("region", { name: /Sector leadership/ })).not.toHaveTextContent("XLK");
-    await waitFor(() => expect(screen.getByRole("region", { name: "What protection costs right now" })).toHaveTextContent("Awaiting refresh"));
-    expect(screen.getByRole("region", { name: "What protection costs right now" })).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
-    expect(screen.getByRole("region", { name: "What protection costs right now" })).not.toHaveTextContent("6.8");
+    const vol = await screen.findByRole("region", { name: "What protection costs right now" });
+    await waitFor(() => expect(vol).toHaveTextContent("Couldn't load · Retry"));
+    expect(vol).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
+    expect(vol).not.toHaveTextContent("6.8");
+    const sect = screen.getByRole("region", { name: /Sector leadership/ });
+    await waitFor(() => expect(sect).toHaveTextContent("Couldn't load · Retry"));
+    expect(sect).not.toHaveTextContent("XLK");
+    expect(vol).not.toHaveAttribute("data-prototype");
   });
 
   it("the vol column is the S&P's: /technicals naming another instrument draws no PROTOTYPE (§1.0.3)", async () => {
@@ -463,10 +466,10 @@ describe("Codex R-03: the protection PROTOTYPE stands only in a ready answer's n
     expect(vol().textContent).not.toMatch(illustrative);
   });
 
-  it("/technicals failed: the vol card keeps its labels and says Awaiting refresh; no illustrative figure", async () => {
+  it("/technicals failed: the vol card keeps its labels and says Couldn't load · Retry (§14.12); no illustrative figure", async () => {
     stubDesk({ "/api/desk/technicals": deskError(503, "not wired") });
     renderTab();
-    await waitFor(() => expect(vol()).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(vol()).toHaveTextContent("Couldn't load · Retry"));
     expect(vol()).not.toHaveAttribute("data-prototype");
     expect(vol()).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
     expect(vol().textContent).not.toMatch(illustrative);
@@ -542,12 +545,14 @@ describe("Technicals for any stock (§14.2)", () => {
     expect(symbolOf("")).toBeNull();
   });
 
-  it("a symbol the provider does not know keeps the cards' labels", async () => {
+  it("a symbol the provider does not know keeps the cards' labels and says why, with no Retry (§14.12)", async () => {
     stubDesk();
     renderAt("/desk/technicals?symbol=ZZZZ");
     const risk = await screen.findByRole("region", { name: /^Risk · drawdown and volatility/ });
-    await waitFor(() => expect(risk).toHaveTextContent("Awaiting refresh"));
+    // §14.12: the Desk's own refusal prints its words, with no Retry (asking again would not change it).
+    await waitFor(() => expect(risk).toHaveTextContent("Couldn't load: No listing found for 'ZZZZ' on EODHD."));
+    expect(within(risk).queryByRole("button", { name: "Retry" })).toBeNull();
     for (const l of ["From 1-year high", "21-day realized vol", "1-year return"]) expect(risk).toHaveTextContent(l);
-    expect(screen.getByRole("region", { name: /^Momentum · RSI/ })).toHaveTextContent(/Now\s*Awaiting refresh/);
+    expect(screen.getByRole("region", { name: /^Momentum · RSI/ })).toHaveTextContent("Couldn't load");
   });
 });

@@ -26,7 +26,7 @@ import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
 import { WINDOWS, apiParams, askFromSearch, presetHorizon, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
-import { DroppedNote, Unserved, LoadingLine } from "../kit/ui";
+import { DroppedNote, Unserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import "./study.css";
 
@@ -237,6 +237,8 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
       ) : null}
       {/* §12.0: a study served awaiting (an input not stored) keeps the labels and prints its reason (§1.0.2). */}
       <Unserved block={unavailableOf(q.error)}>
+        {/* §14.12: a question the server refuses prints its words; any other failure says Couldn't load, with Retry. */}
+        <FailedScope q={refusal ? { isError: false, error: null } : q}>
         <div className="es-grid" data-busy={placeholder || undefined}>
           <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon ?? undefined} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
@@ -257,6 +259,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
             ) : null}
           </aside>
         </div>
+        </FailedScope>
       </Unserved>
       {exportNote ? (
         <p className="es-note" role="status">

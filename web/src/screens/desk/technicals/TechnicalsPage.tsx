@@ -38,7 +38,7 @@ import { DESK_ACCENTS } from "../kit/palette";
 import Gauge from "../kit/Gauge";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import RankBars from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord, LoadingLine } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord, LoadingLine, FailedScope, eitherFailed } from "../kit/ui";
 import { ProtectionCard } from "../prototypes/ProtectionCard";
 import { SPX_SYMBOLS, symbolOf } from "./symbol";
 import "./technicals.css";
@@ -484,6 +484,7 @@ function RsiCard({ t, state, short = "S&P" }: { t: TechnicalsResponse | undefine
         {/* §1.6: the RSI is dated by its own session, which a gap in the closes can hold before the price's. */}
         {r != null && dayShort(t?.rsi_date) ? <LiveBadge parts={[dayShort(t?.rsi_date)]} /> : null}
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
         <Stat label="Now" awaiting={aw || (ready && r == null)} value={r != null ? num(r) : undefined} sub={words || undefined} />
         <Stat label="Last above 70" size="date" tone="amber" awaiting={aw || (ready && !day(t.rsi_last_above_70))} value={day(t?.rsi_last_above_70) || undefined} sub={ready ? visitSub(t.rsi_last_above_70, short) : undefined} />
@@ -554,6 +555,7 @@ function MacdCard({ t, state, short = "S&P" }: { t: TechnicalsResponse | undefin
         {/* §1.6: the MACD is dated by its own session, which a gap in the closes can hold before the price's. */}
         {m && dayShort(m.date) ? <LiveBadge parts={[dayShort(m.date)]} /> : null}
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={4}>
         <Stat label="MACD" awaiting={aw || (ready && !fin(m?.macd))} value={m && fin(m.macd) ? pts1(m.macd) : undefined} tone="blue" />
         <Stat label="Signal" awaiting={aw || (ready && !fin(m?.signal))} value={m && fin(m.signal) ? pts1(m.signal) : undefined} tone="gray" />
@@ -623,6 +625,7 @@ function SeasonalityCard({ t, state, name = "S&P 500" }: { t: TechnicalsResponse
           Seasonality · {name} by calendar month
         </h2>
       </div>
+      <LoadingLine busy={state === "loading"} />
       {s && rows.length ? (
         <>
           {w && monthOf(w.start) && monthOf(w.end) ? (
@@ -801,7 +804,9 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
           {symbol ? "Add to basket →" : "Add SPY to basket →"}
         </Link>
       </p>
+      {/* §14.12: every card reads /technicals; the Signals card reads the Ledger too, and fails with either. */}
       {scored ? (
+        <FailedScope q={tq}>
         <div className="te-grid">
           {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
           {/* §1.0.3 (desk/prototypes): the PROTOTYPE stands in the vol column until the vol block is served; a
@@ -815,7 +820,9 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
           )}
           <Unserved block={unavailableOf(tq.error)}>
             <PriceCard t={t} state={stateOf(tq)} cross={cross} range={range} onRange={onRange} scored />
-            <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />
+            <FailedScope q={eitherFailed(tq, lq)}>
+              <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />
+            </FailedScope>
           </Unserved>
           <Unserved block={sectorsOff}>
             <SectorCard s={t?.sectors} state={stateOf(tq, Array.isArray(t?.sectors?.leadership))} />
@@ -827,11 +834,13 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
             <RiskCard t={t} state={stateOf(tq)} scored />
           </Unserved>
         </div>
+        </FailedScope>
       ) : (
         <>
           <p className="te-scored-line">
             Signals are scored on the S&amp;P 500 <Link to={pathTo("technicals")}>→ view</Link>
           </p>
+          <FailedScope q={tq}>
           <div className="te-grid te-grid-stock">
             <Unserved block={unavailableOf(tq.error)}>
               <PriceCard t={t} state={stateOf(tq)} cross={undefined} range={range} onRange={onRange} scored={false} />
@@ -842,6 +851,7 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
               <SeasonalityCard t={t} state={stateOf(tq)} name={symbol ?? "S&P 500"} />
             </Unserved>
           </div>
+          </FailedScope>
         </>
       )}
     </div>

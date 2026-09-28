@@ -2318,3 +2318,29 @@ question pushes one.
   on hover or focus of a term it shows the sentence under the term (above it
   near the bottom of the window), fixed to the viewport so no card clips it;
   Escape, scrolling or leaving the term hides it.
+
+### 14.12 A card whose request failed
+
+- **Per card.** A card whose own request did not come back usable (no
+  answer, a 5xx, an answer that could not be read, a poll that ran out)
+  prints one line where it would print "Loading live data…": "Couldn't load
+  · Retry", amber, `role="status"`. Retry asks that request again (the line
+  reads "Loading live data…" meanwhile); the card keeps its title and stat
+  labels, with "—" and no number, and prints no "Awaiting refresh", since
+  nothing awaits a refresh. A refusal (4xx) prints the server's words,
+  "Couldn't load: <message>", with no Retry, which could not change it.
+- **The rest renders.** The scope is the request (`kit/ui.tsx`
+  `FailedScope`): Technicals' cards read `/technicals` and its Signals card
+  the Ledger too (`eitherFailed`), so a failed Ledger fails that card alone;
+  the Overview's since-last-close line, tiles and active signals read
+  `/overview` and its Monitored card this browser's store; the Event Study's
+  answer and rail read `/study` and its event list `/study/events`. The page
+  title, header, search and sidebar never depend on a card's request.
+- **Not a failure.** An answer served awaiting (§1.0.2) keeps its reason and
+  its "Not yet served" or "Awaiting refresh" badge; a question the Event
+  Study refuses (422 `unsupported`) keeps its served sentence; a Sectors body
+  that says the ETFs are not ingested is a fact about the store.
+- **Before.** A failed request printed "Awaiting refresh" under every label,
+  the words for data the store has not refreshed yet: an MD could not tell a
+  dropped connection from a stale store. Codex R-09's rule stands: an answer
+  that came back null is never a loading state; it is now a failure.

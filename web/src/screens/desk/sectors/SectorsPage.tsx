@@ -18,7 +18,7 @@ import { dayShort, endDay, leadershipGaps, pct } from "../kit/format";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars, { relTone } from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import "./sectors.css";
 import { defineTerms } from "../kit/Term";
@@ -328,10 +328,12 @@ export default function SectorsPage({ page }: { page: DeskPage }) {
       {/* §1.6: the badge dates what the page covers, the served comparison session, never the generation's day. */}
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : s?.date ? <LiveBadge boxed parts={[sourceWords(s), dayShort(s.date)]} /> : null} />
       <Unserved block={unserved}>
-        <div className="sc-grid">
-          <Leadership s={s} state={state} />
-          <Breadth s={s} state={state} />
-        </div>
+        <FailedScope q={q}>
+          <div className="sc-grid">
+            <Leadership s={s} state={state} />
+            <Breadth s={s} state={state} />
+          </div>
+        </FailedScope>
       </Unserved>
     </div>
   );

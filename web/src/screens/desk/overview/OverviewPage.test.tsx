@@ -186,17 +186,18 @@ describe("Overview tab", () => {
     expect(await screen.findByText("No positions are monitored in this browser.")).toBeInTheDocument();
   });
 
-  it("with no /overview every tile keeps its label and says Awaiting refresh, no number", async () => {
+  it("with no /overview every tile keeps its label and says Couldn't load · Retry, no number (§14.12)", async () => {
     stubDesk({ "/api/desk/overview": deskError(503, "generation warming") });
     renderOverview();
     const regime = await screen.findByRole("region", { name: "Regime" });
-    await waitFor(() => expect(regime).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(regime).toHaveTextContent("Couldn't load · Retry"));
     for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) {
       const tile = screen.getByRole("region", { name });
-      expect(tile).toHaveTextContent("Awaiting refresh");
+      expect(tile).toHaveTextContent("Couldn't load · Retry");
+      expect(tile).not.toHaveTextContent("Awaiting refresh");
       expect((tile.textContent ?? "").replace(name, "")).not.toMatch(/\d/);
     }
-    expect(screen.getByTestId("ov-since")).toHaveTextContent("Awaiting refresh");
+    expect(screen.getByTestId("ov-since")).toHaveTextContent("Couldn't load · Retry");
     expect(screen.queryByText("Overheating")).toBeNull();
   });
 });

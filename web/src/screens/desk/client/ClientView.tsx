@@ -17,7 +17,7 @@ import { DeskApiError, unavailableOf, useStudy, useStudyCatalog } from "../data/
 import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
-import { Awaiting, DroppedNote, Signed, Unserved, useUnserved, LoadingLine } from "../kit/ui";
+import { Awaiting, DroppedNote, Signed, Unserved, useUnserved, LoadingLine, FailedScope, useLoadFailed } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { apiParams, askFromSearch, atMonth, readLastStudy, targetLabel } from "../event-study/question";
 import { isUnit, moveText, scaleOf, tipOf } from "../kit/units";
@@ -139,10 +139,11 @@ function Backdrop({ s, failed }: { s: StudyResponse | undefined; failed: boolean
 function StatCard({ label, children, state }: { label: string; children?: ReactNode; state: "value" | "loading" | "awaiting" | string }) {
   // §1.0.2: a study served awaiting keeps the label and prints no number; the reason is printed once above.
   const unserved = useUnserved();
+  const failed = useLoadFailed();
   return (
     <div className="dk-card cv-stat">
       <p className="dk-stat-label">{defineTerms(label)}</p>
-      {unserved ? (
+      {unserved || (failed && state === "awaiting") ? (
         <p className="dk-stat-await" aria-hidden="true">
           —
         </p>
@@ -178,6 +179,7 @@ export default function ClientView({ page }: { page: DeskPage }) {
   // Once, in the backdrop card (and in the summary's place when no client paragraph is served); the month's two stats read like a null regime row.
   const state = (ok: boolean) => (ok ? "value" : (!s && !failed) || refusal ? "loading" : thin ? "too few cases to say" : "awaiting");
   return (
+    <FailedScope q={refusal ? { isError: false, error: null } : q}>
     <div className="cv" aria-busy={(!s && !failed) || undefined}>
       <LoadingLine busy={(!s && !failed) || undefined} />
       <Unserved block={unavailableOf(q.error)}>
@@ -234,5 +236,6 @@ export default function ClientView({ page }: { page: DeskPage }) {
         </div>
       </Unserved>
     </div>
+    </FailedScope>
   );
 }

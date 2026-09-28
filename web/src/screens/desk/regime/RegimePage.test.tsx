@@ -343,11 +343,12 @@ describe("Regime tab", () => {
     stubDesk({ "/api/desk/regime": deskError(503, "warming") });
     renderTab();
     const card = await screen.findByRole("region", { name: /Where we are/ });
-    await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
     expect(card).toHaveTextContent("Growth");
     expect(card).not.toHaveTextContent("Overheating");
     expect(screen.getByRole("region", { name: /Recession score/ })).not.toHaveTextContent("12%");
-    expect(screen.getByRole("region", { name: /What would change it/ })).toHaveTextContent(/Next CPI\s*Awaiting refresh/);
+    expect(screen.getByRole("region", { name: /What would change it/ })).toHaveTextContent(/Next CPI\s*—/);
+    expect(screen.getByRole("main")).not.toHaveTextContent("Awaiting refresh");
     expect(screen.getByRole("region", { name: /What each regime has meant/ })).toHaveTextContent(/Regime\s*Months/);
   });
 });

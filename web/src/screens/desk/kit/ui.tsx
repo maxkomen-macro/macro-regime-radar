@@ -8,6 +8,7 @@
  */
 
 import { createContext, useContext, useId, useState, type ReactNode } from "react";
+import { DeskApiError, unavailableOf } from "../data/api";
 import type { Unavailable } from "../data/envelope";
 import type { Verdict } from "../data/types";
 import { VERDICT_LABEL } from "./format";
@@ -269,10 +270,11 @@ export function Stat({
   why?: ReactNode;
 }) {
   const unserved = useUnserved();
+  const failed = useContext(FailedContext) !== null && awaiting;
   return (
     <div className="dk-stat" data-size={size}>
       <div className="dk-stat-label">{defineTerms(label)}</div>
-      {unserved ? (
+      {unserved || failed ? (
         // §1.0.2: the label stays, no number; the card prints the reason once.
         <div className="dk-stat-await" aria-hidden="true">
           —
@@ -362,21 +364,107 @@ export function AdvancedPanel({ adv, items, missing, children, enabled = false }
   );
 }
 
-/** desk/usability §14.10: while a card's request is pending it says so, one line under its title, so a cold
- * start reads as loading, never as a blank card. Nothing when the answer is in (or failed, or is served awaiting). */
-export function LoadingLine({ busy }: { busy?: boolean | null }) {
-  if (!busy) return null;
+// ── A request that failed (desk/usability §14.12) ─────────────────────────
+// A card whose own request did not come back usable (no answer, a 5xx, an
+// unreadable answer, a refusal) says "Couldn't load · Retry" once, where it
+// would say "Loading live data…"; its labels stay with no number, and cards
+// fed by other requests render as usual. An answer served awaiting (§1.0.2)
+// is not a failure: the <Unserved> scope prints its reason instead.
+
+interface FailedValue {
+  /** Ask again; null for a refusal (4xx), which asking again would not change. */
+  retry: (() => void) | null;
+  fetching: boolean;
+  /** The served words of a refusal. */
+  reason: string | null;
+}
+const FailedContext = createContext<FailedValue | null>(null);
+
+interface QueryLike {
+  isError: boolean;
+  error: unknown;
+  isFetching?: boolean;
+  refetch?: () => unknown;
+}
+
+/** The request failed, and not because its answer is served awaiting. */
+export function loadFailed(q: Pick<QueryLike, "isError" | "error">): boolean {
+  return q.isError && !unavailableOf(q.error);
+}
+
+/** The Desk's own refusals, whose served sentence says why (§12.0, the provider layer's typed errors). */
+const SAID_REFUSALS = new Set(["unsupported", "unknown_symbol", "empty"]);
+
+/** The cards inside read `q`: when it failed, each says so once, with Retry. */
+export function FailedScope({ q, children }: { q: QueryLike; children: ReactNode }) {
+  const err = q.error instanceof DeskApiError ? q.error : null;
+  // A 4xx is an answer asking again would not change (a 408 or 429 would): no Retry. Only the Desk's own
+  // refusals print their words; a framework's ("Unprocessable Entity") is not an MD's.
+  const refused = !!err && err.status >= 400 && err.status < 500 && err.status !== 408 && err.status !== 429;
+  const said = refused && typeof err.body?.error === "string" && SAID_REFUSALS.has(err.body.error);
+  const value: FailedValue | null = loadFailed(q)
+    ? { retry: refused || !q.refetch ? null : () => void q.refetch?.(), fetching: !!q.isFetching, reason: said ? err.message : null }
+    : null;
+  return <FailedContext.Provider value={value}>{children}</FailedContext.Provider>;
+}
+
+export function useLoadFailed(): boolean {
+  return useContext(FailedContext) !== null;
+}
+
+/** One scope for a card that reads several requests: failed when any failed; Retry asks each failed one again. */
+export function eitherFailed(...qs: QueryLike[]): QueryLike {
+  const bad = qs.filter(loadFailed);
+  return { isError: bad.length > 0, error: bad[0]?.error ?? null, isFetching: bad.some((q) => q.isFetching), refetch: () => bad.forEach((q) => q.refetch?.()) };
+}
+
+/** The failed line of the enclosing scope ("Couldn't load · Retry"); nothing outside one. `inline` sits in a line of text. */
+export function FailedLine({ inline = false, className }: { inline?: boolean; className?: string }) {
+  const f = useContext(FailedContext);
+  if (!f) return null;
+  if (f.fetching) return <LoadingText inline={inline} className={className} />;
+  const Tag = inline ? "span" : "p";
   return (
-    <p className="dk-loading" role="status" aria-live="polite" data-testid="dk-loading">
-      Loading live data…
-    </p>
+    <Tag className={cx("dk-failed", className)} role="status" data-testid="dk-failed">
+      {f.reason ? `Couldn't load: ${f.reason}` : "Couldn't load"}
+      {f.retry ? (
+        <>
+          {" · "}
+          <button type="button" className="dk-link" onClick={f.retry}>
+            Retry
+          </button>
+        </>
+      ) : null}
+    </Tag>
   );
+}
+
+function LoadingText({ inline = false, className }: { inline?: boolean; className?: string }) {
+  const Tag = inline ? "span" : "p";
+  return (
+    <Tag className={cx("dk-loading", className)} role="status" aria-live="polite" data-testid="dk-loading">
+      Loading live data…
+    </Tag>
+  );
+}
+
+/** desk/usability §14.10: while a card's request is pending it says so, one line under its title, so a cold
+ * start reads as loading, never as a blank card; §14.12: when it failed, the same line says "Couldn't load ·
+ * Retry". Nothing when the answer is in, or is served awaiting. */
+export function LoadingLine({ busy }: { busy?: boolean | null }) {
+  const failed = useContext(FailedContext);
+  if (failed) return <FailedLine />;
+  if (!busy) return null;
+  return <LoadingText />;
 }
 
 /** A card body with nothing served (§1.7): gray words, no number. */
 export function Awaiting({ children, className }: { children?: ReactNode; className?: string }) {
   const ctx = useContext(UnservedContext);
+  const failed = useContext(FailedContext);
   if (ctx) return ctx.once ? null : <UnservedLine block={ctx.block} className={className} />;
+  // §14.12: nothing is awaiting a refresh when the request failed; the card's line says so once.
+  if (failed) return null;
   return (
     <p className={cx("dk-await", className)} role="status">
       Awaiting refresh{children ? <span className="dk-await-why"> · {children}</span> : null}

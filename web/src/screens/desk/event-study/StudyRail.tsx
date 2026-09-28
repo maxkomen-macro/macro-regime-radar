@@ -11,7 +11,7 @@
 
 import type { StudyResponse } from "../data/types";
 import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
-import { Advanced, Awaiting, DroppedNote, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
+import { Advanced, Awaiting, DroppedNote, Signed, UnservedLine, useUnserved, VerdictWord, useLoadFailed } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
@@ -23,6 +23,8 @@ import { defineTerms } from "../kit/Term";
 export function RailPlaceholder() {
   // §1.0.2: a study served awaiting keeps the rail's four labels and prints its reason once, after them.
   const unserved = useUnserved();
+  // §14.12: after a failed request nothing is awaiting a refresh; the rail's line says Couldn't load once.
+  const failed = useLoadFailed();
   const why = "Awaiting refresh";
   if (unserved)
     return (
@@ -47,7 +49,13 @@ export function RailPlaceholder() {
       ].map((l, i) => (
         <div key={i} className="es-rail-empty">
           <p className="dk-stat-label">{defineTerms(l)}</p>
-          <p className="dk-await">{why}</p>
+          {failed ? (
+            <p className="dk-stat-await" aria-hidden="true">
+              —
+            </p>
+          ) : (
+            <p className="dk-await">{why}</p>
+          )}
         </div>
       ))}
     </>

@@ -267,17 +267,24 @@ describe("Event Study tab", () => {
     expect(screen.getByLabelText("What happens to")).toBeDisabled();
   });
 
-  it("a failed /study keeps the stat labels and says Awaiting refresh", async () => {
-    stubDesk({ "/api/desk/study": () => ({ status: 503, body: { error: "warming" } }) });
+  it("a failed /study keeps the stat labels and says Couldn't load · Retry, once per card (§14.12)", async () => {
+    let calls = 0;
+    stubDesk({ "/api/desk/study": () => (++calls <= 2 ? { status: 503, body: { error: "warming" } } : study) });
     renderTab();
     const card = await screen.findByRole("region", { name: "The answer" });
-    await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
     expect(card).toHaveTextContent("Events");
     expect(card).toHaveTextContent("Up a month later");
     expect(card).not.toHaveTextContent("18");
+    expect(card).not.toHaveTextContent("Awaiting refresh");
     const rail = screen.getByRole("complementary", { name: "Verdict and detail" });
-    expect(rail).toHaveTextContent(/Verdict\s*Awaiting refresh/);
-    expect(rail).toHaveTextContent(/Range vs normal\s*Awaiting refresh/);
+    expect(within(rail).getAllByTestId("dk-failed")).toHaveLength(1);
+    expect(rail).toHaveTextContent(/Verdict\s*—/);
+    expect(rail).not.toHaveTextContent("Awaiting refresh");
+    // Retry asks again; the answer replaces the line.
+    fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.getByRole("region", { name: "The answer" })).toHaveTextContent("18"));
+    expect(screen.queryAllByTestId("dk-failed")).toHaveLength(0);
   });
 
   it("Advanced opens the events, the resampling detail, the rules and the provenance; the frame-2 panel is retired (§4)", async () => {
@@ -368,11 +375,11 @@ describe("a study with a block missing (Codex R-10)", () => {
     expect(screen.getByRole("img", { name: /1 month awaiting refresh/ })).toBeInTheDocument();
   });
 
-  it("a study answered null is Awaiting refresh, not loading (Codex R-09)", async () => {
+  it("a study answered null could not be loaded, and is not loading (Codex R-09, §14.12)", async () => {
     stubDesk({ "/api/desk/study": () => null });
     renderTab();
-    await waitFor(() => expect(answer()).toHaveTextContent("Awaiting refresh · the study did not answer"));
-    expect(answer()).toHaveTextContent(/Events\s*Awaiting refresh/);
+    await waitFor(() => expect(answer()).toHaveTextContent("Couldn't load · Retry"));
+    expect(answer()).toHaveTextContent(/Events\s*—/);
     expect(answer()).not.toHaveAttribute("aria-busy", "true");
   });
 });
@@ -488,11 +495,12 @@ describe("the catalog drives the chips and the slots (§4, §12.3)", () => {
     expect(importSaved([], JSON.stringify({ questions: [cross, ten] }))).toMatchObject({ added: 1, rejected: 1 });
   });
 
-  it("only a 422 `unsupported` is a refusal; any other failure is Awaiting refresh", async () => {
+  it("only a 422 `unsupported` is a refusal; any other failure could not be loaded (§14.12)", async () => {
     stubDesk({ "/api/desk/study": deskError(422, "validation", { message: "Unprocessable Entity" }) });
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: "The answer" })).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(screen.getByRole("region", { name: "The answer" })).toHaveTextContent("Couldn't load"));
     expect(screen.getByRole("region", { name: "The answer" })).not.toHaveTextContent("Unprocessable Entity");
+    expect(screen.getByRole("region", { name: "The answer" })).not.toHaveTextContent("Awaiting refresh");
   });
 
   it("a question the server refuses prints the served message (§4: 422 unsupported)", async () => {

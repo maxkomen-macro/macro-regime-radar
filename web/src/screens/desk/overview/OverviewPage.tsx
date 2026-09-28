@@ -20,7 +20,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
-import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine, FailedLine, FailedScope, useLoadFailed } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import { REGIME_TONE } from "../kit/palette";
@@ -55,6 +55,7 @@ export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?
 }
 
 function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefined; failed: boolean; unserved: Unavailable | null }) {
+  const loadFailed = useLoadFailed();
   return (
     <div className="ov-since" data-testid="ov-since" aria-busy={!data && !failed && !unserved}>
       {/* §12.1 (B-05): the two sessions compared, named by their served dates (§1.10). */}
@@ -76,6 +77,9 @@ function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefine
             {it.tag ? <span data-tone="up"> {it.tag}</span> : null}
           </span>
         ))
+      ) : loadFailed ? (
+        // §14.12: the request failed; the line says so, with Retry.
+        <FailedLine inline className="ov-since-item" />
       ) : !data && !failed ? (
         // §14.10: a pending answer says so.
         <span className="ov-since-item dk-loading" role="status" data-testid="dk-loading">
@@ -375,10 +379,15 @@ export default function OverviewPage({ page }: { page: DeskPage }) {
       <PageTitle page={page} />
       <StartHere pathTo={pathTo} />
       <Unserved block={unserved}>
-        <SinceLine data={data?.since_last_close} failed={failed || (!!data && !data.since_last_close)} unserved={unserved ?? data?._blocks?.since_last_close ?? null} />
-        <Tiles data={data} failed={failed} />
+        {/* §14.12: the line, the tiles and the active signals read /overview; the monitored rows read this browser's store. */}
+        <FailedScope q={q}>
+          <SinceLine data={data?.since_last_close} failed={failed || (!!data && !data.since_last_close)} unserved={unserved ?? data?._blocks?.since_last_close ?? null} />
+          <Tiles data={data} failed={failed} />
+        </FailedScope>
         <div className="ov-grid">
-          <ActiveSignals data={data} failed={failed} pathTo={pathTo} />
+          <FailedScope q={q}>
+            <ActiveSignals data={data} failed={failed} pathTo={pathTo} />
+          </FailedScope>
           <Monitored pathTo={pathTo} />
         </div>
       </Unserved>

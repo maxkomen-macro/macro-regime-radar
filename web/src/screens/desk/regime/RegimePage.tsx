@@ -17,7 +17,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import "./regime.css";
 import { defineTerms } from "../kit/Term";
 
@@ -609,12 +609,14 @@ export default function RegimePage({ page }: { page: DeskPage }) {
     <div className="rg">
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : r ? <LiveBadge boxed parts={[print, dayShort(r.as_of)]} /> : null} />
       <Unserved block={unserved}>
-        <div className="rg-grid">
-          <WhereWeAre r={r} state={state} />
-          <Recession r={r} state={state} />
-          <Meant r={r} state={state} />
-          <WouldChange r={r} state={state} />
-        </div>
+        <FailedScope q={q}>
+          <div className="rg-grid">
+            <WhereWeAre r={r} state={state} />
+            <Recession r={r} state={state} />
+            <Meant r={r} state={state} />
+            <WouldChange r={r} state={state} />
+          </div>
+        </FailedScope>
       </Unserved>
     </div>
   );

@@ -20,7 +20,7 @@ import { dayLong, dayShort, endDay, monthYear, num, ordinal } from "../kit/forma
 import Gauge from "../kit/Gauge";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { matrixProblem } from "./matrix";
 import "./macro.css";
@@ -519,6 +519,8 @@ function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
   return (
     <section className="dk-card mc-card mc-mx-card" aria-labelledby="mc-mx" aria-busy={quiet}>
       <CardHead id="mc-mx" title={title} sub={sub} />
+      {/* desk/usability §14.10, §14.12: loading, or Couldn't load · Retry, as the 2×2's cards say it. */}
+      <LoadingLine busy={quiet} />
       {grid ? (
         <>
           {/* matrix-lead-v1: the served sentence, every number in it a served cell. */}
@@ -600,13 +602,15 @@ export default function MacroPage({ page }: { page: DeskPage }) {
           provider joins the source once one is served (desk/fill-etf). */}
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : m ? <LiveBadge boxed parts={[sources(m), dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
       <Unserved block={unserved}>
-        <div className="mc-grid">
-          <Curve m={m} state={state} />
-          <StockBond m={m} state={state} />
-          <Credit m={m} state={state} />
-          <Correlations m={m} state={state} />
-        </div>
-        <Matrix m={m} state={state} />
+        <FailedScope q={q}>
+          <div className="mc-grid">
+            <Curve m={m} state={state} />
+            <StockBond m={m} state={state} />
+            <Credit m={m} state={state} />
+            <Correlations m={m} state={state} />
+          </div>
+          <Matrix m={m} state={state} />
+        </FailedScope>
       </Unserved>
     </div>
   );

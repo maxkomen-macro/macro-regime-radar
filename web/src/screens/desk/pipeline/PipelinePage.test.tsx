@@ -187,11 +187,12 @@ describe("Data Pipeline tab", () => {
     expect(inv).toHaveAttribute("aria-busy", "true");
     expect(inv).not.toHaveTextContent("Awaiting refresh");
   });
-  it("a failed /pipeline keeps the cards and says Awaiting refresh; no badge", async () => {
+  it("a failed /pipeline keeps the cards and says Couldn't load · Retry; no badge (§14.12)", async () => {
     stubDesk({ "/api/desk/pipeline": deskError(503, "warming") });
     renderTab();
     const inv = await screen.findByRole("region", { name: /Series inventory/ });
-    await waitFor(() => expect(inv).toHaveTextContent("Awaiting refresh · the registry's inventory"));
+    await waitFor(() => expect(inv).toHaveTextContent("Couldn't load · Retry"));
+    expect(inv).not.toHaveTextContent("Awaiting refresh");
     expect(screen.queryByTestId("pl-badge")).toBeNull();
     expect(screen.getByRole("region", { name: "Lineage" })).toHaveTextContent("1 · Sources");
   });

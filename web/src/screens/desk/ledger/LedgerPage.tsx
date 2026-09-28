@@ -16,7 +16,7 @@ import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { dayLong, dayShort, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
-import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill, LoadingLine } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill, LoadingLine, FailedScope } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
 import { defineTerms } from "../kit/Term";
@@ -185,6 +185,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
     <div className="lg">
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
       <Unserved block={unserved}>
+        <FailedScope q={q}>
         <div className="lg-stats" aria-busy={state === "loading"}>
           <Stat
             label="Signals scored"
@@ -264,6 +265,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
             </p>
           </div>
         </section>
+        </FailedScope>
       </Unserved>
     </div>
   );

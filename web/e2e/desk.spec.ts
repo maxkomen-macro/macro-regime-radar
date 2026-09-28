@@ -6,7 +6,8 @@
  * §1.3 color; no banned word renders; every card that reads live data
  * carries its badge; every Tab stop has a name and a ring; nothing animates
  * under reduced motion; a phone gets the sidebar from a Menu button with no
- * sideways scroll; a failed endpoint leaves labels and "Awaiting refresh".
+ * sideways scroll; a failed endpoint leaves labels and "Couldn't load · Retry"
+ * (desk/usability §14.12).
  *
  * Run against a dev server: E2E_BASE_URL=http://127.0.0.1:5193 npx playwright test e2e/desk.spec.ts
  */
@@ -134,7 +135,8 @@ test.describe("desk v2", () => {
     }
   });
 
-  // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
+  // Codex R-09: a completed 200 whose body is null is never a loading state; since desk/usability §14.12 it is a
+  // request that could not be loaded, said once per card with Retry.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
     { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
     { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover", "Years", "From 1-year high"] },
@@ -146,10 +148,11 @@ test.describe("desk v2", () => {
     { slug: "data-pipeline", path: "/api/desk/pipeline", labels: ["Series inventory"] },
   ];
   for (const t of NULL_ANSWERS)
-    test(`${t.slug}: a 200 answered null keeps its labels and says Awaiting refresh`, async ({ page }) => {
+    test(`${t.slug}: a 200 answered null keeps its labels and says Couldn't load · Retry`, async ({ page }) => {
       await open(page, `/desk/${t.slug}`, { [t.path]: { status: 200, body: null } });
       const main = page.getByRole("main");
-      await expect(main.getByText(/Awaiting refresh/).first()).toBeVisible();
+      await expect(main.getByTestId("dk-failed").first()).toHaveText("Couldn't load · Retry");
+      await expect(main).not.toContainText("Awaiting refresh");
       for (const l of t.labels) await expect(main, l).toContainText(l);
       await settle(page, 700);
       // Nothing waits on an answer that has come: no part of the tab stays busy.
@@ -198,7 +201,7 @@ test.describe("desk v2", () => {
     const study = payloadOf(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!);
     for (const question of [{}, { ...(study.question as object), while: 5 }]) {
       await open(page, "/desk/event-study", { "/api/desk/study": { status: 200, body: { ...study, question } } });
-      await expect(page.getByRole("region", { name: "The answer" })).toContainText("Awaiting refresh");
+      await expect(page.getByRole("region", { name: "The answer" })).toContainText("Couldn't load · Retry");
       await expect(page.getByText(/rendering error/)).toHaveCount(0);
       await open(page, "/desk/position-monitor?from=gold-2sigma-spx-weak", { "/api/desk/study": { status: 200, body: { ...study, question } } });
       await expect(page.getByText(/is awaiting refresh; the gate is the same for every position/)).toBeVisible();
@@ -280,9 +283,9 @@ test.describe("desk v2", () => {
     expect(await auditPalette(page)).toEqual([]);
   });
 
-  test("overview: a failed /overview keeps every label and says Awaiting refresh", async ({ page }) => {
+  test("overview: a failed /overview keeps every label and says Couldn't load · Retry on each tile (§14.12)", async ({ page }) => {
     await open(page, "/desk/overview", { "/api/desk/overview": { status: 503, body: { error: "generation warming" } } });
-    for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name })).toContainText("Awaiting refresh");
+    for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name }).getByTestId("dk-failed")).toHaveText("Couldn't load · Retry");
     await expect(page.getByText("Goldilocks")).toHaveCount(0);
     await expect(page.getByTestId("dk-live")).toHaveCount(0);
   });
