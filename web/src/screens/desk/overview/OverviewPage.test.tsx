@@ -79,7 +79,7 @@ describe("Overview tab", () => {
     expect(since.textContent).toContain("data refreshed 05:07 UTC");
     const regime = screen.getByRole("region", { name: "Regime" });
     // §2: the K−2 row governing today (a September session reads the July row, Goldilocks as stored).
-    expect(regime).toHaveTextContent("Live · Jul row");
+    expect(regime).toHaveTextContent("Live · July data");
     expect(regime).toHaveTextContent("Goldilocks");
     // §1.3's exception (v2 D-36): the regime carries its color, Goldilocks green.
     expect(regime.querySelector(".ov-tile-value")).toHaveAttribute("data-tone", "green");

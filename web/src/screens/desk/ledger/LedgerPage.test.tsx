@@ -290,11 +290,13 @@ describe("Signal Ledger tab", () => {
     expect(document.querySelector(".lg-note")?.textContent?.replace(/\u00a0/g, " ")).toBe("vs normal compares each study to its own baseline over its own sample. a month = 20 sessions");
     expect(screen.queryByText(/engine as of/)).toBeNull();
   });
-  it("the chips wait for the table", async () => {
+  it("the chips wait for the table: none is shown until its rows are (§14.13), and a failed Ledger says so with Retry (§14.12)", async () => {
     stubDesk({ "/api/desk/ledger": deskError(503, "warming") });
     renderTab();
-    await waitFor(() => expect(screen.getAllByText("Awaiting refresh").length).toBeGreaterThan(0));
-    expect(within(screen.getByRole("group", { name: "Filter" })).getByRole("button", { name: "Firing now" })).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry"));
+    expect(screen.queryByRole("group", { name: "Filter" })).toBeNull();
+    // The sidebar's own S&P line awaits a refresh (a fact of the fixture); the page's cards do not.
+    expect(screen.getByRole("main")).not.toHaveTextContent("Awaiting refresh");
   });
   it("while loading, the counts are busy and none says Awaiting refresh (D14)", async () => {
     stubDesk({ "/api/desk/ledger": () => new Promise(() => {}) });

@@ -418,7 +418,7 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
       )}
       <DroppedNote n={droppedOf(s, "leadership")} one="sector" />
       <div className="te-foot">
-        {/* All eleven come from the sectors block once served; until then the control is disabled (§1.4). */}
+        {/* All eleven come from the sectors block once served; until then the control is not shown (§1.4, §14.13). */}
         <AdvancedPanel enabled={rows.length > 0} adv={adv} items="all 11 · rotation over time · by regime" missing="Rotation over time and leadership by regime are not served yet.">
           {rows.length ? <RankBars label="All eleven sector ETFs against the S&P" rows={served.map(toRow)} lo={lo} hi={hi} /> : null}
         </AdvancedPanel>

@@ -170,7 +170,8 @@ test.describe("desk v2", () => {
       for (const l of ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"]) await expect(main).toContainText(l);
       await expect(main).not.toContainText("Awaiting refresh");
       await expect(page.getByTestId("dk-live").first()).toHaveText("Not yet served");
-      await expect(main.getByTestId("dk-advanced").first()).toBeDisabled();
+      // §14.13: an Advanced that would open nothing is not shown.
+      await expect(main.getByTestId("dk-advanced")).toHaveCount(0);
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
@@ -258,7 +259,7 @@ test.describe("desk v2", () => {
     await seedPositions(page, [ndx, spx, { ...curve, entry_value: 55, original_room: 40 }]);
     await open(page, "/desk/overview");
     // §2: the K−2 row governing today (a September session reads the July row).
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Jul row");
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · July data");
     // The audit's values (§2.2, §2.1): the July row is Goldilocks; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Goldilocks");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
@@ -450,13 +451,13 @@ test.describe("desk v2", () => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/regime");
-      await expect(page.locator("body")).toContainText("Live · Jul row");
+      await expect(page.locator("body")).toContainText("Live · July data");
       const where = page.getByRole("region", { name: /Where we are/ });
       await expect(where.locator(".rg-latest")).toHaveText("Latest print: Aug 2026");
       const rec = page.getByRole("region", { name: /Recession score/ });
       await expect(rec.locator(".rg-rec-for")).toHaveText("score for Aug\u00a02026 · inputs through May\u00a02026");
       await expect(rec).toContainText("High risk · above 40%");
-      if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · Jul row");
+      if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · July data");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }

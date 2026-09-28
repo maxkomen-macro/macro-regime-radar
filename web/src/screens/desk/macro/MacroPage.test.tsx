@@ -284,8 +284,9 @@ describe("Macro tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
     expect(card).toHaveTextContent("10-year");
     expect(card).not.toHaveTextContent("4.21");
-    // §14.12: each of the four cards says so once.
-    expect(screen.getAllByTestId("dk-failed")).toHaveLength(4);
+    // §14.12: each of the five cards (the 2×2 and desk/matrix's matrix) says so once.
+    expect(screen.getAllByTestId("dk-failed")).toHaveLength(5);
+    expect(within(screen.getByRole("region", { name: /^Correlation matrix/ })).getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry");
   });
 });
 
@@ -369,7 +370,9 @@ describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () =>
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89"));
     const card = screen.getByRole("region", { name: /^What moves with the S&P/ });
+    // §14.13: an Advanced that would open nothing is not shown.
     expect(within(card).queryByTestId("dk-advanced")).toBeNull();
+    expect(card).not.toHaveTextContent("Advanced");
     expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent("+0.44");
     expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.96%");
     expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("2.73%");

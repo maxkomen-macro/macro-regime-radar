@@ -27,7 +27,7 @@ export default function TourStrip({ step, onClosed }: { step: number; onClosed?:
 
   const go = (n: number) => {
     if (n < 1 || n > total) return;
-    // A button about to be disabled hands focus on first (never to the page).
+    // A button about to be hidden hands focus on first (never to the page).
     if (n === total && document.activeElement === nextRef.current) closeRef.current?.focus();
     if (n === 1 && document.activeElement === backRef.current) nextRef.current?.focus();
     navigate(tourHref(n));
@@ -78,12 +78,17 @@ export default function TourStrip({ step, onClosed }: { step: number; onClosed?:
         {current.caption}
       </p>
       <div className="mrr-desk-tour-actions">
-        <button type="button" className="mrr-btn" ref={backRef} onClick={() => go(step - 1)} disabled={step <= 1} aria-keyshortcuts="ArrowLeft">
-          Back
-        </button>
-        <button type="button" className="mrr-btn mrr-btn-primary" ref={nextRef} onClick={() => go(step + 1)} disabled={step >= total} aria-keyshortcuts="ArrowRight">
-          Next
-        </button>
+        {/* desk/usability §14.13: no Back on the first step and no Next on the last, rather than a button that does nothing. */}
+        {step > 1 ? (
+          <button type="button" className="mrr-btn" ref={backRef} onClick={() => go(step - 1)} aria-keyshortcuts="ArrowLeft">
+            Back
+          </button>
+        ) : null}
+        {step < total ? (
+          <button type="button" className="mrr-btn mrr-btn-primary" ref={nextRef} onClick={() => go(step + 1)} aria-keyshortcuts="ArrowRight">
+            Next
+          </button>
+        ) : null}
         <button type="button" className="mrr-btn" ref={closeRef} onClick={close} aria-keyshortcuts="Escape" aria-label="Close the walkthrough">
           Close
         </button>

@@ -18,8 +18,8 @@ export type Tone = "up" | "down" | "flat" | "amber" | "green" | "red" | "blue" |
 
 // ── The unavailable state (§1.0.2) ─────────────────────────────────────────
 // A block the API serves awaiting keeps its title, subtitle and stat labels;
-// its body prints the served reason once; its Advanced control is disabled
-// and says "not yet served"; its badge reads "○ Not yet served", or "○ Awaiting
+// its body prints the served reason once; it shows no Advanced control
+// (desk/usability §14.13); its badge reads "○ Not yet served", or "○ Awaiting
 // refresh" when the reason begins "Awaiting refresh" (§1.7, S-27). A card
 // inside an <Unserved> scope takes that state: the Card prints the reason
 // once, a Stat keeps its label with no number, Awaiting says nothing more.
@@ -78,7 +78,7 @@ export function useBlockUnserved(data: { _blocks?: Record<string, Unavailable> }
 /**
  * A card whose block is unavailable, drawn exactly as §1.0.2 says: its title
  * and subtitle, its badge (§1.7), its stat labels with no number, the
- * served reason once, and its Advanced control disabled ("not yet served").
+ * served reason once, and no Advanced control (desk/usability §14.13).
  * Cards a page draws itself return this in place of their body.
  */
 export function UnservedCard({
@@ -87,7 +87,6 @@ export function UnservedCard({
   labels = [],
   block,
   className,
-  advanced = false,
   headingId,
   as: As = "section",
   cols,
@@ -99,6 +98,7 @@ export function UnservedCard({
   cols?: number;
   block: Unavailable;
   className?: string;
+  /** Retired (desk/usability §14.13): an unserved card shows no Advanced control. Kept so callers need not change. */
   advanced?: boolean;
   headingId?: string;
   as?: "section" | "div" | "article";
@@ -125,11 +125,6 @@ export function UnservedCard({
           </StatRow>
         ) : null}
         <UnservedLine block={block} />
-        {advanced ? (
-          <div className="dk-card-foot">
-            <Advanced items="" />
-          </div>
-        ) : null}
       </UnservedContext.Provider>
     </As>
   );
@@ -316,16 +311,10 @@ export function ReadBox({ label = "Read", warn = false, children, className }: {
 
 /** `Advanced ▸` (blue link) plus the gray list of what expands (§1.4 item 5). */
 export function Advanced({ items, open, onToggle, controls, served = true }: { items: string; open?: boolean; onToggle?: () => void; controls?: string; served?: boolean }) {
-  // §1.4: enabled only when the endpoint it opens exists in §12; otherwise disabled, "not yet served".
-  if (useUnserved() || !served)
-    return (
-      <p className="dk-adv">
-        <button type="button" className="dk-link" disabled data-testid="dk-advanced">
-          Advanced ▸
-        </button>{" "}
-        <span>not yet served</span>
-      </p>
-    );
+  // §1.4 as amended by desk/usability §14.13: shown only when what it opens is served; a control that
+  // would open nothing is not shown (it was a disabled "Advanced ▸ not yet served").
+  const unserved = useUnserved();
+  if (unserved || !served) return null;
   return (
     <p className="dk-adv">
       <button type="button" className="dk-link" aria-expanded={onToggle ? Boolean(open) : undefined} aria-controls={open ? controls : undefined} onClick={onToggle} data-testid="dk-advanced">
@@ -345,16 +334,16 @@ export function useAdvanced(): { open: boolean; toggle: () => void; id: string }
 
 /** `Advanced ▸` with the panel it opens under the card's body: what is
  * served goes in `children`; `missing` says in one sentence what the API does
- * not serve yet, so an expander never opens onto nothing. §1.4: a control
- * whose panel reads no §12 endpoint is disabled and says "not yet served";
- * `enabled` marks one that opens something real (a served endpoint, or
- * controls this browser holds, §1.0's local basket editing). */
+ * not serve yet. `enabled` marks one that opens something real (a served
+ * endpoint, or controls this browser holds, §1.0's local basket editing);
+ * without it nothing is shown (desk/usability §14.13: no control that does
+ * nothing, and no expander that opens onto nothing). */
 export function AdvancedPanel({ adv, items, missing, children, enabled = false }: { adv: { open: boolean; toggle: () => void; id: string }; items: string; missing?: string; children?: ReactNode; enabled?: boolean }) {
   const unserved = useUnserved();
   return (
     <>
-      <Advanced items={items} open={adv.open} onToggle={adv.toggle} controls={adv.id} served={enabled} />
-      {adv.open && !unserved && enabled ? (
+      <Advanced items={items} open={adv.open} onToggle={adv.toggle} controls={adv.id} served={enabled && children != null && children !== false} />
+      {adv.open && !unserved && enabled && children != null && children !== false ? (
         <div className="dk-adv-panel" id={adv.id}>
           {children}
           {missing ? <p className="dk-adv-missing">{missing}</p> : null}

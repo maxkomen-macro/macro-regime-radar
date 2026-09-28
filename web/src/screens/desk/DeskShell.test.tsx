@@ -123,8 +123,8 @@ describe("Desk v2 shell", () => {
     renderDesk("/desk/overview");
     const today = await screen.findByTestId("dk-today");
     await waitFor(() => expect(today).toHaveTextContent("Goldilocks"));
-    // §1.1: "Goldilocks · Jul row", the K−2 row governing today (the audit's §2.2).
-    expect(today).toHaveTextContent("regime · Jul row");
+    // §1.1: the K−2 row governing today (the audit's §2.2), said as its month's data (§14.13).
+    expect(today).toHaveTextContent("regime · July data");
     // The fixture's session is Sep 23; "today" only when that is New York's today. Sep 22 is not
     // stored (the audit's §2.1), so the day's change is null and says Awaiting refresh.
     expect(today).toHaveTextContent(/S&P (today|Sep 23)\s*Awaiting refresh/);

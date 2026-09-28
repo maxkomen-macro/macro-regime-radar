@@ -305,7 +305,8 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
               </h2>
               {/* §11: "generated from the registry and its consumers, counts derived". */}
               <p className="pl-head-sub">{total ? `${total} series · grouped · generated from the registry` : "grouped · generated from the registry"}</p>
-              <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} disabled={!groups.length} />
+              {/* §14.13: the search appears with the series it searches. */}
+              {groups.length ? <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} /> : null}
             </div>
             <LoadingLine busy={!p && !q.isError} />
             {text.trim() && !hit ? (

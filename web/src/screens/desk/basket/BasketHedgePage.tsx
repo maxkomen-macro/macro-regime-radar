@@ -112,14 +112,17 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
         <p>
           <span className="dk-stat-label">Legs</span> <span className="bh-hint">type a weight, or × to drop a name</span>
         </p>
-        <div className="bh-legs-tools">
-          <button type="button" className="dk-btn" disabled={!legs?.length} onClick={() => legs && onChange(equalWeight(legs))}>
-            Equal-weight
-          </button>
-          <button type="button" className="dk-btn" disabled={!legs?.length} onClick={() => legs && onChange(normalize(legs))}>
-            Normalize to 100%
-          </button>
-        </div>
+        {/* §14.13: a tool with no legs to act on is not shown. */}
+        {legs?.length ? (
+          <div className="bh-legs-tools">
+            <button type="button" className="dk-btn" onClick={() => onChange(equalWeight(legs))}>
+              Equal-weight
+            </button>
+            <button type="button" className="dk-btn" onClick={() => onChange(normalize(legs))}>
+              Normalize to 100%
+            </button>
+          </div>
+        ) : null}
       </div>
       {legs ? (
         <table className="bh-table">
@@ -187,24 +190,27 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
       ) : (
         empty
       )}
-      <div className="bh-add-row">
-        <form
-          className="bh-add"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void add();
-          }}
-        >
-          <label htmlFor={`${uid}-t`} className="bh-add-plus" aria-hidden="true">
-            +
-          </label>
-          <input id={`${uid}-t`} className="bh-add-input" placeholder="Add a ticker…" aria-label="Add a ticker" value={ticker} disabled={!legs} aria-busy={checking || undefined} onChange={(e) => setTicker(e.target.value)} autoComplete="off" />
-          <span className="bh-add-hint">any US-listed name</span>
-        </form>
-        <p className="bh-total">
-          total <b data-off={(tot != null && tot !== "100") || undefined}>{tot == null ? "—" : totalWords(tot)}</b>
-        </p>
-      </div>
+      {/* §14.13: with no basket open there is nothing to add to; + New basket starts one. */}
+      {legs ? (
+        <div className="bh-add-row">
+          <form
+            className="bh-add"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void add();
+            }}
+          >
+            <label htmlFor={`${uid}-t`} className="bh-add-plus" aria-hidden="true">
+              +
+            </label>
+            <input id={`${uid}-t`} className="bh-add-input" placeholder="Add a ticker…" aria-label="Add a ticker" value={ticker} aria-busy={checking || undefined} onChange={(e) => setTicker(e.target.value)} autoComplete="off" />
+            <span className="bh-add-hint">any US-listed name</span>
+          </form>
+          <p className="bh-total">
+            total <b data-off={(tot != null && tot !== "100") || undefined}>{tot == null ? "—" : totalWords(tot)}</b>
+          </p>
+        </div>
+      ) : null}
       <p className="bh-note" role="status">
         {note}
       </p>
@@ -456,19 +462,26 @@ function BasketCard({
       }
       footer={
         <div className="bh-foot">
-          <div className="bh-save">
-            {/* §14.6: the page's one primary action is the header's Send; saving is secondary. */}
-            <button type="button" className="dk-btn" onClick={save} disabled={!legs || !local}>
-              Save basket
-            </button>
-            <span className="bh-save-hint">{dirty ? "unsaved changes" : "Save computes everything below · kept in this browser only"}</span>
-          </div>
+          {/* §14.6: the page's one primary action is the header's Send; saving is secondary. §14.13: shown with a basket open. */}
+          {legs ? (
+            <div className="bh-save">
+                          <button type="button" className="dk-btn" onClick={save}>
+                Save basket
+              </button>
+              <span className="bh-save-hint">{dirty ? "unsaved changes" : "Save computes everything below · kept in this browser only"}</span>
+            </div>
+          ) : null}
           {/* §1.8, §10: the basket's local controls sit with Save; they need no endpoint. */}
           <p className="bh-adv-row bh-local">
-            <button type="button" className="dk-link" onClick={download} disabled={!saved.length}>
-              Export saved baskets (JSON)
-            </button>
-            {" · "}
+            {/* §14.13: nothing saved, nothing to export: the control is not shown. */}
+            {saved.length ? (
+              <>
+                <button type="button" className="dk-link" onClick={download}>
+                  Export saved baskets (JSON)
+                </button>
+                {" · "}
+              </>
+            ) : null}
             <button type="button" className="dk-link" onClick={() => fileRef.current?.click()}>
               Import JSON
             </button>

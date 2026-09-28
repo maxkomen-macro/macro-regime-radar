@@ -316,11 +316,13 @@ describe("Basket & Hedge tab", () => {
     renderTab();
     const b = basketCard();
     expect(b).toHaveTextContent("No basket is saved in this browser yet: start one with + New basket, or import a file.");
-    // No basket, no chart title, and no total to hold against 100 (no amber dash).
+    // No basket, no chart title, no total to hold against 100, and (§14.13) no control with nothing to act on.
     expect(b).not.toHaveTextContent("bet working");
-    expect(b.querySelector(".bh-total b")).not.toHaveAttribute("data-off");
+    expect(b.querySelector(".bh-total")).toBeNull();
     expect(within(b).queryByLabelText("Basket")).toBeNull();
-    expect(within(b).getByLabelText("Add a ticker")).toBeDisabled();
+    expect(within(b).queryByLabelText("Add a ticker")).toBeNull();
+    for (const name of ["Equal-weight", "Normalize to 100%", "Save basket", "Export saved baskets (JSON)"]) expect(within(b).queryByRole("button", { name })).toBeNull();
+    expect(within(b).getByRole("button", { name: "Import JSON" })).toBeEnabled();
     fireEvent.click(within(b).getByRole("button", { name: "+ New basket" }));
     fireEvent.click(within(b).getByRole("button", { name: "Create" }));
     expect(b).toHaveTextContent("Name the basket first.");
@@ -660,22 +662,4 @@ describe("Codex R-01: Positioning never prints NaN or counts a name without data
       expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
       expect(c.textContent).not.toMatch(/NaN|\d%\s*of float|names with data/);
     });
-});
-
-describe("added from Technicals (§14.2)", () => {
-  it("`?add=` puts the ticker in the open basket at 0%, unsaved, and leaves the address", async () => {
-    seed();
-    renderTab("/desk/basket-hedge?add=nvda&basket=" + (BASKETS[0] as SavedBasket).id);
-    const basket = await screen.findByRole("region", { name: "Basket" });
-    await waitFor(() => expect(basket).toHaveTextContent(/NVDA (added from Technicals at 0%|is already in this basket)/));
-    await waitFor(() => expect(screen.getByTestId("loc").textContent).not.toMatch(/add=/));
-    expect(stored()).toEqual(BASKETS);
-  });
-
-  it("with no basket kept here, one is started for the ticker", async () => {
-    renderTab("/desk/basket-hedge?add=AAPL");
-    const basket = await screen.findByRole("region", { name: "Basket" });
-    await waitFor(() => expect(basket).toHaveTextContent("AAPL added from Technicals at 0%: type its weight, then save."));
-    expect(stored()).toHaveLength(1);
-  });
 });

@@ -214,7 +214,7 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
         <StatRow cols={3}>
           <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, 3-mo slope" />
           <Stat label="Inflation" value={i ? capitalize(i) : undefined} awaiting={!i} tone={trendTone("inflation", i)} sub="CPI, 3-mo slope" />
-          <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} row` : undefined} />
+          <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} reading` : undefined} />
         </StatRow>
       ) : (
         <AwaitingStats labels={["Growth", "Inflation", "In this regime"]} quiet={quiet} />

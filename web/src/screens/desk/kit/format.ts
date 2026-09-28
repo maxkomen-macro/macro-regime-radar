@@ -133,9 +133,10 @@ export function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
-/** "Jul row": the stored regime row a label comes from (§5: the K−2 row governing today). */
+/** "July data": the month of the stored regime row a label comes from (§5: the K−2 row governing today);
+ * desk/usability §14.13: said as the month's data, never as a table's "row". */
 export function rowWords(print: string | null | undefined): string {
-  return monthShort(print) ? `${monthShort(print)} row` : "";
+  return monthLong(print) ? `${monthLong(print)} data` : "";
 }
 
 /** The recession score's band in words (§5, v3 §11): "Low", "Elevated", "High risk"; "" when not served. */

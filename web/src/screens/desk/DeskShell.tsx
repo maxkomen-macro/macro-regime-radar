@@ -39,16 +39,6 @@ const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
 const BasketHedgePage = lazy(() => import("./basket/BasketHedgePage"));
 const ClientView = lazy(() => import("./client/ClientView"));
 
-/** §1.1 (Codex R-22): the page footer names the one generation the page's answers share, or each when they differ. */
-function GenerationFooter({ ids }: { ids: readonly string[] }) {
-  if (!ids.length) return null;
-  return (
-    <footer className="dk-gen" data-testid="dk-gen">
-      <span>{ids.length > 1 ? "Generations" : "Generation"}</span> <span className="dk-gen-id">{ids.join(" · ")}</span>
-    </footer>
-  );
-}
-
 /** §1.1, §11 (S-32): the Client view's footer says only when the answer was staged, never the generation, and is not printed. */
 function SnapshotFooter() {
   const asOf = dayLong(usePageAsOf());
@@ -128,12 +118,14 @@ export default function DeskShell() {
       <MixedGenerations.Provider value={generations.length > 1}>
         <div className="dk-main">
           <DeskTopBar page={page} view={view} onChangeView={setView} pathTo={pathTo} onMenu={() => setMenu((m) => !m)} menuOpen={menu} right={page.slug === "data-pipeline" ? <PipelineBadge /> : undefined} />
-          <main id="main-content" className="dk-page" tabIndex={-1} style={{ outline: "none" }} data-slug={page.slug}>
+          <main id="main-content" className="dk-page" tabIndex={-1} style={{ outline: "none" }} data-slug={page.slug} data-generations={generations.join(" ") || undefined}>
             <ErrorBoundary key={page.slug} label="This Desk tab">
               <Suspense fallback={<PageLoading label={page.label} />}>{body}</Suspense>
             </ErrorBoundary>
-            {/* S-32: the Client view prints its snapshot date instead; the mixed-generation check still runs. */}
-            {client ? <SnapshotFooter /> : <GenerationFooter ids={generations} />}
+            {/* Codex R-22's generation check runs on every view and says "mixed generations · refreshing" when the
+                answers disagree; the ids ride on <main> (data-generations), never in words an MD reads (desk/usability
+                §14.13). S-32: the Client view prints its snapshot date. */}
+            {client ? <SnapshotFooter /> : null}
           </main>
           {tour ? <TourStrip step={tour} /> : null}
         </div>

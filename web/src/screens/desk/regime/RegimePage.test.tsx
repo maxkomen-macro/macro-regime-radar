@@ -144,7 +144,7 @@ describe("Regime tab", () => {
     );
     // §1.3's exception (v2 D-36) and §5: the label in its regime's color.
     expect(card.querySelector(".rg-big")).toHaveAttribute("data-tone", "green");
-    expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the July row/);
+    expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the July reading/);
     expect(card.querySelector(".rg-latest")?.textContent).toBe("Latest print: Aug 2026");
     const strip = within(card).getByRole("img", { name: /Regime by month from Aug 2021 to Aug 2026/ });
     const segs = [...strip.querySelectorAll("span")];
@@ -364,7 +364,7 @@ describe("blocks served awaiting inside a ready answer (§12.6, §1.0.2)", () =>
     for (const l of ["Regime", "Months", "S&P median", "S&P mean", "Up", "VIX avg"]) expect(meant).toHaveTextContent(new RegExp(l.replace("&", "&"), "i"));
     expect(within(meant).getAllByText(reason)).toHaveLength(1);
     expect(within(meant).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
-    expect(within(meant).getByTestId("dk-advanced")).toBeDisabled();
+    expect(within(meant).queryByTestId("dk-advanced")).toBeNull();
     const change = screen.getByRole("region", { name: /^What would change it/ });
     expect(change).toHaveTextContent("Oct 14");
     expect(within(change).getAllByText(reason)).toHaveLength(1);

@@ -248,17 +248,17 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 11px;
+  margin: 11px 0 0;
+  padding: 0;
+  list-style: none;
 }
-/* §10: the three mode labels are kept, and nothing can be picked while the hedge is not served. */
-.bh-modes button {
+/* §10: the three mode labels are kept; §14.13: as labels, nothing can be picked while the hedge is not served. */
+.bh-modes li {
   padding: 5px 11px;
   border: 1px solid var(--dk-box);
   border-radius: 6px;
-  background: none;
   color: var(--dk-t3);
   font-size: 13px;
-  cursor: default;
 }
 .bh-modes + .dk-stats {
   margin-top: 14px;

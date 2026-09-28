@@ -15,6 +15,8 @@ import { DESK_PAGES } from "../src/screens/desk/desk-sections";
 import positionSample from "../src/fixtures/desk/positions.json" with { type: "json" };
 import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
 import { GLOSSARY } from "../src/screens/desk/kit/glossary";
+import basketSample from "../src/fixtures/desk/baskets.json" with { type: "json" };
+import { SAVED_BASKETS_KEY } from "../src/screens/desk/basket/weights";
 
 /** What /api/market/search answers on the Desk's scope in these tests: a mixed upstream list, as EODHD sends it. */
 export const SEARCH_N: Override = {
@@ -39,6 +41,54 @@ async function open(page: Page, route: string, over?: Record<string, Override>):
   await page.goto(route, { waitUntil: "domcontentloaded" });
   await settle(page, 500);
   return calls;
+}
+
+/** Item 13's words that must never reach an MD's screen (the brief's list, as patterns). */
+const GUARD_STRINGS: [string, RegExp][] = [
+  ["Generation g…", /Generation g/],
+  ["<n> ms", /\b\d+ ms\b/],
+  ["cached", /\bcached\b/i],
+  ["<Month> row", /\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]* row\b/],
+  ["not specified", /not specified/i],
+];
+
+/**
+ * Whitelisted disabled controls, each with its reason (the brief keeps them): the Position Monitor's Save waits
+ * for the discipline gate (item 4 keeps the gate exactly as is). §1.0 unavailable-with-reason blocks
+ * ([data-unserved]) and PROTOTYPE cards ([data-prototype]) are whitelisted by scope.
+ */
+const GUARD_ALLOW = [".pm-save-btn"];
+
+/** Item 13: what a page must not show. Every problem as one line; none is an empty list. */
+async function guardProblems(page: Page, where: string): Promise<string[]> {
+  const bad: string[] = [];
+  const text = await page.locator("body").innerText();
+  for (const [name, re] of GUARD_STRINGS) if (re.test(text)) bad.push(`${where}: "${name}" on screen (${text.match(re)?.[0]})`);
+  const disabled = await page.evaluate((allow) => {
+    const out: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>('button, select, option, input, textarea, [aria-disabled="true"]')) {
+      const off = (el as HTMLButtonElement).disabled || el.getAttribute("aria-disabled") === "true";
+      if (!off) continue;
+      if (el.closest(["[data-unserved]", "[data-prototype]", "[hidden]", ...allow].join(", "))) continue;
+      const box = (el.tagName === "OPTION" ? el.closest("select") : el)?.getBoundingClientRect();
+      if (!box || (box.width === 0 && box.height === 0)) continue;
+      out.push(`${el.tagName.toLowerCase()} "${(el.textContent || el.getAttribute("aria-label") || "").trim().slice(0, 48)}"`);
+    }
+    return out;
+  }, GUARD_ALLOW);
+  bad.push(...disabled.map((d) => `${where}: disabled ${d}`));
+  // An Advanced expander opens onto something served, never only a sentence about what is missing.
+  const toggles = page.getByRole("main").getByTestId("dk-advanced");
+  for (let i = 0; i < (await toggles.count()); i++) {
+    const t = toggles.nth(i);
+    if ((await t.getAttribute("aria-expanded")) !== "true") await t.click();
+    const id = await t.getAttribute("aria-controls");
+    const panel = id ? page.locator(`[id="${id}"]`) : null;
+    const all = panel && (await panel.count()) ? (await panel.innerText()).trim() : "";
+    const missing = panel && (await panel.count()) ? (await panel.locator(".dk-adv-missing").allInnerTexts()).join("") : "";
+    if (all.replace(missing, "").trim().length < 20) bad.push(`${where}: Advanced ${i + 1} opens onto nothing`);
+  }
+  return bad;
 }
 
 test.describe("desk usability", () => {
@@ -382,7 +432,8 @@ test.describe("desk usability", () => {
     await expect(main.getByTestId("dk-failed")).toHaveCount(1);
     await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("RSI (14)");
     await expect(main.getByRole("region", { name: /S&P 500 price/ }).getByRole("img").first()).toBeVisible();
-    await expect(main).not.toContainText("Awaiting refresh");
+    // Nothing on the failed card awaits a refresh (the fixture's own technicals await some values, a fact of its data).
+    await expect(signals).not.toContainText("Awaiting refresh");
     // The Ledger answers again: Retry fills the card.
     await page.route(
       (u) => u.pathname === "/api/desk/ledger",
@@ -408,5 +459,50 @@ test.describe("desk usability", () => {
     await expect(main.getByTestId("ov-since")).toContainText("Couldn't load · Retry");
     await expect(main.getByRole("region", { name: /^Monitored/ })).toBeVisible();
     expect(await auditPalette(page)).toEqual([]);
+  });
+
+  test("item 13: no Desk page shows a control that does nothing, an empty Advanced, or the banned strings (empty browser store)", async ({ page }) => {
+    const routes = [
+      ...DESK_PAGES.map((p) => `/desk/${p.slug}`),
+      "/desk/technicals?symbol=NVDA",
+      "/desk/event-study?adv=1",
+      "/desk/event-study?view=client",
+      "/desk/overview?tour=1",
+      "/desk/overview?tour=6",
+    ];
+    const bad: string[] = [];
+    for (const r of routes) {
+      await open(page, r);
+      bad.push(...(await guardProblems(page, r)));
+    }
+    expect(bad).toEqual([]);
+  });
+
+  test("item 13: the same guard with positions and baskets saved in this browser", async ({ page }) => {
+    await page.addInitScript(
+      ([pk, pv, bk, bv]) => {
+        localStorage.setItem(pk, pv);
+        localStorage.setItem(bk, bv);
+      },
+      [POSITIONS_KEY, JSON.stringify((positionSample as { positions: unknown[] }).positions), SAVED_BASKETS_KEY, JSON.stringify((basketSample as { baskets: unknown[] }).baskets)] as const,
+    );
+    const bad: string[] = [];
+    for (const r of ["/desk/overview", "/desk/basket-hedge", "/desk/position-monitor", "/desk/position-monitor?new=1"]) {
+      await open(page, r);
+      bad.push(...(await guardProblems(page, r)));
+    }
+    expect(bad).toEqual([]);
+    // The whitelist is the gate's Save only, and it is on the form, waiting for the gate.
+    await expect(page.locator(".pm-save-btn")).toBeDisabled();
+  });
+
+  test("item 13: the guard sees what it guards against", async ({ page }) => {
+    await open(page, "/desk/build-notes");
+    await page.evaluate(() => {
+      const main = document.querySelector("main")!;
+      main.insertAdjacentHTML("beforeend", '<p>Generation g1 · 0 ms · cached · Jul row · not specified</p><button disabled>Dead</button>');
+    });
+    const bad = await guardProblems(page, "probe");
+    expect(bad).toEqual(expect.arrayContaining([expect.stringContaining('"Generation g…"'), expect.stringContaining('"<n> ms"'), expect.stringContaining('"cached"'), expect.stringContaining('"<Month> row"'), expect.stringContaining('"not specified"'), 'probe: disabled button "Dead"']));
   });
 });

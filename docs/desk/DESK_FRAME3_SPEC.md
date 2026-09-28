@@ -109,7 +109,7 @@ Build Notes prints these two lists as their own section, word for word.
 A card whose block is unavailable keeps its title, subtitle and stat labels.
 Its body prints one sentence: the served `unavailable.reason`, and, when
 served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
-`Advanced ▸` control is disabled and says "not yet served". Its badge reads
+`Advanced ▸` control is not shown (§14.13; it was disabled, "not yet served"). Its badge reads
 `○ Not yet served` (`○ Awaiting refresh` when the reason begins "Awaiting
 refresh", §1.7). A block that is unavailable by §1.0 but has no served
 envelope prints the reason in §1.0's table (the confidence chips).
@@ -227,9 +227,10 @@ bars blue, baseline bars gray. Positive bars extend right, negative left.
    exists (§12.0, v2 §15). Amber-bordered when its `tone` is `warning`. No
    read is served on Monday; the box is omitted.
 5. Footer: `Advanced ▸` (blue link) + gray list of what expands, and/or an
-   action link `→`. An Advanced control is enabled only when the endpoint it
-   opens exists in §12; otherwise it is disabled and says "not yet served"
-   (v2 D-34). Footer text promises no counts or history ranges.
+   action link `→`. An Advanced control is shown only when the endpoint it
+   opens exists in §12; otherwise it is not shown (§14.13; it was disabled
+   with "not yet served", v2 D-34). Footer text promises no counts or history
+   ranges.
 
 ### 1.5 Verdicts (never "established", never "significant")
 
@@ -633,7 +634,7 @@ ticks and `today` at the right; key ■ Goldilocks ■ Overheating ■ Stagflati
 ■ Recession Risk; note "labels as stored; revisions are not replayed."
 (`history_note`). Box "How it's decided: two signs — growth rising or
 falling, inflation rising or falling. Four combinations, four regimes. No
-model, no fitting." Footer `Advanced ▸` disabled, "not yet served".
+model, no fitting." No `Advanced ▸` while it is not served (§14.13).
 
 **Recession score** (`logistic model, five monthly inputs lagged three
 months`). Big score (`recession.score` × 100 %), then the band word ("Low.",
@@ -645,8 +646,8 @@ its `probability_month`; "—" when null) · PEAK SINCE 2015 (`peak.score`,
 `peak.probability_month`). Box "What it is: a fitted model — five monthly
 indicators against NBER recession dates, trained <training.start> to
 <training.end>; historical scores are in-sample. It is the only fitted thing
-on the site, and it is labeled as one wherever it appears." Footer
-`Advanced ▸` disabled, "not yet served".
+on the site, and it is labeled as one wherever it appears." No
+`Advanced ▸` while it is not served (§14.13).
 
 **What each regime has meant** (desk/fill-compute; Codex R-01, R-04, R-07), from
 `/regime` `stats`. Measured from when each regime was known: a row stamped M
@@ -2344,3 +2345,40 @@ question pushes one.
   the words for data the store has not refreshed yet: an MD could not tell a
   dropped connection from a stale store. Codex R-09's rule stands: an answer
   that came back null is never a loading state; it is now a failure.
+
+### 14.13 No control that does nothing
+
+- **The rule.** Every visible option works or is not shown. The guard
+  (`web/e2e/desk-usability.spec.ts`, item 13) opens every Desk page (every
+  sidebar page, a stock's Technicals, the Event Study with Advanced open,
+  the Client view, the walkthrough's first and last steps), with an empty
+  browser store and with positions and baskets saved, and fails on:
+  - a visible disabled button, select, option, input or `aria-disabled`
+    control;
+  - an Advanced expander that opens onto nothing but a sentence about what is
+    missing;
+  - the strings "Generation g…", "<n> ms", "cached", "<Month> row" or
+    "not specified".
+- **Whitelisted, each with its reason.** A §1.0 block served unavailable
+  with its reason (`[data-unserved]`); a PROTOTYPE card with its footnote
+  (`[data-prototype]`, none on this branch); the Position Monitor's Save,
+  which waits for the discipline gate (item 4 keeps the gate as it is).
+- **What changed to pass it.**
+  - `Advanced ▸` is shown only when what it opens is served (kit `Advanced`,
+    `AdvancedPanel`); it was a disabled "Advanced ▸ not yet served".
+  - The page footer "Generation gen-…" is gone. The generation check (Codex
+    R-22) still runs, says "mixed generations · refreshing" when answers
+    disagree, and keeps the ids on `<main data-generations>`.
+  - The Event Study pill reads "● Live", without "0.3s, cached".
+  - A regime label's month reads "July data" (sidebar, Overview tile,
+    Regime badge), never "Jul row"; "since the July reading".
+  - The Overview's VIX tile says the gap to realized and a band word are not
+    on the tile yet, and links to Technicals, where the S&P's 21-day realized
+    volatility is served (§14.2). The old "realized-volatility method not
+    specified" predated that method.
+  - The basket editor shows Equal-weight, Normalize, the ticker field, the
+    total and Save only with a basket open, and Export only with a basket
+    saved. The hedge's three modes are labels, not disabled buttons.
+  - The Ledger's filter chips and the Pipeline's search appear with the rows
+    they act on.
+  - The walkthrough has no Back on its first step and no Next on its last.

@@ -200,13 +200,16 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
         </div>
         <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
           <LoadingLine busy={state === "loading"} />
-          <div className="lg-chips" role="group" aria-label="Filter">
-            {chips.map((c) => (
-              <button key={c.id} type="button" className="dk-chip" aria-pressed={filter === c.id} disabled={!ready} onClick={() => setFilter(c.id)}>
-                {c.label}
-              </button>
-            ))}
-          </div>
+          {/* §14.13: the filters appear with the rows they filter. */}
+          {ready ? (
+            <div className="lg-chips" role="group" aria-label="Filter">
+              {chips.map((c) => (
+                <button key={c.id} type="button" className="dk-chip" aria-pressed={filter === c.id} onClick={() => setFilter(c.id)}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {ready ? (
             // The table keeps its columns at every width; narrower than that, it scrolls inside this region (L-1, L-11).
             <div className="lg-scroll" ref={scrollRef} tabIndex={scrolls ? 0 : undefined} role="region" aria-label="The signals table">

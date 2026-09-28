@@ -18,7 +18,7 @@ import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { bpEvents, bpStudy } from "../../../test/desk-variants";
 import type { Question } from "../data/types";
 import { applyFix, provenanceLine } from "./EventStudyPage";
-import { barTicks, horizonPhrase, servedWords } from "./AnswerCard";
+import { barTicks, horizonPhrase } from "./AnswerCard";
 import { LAST_STUDY_KEY, SAVED_KEY, WHILES, WINDOWS, apiParams, askFromSearch, atMonth, exportSaved, importSaved, loadSaved, questionFromEngine, questionWords, searchFor, unreadableSaved, withSaved, withdrawnIn, writeSaved } from "./question";
 
 const GOLD: Question = { shock: "gold", window: 20, move: "up2s", while: "spx_below_50", target: "spx", horizon: 20 };
@@ -94,7 +94,6 @@ describe("the question", () => {
   it("spells the served numbers", () => {
     expect(horizonPhrase(20)).toBe("a month");
     expect(horizonPhrase(60)).toBe("3 months");
-    expect(servedWords({ elapsed_ms: 300, served_from_cache: true })).toBe("0.3s, cached");
     expect(barTicks(-0.5, 6.2)).toEqual([-3, 0, 5]);
     expect(barTicks(-0.5, 6.2, "log_change")).toEqual([-3, 0, 5]);
     // Basis points step by 1, 2 or 5 × 10ⁿ, never by a percent's 5 (Codex G2-5).
@@ -126,7 +125,8 @@ describe("Event Study tab", () => {
     // The S&P's 50-day condition is unevaluable since Sep 22 (the audit's §2.1), so the state is stale at Sep 21 (§4).
     expect(card).toHaveTextContent("○ Stale · Sep 21, 2026");
     expect(card).not.toHaveTextContent("Firing today");
-    expect(card).toHaveTextContent("● Live · 0.3s, cached");
+    expect(card).toHaveTextContent("● Live");
+    expect(card).not.toHaveTextContent(/cached|\d ms|\ds\b/);
     // EVENTS is the study's size, with the selected horizon's completed count beneath it (C-03).
     expect(card).toHaveTextContent(/Events\s*18\s*18 complete at 1 month/);
     expect(card).toHaveTextContent(/Up a month later\s*67%\s*12 of 18/);

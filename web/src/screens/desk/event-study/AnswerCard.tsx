@@ -140,13 +140,6 @@ export function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: Targe
   );
 }
 
-/** "0.3s, cached" from the served timing (milliseconds under a tenth of a second). */
-export function servedWords(s: Pick<StudyResponse, "elapsed_ms" | "served_from_cache">): string {
-  const ms = s.elapsed_ms;
-  const t = !fin(ms) ? null : ms < 100 ? `${Math.max(0, Math.round(ms))} ms` : `${(ms / 1000).toFixed(1)}s`;
-  return [t, s.served_from_cache ? "cached" : null].filter(Boolean).join(", ");
-}
-
 /** The line on the same question without its condition (§4): the `without_condition` block, unavailable on
  * Monday (§1.0, C-01), so it prints its served reason; a block that did not arrive is Awaiting refresh. The
  * comparison's shape, once defined, is §12.13's. */
@@ -266,8 +259,9 @@ export default function AnswerCard({
         ) : study.firing_now === false ? (
           <span className="es-pill">○ Not firing today{study.last_event ? ` · last ${dayLong(study.last_event)}` : ""}</span>
         ) : null}
+        {/* desk/usability §14.13: the engine's timing and cache words ("0.3s, cached") are not an MD's; the pill says live. */}
         <span className="es-pill" data-live>
-          {["● Live", servedWords(study)].filter(Boolean).join(" · ")}
+          ● Live
         </span>
       </div>
       <StatRow cols={4}>
