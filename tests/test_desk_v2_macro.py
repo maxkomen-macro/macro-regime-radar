@@ -39,12 +39,14 @@ PUBLISHED = ROOT / "data" / "macro_radar.db"
 AUDIT_SHA = "9a8b857968b8de22"  # FRAME3_DATA_AUDIT.md's copy of the store
 client = TestClient(app)
 AWAITING_REFRESH = "Awaiting refresh: this could not be computed from the current data."
-CORRELATIONS = "Treasury and credit price-return series not ingested."
+CORRELATIONS = "the 12-asset matrix's assets and method are not specified yet."
+# desk/fill-etf: the hermetic store holds no asset_prices, so the stock–bond block awaits the ETF refresh
+STOCK_BOND_AWAITING = "Awaiting refresh: the full refresh stores SPY, TLT; this database predates it."
 TENOR_KEYS = ("3m", "2y", "5y", "10y", "30y")
 
 
 def serve_macro(install_worker, monkeypatch, path: Path):
-    return serve(install_worker, monkeypatch, path, names=("desk_macro",))
+    return serve(install_worker, monkeypatch, path, names=("desk_macro", "desk_etf"))
 
 
 def get_macro() -> dict:
@@ -91,8 +93,10 @@ def test_macro_shape(hermetic):
     body = get_macro()
     assert body["status"] == "ready"
     d = body["data"]
-    for k in ("stock_bond", "correlations", "matrix"):
-        assert d[k] == {"status": "awaiting", "data": None, "unavailable": {"reason": CORRELATIONS, "until": None}}
+    assert d["matrix"] == {"status": "awaiting", "data": None, "unavailable": {"reason": CORRELATIONS, "until": None}}
+    # desk/fill-etf: no SPY in the hermetic store, so the correlations await the ETF refresh
+    assert d["correlations"]["unavailable"]["reason"] == "Awaiting refresh: the full refresh stores SPY; this database predates it."
+    assert d["stock_bond"] == {"status": "awaiting", "data": None, "unavailable": {"reason": STOCK_BOND_AWAITING, "until": None}}
     assert d["curve"]["status"] == d["credit"]["status"] == "ready"
     c = d["credit"]["data"]
     assert set(c["rank_window"]) == {"start", "end", "n", "expected_n", "valid_n", "missing_n", "first_obs", "last_obs"}

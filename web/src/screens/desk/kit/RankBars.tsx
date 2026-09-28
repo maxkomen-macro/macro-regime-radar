@@ -14,6 +14,11 @@ export interface RankRow {
   name: string;
   /** Null when not served: the row keeps its ticker and name and says so (§1.7). */
   value: number | null;
+  /** Why the value is null, when served (a history that starts later, a missing close): the row reads
+   * "not available" with the reason, never a value or "below" (§12.13). */
+  note?: string | null;
+  /** The value's hover text (§1.9: "log return, ×100"). */
+  title?: string;
 }
 
 /** §3/§7: > +1% green, within ±1% gray, < −1% red. */
@@ -44,10 +49,14 @@ export default function RankBars({ rows, lo, hi, label }: { rows: RankRow[]; lo?
               <span className="dk-rank-track" aria-hidden="true">
                 <span data-tone={relTone(r.value)} style={{ width: `${rankLength(r.value, min, max)}%` }} />
               </span>
-              <span className="dk-rank-value" data-tone={relTone(r.value) === "gray" ? undefined : relTone(r.value)}>
+              <span className="dk-rank-value" data-tone={relTone(r.value) === "gray" ? undefined : relTone(r.value)} title={r.title}>
                 {pct(r.value)}
               </span>
             </>
+          ) : r.note ? (
+            <span className="dk-rank-await dk-stat-await" title={r.note}>
+              not available · {r.note}
+            </span>
           ) : (
             <span className="dk-rank-await dk-stat-await">Awaiting refresh</span>
           )}

@@ -132,8 +132,9 @@ def test_registry_tier1_is_the_agreed_list_and_the_vocabularies_hold():
         assert s.unit in registry.UNITS and s.source in registry.SOURCES and s.known_by in registry.KNOWN_BY
         assert s.fixed[0] in registry.ANCHORS and s.known[0] in registry.ANCHORS, s.key
         assert isinstance(s.defer_as_target, bool)
-        # an available series is a study input, except the curve tenors, which only /macro reads
-        assert set(s.roles) <= set(registry.ROLES) and (bool(s.roles) == s.available or s.series_id in TENORS), s.key
+        # an available series is a study input, except the curve tenors, which only /macro reads, and the
+        # ETFs without roles (desk/fill-etf), which only the Sectors, Technicals and Macro tabs read
+        assert set(s.roles) <= set(registry.ROLES) and (bool(s.roles) == s.available or s.series_id in TENORS or s.source == "asset_prices"), s.key
         assert (s.reason is not None) == (not s.available), s.key
         assert (s.scale == 100.0) == (s.unit == "bp"), s.key  # FRED serves yields and OAS in percent
         if s.source != "market":

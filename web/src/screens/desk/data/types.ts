@@ -505,14 +505,41 @@ export interface DatedValue {
   source?: string;
 }
 
+export interface CorrelationRow {
+  asset: string;
+  symbol?: string;
+  quantity?: string;
+  transform?: string;
+  corr: number | null;
+  /** The newest session both series hold a value: the window's end. */
+  date?: string | null;
+  window?: Window | null;
+  /** Why `corr` is null, else null. */
+  reason?: string | null;
+}
+
 export interface MacroResponse extends Envelope {
   curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null; freq?: string; source?: string };
+  /** §12.8 (desk/fill-etf): SPY's daily log returns against TLT's, 60 return dates, every pair complete. */
   stock_bond?: {
     today: number | null;
+    today_date?: string | null;
+    /** Why `today` is null ("fewer than 60 complete daily return pairs …"). */
+    today_reason?: string | null;
     year_ago: number | null;
-    /** The month the sign last changed; null when it has not changed within the served year (§12.13). */
+    year_ago_date?: string | null;
+    /** The month of the newest change of sign; null when the served history has none. */
     flipped: string | null;
+    flipped_on?: string | null;
+    flipped_to?: "positive" | "negative" | null;
     series: { date: string; corr: number | null }[];
+    window?: Window;
+    line_window?: Window;
+    stock?: { etf: string; name: string };
+    bond?: { etf: string; name: string };
+    transform?: string;
+    date?: string;
+    providers?: string[];
   };
   /** §12.8: HY and IG as dated observations; the three-year figures over `rank_window`, null with a `reason` when coverage is short. */
   credit?: {
@@ -528,8 +555,8 @@ export interface MacroResponse extends Envelope {
     line_window?: Window;
     peak_12m: { date: string; hy: number | null } | null;
   };
-  /** §12.13: each asset declares its symbol, quantity and transform. */
-  correlations?: { asset: string; symbol?: string; quantity?: string; transform?: string; corr: number | null }[];
+  /** §12.8 (desk/fill-etf): each asset against SPY over 60 daily returns to its own `date`, declaring its symbol, quantity and transform. */
+  correlations?: CorrelationRow[];
   /** `labels` is PROPOSED (§12.13): the assets' names, in `assets` order. */
   matrix?: { assets: string[]; labels?: string[]; window: number | null; values: (number | null)[][] };
   /** §12.0: the cards' served reads (none on Monday). */
@@ -551,14 +578,68 @@ export interface VolResponse extends Envelope {
   dates?: Record<string, string>;
 }
 
-// ── §12.7 /sectors ────────────────────────────────────────────────────────
+// ── §12.14 /sectors (desk/fill-etf) ───────────────────────────────────────
 
 export interface SectorRow {
   etf: string;
   name: string;
-  /** PROPOSED (§12.13): a four-letter name for the bars and dots ("Tech", "Stpl"). */
+  /** A four-letter name for the bars and dots ("Tech", "Stpl"). */
   short?: string;
+  /** The pattern rule's group; null for XLC and XLRE, which it leaves out. */
+  group?: "cyclical" | "defensive" | null;
+  /** 60-session log return less SPY's (a log fraction; §1.9 prints it ×100 as a log-return percentage). */
   rel_ret: number | null;
+  /** The ETF's own 60-session log return. */
+  ret?: number | null;
+  /** Its first stored close. */
+  first?: string | null;
+  /** Why `rel_ret` is null ("no close on …: its history starts …"), else null. */
+  reason?: string | null;
+}
+
+/** One average's breadth: how many of the sector ETFs close above it, of how many it can be read for (§12.14). */
+export interface AboveAverage {
+  n: number | null;
+  of: number | null;
+  compared_on: string | null;
+  /** The session slots the average reads. */
+  window?: Window;
+  /** Each sector ETF the average can be read for: above (true) or not (false). */
+  by_etf?: Record<string, boolean>;
+  /** The ones it cannot be read for, with why ("no close on …: its history starts …"). */
+  not_available?: { etf: string; reason: string }[];
+}
+
+export interface SectorBreadth {
+  compared_on?: string;
+  /** How many sector ETFs breadth is measured over (11). */
+  of_total?: number;
+  above_50: AboveAverage;
+  above_200: AboveAverage;
+  /** RSP's 60-session log return less SPY's; null with `eqw_vs_cap_reason`. */
+  eqw_vs_cap_3m: number | null;
+  eqw_vs_cap_reason?: string | null;
+  eqw_vs_cap_series?: RelPoint[];
+  eqw_vs_cap_line_window?: Window | null;
+  /** IWM's 60-session log return less SPY's. */
+  small_vs_large_3m?: number | null;
+  small_vs_large_reason?: string | null;
+  small_vs_large_series?: RelPoint[];
+  small_vs_large_line_window?: Window | null;
+  relative_window?: Window;
+  date?: string;
+  providers?: string[];
+}
+
+/** `sector-pattern-v1` (§12.14): the cyclical group's mean `rel_ret` less the defensive group's, and its word by a ±`band` rule. */
+export interface SectorPattern {
+  rule: string;
+  band: number;
+  cyclicals: string[];
+  defensives: string[];
+  word: "cyclical" | "defensive" | "mixed" | null;
+  spread: number | null;
+  reason: string | null;
 }
 
 export interface RelPoint {
@@ -568,16 +649,25 @@ export interface RelPoint {
 
 export interface SectorsResponse extends Envelope {
   window_months: number | null;
+  /** The 60 XNYS sessions the returns span. */
+  window?: Window;
+  compared_on?: string;
+  unit?: string;
+  band?: number;
+  benchmark?: { etf: string; name: string; ret: number | null };
   leadership?: SectorRow[];
-  breadth?: {
-    /** §12.13: breadth serves its comparison date. */
-    above_50: { n: number | null; of: number | null; compared_on: string | null; by_etf?: Record<string, boolean> };
-    above_200: { n: number | null; of: number | null; by_etf?: Record<string, boolean> };
-    eqw_vs_cap_3m: number | null;
-    eqw_vs_cap_series?: RelPoint[];
-    /** PROPOSED (§12.13) point shape: §12.7 leaves it as `["… 252"]`. */
-    small_vs_large_series?: RelPoint[];
-  };
+  /** How many sectors the ranking holds: those with a return over the window (Codex R-01). */
+  ranked_n?: number;
+  /** The sectors without one, each with why; the ranking is only among the others. */
+  missing?: { etf: string; name: string; reason: string }[];
+  pattern?: SectorPattern;
+  date?: string;
+  freq?: string;
+  source?: string;
+  /** The providers of the rows read, in words ("Yahoo", "EODHD"). */
+  providers?: string[];
+  /** §12.14's breadth block (desk/fill-etf): of the eleven sector ETFs, never stocks. */
+  breadth?: SectorBreadth;
 }
 
 // Basket & Hedge (§10) is unavailable: no page reads `/basket/:id`, `/basket/price` or `/hedge`,

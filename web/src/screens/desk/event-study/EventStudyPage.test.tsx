@@ -611,12 +611,31 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(rail()).toHaveTextContent(/Last five events · S&P 500 a month later\s*No events/);
   });
 
+  it("Codex R-03, R-04: the Shock and Target slots offer only the catalog's inputs, whatever else a study serves, and the hint counts those", async () => {
+    const extra = { key: "xlk", label: "Technology sector ETF (XLK)", roles: ["shock", "condition"], ops: [], unit: "log_return" };
+    // The fixture's eight series (the catalog's inputs) plus XLK: nine served, eight offered.
+    expect(study.series).toHaveLength(8);
+    stubDesk({ "/api/desk/study": () => ({ ...study, series: [...study.series, extra] }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: "The answer" });
+    await waitFor(() => expect(card).toHaveTextContent("at 1 month"));
+    for (const slot of ["Shock", "What happens to"]) {
+      const values = [...(screen.getByLabelText(slot) as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
+      expect(values, slot).not.toContain("xlk");
+      expect(values, slot).toContain("gold");
+      expect(values, slot).toHaveLength(8);
+    }
+    expect(document.body).toHaveTextContent("every slot lists the same 8 series");
+    expect(document.body).not.toHaveTextContent("every slot lists the same 9 series");
+  });
+
   it("Codex R-23: a preset link keeps its horizon through the address, the request, the answer and the export", async () => {
     const { calls } = stubDesk();
     const urls = globalThis.URL as unknown as { createObjectURL?: unknown; revokeObjectURL?: unknown };
     const [c0, r0] = [urls.createObjectURL, urls.revokeObjectURL];
     urls.createObjectURL = () => "blob:x";
-    urls.revokeObjectURL = () => {};
+    const revoke = vi.fn();
+    urls.revokeObjectURL = revoke;
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
     try {
       renderTab("/desk/event-study?preset=gold-2sigma-spx-weak&horizon=5");
@@ -626,6 +645,9 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
       fireEvent.click(await screen.findByTestId("es-export"));
       await waitFor(() => expect(calls.some((c) => c.startsWith("GET /api/desk/study/events?preset=gold-2sigma-spx-weak&horizon=5"))).toBe(true));
       await waitFor(() => expect(click).toHaveBeenCalled());
+      // The object URL is released a second after the click; restore the stubs only after that,
+      // or the timer fires on jsdom's URL, which has no revokeObjectURL (desk/fill-etf gate).
+      await waitFor(() => expect(revoke).toHaveBeenCalledWith("blob:x"), { timeout: 3000 });
     } finally {
       click.mockRestore();
       urls.createObjectURL = c0;

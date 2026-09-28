@@ -1189,3 +1189,68 @@ def test_a_restamp_across_its_runs_date_names_its_series_whatever_its_tier(tmp_p
         after = [m for m in down["failures" if tier == 1 else "warnings"] if f"desk:{sid}" in m and "dated after the New York date" in m]
         assert after, (sid, down["failures"], down["warnings"])
         assert not any(f"desk:{sid}" in m and "dated after the New York date" in m for m in down["warnings" if tier == 1 else "failures"])
+
+
+# ── desk/fill-etf, Codex R-02: asset_prices' volume in the publication fingerprint ──
+
+def _with_volume(path: Path, volume: float | None = None) -> Path:
+    """The published table as the first full refresh after desk/fill-etf leaves it: the volume
+    column added in place by asset_history.ensure_table, and, when given, SPY's daily volume."""
+    from src.market_data import asset_history
+
+    conn = sqlite3.connect(path)
+    asset_history.ensure_table(conn)
+    if volume is not None:
+        conn.execute("UPDATE asset_prices SET volume = ? WHERE symbol = 'SPY' AND interval = '1d'", (volume,))
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_codex_r02_a_volume_only_correction_is_published(tmp_path):
+    """Codex's repro: two snapshots identical but for one row's volume. The
+    fingerprint read symbol, interval, date and close only, so the corrected
+    volume was "unchanged" and never uploaded; it is now changed and uploaded."""
+    prev = _with_volume(_make_path(tmp_path, "prev.db"), 1_000_000.0)
+    cur = _with_volume(_make_path(tmp_path, "cur.db"), 1_250_000.0)
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert "asset_prices" in rep["changed_tables"] and rep["changed"] is True and rep["upload"] is True, rep["changed_tables"]
+
+
+def test_codex_r02_the_volume_columns_arrival_is_published_and_the_old_layout_still_fingerprints(tmp_path):
+    """Backward compatible: a published table without the column fingerprints
+    over its own columns (two such snapshots are unchanged), and the column's
+    arrival alone, every volume still NULL, is a change of the table."""
+    old_a, old_b = _make_path(tmp_path, "a.db"), _make_path(tmp_path, "b.db")
+    same = v.validate(old_b, old_a, "full", now=NOW)
+    assert "asset_prices" not in same["changed_tables"] and not same["corruption"]["not_executed"], same["changed_tables"]
+    migrated = _with_volume(_make_path(tmp_path, "c.db"))
+    rep = v.validate(migrated, old_a, "full", now=NOW)
+    assert "asset_prices" in rep["changed_tables"] and rep["upload"] is (rep["verdict"] == "pass"), rep["changed_tables"]
+
+
+def test_codex_r02_every_column_the_refresh_stores_is_in_the_fingerprint(tmp_path):
+    """Each column of asset_history's layout, changed alone on one row, moves the fingerprint."""
+    from src.market_data import asset_history
+
+    path = _with_volume(_make_path(tmp_path, "p.db"), 10.0)
+    conn = sqlite3.connect(path)
+    assert tuple(r[1] for r in conn.execute("PRAGMA table_info(asset_prices)")) == asset_history.STORED_COLUMNS
+    base = v._asset_prices_fingerprint(conn)
+    changes = {"symbol": "'SPZ'", "interval": "'1mo'", "date": "'2026-09-02'", "close": "close + 1", "provider": "'eodhd'", "volume": "volume + 1"}
+    assert set(changes) == set(asset_history.STORED_COLUMNS)
+    for col, expr in changes.items():
+        conn.execute("SAVEPOINT s")
+        conn.execute(f"UPDATE asset_prices SET {col} = {expr} WHERE symbol = 'SPY' AND interval = '1d'")
+        assert v._asset_prices_fingerprint(conn) != base, col
+        conn.execute("ROLLBACK TO s")
+        conn.execute("RELEASE s")
+    assert v._asset_prices_fingerprint(conn) == base
+    conn.close()
+
+
+def _make_path(tmp_path: Path, name: str) -> Path:
+    path = tmp_path / name
+    _make(path)
+    return path

@@ -203,7 +203,7 @@
      "last": null,
      "feeds": [],
      "status": "missing",
-     "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it yet: the correlations on Macro & Correlations and Basket & Hedge are not served."
+     "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge is not served."
     },
     {
      "label": "Russell 2000",
@@ -215,7 +215,7 @@
      "last": "2026-09-23",
      "feeds": [],
      "status": "current",
-     "note": "Stored from 1990 by the allocation refresh (asset_prices). No Desk tab reads it yet: Sectors and its breadth are not served."
+     "note": "Stored from 1990 by the allocation refresh (asset_prices). No Desk tab reads it: Sectors compares small caps with large through IWM against SPY."
     },
     {
      "label": "VIX",
@@ -228,6 +228,7 @@
      "feeds": [
       "Overview",
       "Event Study",
+      "Macro",
       "Ledger"
      ],
      "status": "current",
@@ -265,7 +266,7 @@
      "last": null,
      "feeds": [],
      "status": "missing",
-     "note": "USD/JPY (JPY=X) is awaiting the next full refresh: this database has no JPY=X rows in desk_series yet. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "USD/JPY (JPY=X) is awaiting the next full refresh: this database has no JPY=X rows in desk_series yet. No Desk tab reads it: the dollar row on Macro & Correlations reads UUP."
     },
     {
      "label": "Gold (COMEX front month)",
@@ -370,6 +371,368 @@
      ],
      "status": "current",
      "note": null
+    }
+   ]
+  },
+  {
+   "name": "Sector ETFs",
+   "status": "current",
+   "series": [
+    {
+     "label": "Materials sector ETF (XLB)",
+     "id": "XLB",
+     "key": "xlb",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Communication Services sector ETF (XLC)",
+     "id": "XLC",
+     "key": "xlc",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2018-06-19",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Launched June 2018: stored from 2018-06-19, so a statistic that needs an earlier close is not available for it."
+    },
+    {
+     "label": "Energy sector ETF (XLE)",
+     "id": "XLE",
+     "key": "xle",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Financials sector ETF (XLF)",
+     "id": "XLF",
+     "key": "xlf",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Industrials sector ETF (XLI)",
+     "id": "XLI",
+     "key": "xli",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Technology sector ETF (XLK)",
+     "id": "XLK",
+     "key": "xlk",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Consumer Staples sector ETF (XLP)",
+     "id": "XLP",
+     "key": "xlp",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Real Estate sector ETF (XLRE)",
+     "id": "XLRE",
+     "key": "xlre",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2015-10-08",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Launched October 2015: stored from 2015-10-08, so a statistic that needs an earlier close is not available for it."
+    },
+    {
+     "label": "Utilities sector ETF (XLU)",
+     "id": "XLU",
+     "key": "xlu",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Health Care sector ETF (XLV)",
+     "id": "XLV",
+     "key": "xlv",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Consumer Discretionary sector ETF (XLY)",
+     "id": "XLY",
+     "key": "xly",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1998-12-22",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume."
+    }
+   ]
+  },
+  {
+   "name": "Equity ETFs",
+   "status": "current",
+   "series": [
+    {
+     "label": "S&P 500 ETF (SPY)",
+     "id": "SPY",
+     "key": "spy",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1993-01-29",
+     "last": "2026-09-23",
+     "feeds": [
+      "Technicals",
+      "Macro",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 1993-01-29 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "S&P 500 equal weight ETF (RSP)",
+     "id": "RSP",
+     "key": "rsp",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2003-05-01",
+     "last": "2026-09-23",
+     "feeds": [
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 2003-05-01 (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Russell 2000 ETF (IWM)",
+     "id": "IWM",
+     "key": "iwm",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2000-05-26",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro",
+      "Sectors"
+     ],
+     "status": "current",
+     "note": "Stored from 2000-05-26 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Nasdaq 100 ETF (QQQ)",
+     "id": "QQQ",
+     "key": "qqq",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "1999-03-10",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": "Stored from 1999-03-10 (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Semiconductor ETF (SMH)",
+     "id": "SMH",
+     "key": "smh",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2000-06-05",
+     "last": "2026-09-23",
+     "feeds": [],
+     "status": "current",
+     "note": "Stored from 2000-06-05 (asset_prices). The VanEck fund listed on 2011-12-20; the provider's closes before that are the ticker's predecessor's. No Desk tab reads it yet: Basket & Hedge is not served."
+    },
+    {
+     "label": "Semiconductor ETF (SOXX)",
+     "id": "SOXX",
+     "key": "soxx",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2001-07-13",
+     "last": "2026-09-23",
+     "feeds": [],
+     "status": "current",
+     "note": "Stored from 2001-07-13 (asset_prices), with each session's volume. No Desk tab reads it yet: Basket & Hedge is not served."
+    },
+    {
+     "label": "Software ETF (IGV)",
+     "id": "IGV",
+     "key": "igv",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2001-07-17",
+     "last": "2026-09-23",
+     "feeds": [],
+     "status": "current",
+     "note": "Stored from 2001-07-17 (asset_prices), with each session's volume. No Desk tab reads it yet: Basket & Hedge is not served."
+    }
+   ]
+  },
+  {
+   "name": "Bond, gold & dollar ETFs",
+   "status": "current",
+   "series": [
+    {
+     "label": "20+ year Treasury ETF (TLT)",
+     "id": "TLT",
+     "key": "tlt",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2002-07-30",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": "Stored from 2002-07-30 (asset_prices), with each session's volume."
+    },
+    {
+     "label": "7–10 year Treasury ETF (IEF)",
+     "id": "IEF",
+     "key": "ief",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2002-07-30",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "High-yield corporate bond ETF (HYG)",
+     "id": "HYG",
+     "key": "hyg",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2007-04-11",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": "Stored from 2007-04-11 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Investment-grade corporate bond ETF (LQD)",
+     "id": "LQD",
+     "key": "lqd",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2002-07-30",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "Gold ETF (GLD)",
+     "id": "GLD",
+     "key": "gld",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2004-11-18",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": "Stored from 2004-11-18 by the allocation refresh (asset_prices), with each session's volume."
+    },
+    {
+     "label": "US dollar index ETF (UUP)",
+     "id": "UUP",
+     "key": "uup",
+     "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "freq": "daily",
+     "first": "2007-03-01",
+     "last": "2026-09-23",
+     "feeds": [
+      "Macro"
+     ],
+     "status": "current",
+     "note": "Stored from 2007-03-01, the provider's first close (asset_prices), with each session's volume."
     }
    ]
   }

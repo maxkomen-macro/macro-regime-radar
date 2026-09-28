@@ -1,7 +1,7 @@
 /**
  * Macro & Correlations (DESK_FRAME3_SPEC §6) against the §12.6 fixture: the
  * curve today and a month ago, the stock–bond correlation, credit against
- * three years, the six correlations with their meanings, the matrix under
+ * three years, the served correlations with their symbols, the matrix under
  * Advanced, and Awaiting refresh with the labels kept when /macro fails.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -100,13 +100,20 @@ describe("Macro tab", () => {
     // §1.4: no read is served on Monday, so the box is omitted.
     expect(card).not.toHaveTextContent("Read:");
   });
-  it("stock–bond, served (§12.13's deferred shape): today, a year ago, when it flipped; no read is served", async () => {
+  it("stock–bond, served (§12.8, desk/fill-etf): today, a year ago, when it flipped, each dated; no read is served", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Do bonds still hedge stocks/ });
-    await waitFor(() => expect(card).toHaveTextContent("+0.31"));
-    // §12.13's shape is the three numbers and the series: no words, no hedging call, no read (§12.0).
-    expect(card).toHaveTextContent(/Today\s*\+0\.31\s*A year ago\s*−0\.24\s*Flipped\s*Mar 2026/);
+    await waitFor(() => expect(card).toHaveTextContent("+0.44"));
+    // The API's answer on the fixture store: SPY against TLT, 60 daily log returns to Sep 23. No words, no hedging call.
+    expect(card).toHaveTextContent(/Today\s*\+0\.44\s*SPY vs TLT · Sep 23\s*A year ago\s*\+0\.04\s*Sep 23, 2025\s*Flipped\s*Jan 2026\s*to positive on Jan 7, 2026/);
+    expect(card).toHaveTextContent("60 daily log returns to Sep 23 · SPY vs TLT, adjusted closes · Yahoo");
     expect(card).not.toHaveTextContent(/hedging|was working|Read for the desk/);
+  });
+  it("a stock–bond window with a missing close says why, with no number (no forward fill)", async () => {
+    const reason = "fewer than 60 complete daily return pairs in the window to 2026-09-23";
+    stubDesk({ "/api/desk/macro": () => withBlock("stock_bond", { today: null, today_reason: reason }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /Do bonds still hedge/ })).toHaveTextContent(new RegExp(`Today\\s*Awaiting refresh\\s*${reason}`)));
   });
   it("credit: the spread, its three-year range, IG, the gauge and the year", async () => {
     renderTab();
@@ -120,20 +127,27 @@ describe("Macro tab", () => {
     expect(within(card).getByRole("img", { name: "High-yield spread at the 16th percentile of three years, tight" })).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: /High-yield spread over the last year; peak 3\.5% on Mar 30/ })).toBeInTheDocument();
   });
-  it("what moves with the S&P: six rows, each with the symbol it declares; the matrix under Advanced", async () => {
+  it("what moves with the S&P: nine rows as served, each with the symbol it declares, dated; the matrix under Advanced", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What moves with the S&P/ });
     const list = await within(card).findByRole("list", { name: "Correlation with the S&P" });
-    // §12.13: each asset declares its symbol, quantity and transform; no meaning words are served.
+    // §12.8 (desk/fill-etf), the API's answer on the fixture store: each asset declares its symbol, quantity and
+    // transform; no meaning words are served.
     expect(within(list).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "10-year Treasury (price)+0.31IEF",
-      "Gold+0.12GC=F",
-      "Dollar−0.22DX-Y.NYB",
-      "Oil+0.18DCOILWTICO",
-      "Nasdaq+0.92^NDX",
-      "High-yield credit+0.64HYG",
+      "20+ year Treasuries+0.44TLT",
+      "7–10 year Treasuries+0.50IEF",
+      "High-yield bonds+0.71HYG",
+      "Investment-grade bonds+0.54LQD",
+      "Gold+0.36GLD",
+      "Dollar−0.28UUP",
+      "Small caps+0.80IWM",
+      "Nasdaq 100+0.89QQQ",
+      "VIX−0.73VIXCLS",
     ]);
     expect(within(list).getByText("IEF")).toHaveAttribute("title", "adjusted close, daily log return");
+    expect(within(list).getByText("VIXCLS")).toHaveAttribute("title", "index level (FRED VIXCLS), daily log change");
+    // The rows' own dates: VIX is FRED's, a session behind.
+    expect(card).toHaveTextContent("60 daily returns to Sep 23 · VIXCLS to Sep 22 · each against SPY");
     fireEvent.click(within(card).getByTestId("dk-advanced"));
     expect(within(card).getByRole("table")).toHaveTextContent("60-day correlation, every pair");
     expect(within(card).getAllByRole("row")).toHaveLength(13);
@@ -157,7 +171,7 @@ describe("Macro tab", () => {
   it("TODAY takes no color of its own (§12.13 serves no hedging call); 2s10s is colored by the month's change", async () => {
     renderTab();
     const sb = await screen.findByRole("region", { name: /Do bonds still hedge/ });
-    await waitFor(() => expect(within(sb).getByText("+0.31")).toHaveAttribute("data-tone", "default"));
+    await waitFor(() => expect(within(sb).getByText("+0.44")).toHaveAttribute("data-tone", "default"));
     const curve = screen.getByRole("region", { name: /Yield curve/ });
     // A month of flattening colors 2s10s down.
     expect(within(curve).getByText("+25 bp")).toHaveAttribute("data-tone", "down");
@@ -185,7 +199,7 @@ describe("Macro tab", () => {
       curve: { ...macro.curve, "10y_chg_bp": 0, "2s10s_chg_bp": 0 },
       credit: { ...macro.credit, hy_pct_3y: null, hy_range_3y: [null, 5.9], peak_12m: { date: "2026-03-10", hy: null }, series: [] },
       stock_bond: { ...macro.stock_bond, series: [] },
-      correlations: macro.correlations.map((r) => (r.asset === "Gold" ? { ...r, corr: null } : r)),
+      correlations: macro.correlations.map((r) => (r.asset === "Gold" ? { ...r, corr: null, reason: null } : r)),
     };
     stubDesk({ "/api/desk/macro": () => m });
     renderTab();
@@ -200,15 +214,30 @@ describe("Macro tab", () => {
     expect(credit).not.toHaveTextContent("0.0");
     expect(screen.getByRole("region", { name: /Do bonds still hedge/ })).toHaveTextContent("Awaiting refresh · the year of correlations");
     const list = within(screen.getByRole("region", { name: /What moves with the S&P/ })).getByRole("list");
-    expect(within(list).getAllByRole("listitem")).toHaveLength(6);
-    expect(within(list).getAllByRole("listitem")[1]).toHaveTextContent(/Gold\s*Awaiting refresh/);
+    expect(within(list).getAllByRole("listitem")).toHaveLength(9);
+    expect(within(list).getAllByRole("listitem")[4]).toHaveTextContent(/Gold\s*Awaiting refresh/);
   });
   it("with no correlation served, the list's read is not printed", async () => {
     stubDesk({ "/api/desk/macro": () => ({ ...macro, correlations: macro.correlations.map((r) => ({ ...r, corr: null })) }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /What moves with the S&P/ });
-    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(6));
+    await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(9));
     expect(card).not.toHaveTextContent("nothing on this list");
+  });
+  it("a row served null with its reason says not available and why; one awaiting the refresh says so (§12.8)", async () => {
+    const gap = "fewer than 60 complete daily return pairs in the window to 2026-09-23";
+    const refresh = "Awaiting refresh: the full refresh stores QQQ; this database predates it.";
+    stubDesk({
+      "/api/desk/macro": () => ({
+        ...macro,
+        correlations: macro.correlations.map((r) => (r.symbol === "GLD" ? { ...r, corr: null, reason: gap } : r.symbol === "QQQ" ? { ...r, corr: null, date: null, window: null, reason: refresh } : r)),
+      }),
+    });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /What moves with the S&P/ });
+    await waitFor(() => expect(within(card).getAllByRole("listitem")[4]).toHaveTextContent(`Goldnot available · ${gap}`));
+    expect(within(card).getAllByRole("listitem")[7]).toHaveTextContent(/Nasdaq 100\s*Awaiting refresh/);
+    expect(within(card).getAllByRole("listitem")[7].querySelector("[title]")).toHaveAttribute("title", refresh);
   });
   it("an absent block prints no read of its own (M-10)", async () => {
     stubDesk({ "/api/desk/macro": () => without("curve") });
@@ -326,25 +355,31 @@ describe("a route served awaiting (§12.0, §1.0.2)", () => {
 
 describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () => {
   const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
-  it("stock–bond and the correlations say Not yet served with the reason once; the matrix's Advanced says not yet served; the curve and credit stand", async () => {
-    // Monday's /macro as the fixture serves it (§1.0, §12.8): the three blocks awaiting.
-    const why = "Treasury and credit price-return series not ingested.";
+  it("as the fixture serves /macro: the correlations stand, the matrix's Advanced says not yet served; the curve, stock–bond and credit stand", async () => {
+    // /macro as the fixture serves it (desk/fill-etf item 5): stock–bond and the correlations served, the matrix awaiting.
     stubDesk();
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent(why));
-    for (const name of [/^Do bonds still hedge stocks/, /^What moves with the S&P/]) {
-      const card = screen.getByRole("region", { name });
-      expect(within(card).getAllByText(why)).toHaveLength(1);
-      expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-      expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
-    }
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89"));
+    const card = screen.getByRole("region", { name: /^What moves with the S&P/ });
+    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
+    expect(card).toHaveTextContent("Advanced ▸ not yet served");
+    expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent("+0.44");
     expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.96%");
     expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("2.73%");
+  });
+  it("stock–bond served awaiting a refresh prints its reason and badges Awaiting refresh (§1.7)", async () => {
+    const why = "Awaiting refresh: the full refresh stores TLT; this database predates it.";
+    stubDesk({ "/api/desk/macro": () => ({ ...macro, stock_bond: off(why) }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent(why));
+    const card = screen.getByRole("region", { name: /^Do bonds still hedge stocks/ });
+    expect(within(card).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
+    for (const l of ["Today", "A year ago", "Flipped"]) expect(card).toHaveTextContent(l);
   });
   it("the matrix alone served awaiting disables its Advanced with not yet served; the six rows stand", async () => {
     stubDesk({ "/api/desk/macro": () => ({ ...macro, matrix: off("not ingested.") }) });
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.92"));
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89"));
     const card = screen.getByRole("region", { name: /^What moves with the S&P/ });
     expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
     expect(card).toHaveTextContent("Advanced ▸ not yet served");

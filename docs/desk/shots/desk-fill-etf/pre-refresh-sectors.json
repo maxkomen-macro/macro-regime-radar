@@ -1,0 +1,16 @@
+{
+ "url": "http://127.0.0.1:5231/api/desk/sectors",
+ "status": 200,
+ "body": {
+  "status": "awaiting",
+  "generation_id": "g1-91af8a611b",
+  "as_of": "2026-09-27",
+  "engine_version": "unknown",
+  "data": null,
+  "unavailable": {
+   "reason": "Awaiting refresh: the full refresh stores XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY; this database predates it.",
+   "until": null
+  },
+  "error": null
+ }
+}

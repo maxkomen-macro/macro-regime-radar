@@ -31,7 +31,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PUBLISHED = Path(os.environ.get("DESK_PUBLISHED_DB", ROOT / "data" / "macro_radar.db"))
 published = pytest.mark.skipif(not PUBLISHED.exists(), reason="no published copy at data/macro_radar.db (DESK_PUBLISHED_DB)")
 ITEMS = [(n, f) for n, f in analytics_cache.ITEMS
-         if n in ("desk_technicals", "desk_study:spx-20d-2sigma", "desk_study:golden-cross", "desk_study:death-cross")]
+         if n in ("desk_technicals", "desk_study:spx-20d-2sigma", "desk_study:golden-cross", "desk_study:death-cross", "desk_etf")]
 
 client = TestClient(app)
 
@@ -60,7 +60,8 @@ def test_the_technicals_shape(served):
     d = _tech()["data"]
     assert d["signals_allowlist"] == ["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]
     assert d["vol"]["unavailable"]["reason"] == "needs stored SPY option snapshots and a versioned skew method."
-    assert d["sectors"]["unavailable"]["reason"] == "sector ETFs, RSP and IWM not ingested."
+    # desk/fill-etf: the synthetic store predates the ETFs, so the served leadership awaits the refresh
+    assert d["sectors"]["unavailable"]["reason"].startswith("Awaiting refresh: the full refresh stores SPY, XLB, XLC")
     assert (d["freq"], d["source"]) == ("daily", "asset_prices ^GSPC")
     assert client.get("/api/desk/technicals?x=1").status_code == 422
 

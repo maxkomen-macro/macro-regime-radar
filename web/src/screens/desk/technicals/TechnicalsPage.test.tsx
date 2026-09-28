@@ -141,9 +141,40 @@ describe("Technicals tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Sector leadership/ });
     const seven = await within(card).findByRole("list", { name: /top three/ });
-    expect(within(seven).getAllByRole("listitem").map((li) => li.textContent?.slice(0, 4))).toEqual(["XLKT", "XLII", "XLFF", "XLEE", "XLVH", "XLPS", "XLUU"]);
+    // §12.14 as served on the fixture store: the top three, the middle one, the bottom three.
+    expect(within(seven).getAllByRole("listitem").map((li) => li.textContent?.slice(0, 4))).toEqual(["XLEE", "XLKT", "XLVH", "XLBM", "XLRE", "XLII", "XLUU"]);
+    expect(card).toHaveTextContent("Energy and Technology leading; Industrials and Utilities lagging");
+    expect(card).toHaveTextContent("60 sessions to Sep 23 · log returns ×100 · Yahoo");
+    expect(within(seven).getAllByTitle("log return, ×100")).toHaveLength(7);
     fireEvent.click(within(card).getByTestId("dk-advanced"));
     expect(within(within(card).getByRole("list", { name: /All eleven/ })).getAllByRole("listitem")).toHaveLength(11);
+  });
+
+  it("Codex R-01: a sector without a return is shown with why, never hidden, and the ends are among the sectors with data", async () => {
+    const reason = "no close stored for 2026-09-23";
+    const block = (technicals.sectors as { data: { leadership: { etf: string; rel_ret: number | null }[] } }).data;
+    const xlk = { ...block.leadership.find((r) => r.etf === "XLK")!, rel_ret: null, ret: null, reason };
+    const data = { ...block, leadership: [...block.leadership.filter((r) => r.etf !== "XLK"), xlk], ranked_n: 10, missing: [{ etf: "XLK", name: "Technology", reason }] };
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, sectors: { status: "ready", data, unavailable: null } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Sector leadership/ });
+    const list = await within(card).findByRole("list", { name: /top three, middle and bottom three, then the sectors without data/ });
+    const items = within(list).getAllByRole("listitem");
+    expect(items).toHaveLength(8);
+    expect(items[7]).toHaveTextContent(`XLKTechnot available · ${reason}`);
+    expect(card).toHaveTextContent("Energy and Health care leading; Industrials and Utilities lagging, among the 10 sectors with data");
+    expect(within(card).getByRole("note")).toHaveTextContent(`Not ranked, without data over the window: XLK Technology (${reason}).`);
+  });
+
+  it("the sectors block served awaiting a refresh keeps the card's title, prints the reason once and badges Awaiting refresh (§1.7)", async () => {
+    const reason = "Awaiting refresh: the full refresh stores XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY; this database predates it.";
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicals, sectors: { status: "awaiting", data: null, unavailable: { reason, until: null } } }) });
+    renderTab();
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Sector leadership/ })).toHaveTextContent(reason));
+    const sect = screen.getByRole("region", { name: /^Sector leadership/ });
+    expect(within(sect).getAllByText(reason)).toHaveLength(1);
+    expect(within(sect).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
+    expect(within(sect).queryByRole("list")).toBeNull();
   });
 
   it("the RSI card is unavailable (§1.0): its labels, §1.0's reason once, Not yet served, Advanced disabled, no number or gauge", async () => {
@@ -158,17 +189,17 @@ describe("Technicals tab", () => {
     expect(card.textContent).not.toMatch(/\d+×|\bneutral\b/);
   });
 
-  it("Monday's /technicals serves the vol and sectors blocks awaiting: each card keeps its labels and prints its §12.7 reason once", async () => {
+  it("/technicals serves the vol block awaiting (its card keeps its labels and prints its §12.7 reason once) and the sectors block ready", async () => {
     renderTab();
     // The card remounts from its loading state to the unavailable one: query it afresh.
     await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("needs stored SPY option snapshots and a versioned skew method."));
     const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
     expect(vol).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
     expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(vol).not.toHaveTextContent("Awaiting refresh");
     const sect = screen.getByRole("region", { name: /^Sector leadership/ });
-    expect(within(sect).getAllByText("sector ETFs, RSP and IWM not ingested.")).toHaveLength(1);
-    expect(within(sect).getByTestId("dk-advanced")).toBeDisabled();
-    for (const card of [vol, sect]) expect(card).not.toHaveTextContent("Awaiting refresh");
+    await waitFor(() => expect(within(sect).getByRole("list", { name: /top three/ })).toBeInTheDocument());
+    expect(within(sect).getByTestId("dk-advanced")).toBeEnabled();
   });
 
   it("LAST 20 DAYS is the served σ on its own date, with no word (§3, §12.7 serve none)", async () => {

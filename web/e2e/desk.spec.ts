@@ -140,8 +140,8 @@ test.describe("desk v2", () => {
       await expect(page.getByRole("region", { name: /^Where we are/ })).toContainText("Overheating");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
-      await open(page, "/desk/macro", { "/api/desk/macro": { status: 200, body: { ...macro, stock_bond: off("Treasury and credit price-return series not ingested."), correlations: off("Treasury and credit price-return series not ingested."), matrix: off("Treasury and credit price-return series not ingested.") } } });
-      await expect(page.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toContainText("not ingested");
+      await open(page, "/desk/macro", { "/api/desk/macro": { status: 200, body: { ...macro, stock_bond: off("Awaiting refresh: the full refresh stores TLT; this database predates it."), correlations: off("the correlations are not computed yet."), matrix: off("the correlations are not computed yet.") } } });
+      await expect(page.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toContainText("the full refresh stores TLT");
       await expect(page.getByRole("region", { name: /^Credit/ })).toContainText("%");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
@@ -263,13 +263,17 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: Monday's vol and sectors blocks and the RSI card keep their labels, print their reasons and say Not yet served (§1.0, §12.7)", async ({ page }) => {
+  test("technicals: the vol block and the RSI card keep their labels, print their reasons and say Not yet served; the sector bars are served (§1.0, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
+      // desk/fill-etf: the sector leadership is served, seven bars from the API's answer on the fixture store.
+      const sect = page.getByRole("region", { name: /^Sector leadership/ });
+      await expect(sect.getByRole("list", { name: /top three/ }).getByRole("listitem")).toHaveCount(7);
+      await expect(sect).toContainText("60 sessions to Sep 23 · log returns ×100 · Yahoo");
+      await expect(sect.getByTestId("dk-advanced")).toBeEnabled();
       const cards: [RegExp, string, string][] = [
         [/^What protection costs right now/, "needs stored SPY option snapshots and a versioned skew method.", "PUTS vs CALLS · 1 MONTH OUT"],
-        [/^Sector leadership/, "sector ETFs, RSP and IWM not ingested.", "Sector leadership"],
         [/^Momentum · RSI/, "RSI is not computed yet.", "Last below 30"],
       ];
       for (const [name, reason, label] of cards) {

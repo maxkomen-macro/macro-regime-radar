@@ -414,3 +414,119 @@ def test_the_full_refresh_stores_the_histories_before_validation():
     third_party = {m for m in mods if m not in STDLIB and m not in ("src", "api")}
     full = _requirement_modules(ROOT / "requirements.txt") | _requirement_modules(ROOT / "requirements-snapshot.txt")
     assert third_party <= full | {"riskfolio", "scipy"}, third_party - full
+
+
+# ── desk/fill-etf: the Desk's ETFs, their volume, short histories ───────────
+
+DESK_ETFS = ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP", "XLRE", "XLU", "XLV", "XLY", "SPY", "RSP", "IWM", "QQQ",
+             "SMH", "SOXX", "IGV", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP")
+
+
+def test_the_desk_etfs_are_stored_daily_with_the_providers_whole_history():
+    """Every registry series stored in asset_prices is a daily series of this
+    step; one allocation does not already store is fetched from 1990, before
+    any of them listed, so the row set is the provider's whole history."""
+    from src.analytics import allocation
+    from src.desk import series as registry
+
+    daily = {s.symbol: s for s in asset_history.SERIES if s.interval == "1d"}
+    assert set(DESK_ETFS) <= set(daily) and set(DESK_ETFS) <= set(asset_history.DAILY_SYMBOLS)
+    assert {s.series_id for s in registry.SERIES if s.source == "asset_prices"} <= set(daily)
+    allocation_etfs = {c["etf"] for c in allocation.ASSET_CLASSES.values()}
+    for sym in DESK_ETFS:
+        want = next(c["etf_start"] for c in allocation.ASSET_CLASSES.values() if c["etf"] == sym) if sym in allocation_etfs \
+            else asset_history.DESK_HISTORY_START
+        assert daily[sym].start == want, sym
+        assert daily[sym].eodhd == f"{sym}.US", sym
+
+
+def test_volume_is_stored_beside_each_daily_close_from_the_same_response(tmp_path, eodhd, yahoo, monkeypatch):
+    """EODHD's volume, and Yahoo's through `Closes.volume`, land on the daily
+    rows of the response they came in; a monthly row stores none, and a
+    response with no volume stores NULL, never 0."""
+    def daily_closes(code, start, end=None):
+        rows = [(d, 50.0 + i * 0.05) for i, d in enumerate(_bdays(max(start, "2020-01-01")))]
+        return yf_provider.Closes(rows, {d: 7.0 for d, _ in rows}) if code == "XLRE" else rows
+
+    monkeypatch.setattr(yf_provider, "daily_closes", daily_closes)
+    eodhd.missing.update({"XLRE.US", "XLC.US"})
+    target = tmp_path / "pipeline.db"
+    sqlite3.connect(target).close()
+    asset_history.refresh(target, now=NOW)
+    c = sqlite3.connect(target)
+    try:
+        def vols(sym, interval="1d"):
+            return c.execute("SELECT provider, MIN(volume), MAX(volume), COUNT(*), COUNT(volume) FROM asset_prices "
+                             "WHERE symbol = ? AND interval = ?", (sym, interval)).fetchone()
+        prov, lo, hi, n, nv = vols("XLK")
+        assert (prov, lo, hi) == ("eodhd", 1000.0, 1000.0) and n == nv > 0
+        prov, lo, hi, n, nv = vols("XLRE")
+        assert (prov, lo, hi) == ("yfinance", 7.0, 7.0) and n == nv > 0
+        prov, _lo, _hi, n, nv = vols("XLC")
+        assert prov == "yfinance" and n > 0 and nv == 0
+        _prov, _lo, _hi, n, nv = vols("SPY", "1mo")
+        assert n > 0 and nv == 0
+    finally:
+        c.close()
+
+
+def test_the_volume_column_is_added_in_place_to_a_table_that_predates_it(tmp_path, eodhd, yahoo):
+    """The published table has no volume column until the first full refresh
+    after this change: ensure_table adds it (nullable), keeps every row, and
+    running again changes nothing."""
+    target = tmp_path / "pipeline.db"
+    c = sqlite3.connect(target)
+    c.execute("""CREATE TABLE asset_prices (symbol TEXT NOT NULL, interval TEXT NOT NULL CHECK (interval IN ('1d', '1mo')),
+                 date TEXT NOT NULL, close REAL NOT NULL, provider TEXT NOT NULL, PRIMARY KEY (symbol, interval, date)) WITHOUT ROWID""")
+    c.execute("INSERT INTO asset_prices VALUES ('ZZZ', '1d', '2026-09-18', 12.5, 'eodhd')")
+    c.commit()
+    asset_history.ensure_table(c)
+    asset_history.ensure_table(c)
+    cols = [r[1] for r in c.execute("PRAGMA table_info(asset_prices)")]
+    assert cols == ["symbol", "interval", "date", "close", "provider", "volume"]
+    assert c.execute("SELECT close, volume FROM asset_prices WHERE symbol = 'ZZZ'").fetchone() == (12.5, None)
+    c.close()
+    asset_history.refresh(target, now=NOW)
+    c = sqlite3.connect(target)
+    try:
+        assert c.execute("SELECT COUNT(volume) > 0 FROM asset_prices WHERE symbol = 'XLK'").fetchone()[0] == 1
+        assert c.execute("SELECT close FROM asset_prices WHERE symbol = 'ZZZ'").fetchone() == (12.5,)
+    finally:
+        c.close()
+
+
+def test_a_history_that_starts_after_its_declaration_is_named_short(tmp_path, eodhd, yahoo, monkeypatch):
+    """XLC listed 2018-06-19 and XLRE 2015-10-08; the registry declares those
+    days. Served from the declaration, a series is not short; served later
+    (the mock serves everything from 2020), it is named in the watermark."""
+    first = {"XLC.US": "2018-06-19", "XLRE.US": "2015-10-08"}
+    real = eod.EodhdClient.eod
+
+    def eod_(self, sym, *, from_, to, period="d"):
+        if sym in first:
+            return [{"date": d, "adjusted_close": 20.0, "close": 20.0, "volume": 5} for d in _bdays(first[sym])]
+        return real(self, sym, from_=from_, to=to, period=period)
+
+    monkeypatch.setattr(eod.EodhdClient, "eod", eod_)
+    target = tmp_path / "pipeline.db"
+    sqlite3.connect(target).close()
+    summary = asset_history.refresh(target, now=NOW)
+    assert "XLC" not in summary["short"] and "XLRE" not in summary["short"]
+    assert "XLB" in summary["short"]  # declared 1998-12-22, the mock serves 2020 on
+    detail = _watermark(target)["detail"]
+    assert "XLB from 2020-01-01 (declared 1998-12-22)" in detail
+    assert "XLC from" not in detail and "XLRE from" not in detail
+
+
+def test_yahoos_closes_carry_their_volume(monkeypatch):
+    """yf.daily_closes reads Close and Volume from the same download (single
+    or MultiIndex columns); a NaN volume is left out, never stored as 0."""
+    import pandas as pd
+
+    idx = pd.to_datetime(["2026-09-17", "2026-09-18"])
+    frame = pd.DataFrame({("Close", "XLK"): [250.0, 251.5], ("Volume", "XLK"): [6.0e6, float("nan")]}, index=idx)
+    frame.columns = pd.MultiIndex.from_tuples(frame.columns)
+    monkeypatch.setitem(sys.modules, "yfinance", types.SimpleNamespace(download=lambda *a, **k: frame))
+    out = yf_provider.daily_closes("XLK", "2026-09-01")
+    assert list(out) == [("2026-09-17", 250.0), ("2026-09-18", 251.5)]
+    assert out.volume == {"2026-09-17": 6.0e6}

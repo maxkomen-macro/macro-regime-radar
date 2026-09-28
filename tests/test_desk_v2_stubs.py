@@ -34,8 +34,7 @@ ENVELOPE_TS = WEB_SRC / "screens" / "desk" / "data" / "envelope.ts"
 
 client = TestClient(app)
 
-STUB_PATHS = {
-    "/api/desk/sectors": "/sectors",
+STUB_PATHS = {  # (/api/desk/sectors is served since desk/fill-etf, tests/test_desk_etf.py)
     "/api/desk/vol": "/vol",
     "/api/desk/positions": "/positions",
     "/api/desk/basket/ai-infra": "/basket",

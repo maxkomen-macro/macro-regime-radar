@@ -261,6 +261,34 @@ REGIME_ROUTE = obj(
     changes=Deferred("regime statistics not yet defined in the engine."),
 )
 
+# ── §12.14 sector leadership (desk/fill-etf), served by /sectors and /technicals ──
+
+SECTOR_ROW = obj(etf=STR, name=STR, short=STR, group=null(E("cyclical", "defensive")),
+                 rel_ret=null(NUM), ret=null(NUM), first=null(DATE), reason=null(STR))
+SECTOR_PATTERN = obj(rule=Const("sector-pattern-v1"), band=Const(0.01), cyclicals=Arr(STR, min=6, max=6),
+                     defensives=Arr(STR, min=3, max=3), word=null(E("cyclical", "defensive", "mixed")),
+                     spread=null(NUM), reason=null(STR))
+LEADERSHIP = dict(
+    window_months=Const(3), window=obj(start=DATE, end=DATE, n=Const(60)), compared_on=DATE,
+    unit=Const("log_return"), band=Const(0.01), benchmark=obj(etf=Const("SPY"), name=STR, ret=NUM),
+    leadership=Arr(SECTOR_ROW, min=11, max=11), ranked_n=INT,
+    missing=Arr(obj(etf=STR, name=STR, reason=STR), max=11), pattern=SECTOR_PATTERN,
+    date=DATE, freq=Const("daily"), source=Const("asset_prices"), providers=Arr(STR),
+)
+_SPAN = obj(start=DATE, end=DATE, n=INT)
+ABOVE = obj(n=INT, of=INT, compared_on=DATE, window=_SPAN, by_etf=MapOf(BOOL),
+            not_available=Arr(obj(etf=STR, reason=STR)))
+REL_POINT = obj(date=DATE, rel=null(NUM))
+BREADTH = obj(
+    compared_on=DATE, of_total=Const(11), above_50=ABOVE, above_200=ABOVE,
+    eqw_vs_cap_3m=null(NUM), eqw_vs_cap_reason=null(STR), eqw_vs_cap_series=Arr(REL_POINT), eqw_vs_cap_line_window=null(_SPAN),
+    small_vs_large_3m=null(NUM), small_vs_large_reason=null(STR), small_vs_large_series=Arr(REL_POINT),
+    small_vs_large_line_window=null(_SPAN),
+    relative_window=obj(start=DATE, end=DATE, n=Const(60)),
+    unit=Const("log_return"), date=DATE, freq=Const("daily"), source=Const("asset_prices"), providers=Arr(STR),
+)
+SECTORS = Obj(dict(LEADERSHIP, breadth=Block(BREADTH)))
+
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 
 SPAN = obj(start=DATE, end=DATE, n=INT)
@@ -277,7 +305,7 @@ TECHNICALS = obj(
     series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": Arr(POINT)}),
     signals_allowlist=Const(["golden-cross", "death-cross", "spx-20d-2sigma", "spx-5d-2sigma"]),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),
-    sectors=Deferred("sector ETFs, RSP and IWM not ingested."),
+    sectors=Block(Obj(dict(LEADERSHIP))),
 )
 
 # ── §12.8 GET /macro ────────────────────────────────────────────────────────
@@ -303,9 +331,20 @@ MACRO = obj(
         reason=null(STR), band=null(E("tight", "normal", "wide")), band_edges=Const([0.30, 0.70]),
         series=Arr(obj(date=DATE, hy=NUM)), line_window=SPAN, peak_12m=null(obj(date=DATE, hy=NUM)),
     )),
-    stock_bond=Deferred("Treasury and credit price-return series not ingested."),
-    correlations=Deferred("Treasury and credit price-return series not ingested."),
-    matrix=Deferred("Treasury and credit price-return series not ingested."),
+    stock_bond=Block(obj(
+        today=null(NUM), today_date=null(DATE), today_reason=null(STR),
+        year_ago=null(NUM), year_ago_date=null(DATE),
+        flipped=null(MONTH), flipped_on=null(DATE), flipped_to=null(E("positive", "negative")),
+        series=Arr(obj(date=DATE, corr=null(NUM))), window=SPAN, line_window=SPAN,
+        stock=obj(etf=Const("SPY"), name=STR), bond=obj(etf=Const("TLT"), name=STR),
+        transform=Const("daily log return"), unit=Const("correlation"), date=DATE, freq=Const("daily"),
+        source=Const("asset_prices"), providers=Arr(STR),
+    )),
+    correlations=Block(Arr(obj(
+        asset=STR, symbol=STR, quantity=STR, transform=E("daily log return", "daily log change"),
+        corr=null(NUM), date=null(DATE), window=null(SPAN), reason=null(STR),
+    ), min=1, max=9)),
+    matrix=Deferred("the 12-asset matrix's assets and method are not specified yet."),
 )
 
 # ── §12.9 GET /pipeline ─────────────────────────────────────────────────────
@@ -323,7 +362,7 @@ PIPELINE = obj(
 
 # ── The routes ──────────────────────────────────────────────────────────────
 
-# The nine live routes' ready payloads.
+# The live routes' ready payloads (the nine of §12.1–§12.9, and /sectors since desk/fill-etf).
 ROUTES: dict[str, Obj] = {
     "/overview": OVERVIEW,
     "/study": STUDY,
@@ -334,12 +373,12 @@ ROUTES: dict[str, Obj] = {
     "/technicals": TECHNICALS,
     "/macro": MACRO,
     "/pipeline": PIPELINE,
+    "/sectors": SECTORS,  # desk/fill-etf (§12.14)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons
 # (§1.0, §12.3's served reasons; `/basket` is `/basket/:id`).
 STUBS: dict[str, str] = {
-    "/sectors": "sector ETFs, RSP and IWM not ingested.",
     "/vol": "needs stored SPY option snapshots and a versioned skew method.",
     "/positions": "Positions are kept in this browser; there is no server position store.",
     "/basket": "basket pricing and option structures not yet defined in the engine.",

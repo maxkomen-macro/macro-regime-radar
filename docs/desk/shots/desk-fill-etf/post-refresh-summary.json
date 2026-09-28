@@ -1,0 +1,60 @@
+[
+ {
+  "label": "post-refresh",
+  "card": "sectors-leadership",
+  "text": "Sector leadership 3-month return relative to the S&P · all elevenLeadingEnergy+13.1% vs the indexLaggingUtilities−15.4% vs the indexPatternCyclicalcyclical sectors ahead of defensives by 3.1%XLEEnergy+13.1%XLVHealth care+3.5%XLKTechnology+2.1%XLCCommunications−0.4%XLFFinancials−3.2%XLPStaples−4.5%XLBMaterials−5.6%XLREReal estate−8.9%XLYDiscretionary−10.0%XLIIndustrials−10.7%XLUUtilities−15.4% more"
+ },
+ {
+  "label": "post-refresh",
+  "card": "sectors-breadth",
+  "text": "Breadth is the rally wide or narrow? · of 11 sectorsAbove 50-day4 of 11 sectorson Sep 25Above 200-day4 of 11 sectorson Sep 25Equal vs cap weight−4.3%RSP vs SPY · 60 sessionsEqual weight vs cap weight · RSP against SPY, 60-session difference · one yearRSP ahead of SPY · equal weight leadingSPY ahead of RSP · cap weight leading+10%0−10%a year agoSep 25Which of the 11 sectors are above their 50-dayEn"
+ },
+ {
+  "label": "post-refresh",
+  "page": "sectors",
+  "api_status": "ready",
+  "generation_id": "g1-b8a851916e",
+  "as_of": "2026-09-27"
+ },
+ {
+  "label": "post-refresh",
+  "card": "technicals-sector-leadership",
+  "text": "Sector leadership · 3-month relative strength vs S&PEnergy and Health care leading; Industrials and Utilities laggingXLEEnrg+13.1%XLVHlth+3.5%XLKTech+2.1%XLPStpl−4.5%XLYDisc−10.0%XLIInd−10.7%XLUUtil−15.4%60 sessions to Sep 25 · log returns ×100 · YahooAdvanced ▸ all 11 · rotation over time · by regime"
+ },
+ {
+  "label": "post-refresh",
+  "page": "technicals",
+  "api_status": "ready",
+  "generation_id": "g1-b8a851916e",
+  "as_of": "2026-09-27"
+ },
+ {
+  "label": "post-refresh",
+  "card": "macro-stock-bond",
+  "text": "Do bonds still hedge stocks? 60-day correlation of daily returns, one yearToday+0.48SPY vs TLT · Sep 25A year ago+0.04Sep 25, 2025FlippedJan 2026to positive on Jan 7, 2026bonds move WITH stocks · no hedgebonds move AGAINST stocks · hedge works+10−1a year agoSep 2560 daily log returns to Sep 25 · SPY vs TLT, adjusted closes · YahooAdvanced ▸ not yet served"
+ },
+ {
+  "label": "post-refresh",
+  "card": "macro-what-moves",
+  "text": "What moves with the S&P 60-day correlation · each asset against the index← moves against · a hedgemoves with · same bet →20+ year Treasuries+0.48TLT7–10 year Treasuries+0.54IEFHigh-yield bonds+0.71HYGInvestment-grade bonds+0.57LQDGold+0.37GLDDollar−0.30UUPSmall caps+0.79IWMNasdaq 100+0.89QQQVIX−0.73VIXCLS60 daily returns to Sep 25 · VIXCLS to Sep 22 · each against SPYAdvanced ▸ not yet served"
+ },
+ {
+  "label": "post-refresh",
+  "page": "macro",
+  "api_status": "ready",
+  "generation_id": "g1-b8a851916e",
+  "as_of": "2026-09-27"
+ },
+ {
+  "label": "post-refresh",
+  "card": "pipeline-inventory",
+  "text": "Series inventory46 series · grouped · generated from the registry▸Rates8 series ● missing▸Credit2 series ● current▸Equities & vol4 series ● missing▸FX & commodities4 series ● missing▸Macro (monthly)4 series ● current▾Sector ETFs11 series ● currentSeriesIDFromAs ofFeedsStatusMaterials sector ETF (XLB) · EODHD first, Yahoo disclosed fallback (stored), dailyXLBDec 22, 1998Sep 25, 2026Technicals, Sect"
+ },
+ {
+  "label": "post-refresh",
+  "page": "data-pipeline",
+  "api_status": "ready",
+  "generation_id": "g1-b8a851916e",
+  "as_of": "2026-09-27"
+ }
+]

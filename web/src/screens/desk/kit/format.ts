@@ -171,3 +171,25 @@ export function endDay(date: string | undefined | null, today = nyToday()): stri
   if (!date) return "latest";
   return date === today ? "today" : dayShort(date);
 }
+
+/** Codex R-01: the sectors a leadership ranking leaves out, and the words that say so. `missing` as served
+ * (§12.14), else the rows served without a return; `ranked` the served count, else the rows with one. */
+export function leadershipGaps(s: { leadership?: { etf: string; name: string; rel_ret: number | null; reason?: string | null }[]; ranked_n?: number; missing?: { etf: string; name: string; reason: string }[] } | undefined): {
+  ranked: number;
+  missing: { etf: string; name: string; reason: string }[];
+  among: string;
+  note: string;
+} {
+  const rows = Array.isArray(s?.leadership) ? s.leadership : [];
+  const missing = Array.isArray(s?.missing)
+    ? s.missing
+    : rows.filter((r) => !isFiniteNumber(r.rel_ret)).map((r) => ({ etf: r.etf, name: r.name, reason: r.reason ?? "not served" }));
+  const ranked = isFiniteNumber(s?.ranked_n) ? s.ranked_n : rows.filter((r) => isFiniteNumber(r.rel_ret)).length;
+  if (!missing.length) return { ranked, missing, among: "", note: "" };
+  return {
+    ranked,
+    missing,
+    among: `among the ${ranked} sectors with data`,
+    note: `Not ranked, without data over the window: ${missing.map((m) => `${m.etf} ${m.name} (${m.reason})`).join("; ")}.`,
+  };
+}

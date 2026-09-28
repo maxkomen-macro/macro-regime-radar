@@ -187,10 +187,18 @@ def macro_payload() -> dict:
     return {
         "curve": stored_block(item["curve"]),
         "credit": stored_block(item["credit"]),
-        "stock_bond": env.block_deferred("/macro", "stock_bond"),
-        "correlations": env.block_deferred("/macro", "correlations"),
+        # desk/fill-etf: SPY against TLT from the ETF item (api/desk_items_etf.py), a block of its own
+        "stock_bond": _etf_block("stock_bond"),
+        "correlations": _etf_block("correlations"),
         "matrix": env.block_deferred("/macro", "matrix"),
     }
+
+
+def _etf_block(part: str) -> dict:
+    """One part of the desk_etf item as a /macro block (api/desk_v2.etf_block's rule)."""
+    from api.desk_v2 import etf_block
+
+    return etf_block("/macro", part, part)
 
 
 @router.get("/macro")

@@ -1,10 +1,10 @@
 /**
  * Macro & Correlations (DESK_FRAME3_SPEC §6, screens/05-macro-correlations.png),
- * read from GET /api/desk/macro (§12.6): the yield curve today against a
- * month ago, whether bonds still hedge stocks (the 60-day stock–bond
+ * read from GET /api/desk/macro (§12.8): the yield curve today against a
+ * month ago, whether bonds still hedge stocks (SPY against TLT, the 60-day
  * correlation over a year), credit (the high-yield spread against three
- * years), and what moves with the S&P (six 60-day correlations; the full
- * 12-asset matrix under Advanced). A 2×2, no action button. Every number is
+ * years), and what moves with the S&P (each served asset's 60-day
+ * correlation with SPY; the 12-asset matrix under Advanced, not yet served). A 2×2, no action button. Every number is
  * served; every sentence and every call about it (the stock–bond words and
  * whether bonds hedge, the credit words, the reads) is the API's. Each block,
  * and each value inside it, keeps its label and says "Awaiting refresh" when
@@ -12,7 +12,7 @@
  */
 
 import { unavailableOf, useMacro } from "../data/api";
-import type { MacroResponse, Read } from "../data/types";
+import type { CorrelationRow, MacroResponse, Read } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, dayShort, endDay, monthYear, num, ordinal } from "../kit/format";
@@ -228,6 +228,18 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   );
 }
 
+type StockBondBlock = NonNullable<MacroResponse["stock_bond"]>;
+
+/** "SPY vs TLT": the served pair. */
+const pair = (sb: StockBondBlock) => `${sb.stock?.etf ?? "SPY"} vs ${sb.bond?.etf ?? "TLT"}`;
+
+/** "60 daily log returns to Sep 23 · SPY vs TLT, adjusted closes · Yahoo": what the correlation reads, from the served window. */
+export function sbStamp(sb: StockBondBlock): string {
+  if (!sb.window?.end) return "";
+  const prov = Array.isArray(sb.providers) && sb.providers.length ? ` · ${sb.providers.join("/")}` : "";
+  return `${fin(sb.window.n) ? sb.window.n : 60} daily log returns to ${dayShort(sb.window.end)} · ${pair(sb)}, adjusted closes${prov}`;
+}
+
 function StockBond({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
@@ -245,10 +257,21 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
       {sb ? (
         <>
           <StatRow cols={3}>
-            {/* §12.13's shape carries the three numbers only; no words and no hedging call are served. */}
-            <Stat label="Today" value={fin(sb.today) ? corrText(sb.today) : undefined} awaiting={!fin(sb.today)} />
-            <Stat label="A year ago" value={fin(sb.year_ago) ? corrText(sb.year_ago) : undefined} awaiting={!fin(sb.year_ago)} />
-            <Stat label="Flipped" value={flipServed ? (sb.flipped ? monthYear(sb.flipped) : "None") : undefined} awaiting={!flipServed} />
+            {/* §12.8: the three numbers, each dated by its served session; no words and no hedging call are served. */}
+            <Stat
+              label="Today"
+              value={fin(sb.today) ? corrText(sb.today) : undefined}
+              awaiting={!fin(sb.today)}
+              sub={fin(sb.today) && sb.today_date ? `${pair(sb)} · ${dayShort(sb.today_date)}` : undefined}
+              why={sb.today_reason ?? undefined}
+            />
+            <Stat label="A year ago" value={fin(sb.year_ago) ? corrText(sb.year_ago) : undefined} awaiting={!fin(sb.year_ago)} sub={fin(sb.year_ago) && sb.year_ago_date ? dayLong(sb.year_ago_date) : undefined} />
+            <Stat
+              label="Flipped"
+              value={flipServed ? (sb.flipped ? monthYear(sb.flipped) : "None") : undefined}
+              awaiting={!flipServed}
+              sub={flipServed && sb.flipped && sb.flipped_on && sb.flipped_to ? `to ${sb.flipped_to} on ${dayLong(sb.flipped_on)}` : undefined}
+            />
           </StatRow>
           {drawn ? (
             <LineChart
@@ -275,6 +298,7 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
           ) : (
             <Awaiting>the year of correlations</Awaiting>
           )}
+          {sb.window?.end ? <p className="dk-asof">{sbStamp(sb)}</p> : null}
           <ServedRead read={m?.reads?.stock_bond} />
         </>
       ) : (
@@ -367,6 +391,18 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
   );
 }
 
+/** "60 daily returns to Sep 23 · VIX to Sep 22": the rows' served dates, the most common first, any other named. */
+export function corrStamp(rows: readonly CorrelationRow[]): string {
+  const dated = rows.filter((r) => fin(r.corr) && r.date);
+  if (!dated.length) return "";
+  const counts = new Map<string, number>();
+  for (const r of dated) counts.set(r.date as string, (counts.get(r.date as string) ?? 0) + 1);
+  const main = [...counts.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? 1 : -1))[0][0];
+  const n = dated.find((r) => r.date === main)?.window?.n;
+  const others = dated.filter((r) => r.date !== main).map((r) => `${r.symbol ?? r.asset} to ${dayShort(r.date)}`);
+  return [`${fin(n) ? n : 60} daily returns to ${dayShort(main)}`, ...others, "each against SPY"].join(" · ");
+}
+
 function Correlations({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
@@ -404,12 +440,19 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
                       {r.symbol ?? ""}
                     </span>
                   </>
+                ) : r.reason && !r.reason.startsWith("Awaiting refresh") ? (
+                  <span className="mc-row-await dk-stat-await" title={r.reason}>
+                    not available · {r.reason}
+                  </span>
                 ) : (
-                  <span className="mc-row-await dk-stat-await">Awaiting refresh</span>
+                  <span className="mc-row-await dk-stat-await" title={r.reason ?? undefined}>
+                    Awaiting refresh
+                  </span>
                 )}
               </li>
             ))}
           </ul>
+          {corrStamp(rows) ? <p className="dk-asof">{corrStamp(rows)}</p> : null}
           {rows.some((r) => fin(r.corr)) ? <ServedRead read={m?.reads?.correlations} /> : null}
         </>
       ) : quiet ? null : (
@@ -454,6 +497,12 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
   );
 }
 
+/** "FRED", or "FRED/Yahoo" when a served ETF block names its provider. */
+export function sources(m: MacroResponse): string {
+  const prov = new Set<string>(m.stock_bond?.providers ?? []);
+  return ["FRED", ...prov].join("/");
+}
+
 export default function MacroPage({ page }: { page: DeskPage }) {
   const q = useMacro();
   const m = q.data;
@@ -462,8 +511,9 @@ export default function MacroPage({ page }: { page: DeskPage }) {
   const unserved = unavailableOf(q.error);
   return (
     <div className="mc">
-      {/* §6: `● Live · FRED · <date>`, the curve's own date (the HY date when the tenors are dated apart). */}
-      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : m ? <LiveBadge boxed parts={["FRED", dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
+      {/* §6: `● Live · FRED · <date>`, the curve's own date (the HY date when the tenors are dated apart); the ETF blocks'
+          provider joins the source once one is served (desk/fill-etf). */}
+      <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : m ? <LiveBadge boxed parts={[sources(m), dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
       <Unserved block={unserved}>
         <div className="mc-grid">
           <Curve m={m} state={state} />

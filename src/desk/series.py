@@ -9,7 +9,9 @@ Stores
   fred          FRED daily observations in `desk_series` (src/market_data/desk_history.py)
   market        EODHD-first / Yahoo-fallback adjusted closes in `desk_series` (same writer)
   asset_prices  allocation's stored histories (`asset_prices`, interval '1d'); the
-                writer never touches that table
+                writer never touches that table. Since desk/fill-etf the 24 ETFs the
+                Sectors, Technicals and Macro tabs read are stored there too, by the
+                same step (src/market_data/asset_history.py), with each session's volume
 
 Shock units (EVENT_STUDY_SPEC §2): price series → log return; yields and
 spreads → change in basis points (FRED serves them in percent, so `scale` is
@@ -144,6 +146,23 @@ class DeskSeries:
         return "asset_prices" if self.source == "asset_prices" else "desk_series"
 
 
+# desk/fill-etf: the eleven SPDR sector ETFs, in the order the Sectors tab names them
+# (ticker, name, short name, the group the leadership pattern reads: "cyclical",
+# "defensive", or None for the two it leaves out, XLC and XLRE; see api/desk_items_etf.py).
+SECTOR_ETFS: tuple[tuple[str, str, str, str | None], ...] = (
+    ("XLB", "Materials", "Mat", "cyclical"), ("XLC", "Communications", "Comm", None),
+    ("XLE", "Energy", "Enrg", "cyclical"), ("XLF", "Financials", "Fin", "cyclical"),
+    ("XLI", "Industrials", "Ind", "cyclical"), ("XLK", "Technology", "Tech", "cyclical"),
+    ("XLP", "Staples", "Stpl", "defensive"), ("XLRE", "Real estate", "RE", None),
+    ("XLU", "Utilities", "Util", "defensive"), ("XLV", "Health care", "Hlth", "defensive"),
+    ("XLY", "Discretionary", "Disc", "cyclical"),
+)
+# Listed after 1998-12-22 (XLC June 2018, XLRE October 2015): registered with their own dates.
+SHORT_SECTORS = ("XLC", "XLRE")
+# The registry labels of the nine that list from 1998-12-22 (unchanged since desk/event-study).
+SECTOR_NAMES = {"XLB": "Materials", "XLE": "Energy", "XLF": "Financials", "XLI": "Industrials", "XLK": "Technology",
+                "XLP": "Consumer Staples", "XLU": "Utilities", "XLV": "Health Care", "XLY": "Consumer Discretionary"}
+
 _ALL = ("shock", "condition", "target")
 _SC = ("shock", "condition")
 
@@ -193,12 +212,40 @@ SERIES: tuple[DeskSeries, ...] = (
                day_zone=ROUND_THE_CLOCK_ZONE,
                note="Front-month futures; history from 2000-08-30."),
 ) + tuple(
-    DeskSeries(t.lower(), f"{name} sector ETF ({t})", "market", t, "log_return", 1.0, "1998-12-22", 3, _SC,
-               eodhd=f"{t}.US", note="Sector ETFs list from 1998-12-22.")
-    for t, name in (
-        ("XLB", "Materials"), ("XLE", "Energy"), ("XLF", "Financials"), ("XLI", "Industrials"),
-        ("XLK", "Technology"), ("XLP", "Consumer Staples"), ("XLU", "Utilities"),
-        ("XLV", "Health Care"), ("XLY", "Consumer Discretionary"),
+    # desk/fill-etf (2026-09-27): the nine sector ETFs that list from 1998-12-22 are stored
+    # in asset_prices by the allocation refresh (src/market_data/asset_history.py), EODHD
+    # first and Yahoo as the disclosed fallback, like ^GSPC. Tier 2; their roles are the
+    # event-study's (frozen by tests/fixtures/desk_entries_cc721f0.json), their fixing the
+    # session close.
+    DeskSeries(t.lower(), f"{SECTOR_NAMES[t]} sector ETF ({t})", "asset_prices", t, "log_return", 1.0, "1998-12-22", 2, _SC,
+               note="Stored from 1998-12-22 by the allocation refresh (asset_prices), with each session's volume.")
+    for t, _name, _short, _group in SECTOR_ETFS if t not in SHORT_SECTORS
+) + tuple(
+    # desk/fill-etf: the two sectors that listed later, and the broad, bond, gold and dollar
+    # ETFs. No roles, so no study can select them; the Sectors, Technicals and Macro tabs
+    # read them. A statistic that needs a close before a series' first one reads "not
+    # available" for that series, never a value.
+    DeskSeries(key, label, "asset_prices", sym, "log_return", 1.0, first, 2, (), note=note)
+    for key, label, sym, first, note in (
+        ("xlc", "Communication Services sector ETF (XLC)", "XLC", "2018-06-19",
+         "Launched June 2018: stored from 2018-06-19, so a statistic that needs an earlier close is not available for it."),
+        ("xlre", "Real Estate sector ETF (XLRE)", "XLRE", "2015-10-08",
+         "Launched October 2015: stored from 2015-10-08, so a statistic that needs an earlier close is not available for it."),
+        ("spy", "S&P 500 ETF (SPY)", "SPY", "1993-01-29", "Stored from 1993-01-29 by the allocation refresh (asset_prices), with each session's volume."),
+        ("rsp", "S&P 500 equal weight ETF (RSP)", "RSP", "2003-05-01", "Stored from 2003-05-01 (asset_prices), with each session's volume."),
+        ("iwm", "Russell 2000 ETF (IWM)", "IWM", "2000-05-26", "Stored from 2000-05-26 by the allocation refresh (asset_prices), with each session's volume."),
+        ("qqq", "Nasdaq 100 ETF (QQQ)", "QQQ", "1999-03-10", "Stored from 1999-03-10 (asset_prices), with each session's volume."),
+        ("smh", "Semiconductor ETF (SMH)", "SMH", "2000-06-05",
+         "Stored from 2000-06-05 (asset_prices). The VanEck fund listed on 2011-12-20; the provider's closes before that "
+         "are the ticker's predecessor's."),
+        ("soxx", "Semiconductor ETF (SOXX)", "SOXX", "2001-07-13", "Stored from 2001-07-13 (asset_prices), with each session's volume."),
+        ("igv", "Software ETF (IGV)", "IGV", "2001-07-17", "Stored from 2001-07-17 (asset_prices), with each session's volume."),
+        ("tlt", "20+ year Treasury ETF (TLT)", "TLT", "2002-07-30", "Stored from 2002-07-30 (asset_prices), with each session's volume."),
+        ("ief", "7–10 year Treasury ETF (IEF)", "IEF", "2002-07-30", "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."),
+        ("hyg", "High-yield corporate bond ETF (HYG)", "HYG", "2007-04-11", "Stored from 2007-04-11 by the allocation refresh (asset_prices), with each session's volume."),
+        ("lqd", "Investment-grade corporate bond ETF (LQD)", "LQD", "2002-07-30", "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."),
+        ("gld", "Gold ETF (GLD)", "GLD", "2004-11-18", "Stored from 2004-11-18 by the allocation refresh (asset_prices), with each session's volume."),
+        ("uup", "US dollar index ETF (UUP)", "UUP", "2007-03-01", "Stored from 2007-03-01, the provider's first close (asset_prices), with each session's volume."),
     )
 )
 

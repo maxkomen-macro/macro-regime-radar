@@ -1,0 +1,750 @@
+{
+ "url": "http://127.0.0.1:5231/api/desk/pipeline",
+ "status": 200,
+ "body": {
+  "status": "ready",
+  "generation_id": "g1-91af8a611b",
+  "as_of": "2026-09-27",
+  "engine_version": "unknown",
+  "data": {
+   "last_refresh_utc": "2026-09-24T15:52:43Z",
+   "validation": null,
+   "groups": [
+    {
+     "name": "Rates",
+     "status": "missing",
+     "series": [
+      {
+       "label": "3M Treasury",
+       "id": "DGS3MO",
+       "key": "us3m",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Macro"
+       ],
+       "status": "missing",
+       "note": "3M Treasury (DGS3MO) is awaiting the next full refresh: this database has no DGS3MO rows in desk_series yet."
+      },
+      {
+       "label": "2Y Treasury",
+       "id": "DGS2",
+       "key": "us2y",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": "1976-06-01",
+       "last": "2026-09-22",
+       "feeds": [
+        "Overview",
+        "Regime",
+        "Macro",
+        "Position Monitor"
+       ],
+       "status": "stale",
+       "note": null
+      },
+      {
+       "label": "2s10s curve",
+       "id": "T10Y2Y",
+       "key": "curve_2s10s",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": "1976-06-01",
+       "last": "2026-09-23",
+       "feeds": [
+        "Overview",
+        "Event Study",
+        "Ledger"
+       ],
+       "status": "current",
+       "note": null
+      },
+      {
+       "label": "5Y Treasury",
+       "id": "DGS5",
+       "key": "us5y",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Macro"
+       ],
+       "status": "missing",
+       "note": "5Y Treasury (DGS5) is awaiting the next full refresh: this database has no DGS5 rows in desk_series yet."
+      },
+      {
+       "label": "10Y Treasury",
+       "id": "DGS10",
+       "key": "us10y",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": "1962-01-02",
+       "last": "2026-09-22",
+       "feeds": [
+        "Overview",
+        "Event Study",
+        "Regime",
+        "Macro",
+        "Position Monitor"
+       ],
+       "status": "stale",
+       "note": null
+      },
+      {
+       "label": "30Y Treasury",
+       "id": "DGS30",
+       "key": "us30y",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Macro"
+       ],
+       "status": "missing",
+       "note": "30Y Treasury (DGS30) is awaiting the next full refresh: this database has no DGS30 rows in desk_series yet."
+      },
+      {
+       "label": "10-year breakeven inflation",
+       "id": "T10YIE",
+       "key": null,
+       "provider": "FRED",
+       "freq": "daily",
+       "first": "2003-01-01",
+       "last": "2026-09-23",
+       "feeds": [
+        "Overview",
+        "Regime"
+       ],
+       "status": "current",
+       "note": null
+      },
+      {
+       "label": "5-year breakeven inflation",
+       "id": "T5YIE",
+       "key": null,
+       "provider": "FRED",
+       "freq": "daily",
+       "first": "2003-01-01",
+       "last": "2026-09-23",
+       "feeds": [
+        "Overview",
+        "Regime"
+       ],
+       "status": "current",
+       "note": null
+      }
+     ]
+    },
+    {
+     "name": "Credit",
+     "status": "current",
+     "series": [
+      {
+       "label": "US HY OAS",
+       "id": "BAMLH0A0HYM2",
+       "key": "hy_oas",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": "2023-09-25",
+       "last": "2026-09-23",
+       "feeds": [
+        "Overview",
+        "Event Study",
+        "Regime",
+        "Macro",
+        "Ledger"
+       ],
+       "status": "current",
+       "note": "ICE BofA index OAS, published the next morning. FRED serves a rolling three years only (since April 2026); the store keeps every observation it has been served, from 2023-09-25."
+      },
+      {
+       "label": "Investment-grade OAS",
+       "id": "BAMLC0A0CM",
+       "key": null,
+       "provider": "FRED",
+       "freq": "daily",
+       "first": "1996-12-01",
+       "last": "2026-09-23",
+       "feeds": [
+        "Macro"
+       ],
+       "status": "current",
+       "note": null
+      }
+     ]
+    },
+    {
+     "name": "Equities & vol",
+     "status": "missing",
+     "series": [
+      {
+       "label": "S&P 500",
+       "id": "^GSPC",
+       "key": "spx",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "1990-01-02",
+       "last": "2026-09-23",
+       "feeds": [
+        "Overview",
+        "Technicals",
+        "Event Study",
+        "Ledger",
+        "Position Monitor"
+       ],
+       "status": "stale",
+       "note": "Stored from 1990 by the allocation refresh (asset_prices)."
+      },
+      {
+       "label": "Nasdaq 100",
+       "id": "^NDX",
+       "key": "ndx",
+       "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [],
+       "status": "missing",
+       "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge is not served."
+      },
+      {
+       "label": "Russell 2000",
+       "id": "^RUT",
+       "key": "rut",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "1990-01-02",
+       "last": "2026-09-23",
+       "feeds": [],
+       "status": "stale",
+       "note": "Stored from 1990 by the allocation refresh (asset_prices). No Desk tab reads it: Sectors compares small caps with large through IWM against SPY."
+      },
+      {
+       "label": "VIX",
+       "id": "VIXCLS",
+       "key": "vix",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": "1990-01-02",
+       "last": "2026-09-22",
+       "feeds": [
+        "Overview",
+        "Event Study",
+        "Macro",
+        "Ledger"
+       ],
+       "status": "stale",
+       "note": "CBOE close via FRED VIXCLS; settles 16:15 ET, so a VIX-dated event enters the target the next session."
+      }
+     ]
+    },
+    {
+     "name": "FX & commodities",
+     "status": "missing",
+     "series": [
+      {
+       "label": "US Dollar Index",
+       "id": "DX-Y.NYB",
+       "key": "dxy",
+       "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Overview",
+        "Event Study",
+        "Ledger"
+       ],
+       "status": "missing",
+       "note": "US Dollar Index (DX-Y.NYB) is awaiting the next full refresh: this database has no DX-Y.NYB rows in desk_series yet."
+      },
+      {
+       "label": "USD/JPY",
+       "id": "JPY=X",
+       "key": "usdjpy",
+       "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [],
+       "status": "missing",
+       "note": "USD/JPY (JPY=X) is awaiting the next full refresh: this database has no JPY=X rows in desk_series yet. No Desk tab reads it: the dollar row on Macro & Correlations reads UUP."
+      },
+      {
+       "label": "Gold (COMEX front month)",
+       "id": "GC=F",
+       "key": "gold",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "2000-08-30",
+       "last": "2026-09-23",
+       "feeds": [
+        "Overview",
+        "Event Study",
+        "Ledger"
+       ],
+       "status": "stale",
+       "note": "COMEX front-month futures (GC=F), stored from 2000-08-30 by the allocation refresh; studies on gold say \"since 2000\". The daily close is declared at 17:00 ET (conservative), so a gold shock enters an equity target the next session; as a target its fixing time is ambiguous, so entry is the next session."
+      },
+      {
+       "label": "WTI crude",
+       "id": "DCOILWTICO",
+       "key": "wti",
+       "provider": "FRED (Desk daily history)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Overview",
+        "Event Study",
+        "Ledger"
+       ],
+       "status": "missing",
+       "note": "WTI crude (DCOILWTICO) is awaiting the next full refresh: this database has no DCOILWTICO rows in desk_series yet."
+      }
+     ]
+    },
+    {
+     "name": "Macro (monthly)",
+     "status": "current",
+     "series": [
+      {
+       "label": "CPI (all items)",
+       "id": "CPIAUCSL",
+       "key": null,
+       "provider": "FRED",
+       "freq": "monthly",
+       "first": "1996-03-01",
+       "last": "2026-08-01",
+       "feeds": [
+        "Overview",
+        "Technicals",
+        "Event Study",
+        "Regime",
+        "Ledger"
+       ],
+       "status": "current",
+       "note": null
+      },
+      {
+       "label": "Industrial production",
+       "id": "INDPRO",
+       "key": null,
+       "provider": "FRED",
+       "freq": "monthly",
+       "first": "1996-03-01",
+       "last": "2026-08-01",
+       "feeds": [
+        "Overview",
+        "Technicals",
+        "Event Study",
+        "Regime",
+        "Ledger"
+       ],
+       "status": "current",
+       "note": null
+      },
+      {
+       "label": "Unemployment rate",
+       "id": "UNRATE",
+       "key": null,
+       "provider": "FRED",
+       "freq": "monthly",
+       "first": "1996-03-01",
+       "last": "2026-08-01",
+       "feeds": [
+        "Overview",
+        "Regime"
+       ],
+       "status": "current",
+       "note": null
+      },
+      {
+       "label": "NBER recession indicator",
+       "id": "USREC",
+       "key": null,
+       "provider": "FRED",
+       "freq": "monthly",
+       "first": "1996-03-01",
+       "last": "2026-08-01",
+       "feeds": [
+        "Overview",
+        "Regime"
+       ],
+       "status": "current",
+       "note": null
+      }
+     ]
+    },
+    {
+     "name": "Sector ETFs",
+     "status": "missing",
+     "series": [
+      {
+       "label": "Materials sector ETF (XLB)",
+       "id": "XLB",
+       "key": "xlb",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Materials sector ETF (XLB) (XLB) is awaiting the next full refresh: this database has no XLB rows in asset_prices yet."
+      },
+      {
+       "label": "Communication Services sector ETF (XLC)",
+       "id": "XLC",
+       "key": "xlc",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Communication Services sector ETF (XLC) (XLC) is awaiting the next full refresh: this database has no XLC rows in asset_prices yet."
+      },
+      {
+       "label": "Energy sector ETF (XLE)",
+       "id": "XLE",
+       "key": "xle",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Energy sector ETF (XLE) (XLE) is awaiting the next full refresh: this database has no XLE rows in asset_prices yet."
+      },
+      {
+       "label": "Financials sector ETF (XLF)",
+       "id": "XLF",
+       "key": "xlf",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Financials sector ETF (XLF) (XLF) is awaiting the next full refresh: this database has no XLF rows in asset_prices yet."
+      },
+      {
+       "label": "Industrials sector ETF (XLI)",
+       "id": "XLI",
+       "key": "xli",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Industrials sector ETF (XLI) (XLI) is awaiting the next full refresh: this database has no XLI rows in asset_prices yet."
+      },
+      {
+       "label": "Technology sector ETF (XLK)",
+       "id": "XLK",
+       "key": "xlk",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Technology sector ETF (XLK) (XLK) is awaiting the next full refresh: this database has no XLK rows in asset_prices yet."
+      },
+      {
+       "label": "Consumer Staples sector ETF (XLP)",
+       "id": "XLP",
+       "key": "xlp",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Consumer Staples sector ETF (XLP) (XLP) is awaiting the next full refresh: this database has no XLP rows in asset_prices yet."
+      },
+      {
+       "label": "Real Estate sector ETF (XLRE)",
+       "id": "XLRE",
+       "key": "xlre",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Real Estate sector ETF (XLRE) (XLRE) is awaiting the next full refresh: this database has no XLRE rows in asset_prices yet."
+      },
+      {
+       "label": "Utilities sector ETF (XLU)",
+       "id": "XLU",
+       "key": "xlu",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Utilities sector ETF (XLU) (XLU) is awaiting the next full refresh: this database has no XLU rows in asset_prices yet."
+      },
+      {
+       "label": "Health Care sector ETF (XLV)",
+       "id": "XLV",
+       "key": "xlv",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Health Care sector ETF (XLV) (XLV) is awaiting the next full refresh: this database has no XLV rows in asset_prices yet."
+      },
+      {
+       "label": "Consumer Discretionary sector ETF (XLY)",
+       "id": "XLY",
+       "key": "xly",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Technicals",
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "Consumer Discretionary sector ETF (XLY) (XLY) is awaiting the next full refresh: this database has no XLY rows in asset_prices yet."
+      }
+     ]
+    },
+    {
+     "name": "Equity ETFs",
+     "status": "missing",
+     "series": [
+      {
+       "label": "S&P 500 ETF (SPY)",
+       "id": "SPY",
+       "key": "spy",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "1993-01-29",
+       "last": "2026-09-23",
+       "feeds": [
+        "Technicals",
+        "Macro",
+        "Sectors"
+       ],
+       "status": "stale",
+       "note": "Stored from 1993-01-29 by the allocation refresh (asset_prices), with each session's volume."
+      },
+      {
+       "label": "S&P 500 equal weight ETF (RSP)",
+       "id": "RSP",
+       "key": "rsp",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Sectors"
+       ],
+       "status": "missing",
+       "note": "S&P 500 equal weight ETF (RSP) (RSP) is awaiting the next full refresh: this database has no RSP rows in asset_prices yet."
+      },
+      {
+       "label": "Russell 2000 ETF (IWM)",
+       "id": "IWM",
+       "key": "iwm",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "2000-05-26",
+       "last": "2026-09-23",
+       "feeds": [
+        "Macro",
+        "Sectors"
+       ],
+       "status": "stale",
+       "note": "Stored from 2000-05-26 by the allocation refresh (asset_prices), with each session's volume."
+      },
+      {
+       "label": "Nasdaq 100 ETF (QQQ)",
+       "id": "QQQ",
+       "key": "qqq",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Macro"
+       ],
+       "status": "missing",
+       "note": "Nasdaq 100 ETF (QQQ) (QQQ) is awaiting the next full refresh: this database has no QQQ rows in asset_prices yet."
+      },
+      {
+       "label": "Semiconductor ETF (SMH)",
+       "id": "SMH",
+       "key": "smh",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [],
+       "status": "missing",
+       "note": "Semiconductor ETF (SMH) (SMH) is awaiting the next full refresh: this database has no SMH rows in asset_prices yet. No Desk tab reads it yet: Basket & Hedge is not served."
+      },
+      {
+       "label": "Semiconductor ETF (SOXX)",
+       "id": "SOXX",
+       "key": "soxx",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [],
+       "status": "missing",
+       "note": "Semiconductor ETF (SOXX) (SOXX) is awaiting the next full refresh: this database has no SOXX rows in asset_prices yet. No Desk tab reads it yet: Basket & Hedge is not served."
+      },
+      {
+       "label": "Software ETF (IGV)",
+       "id": "IGV",
+       "key": "igv",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [],
+       "status": "missing",
+       "note": "Software ETF (IGV) (IGV) is awaiting the next full refresh: this database has no IGV rows in asset_prices yet. No Desk tab reads it yet: Basket & Hedge is not served."
+      }
+     ]
+    },
+    {
+     "name": "Bond, gold & dollar ETFs",
+     "status": "missing",
+     "series": [
+      {
+       "label": "20+ year Treasury ETF (TLT)",
+       "id": "TLT",
+       "key": "tlt",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Macro"
+       ],
+       "status": "missing",
+       "note": "20+ year Treasury ETF (TLT) (TLT) is awaiting the next full refresh: this database has no TLT rows in asset_prices yet."
+      },
+      {
+       "label": "7–10 year Treasury ETF (IEF)",
+       "id": "IEF",
+       "key": "ief",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "2002-07-30",
+       "last": "2026-09-23",
+       "feeds": [
+        "Macro"
+       ],
+       "status": "stale",
+       "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."
+      },
+      {
+       "label": "High-yield corporate bond ETF (HYG)",
+       "id": "HYG",
+       "key": "hyg",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "2007-04-11",
+       "last": "2026-09-23",
+       "feeds": [
+        "Macro"
+       ],
+       "status": "stale",
+       "note": "Stored from 2007-04-11 by the allocation refresh (asset_prices), with each session's volume."
+      },
+      {
+       "label": "Investment-grade corporate bond ETF (LQD)",
+       "id": "LQD",
+       "key": "lqd",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "2002-07-30",
+       "last": "2026-09-23",
+       "feeds": [
+        "Macro"
+       ],
+       "status": "stale",
+       "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."
+      },
+      {
+       "label": "Gold ETF (GLD)",
+       "id": "GLD",
+       "key": "gld",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": "2004-11-18",
+       "last": "2026-09-23",
+       "feeds": [
+        "Macro"
+       ],
+       "status": "stale",
+       "note": "Stored from 2004-11-18 by the allocation refresh (asset_prices), with each session's volume."
+      },
+      {
+       "label": "US dollar index ETF (UUP)",
+       "id": "UUP",
+       "key": "uup",
+       "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+       "freq": "daily",
+       "first": null,
+       "last": null,
+       "feeds": [
+        "Macro"
+       ],
+       "status": "missing",
+       "note": "US dollar index ETF (UUP) (UUP) is awaiting the next full refresh: this database has no UUP rows in asset_prices yet."
+      }
+     ]
+    }
+   ]
+  },
+  "unavailable": null,
+  "error": null
+ }
+}

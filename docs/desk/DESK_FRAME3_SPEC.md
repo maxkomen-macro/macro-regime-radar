@@ -41,7 +41,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
 | Technicals: vol column ("What protection costs right now") | UNAVAILABLE | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
-| Technicals: sector bars | UNAVAILABLE | sector ETFs, RSP and IWM not ingested (v2 D-19) |
+| Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
 | Technicals: RSI card | UNAVAILABLE | RSI is not computed in `src/desk/` or `api/`; adding it is a new calculation outside Monday's scope (v3 A-16) |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
 | Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
@@ -51,8 +51,12 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Regime: "What each regime has meant" table, and the S&P a month after each change | UNAVAILABLE | regime statistics not yet defined in the engine (v3 A-16 withdraws v2 §9.4) |
 | Macro: yield curve | LIVE with 2y, 10y and 2s10s; 3m, 5y and 30y LIVE once DGS3MO, DGS5 and DGS30 are registered (§12.8) | v2 D-16 |
 | Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
-| Macro: stock–bond correlation, "What moves with the S&P", the 12-asset matrix | UNAVAILABLE | Treasury and credit price-return series not ingested (v2 D-15) |
-| Sectors | UNAVAILABLE | sector ETFs, RSP and IWM not ingested (v2 D-19) |
+| Macro: stock–bond correlation (SPY against TLT, 60 daily log returns) | LIVE (desk/fill-etf, §12.8) | — |
+| Macro: "What moves with the S&P" (TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ and VIX against SPY) | LIVE (desk/fill-etf, §12.8) | — |
+| Macro: the 12-asset matrix | UNAVAILABLE | the 12-asset matrix's assets and method are not specified yet |
+| Sectors: leadership (LEADING, LAGGING, PATTERN, the eleven bars) | LIVE (desk/fill-etf, §12.14) | — |
+| Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
+| Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
 | Signal Ledger | LIVE for the rows whose study completes; the two RSI rows, and any row whose inputs are not stored (WTI, DXY), unavailable | v3 §2, v4 B-02 |
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge | UNAVAILABLE; local leg editing (legs, weights, save, export) remains | basket pricing and option structures not yet defined in the engine (v2 D-25–D-28) |
@@ -66,10 +70,11 @@ Build Notes prints these two lists as their own section, word for word.
 
 **Live**
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, active signals, data status.
-- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals.
+- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints.
-- Macro & Correlations: the yield curve and the credit spreads.
+- Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, and what moves with the S&P.
+- Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
 - Data Pipeline: the series inventory, generated from the registry.
@@ -78,12 +83,12 @@ Build Notes prints these two lists as their own section, word for word.
 **Designed, not yet served**
 - The VIX gap to realized volatility and the vol band word.
 - What protection costs: options skew, implied against realized volatility, the term structure.
-- Sector leadership and breadth.
+- Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
 - RSI, and the two RSI signals.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
 - What each regime has meant, and the S&P after each regime change.
-- Stock–bond correlation, what moves with the S&P, the 12-asset matrix.
+- The 12-asset correlation matrix.
 - Positions kept on a server, and DV01.
 - Basket pricing, the residual chart and the hedge structures.
 
@@ -346,8 +351,17 @@ each `label · N× since <sample_start year> · up P% · a month later +M% ·
 pill`. Note box: "vs normal compares each study to its own baseline over its
 own sample."
 
-**Sector leadership · 3-month relative strength vs S&P**: UNAVAILABLE (§1.0),
-from `/technicals` `sectors` (awaiting).
+**Sector leadership · 3-month relative strength vs S&P**: LIVE (desk/fill-etf),
+from `/technicals` `sectors` (§12.14). Sub-line: the served ranking's two ends
+named ("<first> and <second> leading; <tenth> and <eleventh> lagging"). Bars:
+seven of the eleven (the top three, the middle one, the bottom three), each
+`rel_ret` × 100 with the tooltip "log return, ×100" (§1.9), green above
++`band`, red below −`band`, gray within; all eleven under Advanced. A stamp
+under the bars: "60 sessions to <window.end> · log returns ×100 ·
+<providers>". A row served null prints "not available · <reason>". A
+sector without `rel_ret` is never hidden (Codex R-01): its row follows the
+seven, the sub-line adds ", among the <ranked_n> sectors with data", and
+the note of §7 names it with its reason.
 
 **Momentum · RSI**: UNAVAILABLE (§1.0; no served envelope, §1.0.2). Labels
 kept: NOW · LAST ABOVE 70 · LAST BELOW 30. PNG 02's two RSI context boxes are
@@ -522,9 +536,17 @@ month-ago tenors are drawn and listed the same way from `month_ago.dates`. A
 snapshot with a date is drawn as one curve. The page lists `month_ago.dates`
 under the chart when the date is common too (S-30).
 
-**Do bonds still hedge stocks?**: UNAVAILABLE (§1.0), from `/macro`
-`stock_bond` (awaiting, reason "Treasury and credit price-return series not
-ingested."). Labels kept: TODAY · A YEAR AGO · FLIPPED.
+**Do bonds still hedge stocks?** (`60-day correlation of daily returns, one
+year`): LIVE (desk/fill-etf), from `/macro` `stock_bond` (§12.8): SPY against
+TLT. Stats: TODAY (`today`, signed to two decimals; sub-line "SPY vs TLT ·
+<today_date>", or "Awaiting refresh" and the served `today_reason`) · A YEAR
+AGO (`year_ago`; sub-line `year_ago_date`) · FLIPPED (`flipped` as "<Mon>
+<year>", "None" when served null; sub-line "to <flipped_to> on
+<flipped_on>"). No word and no hedging call is served; the numbers take no
+color. Chart: `series` (blue) on −1…+1 with the zones "bonds move WITH stocks
+· no hedge" (above zero) and "bonds move AGAINST stocks · hedge works" (below
+zero). Stamp: "60 daily log returns to <window.end> · SPY vs TLT, adjusted
+closes · <providers>".
 
 **Credit** (`high-yield spread over Treasuries`). Stats: HY SPREAD (`hy.value`
 %, dated) · 3-YEAR RANGE (`hy_range_3y`, or the served `reason` "coverage
@@ -534,19 +556,67 @@ needle at `hy_pct_3y` ("<nth> pct"); no gauge when `hy_pct_3y` is null. LAST
 12 MONTHS line (`series`, blue) with `peak_12m` labelled "<Mon> peak ·
 <hy>%".
 
-**What moves with the S&P**: UNAVAILABLE (§1.0), from `/macro` `correlations`
-(awaiting). Labels kept; the 12-asset matrix under Advanced is `matrix`
-(awaiting): `Advanced ▸` disabled.
+**What moves with the S&P** (`60-day correlation · each asset against the
+index`): LIVE (desk/fill-etf), from `/macro` `correlations` (§12.8), one row
+per served asset in the served order: its `asset` name, a bar from the
+middle (left and green for a negative correlation, right and amber for a
+positive one), the signed value to two decimals, and its `symbol` (hover:
+`quantity`, `transform`). A row served null prints "not available · <reason>",
+or "Awaiting refresh" when its reason begins so. Stamp: "60 daily returns to
+<the rows' common date>", then each row dated otherwise ("VIXCLS to <date>"),
+then "each against SPY". No meaning word is served. The 12-asset matrix under
+Advanced is `matrix` (awaiting, "the 12-asset matrix's assets and method are
+not specified yet."): `Advanced ▸` disabled.
 
 ---
 
 ## 7. Sectors  (`screens/06-sectors.png`, 900px)
 
-UNAVAILABLE (§1.0). No action button. Badge `○ Not yet served`. The route
-`/sectors` answers the awaiting envelope (reason "sector ETFs, RSP and IWM not
-ingested."). Both cards keep their titles, subtitles and stat labels (LEADING
-· LAGGING · PATTERN; ABOVE 50-DAY · ABOVE 200-DAY · EQUAL vs CAP WEIGHT) and
-print the reason. The served shape once ingested is in §12.13.
+LIVE since desk/fill-etf, from `/sectors` (§12.14). No action button. Badge
+`● Live · <providers> · <date>` (the served comparison session, §1.6).
+
+**Sector leadership** (`3-month return relative to the S&P · all eleven`).
+Stats: LEADING (the first served row's `name`, "<rel_ret> vs the index") ·
+LAGGING (the last served row's) · PATTERN (the served `pattern.word`
+capitalized; sub-line "cyclical sectors ahead of defensives by <|spread|>",
+"defensives ahead of cyclical sectors by <|spread|>", or "neither group ahead
+by more than <band>"; "Awaiting refresh" and the served `pattern.reason`
+when the word is null). All eleven bars in the served order, each `rel_ret` ×
+100 with the tooltip "log return, ×100"; a row served null prints "not
+available · <reason>", never a value or "below". Key: more than 1% ahead ·
+within 1% · more than 1% behind. Stamp: "60 sessions to <window.end> (from
+<window.start>) · log returns ×100 · SPY <benchmark.ret> over the same
+sessions". When `missing` is not empty (Codex R-01) the ranking is not
+presented as complete: the subtitle reads "<ranked_n> of 11 with data",
+LEADING's and LAGGING's sub-lines end "· among the <ranked_n> sectors with
+data", and a note under the bars names each missing sector with its reason
+("Not ranked, without data over the window: XLC Communications
+(<reason>).").
+
+**Breadth** (`is the rally wide or narrow? · of 11 sectors`), the `/sectors`
+`breadth` block (§12.14), of the eleven sector ETFs only. Stats: ABOVE 50-DAY
+("<n> of <of> sectors"; sub-line "on <compared_on>", then "<etfs> not
+available" when a sector's average cannot be read) · ABOVE 200-DAY (the same)
+· EQUAL vs CAP WEIGHT (`eqw_vs_cap_3m` × 100, tooltip "log return, ×100",
+red when negative, green when positive; sub-line "RSP vs SPY · 60 sessions";
+"Awaiting refresh" and the served `eqw_vs_cap_reason` when null). Lines:
+"Equal weight vs cap weight · RSP against SPY, 60-session difference · one
+year" (`eqw_vs_cap_series`), zones "RSP ahead of SPY · equal weight leading"
+and "SPY ahead of RSP · cap weight leading"; dots "Which of the 11 sectors are
+above their 50-day" and "…and their 200-day" (`by_etf`; a sector not in the
+map is an unlit ring read "not available", never "below"); "Small caps vs
+large · IWM against SPY, 60-session difference · one year"
+(`small_vs_large_series`), zones "IWM ahead of SPY · small caps leading" and
+"SPY ahead of IWM · large caps leading". Gray note: "Counted over the 11
+sector ETFs, not stocks. Constituent-level breadth, the stocks inside the
+index, needs constituent data that is not ingested yet." Stamp: "on
+<compared_on> · averages over 50 and 200 sessions · log returns ×100 ·
+<providers>". A served awaiting block keeps the labels and prints its reason.
+
+While the store lacks the sector ETFs (a database older than the first full
+refresh that stores them), the route answers awaiting with "Awaiting refresh:
+the full refresh stores <symbols>; this database predates it." and both
+cards keep their labels and print it (§1.0.2, §1.7).
 
 ---
 
@@ -700,7 +770,12 @@ number, one truth). Series inventory: generated from the registry and its
 consumers, counts derived; each group expands to a table SERIES / ID / FROM
 / AS OF / FEEDS / STATUS (provider, `freq`, first and last stored
 observation, feeds), scrolls inside the group; search jumps to a series. WTI
-is the daily `DCOILWTICO`; USD/JPY is the registry's instrument. The bridge
+is the daily `DCOILWTICO`; USD/JPY is the registry's instrument. Since
+desk/fill-etf the inventory also lists the 24 ETFs the full refresh stores
+in `asset_prices` with each session's volume, in three groups: Sector ETFs
+(the eleven SPDR sectors; XLC from 2018-06-19 and XLRE from 2015-10-08, their
+listing dates), Equity ETFs (SPY, RSP, IWM, QQQ, SMH, SOXX, IGV) and Bond,
+gold & dollar ETFs (TLT, IEF, HYG, LQD, GLD, UUP). The bridge
 card is titled "Proposed export schema (not the current SQLite layout)", with
 the DDL block and the buttons **Export current study → CSV** (§12.4) and
 **Generate Snowflake DDL** (`/pipeline/ddl`).
@@ -743,9 +818,10 @@ still runs on the Client view (S-32).
 
 **Routes.** JSON, GET only, under `/api/desk/`: `/overview`, `/study`,
 `/study/catalog`, `/study/events`, `/ledger`, `/regime`, `/technicals`,
-`/macro`, `/pipeline`. Two text exceptions: `/study/events` with `Accept:
-text/csv` (§12.4) and `/pipeline/ddl` (`text/plain; charset=utf-8`). The
-deferred resources of §12.13 (`/sectors`, `/vol`, `/positions`,
+`/macro`, `/pipeline`, and, since desk/fill-etf, `/sectors` (§12.14). Two
+text exceptions: `/study/events` with `Accept: text/csv` (§12.4) and
+`/pipeline/ddl` (`text/plain; charset=utf-8`). The deferred resources of
+§12.13 (`/vol`, `/positions`,
 `/basket/:id`, `/basket/price`, `/hedge`) are GET-only stubs answering the
 awaiting envelope; a removed write (`POST /positions`, `POST /basket/price`)
 answers 405. Every existing endpoint keeps its contract, those under
@@ -779,7 +855,8 @@ runs (413, 429 from `api/security.py`) keep the middleware's `{detail}` body.
 - `/regime`: `current`, `recession`, `next_prints`, `stats`, `changes`;
 - `/macro`: `curve`, `credit`, `stock_bond`, `correlations`, `matrix`;
 - `/technicals`: `vol`, `sectors`;
-- `/study`: `without_condition`.
+- `/study`: `without_condition`;
+- `/sectors`: `breadth` (desk/fill-etf).
 
 A block envelope is `{"status":"ready","data":<the declared object or
 array>,"unavailable":null}` or `{"status":"awaiting","data":null,
@@ -964,7 +1041,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `provenance.engine_version` | string | required | — | — | A |
 | `provenance.series_start` | object, key → date | required | — | each input's first stored observation | E `provenance.inputs` |
 | `warnings` | string[] | required (may be empty) | — | — | E `provenance.warnings`, each served verbatim except the engine's "calendar sessions without a value: …" entry: when an input's stored history starts before 1970-01-01, the served copy appends, right after that input's count, "(includes N pre-1970 holidays the engine calendar treats as sessions)". N counts the dates that are an `api/calendar` holiday before 1970, inside the input's stored range, a session of the study's own calendar, and a date on which the input has no stored value. A study with no pre-1970 input serves the engine's warnings unchanged. |
-| `series` | array | required | — | — | E registry (`series.with_role`) |
+| `series` | array | required | — | — | E registry (`series.with_role`), limited to the series some catalog study reads: its shock, its target, or the S&P of `spx_below_50` (Codex R-03, desk/fill-etf; the legacy `/api/desk/event-study` keeps every role). The page's Shock and Target slots offer these only |
 | `series[].key`, `label` | string | required | — | — | E |
 | `series[].roles` | array of `shock` \| `target` \| `condition` | required | — | — | E registry `roles` |
 | `series[].ops` | array of `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A: the moves the catalog allows for that series as shock |
@@ -1167,7 +1244,7 @@ Every field describes the registry series `spx` (^GSPC).
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
 | `signals_allowlist` | `["golden-cross","death-cross","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows are omitted while unavailable). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
-| `sectors` | block envelope | required | — | — | awaiting: "sector ETFs, RSP and IWM not ingested." |
+| `sectors` | block envelope | required | — | — | N sector leadership (§12.14, desk/fill-etf): the `/sectors` fields without `breadth`, from the same worker item, so the two agree; awaiting with the route's reason while the store lacks the ETFs |
 
 ### 12.8 `GET /macro`
 
@@ -1195,7 +1272,22 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `credit.data.series` | array of `{date, hy}` | required | percent | `line_window` | N: the 12-month line window |
 | `credit.data.line_window` | `{start, end, n}` | required | — | — | N: [HY date − 12 months, HY date] |
 | `credit.data.peak_12m` | `{date, hy}` | required, nullable | percent | — | N: in-window maximum, earliest date on ties |
-| `stock_bond`, `correlations`, `matrix` | block envelope | required | — | — | awaiting: "Treasury and credit price-return series not ingested." |
+| `stock_bond` | block envelope | required | — | — | N stock–bond correlation (desk/fill-etf); awaiting with "Awaiting refresh: the full refresh stores <symbols>; this database predates it." while SPY or TLT is not stored |
+| `stock_bond.data.today` | number | required, nullable | correlation | `today_date` · daily · `asset_prices` SPY, TLT | N: Pearson's r of SPY's and TLT's daily log returns (ln P(s) / P(s−1), both closes stored) over the 60 XNYS return dates ending at `today_date`, the newest session both close on; null unless all 60 pairs are complete (no forward fill) |
+| `stock_bond.data.today_date`, `today_reason` | date, string | required, nullable | — | — | N: `today_reason` non-null exactly when `today` is null |
+| `stock_bond.data.year_ago`, `year_ago_date` | number, date | required, nullable | correlation | the last XNYS session on or before `today_date` − 12 calendar months | N: the same correlation on that session |
+| `stock_bond.data.flipped`, `flipped_on`, `flipped_to` | month, date, `"positive"` \| `"negative"` | required, nullable (null when the stored history holds no change of sign) | — | — | N: among the sessions with a complete window, in order, zeros skipped, the newest session whose sign differs from the one before; `flipped` its month |
+| `stock_bond.data.series` | array of `{date, corr}` | required | correlation | `line_window` | N: the correlation on every XNYS session after `today_date` − 12 calendar months, through `today_date`; `corr` null where the window is incomplete |
+| `stock_bond.data.window`, `line_window` | `{start, end, n}` | required | sessions | XNYS | N: the 60 return dates of `today`; the line's sessions |
+| `stock_bond.data.stock`, `bond` | `{etf, name}` | required | — | — | A: SPY, TLT |
+| `stock_bond.data.transform`, `unit`, `date`, `freq`, `source`, `providers` | `"daily log return"`, `"correlation"`, date, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
+| `correlations` | block envelope, data an array | required | — | — | N what moves with the S&P (desk/fill-etf); awaiting with "Awaiting refresh: …" while SPY, or every listed asset, is not stored |
+| `correlations.data[]` | `{asset, symbol, quantity, transform, corr, date, window, reason}` | required | — | — | in this order: TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ, and VIX (FRED VIXCLS) when the store holds it |
+| `correlations.data[].corr` | number | required, nullable | correlation | `date` · daily | N: Pearson's r of SPY's daily log returns and the asset's (VIX: daily log changes of the level) over the 60 XNYS return dates ending at `date`, the newest session both hold a value, every pair complete (no forward fill) |
+| `correlations.data[].date`, `window` | date, `{start, end, n}` | required, nullable (when the asset is not stored) | — | XNYS | N |
+| `correlations.data[].symbol`, `quantity`, `transform` | string | required | — | — | A: the registry's series id; "adjusted close" (VIX "index level (FRED VIXCLS)"); "daily log return" (VIX "daily log change") |
+| `correlations.data[].reason` | string | required, nullable | — | — | N: non-null exactly when `corr` is null: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", or "fewer than 60 complete daily return pairs in the window to <date>" |
+| `matrix` | block envelope | required | — | — | awaiting: "the 12-asset matrix's assets and method are not specified yet." |
 
 ### 12.9 `GET /pipeline` and `GET /pipeline/ddl`
 
@@ -1204,7 +1296,7 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `last_refresh_utc` | ts | required, nullable ("unknown" in the UI when null) | — | `source_watermarks` row `"desk_series"` | S: that row's `checked_at` (the Desk store runs only in the full refresh), never the run artifact |
 | `validation` | `"pass"` \| `"fail"` | required, nullable | — | the published `validation.json` | S: the verdict of the `validation.json` published with the served database. Both writers publish it: `refresh-data.yml` and `intraday-refresh.yml`, each in the mode it validates in, as `{verdict, mode, timestamp, db_sha256}`, uploaded after the database. The API binds a verdict by one procedure, run at the download (on the downloaded file) and at every poll (on the served file): read the file's key (k1); require the file's `-wal` to be absent or empty (at a download, `<DB_PATH>-wal` too); hash the file and compare with `db_sha256`; read the key again (k2) and check that the WAL of step 2 (at a download, both) is still absent or empty; bind only when the sha matches, k1 equals k2 and the WAL is still empty, binding exactly k1, with no further sample of the key. It serves the verdict only for the generation with that key; missing, mismatched, WAL-present or re-keyed → null (the UI prints "unknown"). |
 | `groups` | array | required | — | — | E registry and its consumers (`/api/desk/pipeline/inventory`) |
-| `groups[].name` | string | required | — | — | A |
+| `groups[].name` | string | required | — | — | A: Rates, Credit, Equities & vol, FX & commodities, Macro (monthly), Sector ETFs, Equity ETFs, Bond, gold & dollar ETFs (the last three since desk/fill-etf) |
 | `groups[].status` | `"current"` \| `"stale"` \| `"missing"` | required | — | — | A: the worst of its series |
 | `groups[].series` | array | required | — | — | E |
 | `…series[].label`, `id`, `key` | string (`key` nullable for a non-Desk series) | required | — | — | E registry |
@@ -1219,6 +1311,57 @@ DGS10 (v2 §12). Until then those tenors are null.
 `api/static/snowflake_proposed.sql`, the one copy of the proposed Snowflake
 export schema (not the current SQLite layout; the file says so in its first
 line), served verbatim by the route and read by the fixture.
+
+### 12.14 `GET /sectors` (desk/fill-etf, 2026-09-27)
+
+Served from one worker item, `desk_etf` (`api/desk_items_etf.py`), rebuilt
+with every generation. It reads the stored `asset_prices` closes of SPY and
+the eleven SPDR sector ETFs (`src/desk/series.py` `SECTOR_ETFS`) through the
+engine's reader and aligns them onto the XNYS calendar; a session without a
+close is a gap, never filled. Adjusted closes, stored by the full refresh
+(EODHD first, Yahoo fallback).
+
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `window_months` | `3` | required | months | — | A |
+| `window` | `{start, end, n}` | required | sessions | XNYS | N sector leadership: `end` is `compared_on`; `start` the XNYS session 60 before it; `n` 60 (v3 A-18) |
+| `compared_on` | date | required | — | the newest session with an SPY close | N |
+| `unit` | `"log_return"` | required | — | — | A |
+| `band` | `0.01` | required | log fraction | — | A: the bars' ±1% band and the pattern rule's |
+| `benchmark` | `{etf: "SPY", name, ret}` | required | log fraction | `window` | N: ln(SPY(end) / SPY(start)) |
+| `leadership` | array of 11 | required | — | — | N: ranked by `rel_ret`, highest first (ties by ticker), the rows without one after, in `SECTOR_ETFS` order |
+| `leadership[].etf`, `name`, `short` | string | required | — | — | A: `SECTOR_ETFS` |
+| `leadership[].group` | `"cyclical"` \| `"defensive"` | required, nullable (XLC, XLRE) | — | — | A: the pattern rule's groups |
+| `leadership[].rel_ret` | number | required, nullable | log fraction | `window` | N: ln(P(end) / P(start)) − ln(SPY(end) / SPY(start)); null when either close of the ETF is not stored |
+| `leadership[].ret` | number | required, nullable | log fraction | `window` | N: ln(P(end) / P(start)) |
+| `leadership[].first` | date | required, nullable | — | — | S: the ETF's first stored close (XLC 2018-06-19, XLRE 2015-10-08) |
+| `leadership[].reason` | string | required, nullable | — | — | N: non-null exactly when `rel_ret` is null: "no close on <date>: its history starts <first>", "no close stored for <date>", or "not stored in this database" |
+| `ranked_n` | integer | required | sectors | `window` | N (Codex R-01): how many rows carry `rel_ret`; the ranking is only among them |
+| `missing` | array of `{etf, name, reason}` | required (may be empty) | — | — | N (Codex R-01): the rows without `rel_ret`, in the rows' order, each with its `reason` |
+| `pattern.rule`, `pattern.band` | `"sector-pattern-v1"`, `0.01` | required | — | — | A |
+| `pattern.cyclicals`, `pattern.defensives` | string[] | required | — | — | A: XLB, XLE, XLF, XLI, XLK, XLY; XLP, XLU, XLV (XLC and XLRE in neither) |
+| `pattern.spread` | number | required, nullable | log fraction | `window` | N: the cyclicals' mean `rel_ret` less the defensives'; null unless all nine are served |
+| `pattern.word` | `"cyclical"` \| `"defensive"` \| `"mixed"` | required, nullable | — | — | A rule `sector-pattern-v1`: spread > band cyclical, spread < −band defensive, otherwise mixed (strict both ways); null with `spread` |
+| `pattern.reason` | string | required, nullable | — | — | N: the members not served, when `word` is null |
+| `date`, `freq`, `source` | date, `"daily"`, `"asset_prices"` | required | — | — | A: `date` is `compared_on` |
+| `providers` | string[] | required | — | — | S: the providers of the rows read, in words ("Yahoo", "EODHD") |
+| `breadth` | block envelope | required | — | — | N breadth, below; awaiting with the route's reason while the store lacks the ETFs |
+| `breadth.data.compared_on`, `date` | date | required | — | `compared_on` of the route | N: the same session as leadership |
+| `breadth.data.of_total` | `11` | required | sector ETFs | — | A |
+| `breadth.data.above_50`, `above_200` | `{n, of, compared_on, window, by_etf, not_available}` | required | sector ETFs | `window` · daily | N: for each sector ETF, above = close(`compared_on`) > the simple mean of its closes over the 50 (200) XNYS session slots ending there (strict; every slot must hold a close, the §12.7 rule); `by_etf` holds the ETFs it can be read for, `not_available` the others with the reason; `n` counts true, `of` the ETFs in `by_etf` (a sector not available is counted in neither) |
+| `breadth.data.eqw_vs_cap_3m` | number | required, nullable | log fraction | `relative_window` | N: ln(RSP(end) / RSP(start)) − ln(SPY(end) / SPY(start)) over the 60 sessions |
+| `breadth.data.eqw_vs_cap_reason` | string | required, nullable | — | — | N: non-null exactly when `eqw_vs_cap_3m` is null |
+| `breadth.data.eqw_vs_cap_series` | array of `{date, rel}` | required | log fraction | `eqw_vs_cap_line_window` | N: the same 60-session difference on every XNYS session after `compared_on` − 12 calendar months, through `compared_on`; `rel` null where a close it needs is not stored |
+| `breadth.data.eqw_vs_cap_line_window` | `{start, end, n}` | required, nullable (no RSP) | sessions | — | N |
+| `breadth.data.small_vs_large_3m`, `small_vs_large_reason`, `small_vs_large_series`, `small_vs_large_line_window` | as the four above | required | as above | as above | N: IWM against SPY |
+| `breadth.data.relative_window` | `{start, end, n: 60}` | required | sessions | XNYS | N |
+| `breadth.data.unit`, `freq`, `source`, `providers` | `"log_return"`, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
+
+The route answers `awaiting` with "Awaiting refresh: the full refresh stores
+<symbols>; this database predates it." when SPY or every sector ETF is
+absent (a database older than the first full refresh after desk/fill-etf).
+A parameter is refused 422 `unsupported`. Display (§1.9): `rel_ret`, `ret`
+and `spread` print as 100 × native with a % sign, labelled "log returns ×100".
 
 ### 12.13 Deferred shapes (`status: deferred`)
 
@@ -1267,8 +1410,8 @@ value's date. Needs stored SPY option snapshots and a versioned skew
 method; `realized_20d` needs its method specified, and the Overview's
 `tiles.vol` `gap_pts` and `band` wait on it (v2 §13).
 
-**Sectors — `status: deferred`** (`/technicals` `sectors` block; `GET
-/sectors`). `{window_months: 3, leadership: [{etf, name, short, rel_ret}]
+**Sectors — served since desk/fill-etf (§12.14); this deferred shape is
+kept for the history** (`/technicals` `sectors` block; `GET /sectors`). `{window_months: 3, leadership: [{etf, name, short, rel_ret}]
 (sorted best first), breadth: {above_50: {n, of, compared_on, by_etf},
 above_200: {n, of, by_etf}, eqw_vs_cap_3m, eqw_vs_cap_series: [{date, rel}],
 small_vs_large_series: [{date, rel}]}}`. When activated: relative return =
@@ -1277,7 +1420,8 @@ log(P_ETF(t) / P_ETF(t−60)) − log(P_SPY(t) / P_SPY(t−60)) on adjusted clos
 breadth serves its comparison date; missing history is "not available",
 never "below".
 
-**Correlations — `status: deferred`** (`/macro` `stock_bond`,
+**Correlations — `stock_bond` and `correlations` served since desk/fill-etf
+(§12.8); `matrix` `status: deferred`** (`/macro` `stock_bond`,
 `correlations`, `matrix`). `stock_bond: {today, year_ago, flipped, series:
 [{date, corr}]}`, `correlations: [{asset, symbol, quantity, transform,
 corr}]`, `matrix: {assets, labels, window, values}`. Each asset declares
@@ -1358,7 +1502,10 @@ the recession provenance extraction (§12.6); the Desk `data_status`
 (§12.1); the curve snapshot alignment, month-ago selection and dated
 differences (§12.8); `vol_change_pts`, `regime_from`, `regime_to` and
 `regime_changed` (§12.1); the three FRED tenor series. These do not
-authorize any conditional-improvement judgment.
+authorize any conditional-improvement judgment. Added by desk/fill-etf
+(2026-09-27): the 24 ETF series in `asset_prices`; sector leadership and
+its pattern rule, and breadth of the 11 sector ETFs (§12.14); the
+stock–bond correlation and what moves with the S&P (§12.8).
 
 **Not allowed for Monday** (the blocks are unavailable): RSI; confidence
 80% / 95%; the regime statistics table and change outcomes; the

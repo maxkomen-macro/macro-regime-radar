@@ -65,7 +65,7 @@ ENGINE_VERSION = resolve_engine_version(os.environ)
 
 # ── The frame-3 client's routes and block paths ─────────────────────────────
 
-# The routes that answer the envelope (§12.0): the nine live ones, then the
+# The routes that answer the envelope (§12.0): the ten live ones (/sectors since desk/fill-etf), then the
 # §12.13 stubs. `/basket` stands for `/basket/:id` (route_of). The existing
 # /api/desk endpoints (/event-study, /event-study/assets, /pipeline/inventory)
 # keep their own contracts.
@@ -82,6 +82,7 @@ NESTED_PATHS: dict[str, tuple[str, ...]] = {
     "/macro": ("curve", "credit", "stock_bond", "correlations", "matrix"),
     "/technicals": ("vol", "sectors"),
     "/study": ("without_condition",),
+    "/sectors": ("breadth",),  # desk/fill-etf: /sectors is served, its breadth a block of its own
 }
 
 
@@ -93,20 +94,20 @@ def route_of(path: str) -> str:
 
 # ── Served sentences (§1.0, §12.3, §12.6–§12.8, §12.13; plan §6 S-17, S-27) ──
 
-SECTORS_REASON = "sector ETFs, RSP and IWM not ingested."
 VOL_REASON = "needs stored SPY option snapshots and a versioned skew method."
 POSITIONS_REASON = "Positions are kept in this browser; there is no server position store."
 BASKET_REASON = "basket pricing and option structures not yet defined in the engine."
 RSI_REASON = "RSI is not computed yet."
 WITHOUT_CONDITION_REASON = "conditional-versus-unconditional comparison is not defined"
 REGIME_STATS_REASON = "regime statistics not yet defined in the engine."
-CORRELATIONS_REASON = "Treasury and credit price-return series not ingested."
+# desk/fill-etf: stock_bond and correlations are served; the matrix's assets and method are open
+MATRIX_REASON = "the 12-asset matrix's assets and method are not specified yet."
 # S-27: a block whose computation failed on this generation.
 BLOCK_FAILED_REASON = "Awaiting refresh: this could not be computed from the current data."
 
 # The §12.13 stubs, each answering the awaiting envelope with its sentence.
+# (/sectors is served since desk/fill-etf, §12.14.)
 DEFERRED_REASONS: dict[str, str] = {
-    "/sectors": SECTORS_REASON,
     "/vol": VOL_REASON,
     "/positions": POSITIONS_REASON,
     "/basket": BASKET_REASON,
@@ -120,10 +121,7 @@ DEFERRED_BLOCKS: dict[tuple[str, str], str] = {
     ("/regime", "stats"): REGIME_STATS_REASON,
     ("/regime", "changes"): REGIME_STATS_REASON,
     ("/technicals", "vol"): VOL_REASON,
-    ("/technicals", "sectors"): SECTORS_REASON,
-    ("/macro", "stock_bond"): CORRELATIONS_REASON,
-    ("/macro", "correlations"): CORRELATIONS_REASON,
-    ("/macro", "matrix"): CORRELATIONS_REASON,
+    ("/macro", "matrix"): MATRIX_REASON,
 }
 
 INTERNAL_MESSAGE = "Internal error. The incident is logged server-side."

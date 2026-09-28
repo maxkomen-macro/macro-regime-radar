@@ -41,6 +41,7 @@ export const NESTED_PATHS: Readonly<Record<string, readonly string[]>> = {
   "/macro": ["curve", "credit", "stock_bond", "correlations", "matrix"],
   "/technicals": ["vol", "sectors"],
   "/study": ["without_condition"],
+  "/sectors": ["breadth"],
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
