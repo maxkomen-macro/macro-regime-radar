@@ -173,9 +173,9 @@ page are already real.
 The work was split into parallel branches, each built by an AI coding agent
 in its own git worktree, one commit per item.
 
-Every commit passed type checks, unit tests, a production build and the Desk
-browser tests. Each branch then passed the full test suite once, under a
-machine-wide lock, so that only one full run used the machine at a time.
+Every commit passed type checks, unit tests, a production build and its
+related browser tests; each branch then passed the full test suite and the
+full Desk browser suite once before merge.
 
 An independent AI reviewer checked every branch before it merged, with
 read-only access, and reproduced each finding as a test. Every blocking
