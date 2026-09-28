@@ -22,6 +22,7 @@ import { droppedOf } from "../data/schema";
 import { apiParams, askFromSearch, atMonth, readLastStudy, targetLabel } from "../event-study/question";
 import { isUnit, moveText, scaleOf, tipOf } from "../kit/units";
 import "./client.css";
+import { defineTerms } from "../kit/Term";
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 
@@ -140,7 +141,7 @@ function StatCard({ label, children, state }: { label: string; children?: ReactN
   const unserved = useUnserved();
   return (
     <div className="dk-card cv-stat">
-      <p className="dk-stat-label">{label}</p>
+      <p className="dk-stat-label">{defineTerms(label)}</p>
       {unserved ? (
         <p className="dk-stat-await" aria-hidden="true">
           —

@@ -19,6 +19,7 @@ import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, 
 import Gauge from "../kit/Gauge";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine } from "../kit/ui";
 import "./regime.css";
+import { defineTerms } from "../kit/Term";
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, "green" | "amber" | "red" | "gray"> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
@@ -127,8 +128,8 @@ function Card({ id, title, sub, children, footer, busy }: { id: string; title: s
     <section className="dk-card rg-card" aria-labelledby={id} aria-busy={busy}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id={id}>
-          {title}
-          <span className="dk-card-sub"> {sub}</span>
+          {defineTerms(title)}
+          <span className="dk-card-sub"> {defineTerms(sub)}</span>
         </h2>
       </div>
       <LoadingLine busy={busy} />
@@ -361,7 +362,7 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
             <tr>
               {MEANT_LABELS.map((l) => (
                 <th key={l} scope="col">
-                  {l}
+                  {defineTerms(l)}
                 </th>
               ))}
             </tr>

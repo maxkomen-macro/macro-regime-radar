@@ -42,6 +42,7 @@ import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, Not
 import { ProtectionCard } from "../prototypes/ProtectionCard";
 import { SPX_SYMBOLS, symbolOf } from "./symbol";
 import "./technicals.css";
+import { defineTerms } from "../kit/Term";
 
 type CardState = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -135,7 +136,7 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
             )}
           </div>
           <div className="te-vol-sec te-vol-gauge">
-            <div className="dk-stat-label">SKEW · WHERE IT SITS</div>
+            <div className="dk-stat-label">{defineTerms("SKEW · WHERE IT SITS")}</div>
             {/* §12.13 serves the percentile without band edges (the bands are specified when the card is built). */}
             {pctile != null ? <p className="te-vol-meaning">{`${ordinal(pctile)} percentile of two years`}</p> : <Awaiting />}
           </div>
@@ -388,7 +389,7 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
     <section className="dk-card te-sectors" aria-labelledby="te-sect-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-sect-title">
-          Sector leadership · {s && fin(s.window_months) ? `${s.window_months}-month` : "3-month"} relative strength vs S&amp;P
+          {defineTerms(`Sector leadership · ${s && fin(s.window_months) ? `${s.window_months}-month` : "3-month"} relative strength vs S&P`)}
         </h2>
       </div>
       <LoadingLine busy={state === "loading"} />
@@ -478,7 +479,7 @@ function RsiCard({ t, state, short = "S&P" }: { t: TechnicalsResponse | undefine
     <section className="dk-card te-rsi" aria-labelledby="te-rsi-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-rsi-title">
-          Momentum · RSI<span className="dk-card-sub"> is {theOf(short)} stretched, either way?</span>
+          {defineTerms("Momentum · RSI")}<span className="dk-card-sub"> is {theOf(short)} stretched, either way?</span>
         </h2>
         {/* §1.6: the RSI is dated by its own session, which a gap in the closes can hold before the price's. */}
         {r != null && dayShort(t?.rsi_date) ? <LiveBadge parts={[dayShort(t?.rsi_date)]} /> : null}
@@ -731,7 +732,7 @@ function RelativeCard({ t, state, range }: { t: TechnicalsResponse | undefined; 
     <section className="dk-card te-rs" aria-labelledby="te-rs-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-rs-title">
-          Relative strength vs the S&amp;P 500<span className="dk-card-sub"> its price divided by the index, rebased to 100</span>
+          {defineTerms("Relative strength vs the S&P 500")}<span className="dk-card-sub"> its price divided by the index, rebased to 100</span>
         </h2>
       </div>
       <LoadingLine busy={state === "loading"} />

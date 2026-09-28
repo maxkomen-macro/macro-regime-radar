@@ -14,6 +14,7 @@ import { deskFixture } from "../src/fixtures/desk/index";
 import { DESK_PAGES } from "../src/screens/desk/desk-sections";
 import positionSample from "../src/fixtures/desk/positions.json" with { type: "json" };
 import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
+import { GLOSSARY } from "../src/screens/desk/kit/glossary";
 
 /** What /api/market/search answers on the Desk's scope in these tests: a mixed upstream list, as EODHD sends it. */
 export const SEARCH_N: Override = {
@@ -348,5 +349,27 @@ test.describe("desk usability", () => {
       expect(await loading.count(), `${slug}: loading lines`).toBeGreaterThanOrEqual(n);
       await expect(loading, `${slug}: loading lines once answered`).toHaveCount(0, { timeout: 20_000 });
     }
+  });
+
+  test("item 11: terms of art carry a one-sentence definition on hover", async ({ page }) => {
+    const hover = async (route: string, printed: string, id: keyof typeof GLOSSARY) => {
+      await open(page, route);
+      const term = page.getByRole("main").locator("abbr.dk-term", { hasText: printed }).first();
+      await expect(term, `${route}: ${printed}`).toHaveAttribute("data-term", new RegExp(`\\b${id}\\b`));
+      await term.hover();
+      await expect(page.getByTestId("dk-term-tip"), `${route}: ${printed}`).toContainText(GLOSSARY[id].text);
+      await page.mouse.move(0, 0);
+      await expect(page.getByTestId("dk-term-tip")).toHaveCount(0);
+    };
+    await hover("/desk/macro", "2s10s", "curve");
+    await hover("/desk/macro", "HY spread", "oas");
+    await hover("/desk/technicals", "RSI (14)", "rsi");
+    await hover("/desk/technicals", "21-day realized vol", "realized");
+    await hover("/desk/signal-ledger", "2s10s +2σ steepening", "sigma");
+    await hover("/desk/regime", "VIX avg", "vix");
+    await hover("/desk/overview", "Vol · VIX", "vix");
+    // The Event Study's Move slot explains σ with the same sentence.
+    await open(page, "/desk/event-study");
+    await expect(page.locator(".es-tip").first()).toHaveAttribute("data-tip", GLOSSARY.sigma.text);
   });
 });

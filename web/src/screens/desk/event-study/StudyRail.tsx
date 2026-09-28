@@ -16,6 +16,7 @@ import { droppedOf } from "../data/schema";
 import { targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
+import { defineTerms } from "../kit/Term";
 
 /** The rail with no answer: its section labels, and why there is nothing under them (§1.7). A served
  * study, Too few included, is scored (v4 B-02) and gets the whole rail. */
@@ -28,7 +29,7 @@ export function RailPlaceholder() {
       <>
         {["Verdict", "By regime · a month later", "Last five events", "Range vs normal"].map((l) => (
           <div key={l} className="es-rail-empty">
-            <p className="dk-stat-label">{l}</p>
+            <p className="dk-stat-label">{defineTerms(l)}</p>
           </div>
         ))}
         <UnservedLine block={unserved} />
@@ -45,7 +46,7 @@ export function RailPlaceholder() {
         </>,
       ].map((l, i) => (
         <div key={i} className="es-rail-empty">
-          <p className="dk-stat-label">{l}</p>
+          <p className="dk-stat-label">{defineTerms(l)}</p>
           <p className="dk-await">{why}</p>
         </div>
       ))}

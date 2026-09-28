@@ -29,6 +29,7 @@ import { isOpen } from "../positions/store";
 import { useLevels, usePositionStore } from "../positions/usePositionStore";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
 import "./overview.css";
+import { Term, defineTerms } from "../kit/Term";
 
 /** The since-last-close items (§2), in the spec's order. A vol change that
  * rounds to 0.0 reads "unchanged". */
@@ -122,7 +123,7 @@ function Tile({ label, state, badge, value, tone, sub, unserved }: { label: stri
   return (
     <section className="ov-tile" aria-label={label} aria-busy={state === "loading" && !unserved} data-unserved={unserved ? "" : undefined}>
       <div className="ov-tile-head">
-        <span className="ov-tile-label">{label}</span>
+        <span className="ov-tile-label">{defineTerms(label)}</span>
         {unserved ? <NotServedBadge block={unserved} /> : state === "ready" ? badge : null}
       </div>
       <LoadingLine busy={state === "loading" && !unserved} />
@@ -233,7 +234,7 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
           {/* The row's own excess over its own baseline (§1.9), never a universal normal month. */}
           {ok(row.vs_normal) && vsNormalText(row.vs_normal, row.target_unit ?? undefined) ? (
             <>
-              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> vs normal)
+              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["baseline"]}>vs normal</Term>)
             </>
           ) : null}
         </>

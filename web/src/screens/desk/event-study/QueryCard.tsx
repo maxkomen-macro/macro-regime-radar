@@ -20,6 +20,7 @@ import type { CatalogStudy, Move, Question } from "../data/types";
 import type { Slot as SlotKey } from "./catalog";
 import { droppedWords } from "../kit/ui";
 import { HORIZONS, MOVES, PRESET_CHIPS, WHILES, WINDOWS, adjust, exportSaved, importSaved, type SavedQuestion } from "./question";
+import { GLOSSARY } from "../kit/glossary";
 
 export type Mode = "common" | "saved" | "build";
 
@@ -226,7 +227,7 @@ export default function QueryCard({
       <div className="es-slots">
         <Slot label="Shock" value={draft?.shock ?? ""} options={opts("shock", shockList)} onChange={set("shock")} disabled={!draft || !series} awaiting={seriesFailed} />
         <Slot label="Window" value={!draft ? "" : draft.window == null ? "none" : String(draft.window)} options={opts("window", [...WINDOWS.map((w) => ({ id: String(w), label: `${w} days` })), { id: "none", label: "none (a cross or RSI)" }])} onChange={set("window")} disabled={!draft} />
-        <Slot label="Move" tip="σ measured over the last 252 sessions" value={draft?.move ?? ""} options={opts("move", MOVES.map((m) => ({ id: m.id as Move, label: m.label })))} onChange={set("move")} disabled={!draft} />
+        <Slot label="Move" tip={GLOSSARY.sigma.text} value={draft?.move ?? ""} options={opts("move", MOVES.map((m) => ({ id: m.id as Move, label: m.label })))} onChange={set("move")} disabled={!draft} />
         <Slot label="While" tip="Entry at the event close when every input is available by then; otherwise the next close." value={draft?.while ?? ""} options={opts("while", [...WHILES])} onChange={set("while")} disabled={!draft} />
         <Slot label="What happens to" value={draft?.target ?? ""} options={opts("target", targetList)} onChange={set("target")} disabled={!draft || !series} awaiting={seriesFailed} />
         <Slot label="Over the next" value={String(draft?.horizon ?? "")} options={opts("horizon", HORIZONS.map((h) => ({ id: String(h.h), label: h.label })))} onChange={set("horizon")} disabled={!draft} />

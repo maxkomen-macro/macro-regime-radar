@@ -19,6 +19,7 @@ import { moveText, tipOf, vsNormalText } from "../kit/units";
 import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill, LoadingLine } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
+import { defineTerms } from "../kit/Term";
 
 export type Filter = "all" | "firing" | "reliable" | "spx" | "cross";
 const FILTER_IDS: readonly Filter[] = ["all", "firing", "reliable", "spx", "cross"];
@@ -83,7 +84,7 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
   if (!isAvailable(r))
     return (
       <tr data-unavailable>
-        <th scope="row">{titleOf(r)}</th>
+        <th scope="row">{defineTerms(titleOf(r))}</th>
         <td colSpan={7} className="lg-unavailable">
           {r.unavailable?.reason ?? "not yet served"}
         </td>
@@ -97,7 +98,7 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
   };
   return (
     <tr data-firing={firingToday(r) || undefined} tabIndex={0} onClick={() => onOpen(r.slug)} onKeyDown={key} aria-label={`${titleOf(r)}: open in Event Study`}>
-      <th scope="row">{titleOf(r)}</th>
+      <th scope="row">{defineTerms(titleOf(r))}</th>
       <td className="lg-mono">{typeof r.last_fired === "string" && dayLong(r.last_fired) ? dayLong(r.last_fired) : "—"}</td>
       <td className="lg-mono">{fin(r.n) ? r.n : "—"}</td>
       <td className="lg-mono">{fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
@@ -227,7 +228,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                   <th scope="col">Times</th>
                   <th scope="col">Up a month later</th>
                   <th scope="col">Median</th>
-                  <th scope="col">Vs normal</th>
+                  <th scope="col">{defineTerms("Vs normal")}</th>
                   <th scope="col">Verdict</th>
                   <th scope="col">Now</th>
                 </tr>

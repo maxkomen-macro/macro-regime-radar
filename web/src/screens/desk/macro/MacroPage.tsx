@@ -24,6 +24,7 @@ import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBo
 import { droppedOf } from "../data/schema";
 import { matrixProblem } from "./matrix";
 import "./macro.css";
+import { defineTerms } from "../kit/Term";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -54,8 +55,8 @@ function CardHead({ id, title, sub }: { id: string; title: string; sub: string }
   return (
     <div className="dk-card-head">
       <h2 className="dk-card-title" id={id}>
-        {title}
-        <span className="dk-card-sub"> {sub}</span>
+        {defineTerms(title)}
+        <span className="dk-card-sub"> {defineTerms(sub)}</span>
       </h2>
     </div>
   );

@@ -634,6 +634,37 @@
   color: var(--dk-t4);
   white-space: nowrap;
 }
+/* desk/usability item 11 (§14.11): a term of art carries its one-sentence definition on hover or focus. */
+.dk-term {
+  text-decoration: underline dotted var(--dk-t4);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.dk-term-tip {
+  position: fixed;
+  z-index: 60;
+  padding: 8px 10px;
+  border: 1px solid var(--dk-border);
+  border-radius: 4px;
+  background: var(--dk-box);
+  box-shadow: 0 12px 40px rgba(12, 14, 17, 0.7);
+  color: var(--dk-t1);
+  font: 400 12.5px/1.45 var(--dk-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  pointer-events: none;
+}
+.dk-term-tip[data-above] {
+  transform: translateY(-100%);
+}
+.dk-term-tip p {
+  margin: 0;
+}
+.dk-term-tip p + p {
+  margin-top: 6px;
+}
 .dk-stat-value {
   font-family: var(--dk-serif);
   font-weight: 700;

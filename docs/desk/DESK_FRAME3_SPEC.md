@@ -2290,3 +2290,31 @@ question pushes one.
   and the Overview's since-last-close line says the same, until the answer, a
   failure or an awaiting block arrives.
 
+
+### 14.11 Hover definitions
+
+- **One sentence per term.** `web/src/screens/desk/kit/glossary.ts` holds the
+  Desk's terms of art, each with the forms a page prints and one plain
+  sentence that states the Desk's own windows: σ (252 sessions), the
+  high-yield spread and OAS, investment grade, HY, 2s10s, steepening and
+  flattening, the front end, basis points, RSI (14), realized volatility (21
+  sessions, annualized), implied volatility and IV, skew, the VIX, drawdown
+  from the 1-year high, the 50- and 200-day averages, golden and death
+  crosses, relative strength, log returns, correlation, breadth, normal (the
+  baseline), overlap blocks, the 90% interval, K−2, NAV, DV01, beta, R² and
+  notional. Beta, R² and notional print on desk/books' Basket & Hedge; they
+  are defined here so its cards carry them at the rebase.
+- **Where.** Every stat label, card title and card subtitle (`kit/ui.tsx`
+  `Stat`, `Card`, `UnservedCard`, and the pages' own card heads), the
+  Overview's tiles and its "vs normal", the Signal Ledger's row labels and
+  "Vs normal" column, the Regime table's "VIX avg", the correlation matrix's
+  caption. A printed string with a term is wrapped whole in one
+  `<abbr class="dk-term">` (dotted underline, `data-def`, `aria-describedby`
+  to a hidden list of the sentences), so the label keeps one text node. The
+  Event Study's Move slot explains σ with the same sentence. The Ledger's
+  bold row labels show their underline only while the row is hovered or
+  focused, so a column of signal names does not read as a column of links.
+- **Tooltip.** One per Desk (`kit/Term.tsx` `TermTip`, mounted by the shell):
+  on hover or focus of a term it shows the sentence under the term (above it
+  near the bottom of the window), fixed to the viewport so no card clips it;
+  Escape, scrolling or leaving the term hides it.

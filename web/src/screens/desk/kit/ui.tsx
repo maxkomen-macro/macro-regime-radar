@@ -11,6 +11,7 @@ import { createContext, useContext, useId, useState, type ReactNode } from "reac
 import type { Unavailable } from "../data/envelope";
 import type { Verdict } from "../data/types";
 import { VERDICT_LABEL } from "./format";
+import { defineTerms } from "./Term";
 
 export type Tone = "up" | "down" | "flat" | "amber" | "green" | "red" | "blue" | "gray" | "default";
 
@@ -107,8 +108,8 @@ export function UnservedCard({
     <As className={cx("dk-card", className)} aria-labelledby={hid} data-unserved="">
       <div className="dk-card-head">
         <h2 className="dk-card-title" id={hid}>
-          {title}
-          {sub ? <span className="dk-card-sub"> {sub}</span> : null}
+          {defineTerms(title)}
+          {sub ? <span className="dk-card-sub"> {defineTerms(sub)}</span> : null}
         </h2>
         <div className="dk-card-badge">
           <NotServedBadge block={block} />
@@ -231,8 +232,8 @@ export function Card({
       {title || shownBadge || headExtra ? (
         <div className="dk-card-head">
           <h2 className="dk-card-title" id={hid}>
-            {title}
-            {sub ? <span className="dk-card-sub"> {sub}</span> : null}
+            {defineTerms(title)}
+            {sub ? <span className="dk-card-sub"> {defineTerms(sub)}</span> : null}
           </h2>
           {headExtra}
           {shownBadge ? <div className="dk-card-badge">{shownBadge}</div> : null}
@@ -270,7 +271,7 @@ export function Stat({
   const unserved = useUnserved();
   return (
     <div className="dk-stat" data-size={size}>
-      <div className="dk-stat-label">{label}</div>
+      <div className="dk-stat-label">{defineTerms(label)}</div>
       {unserved ? (
         // §1.0.2: the label stays, no number; the card prints the reason once.
         <div className="dk-stat-await" aria-hidden="true">

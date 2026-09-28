@@ -21,6 +21,7 @@ import { PipelineBadge } from "./pipeline/badge";
 import { DESK_ALIASES, DESK_HOME, deskPageBySlug } from "./desk-sections";
 import { useDeskView, withView } from "./desk-view";
 import TourStrip from "./tour/TourStrip";
+import { TermTip } from "./kit/Term";
 import { parseTour } from "./tour/tour";
 import "../../styles/desk.css";
 import "../../styles/desk2.css";
@@ -137,6 +138,7 @@ export default function DeskShell() {
           {tour ? <TourStrip step={tour} /> : null}
         </div>
       </MixedGenerations.Provider>
+      <TermTip />
     </div>
   );
 }
