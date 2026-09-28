@@ -10,7 +10,23 @@ Branch `desk/books` (worktree `mrr-books`), cut from main `4394e59` on
 | 3 | `8aface4` | Basket technicals against the Nasdaq and the S&P (`/api/desk/basket/price`, `src/desk/technicals.py`, step 2) |
 | 4 | `9c7ef6b` | The ETF hedge, ranked, and the linear stress test (`/api/desk/basket/hedge`, step 3) |
 | 5 | `15476bd` | Named baskets, notional and method, the AI Infrastructure 10 preset, `?add=` |
-| 6 | the commit that carries this report (gated as `f5d98c2`, which is it without this file) | The page in three numbered steps; Build Notes; compare shots; live shots |
+| 6 | `125258c` | The page in three numbered steps; Build Notes; compare shots; live shots; this report's first version |
+
+Then Codex's review of `f5d98c2` (DO NOT PUSH, 14 findings), fixed one
+finding or tightly related group per commit (the table below):
+
+| Commit | Findings |
+|---|---|
+| `0a0745f` | R-02, R-03, R-06: the engine on the XNYS calendar |
+| `2c80b97` | R-01: the stress on one shared window at the basket's cutoff |
+| `5edce46` | R-04, R-05: liquidity on the trailing 20 sessions, whole or not served |
+| `3d19e9b` | R-07: adjusted closes only |
+| `3c40c01` | R-13: the daily-bar refresh under the key's single-flight lock |
+| `71ad891` | R-08, R-09: each answer's own date, and the stress window in words |
+| `7897dcf` | R-10, R-12: no zero-weight leg, and ticker checks bound to their basket |
+| `f5ea56e` | R-14, R-11: a plain options slot; the import follow-up in Build Notes |
+| `9dcd5cc` | Build Notes' basket method after the review; the live shots re-taken on the fixed head |
+| the commit that carries this report | the findings table and the gates |
 
 Commits 3 to 6 were re-made after gates found faults in them, each time by
 amending the commit at fault and replaying the ones after it (no rebase, no
@@ -29,6 +45,34 @@ push; every earlier sha is still reachable):
   (`9c7ef6b`), and commits 5 (`15476bd`) and 6 (`878b4db`) were replayed.
 - The final e2e on `878b4db` found "never" on the Build Notes page (my
   basket section); commit 6 was amended to `f5d98c2` with "stay fixed".
+
+## Codex's findings on `f5d98c2`
+
+Codex reviewed `f5d98c2` against main `4394e59` and returned DO NOT PUSH
+with 14 findings, seven blocking. Each test below was built from Codex's
+own repro (read from its session log) and asserts the corrected value
+beside the one Codex reported; all pass at the head.
+
+| ID | Severity | Fix commit | Test |
+|---|---|---|---|
+| R-01 | blocking | `2c80b97` | `tests/test_desk_basket.py::test_codex_r01_the_stress_never_reads_etf_closes_after_the_basket` (the basket = QQQ for 60 returns, SMH 3× QQQ for 60 more: hedged $0, was about +$200,000); `::test_the_stress_says_why_when_the_three_share_too_few_returns`; `tests/test_desk_basket_api.py::test_the_stress_is_linear_in_betas_fitted_on_one_shared_window` |
+| R-02 | blocking | `0a0745f` | `tests/test_desk_basket.py::test_codex_r02_a_missing_session_is_a_missing_return_not_a_two_day_one` (Jan 26–30: beta 3.3333 on the two valid returns, was 2.0513; a 3-return window is null with its reason) |
+| R-03 | blocking | `0a0745f` | `::test_codex_r03_the_start_is_the_first_session_the_basket_is_bought_at` (A Jan 28/30, B Jan 29/30: start Jan 30 at Jan 30's closes, `start_kind` "gap"); `web/.../trades.test.ts` (the gap in words) |
+| R-04 | blocking | `5edce46` | `::test_codex_r04_one_name_without_adv_leaves_the_basket_figure_unserved`; `BasketHedgePage.test.tsx` "Codex R-04: …" |
+| R-05 | blocking | `5edce46` | `::test_codex_r05_adv_reads_the_trailing_20_xnys_sessions_not_the_last_20_rows` (Jan 2–Feb 2 without Jan 16: not a complete ADV) |
+| R-06 | blocking | `0a0745f` | `::test_codex_r06_the_final_session_rebalances_when_it_is_the_month_end` (A 100/200/200, B flat, monthly: 50/50 on Jan 30, was 66.7/33.3) |
+| R-07 | blocking | `3d19e9b` | `tests/test_desk_basket_api.py::test_codex_r07_a_bar_without_an_adjusted_close_is_left_out_and_disclosed` (the mocked split: 0%, was −50%); `::test_a_symbol_with_no_adjusted_close_at_all_is_refused`; `trades.test.ts` "Codex R-07" |
+| R-08 | high | `71ad891` | `BasketHedgePage.test.tsx` "Codex R-08: …" (price Sep 23, hedge Sep 22: both dates and the mismatch shown); `trades.test.ts` "Codex R-08" |
+| R-09 | high | `71ad891` | `trades.test.ts` "Codex R-09: …" (a 60-session basis never reads one year); the R-08 page test reads the footnote |
+| R-10 | high | `7897dcf` | `weights.test.ts` "Codex R-10: …" (NVDA 60 / AVGO 40 + QQQ: 33.4 / 33.3 / 33.3, was QQQ 0%); `BasketHedgePage.test.tsx` "Codex R-10: Save refuses a leg at 0%" |
+| R-11 | high | not fixed, by your decision | Build Notes, "What I'd build next" (`f5ea56e`): import drops a basket whose name and names match one here even when its method or notional differs |
+| R-12 | high | `7897dcf` | `BasketHedgePage.test.tsx` "Codex R-12: …" (a QQQ check held while basket B is opened adds nothing to B) |
+| R-13 | high | `3c40c01` | `tests/test_providers.py::test_codex_r13_a_stale_daily_entry_is_refreshed_once_under_concurrency` (four concurrent calls: one upstream computation, were four) |
+| R-14 | low | `f5ea56e` | `BasketHedgePage.test.tsx` (the options slot has no button and no Advanced control); `web/e2e/desk.spec.ts` (the same in the browser) |
+
+The fixture script gained `--cache`: Yahoo re-adjusts its closes on every
+download, so the fixtures moved by a dollar between regenerations; with one
+cached download they now regenerate byte for byte.
 
 ## What the page is now
 
@@ -69,39 +113,58 @@ leading with one sentence that states its answer with served numbers:
   `api/providers/market.daily_bars`; an answer still missing the day's close
   is asked again after 15 minutes. Each bar also carries EODHD's unadjusted
   close (`close_raw`, not in the served candle shape) for dollar volume.
-- **Index.** Base 100 on the first session every name has a close; the page
-  says whose first close it is (CRWV's, March 2025, for the preset) or that
-  every history starts there. A later session one name lacks is dropped from
-  the index and counted (`missing_sessions`), not filled.
+- **Calendar.** Every series sits on the XNYS calendar (`exchange_calendars`,
+  through the end of the month after the last close). A daily return is a
+  simple return between two consecutive sessions that both have a close; a
+  gap is a missing return, never one spanning two sessions (R-02).
+- **Index.** Base 100 on the first calendar session every name has a close,
+  the one the share counts are bought at (R-03); the page says why it is
+  there: a later first close (CRWV's, March 2025, for the preset), the
+  start of every history, or a gap (the name and the session it had no
+  close on). A later session one name lacks is dropped from the index and
+  counted (`missing_sessions`), not filled.
 - **Buy-and-hold** (default): target weights become share counts at the
   start; weights drift. **Monthly**: counts reset to target weights at each
-  calendar month's last index session.
+  completed month's month-end (its last XNYS session by the calendar, the
+  final observation included; R-06).
 - **Contribution**: share count × price change per holding period over the
   notional; the names add up to the index's return exactly.
 - **Concentration** at the last close: top-3 weight, effective names
-  1 / Σw², mean pairwise Pearson correlation of daily returns over the last
-  252 index sessions (all of them when fewer, null under 60).
-- **Liquidity**: 20-day mean of unadjusted close × volume per name; days to
-  trade = target weight × notional / (0.20 × that); the basket figure is the
-  largest. (Target weights: the question is how long to put the basket on.)
+  1 / Σw², mean pairwise Pearson correlation of the names' one-session
+  returns over the last 252 sessions every name has one (all when fewer,
+  null under 60).
+- **Liquidity**: the mean of unadjusted close × volume over the trailing 20
+  XNYS sessions ending at the index's last session, and only when every one
+  of them has a dollar volume (R-05); days to trade = target weight ×
+  notional / (0.20 × that); the basket figure is the largest, and is not
+  served, with its reason, when any name has none (R-04).
+- **Adjusted closes only**: a bar EODHD served without an adjusted close is
+  left out and disclosed (`excluded`), never priced from its raw close; a
+  symbol with none at all is refused (R-07).
 - **Technicals**: `src/desk/technicals.level_technicals`, the same function
   `/technicals` reads (moved from `api/desk_items.py`; /technicals is byte-
   identical, checked against HEAD's function on the published DB copy and by
   the unchanged 02-technicals compare shot), plus RSI(14) by §12.13's Wilder
   rule, drawdown from the running peak, 21-day realized vol (sample sd of 21
   daily log returns × √252), every cross.
-- **Against QQQ and SPY**: simple daily returns between consecutive sessions
-  both have a close; beta = cov / var of the benchmark; the last 252 and 60
-  returns, complete or null with the reason ("needs 252 daily returns; there
-  are 250 since …"). Relative lines: basket ÷ benchmark over its value on the
-  range's base date × 100, each with its 50-session average.
-- **ETF hedge**: least squares on daily returns; R² over a year ranks (60
-  days when no ETF has a year, and the card says so); hedge ratio = beta;
-  dollars to short = beta × notional; volatility left = sd of basket − beta ×
-  ETF, × √252 (= basket vol × √(1 − R²)).
-- **Stress**: linear in the top pick's window betas; basket move = β(basket,
-  shock) × −10%; the short's P&L = −ratio × notional × β(ETF, shock) × −10%
-  (β = 1 when the ETF is the shock); no convexity, no costs.
+- **Against QQQ and SPY**: one-session returns both have, up to the
+  basket's last session; beta = cov / var of the benchmark; the last 252 and
+  60 of them, complete or null with the reason ("needs 252 daily returns;
+  there are 250 since …"). Relative lines: basket ÷ benchmark over its value
+  on the range's base date × 100, each with its 50-session average.
+- **ETF hedge**: least squares on one-session returns up to the basket's last
+  session; R² over a year ranks (60 days when no ETF has a year, and the card
+  says so); hedge ratio = beta; dollars to short = beta × notional;
+  volatility left = sd of basket − beta × ETF, × √252 (= basket vol ×
+  √(1 − R²)).
+- **Stress**: every beta of a row on one shared window (R-01): the last n
+  sessions (n from the top pick's basis) up to the basket's last session on
+  which the basket, the top ETF and the shock each have a one-session return;
+  basket move = β(basket, shock) × −10%; the short's P&L = −β(basket, ETF) ×
+  notional × β(ETF, shock) × −10% (β = 1 when the ETF is the shock); the
+  footnote names the window (R-09); no convexity, no costs.
+- **Dates**: steps 2 and 3 each show their own answer's date, and a hedge
+  answered at another session than the price is said (R-08).
 
 ## Spec and contract
 
@@ -140,10 +203,10 @@ engine."
    plain input checked against the price endpoint (`basket/check.ts`); a
    ticker it does not list is refused in its words; an unanswered check adds
    the name and says so. **Switch at rebase.**
-4. **The options step** is desk/prototypes'. This branch leaves the slot
-   ("Hedge with options", mode labels and stat labels kept, unavailable
-   state, no numbers), so no PROTOTYPE values appear here and no footnote
-   is needed.
+4. **The options step** is desk/prototypes'. This branch leaves the slot:
+   the card's title, its "Not yet served" badge and one unavailable line, with no
+   controls since R-14 (the three mode buttons and Advanced are gone) and no
+   numbers, so no PROTOTYPE values appear here and no footnote is needed.
 5. **The PNG (screens/09) is two columns;** the request is three steps top to
    bottom. The request wins; §10 says so; the cards keep the PNG's visual
    language. The compare shot is regenerated and differs from the PNG by
@@ -195,8 +258,36 @@ full pytest and the full Desk e2e (`--workers=1`) once, holding
 | 4 `9c7ef6b` | pass | 125 files, 1,543 | pass | `tests/test_desk*`: 620 passed; the 3 SQL-guard timing tests under load (below); the spec-sentence test failed on `b16a03e` and passes here (the spec-reading suites: 158 passed, web 27) | by policy, at the head |
 | 5 `15476bd` | pass | 126 files, 1,553 | pass | `tests/test_desk*`: 620 passed; the 3 SQL-guard timing tests; the route sweep got 202 `computing` from `/api/desk/event-study` (a study past 8 s under load) and passes run alone on the same export (1 passed, 22 s); this commit changes nothing under `api/`, `src/`, `tests/` or `scripts/` | by policy, at the head |
 | 6 (first `7ac512e`, `878b4db`) | pass | 126 files, 1,554 | pass | full (below) | full (below) |
+| `0a0745f` R-02/03/06 | pass | 126 files, 1,554 | pass | basket/provider/desk: 704 passed | at the head |
+| `2c80b97` R-01 | pass | 126 files, 1,554 | pass | 706 passed | at the head |
+| `5edce46` R-04/05 | pass | 126 files, 1,555 | pass | 707 passed | at the head |
+| `3d19e9b` R-07 | pass | 126 files, 1,556 | pass | 709 passed | at the head |
+| `3c40c01` R-13 | pass | 126 files, 1,556 | pass | 710 passed | at the head |
+| `71ad891` R-08/09 | pass | 126 files, 1,559 | pass | 710 passed | at the head |
+| `7897dcf` R-10/12 | pass | 126 files, 1,562 | pass | 710 passed | at the head |
+| `f5ea56e` R-14/11 | pass | 126 files, 1,562 | pass | 710 passed | at the head |
+| `9dcd5cc` (docs and shots) | pass | 126 files, 1,562 | pass | full: 1,650 passed (below) | 55/55 (below) |
 
-**The final gates.** On `878b4db` (commit 6 before the report), holding
+The fix commits' pytest ran `tests/test_providers.py`,
+`tests/test_api_lookup.py`, `tests/test_provider_no_yahoo.py` and every
+`tests/test_desk*.py` (23 files), with no failure on any of the eight.
+
+**The final gate after the review.** On `9dcd5cc`, the head before this
+report: tsc pass; vitest (2 workers) 126 files, **1,562 passed**; build pass;
+then, holding `/tmp/mrr-full-gates.lock` from 22:24:21 until the e2e
+finished (released by the script's exit trap; mrr-usability took it at
+22:35:52): the full pytest, serial, 9 minutes: **1,650 passed, 3 failed**:
+the 2 known `test_asset_history` DB-copy failures, and
+`tests/test_provider_no_yahoo.py::test_the_profile_makes_its_two_eodhd_calls_concurrently`,
+whose calls overlapped (that assertion held) but took 0.75 s against its
+0.71 s bound under load; run alone on the same export afterwards it
+**passed** (0.42 s). The full Desk e2e, `--workers=1`, on a port whose
+listener was checked to be the export: **55/55**. The profile's code is as
+on main; the cache class it shares (`KeyedTTLCache.get`) gained R-13's
+optional `stale` argument, which the profile does not pass (one `is not None`
+test per hit). Adding this report is the only change after the gate.
+
+**The first final gates, before the review.** On `878b4db` (commit 6 before the report), holding
 `/tmp/mrr-full-gates.lock` from 19:43:54 until the e2e finished: the full
 pytest, serial, 26 minutes: **1,638 passed, 6 failed**: the 2 known
 `test_asset_history` failures and the four timing tests named below; the
@@ -212,7 +303,8 @@ full Desk e2e, `--workers=1`, holding the lock from 20:54:34 to 20:56:48:
 full pytest ran alone on the head's export: **4 passed** (20 s)
 (`test_desk_api.py`'s three SQL-guard budgets and
 `test_provider_no_yahoo.py::test_the_profile_makes_its_two_eodhd_calls_concurrently`).
-Adding this report to commit 6 is the only change after these gates.
+At the time, adding this report to commit 6 was the only change after
+these gates.
 
 **Timing tests under load.** Commit 3's full pytest took 90 minutes beside a
 dozen other sessions' suites (load average 15–64). Six tests with wall-clock
@@ -265,7 +357,7 @@ EODHD.", then Save priced eleven names), `live-technicals-render-*`.
 
 | Card | Page | Verdict | Evidence |
 |---|---|---|---|
-| Page badge `● Live · EODHD · Sep 25` | Basket & Hedge | LIVE-verified | preset page shot |
+| Page badge `● Live · EODHD · Sep 25`, and steps 2 and 3 each with its own `prices Sep 25` (R-08) | Basket & Hedge | LIVE-verified | preset page shot |
 | Basket (step 1: dropdown, rename, new, notional, method, legs with weight now and since start, lead sentence) | Basket & Hedge | LIVE-verified | `live-basket-*-01-basket.png`, add-flow shots |
 | Basket index | Basket & Hedge | LIVE-verified (one year of history live; the two-year 200-day line on fixtures and mocks) | `…-02-basket-index.png` |
 | Momentum and risk | Basket & Hedge | LIVE-verified | `…-03-momentum-and-risk.png` (1-year return "—, needs 252 sessions; it has 251") |
@@ -275,8 +367,8 @@ EODHD.", then Save priced eleven names), `live-technicals-render-*`.
 | Concentration | Basket & Hedge | LIVE-verified | `…-07-concentration.png` |
 | Liquidity | Basket & Hedge | LIVE-verified (relay: adjusted close × volume) | `…-08-liquidity.png` |
 | Hedge with an ETF | Basket & Hedge | LIVE-verified (ranked on 60 days live) | `…-09-hedge-with-an-etf.png` |
-| Stress test | Basket & Hedge | LIVE-verified | `…-10-stress-test.png` |
-| Hedge with options | Basket & Hedge | PROTOTYPE (the slot; the card is desk/prototypes', no values on this branch) | `…-11-hedge-with-options.png` |
+| Stress test | Basket & Hedge | LIVE-verified (the footnote names the 60-session window it was fitted on, R-09) | `…-10-stress-test.png` |
+| Hedge with options | Basket & Hedge | PROTOTYPE (the slot; the card is desk/prototypes', no values and no controls on this branch) | `…-11-hedge-with-options.png` |
 | S&P 500 price and its two trend lines (now the kit's TrendChart) | Technicals | LIVE-verified against the deployed API | `live-technicals-render-02-s-p-500.png`, identical numbers to `live-before-technicals.png` |
 
 No card is FAILED.
@@ -292,4 +384,7 @@ No card is FAILED.
 - A request that fetches many cold histories is synchronous (four at a time);
   a slow EODHD day could pass the browser's 15 s abort. The Desk's `computing`
   (202) pattern would fit if that shows up.
+- **R-11**, not fixed by your decision: import treats a basket with the same
+  name and names as already here even when its method or notional differs.
+  Recorded in Build Notes, "What I'd build next".
 - `AGENTS.md` predates the Desk v2 notes and was left as it was.
