@@ -158,7 +158,7 @@ export const ENVELOPED_ROUTES: readonly string[] = [
   "/vol", "/positions", "/basket", "/hedge",
 ];
 
-/** Basket & Hedge's live routes (§12.14, §12.15): never read as a basket's id. */
+/** Basket & Hedge's live routes (§12.15, §12.16): never read as a basket's id. */
 const BASKET_ROUTES = ["/basket/price", "/basket/hedge"];
 
 /** The route an /api/desk URL path answers for (`/basket/ai-infra` reads as `/basket`). */

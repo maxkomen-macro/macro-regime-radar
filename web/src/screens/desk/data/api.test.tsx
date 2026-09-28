@@ -150,7 +150,7 @@ describe("the response boundary", () => {
       "/study/events": studyEvents,
       "/study/catalog": studyCatalog,
       "/pipeline": pipeline,
-      // §12.14 (desk/books): the sample basket's real answer.
+      // §12.15 (desk/books): the sample basket's real answer.
       "/basket/price": Object.values((basketPrice as { answers: Record<string, Record<string, unknown>> }).answers)[0],
       "/basket/hedge": Object.values((basketHedge as { answers: Record<string, Record<string, unknown>> }).answers)[0],
     };

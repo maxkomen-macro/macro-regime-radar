@@ -830,7 +830,7 @@ export interface SectorsResponse extends Envelope {
 // Basket & Hedge (§10) is unavailable: no page reads `/basket/:id`, `/basket/price` or `/hedge`,
 // deferred stubs whose shapes, when built, are §12.13's.
 
-// ── §12.14 /basket/price (desk/books) ─────────────────────────────────────
+// ── §12.15 /basket/price (desk/books) ─────────────────────────────────────
 
 export type BasketMethod = "hold" | "monthly";
 
@@ -855,13 +855,13 @@ export interface BasketLegPriced {
   days_to_trade: number | null;
 }
 
-/** §12.14: a chart point of the basket index, with its RSI and drawdown. */
+/** §12.15: a chart point of the basket index, with its RSI and drawdown. */
 export interface BasketPoint extends PricePoint {
   rsi: number | null;
   drawdown: number | null;
 }
 
-/** §12.14: the basket and the benchmarks rebased to 100 on the range's base date, and basket ÷ benchmark (100 there). */
+/** §12.15: the basket and the benchmarks rebased to 100 on the range's base date, and basket ÷ benchmark (100 there). */
 export interface ComparePoint {
   date: string;
   basket: number | null;
@@ -890,7 +890,7 @@ export interface BasketBenchmark {
   reason_60d: string | null;
 }
 
-/** §12.14: the basket index's technicals, the shared function /technicals reads, with RSI, drawdown and realized vol. */
+/** §12.15: the basket index's technicals, the shared function /technicals reads, with RSI, drawdown and realized vol. */
 export interface BasketIndex {
   price: number | null;
   date: string;
@@ -950,7 +950,7 @@ export interface BasketPriceResponse extends Envelope {
   compare?: { "6m"?: { base_date: string | null; points: ComparePoint[] }; "1y"?: { base_date: string | null; points: ComparePoint[] } };
 }
 
-// ── §12.15 /basket/hedge (desk/books) ─────────────────────────────────────
+// ── §12.16 /basket/hedge (desk/books) ─────────────────────────────────────
 
 export interface HedgeEtf {
   symbol: string;

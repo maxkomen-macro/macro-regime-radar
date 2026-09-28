@@ -97,14 +97,14 @@ const DEFERRED: Readonly<Record<string, string>> = {
   "/vol": "needs stored SPY option snapshots and a versioned skew method.",
   // §9, §12.3's served reasons (S-17): positions are kept in the browser (v2 D-21).
   "/positions": "Positions are kept in this browser; there is no server position store.",
-  // §10: the option structures (v2 D-25–D-28); the ETF hedge is served (§12.15).
+  // §10: the option structures (v2 D-25–D-28); the ETF hedge is served (§12.16).
   "/hedge": "option structures for a basket not yet defined in the engine.",
 };
 
 /** §12.13's served reason for a basket kept on a server (`GET /basket/:id`): baskets live in the browser (§1.8). */
 const BASKET_REASON = "Baskets are kept in this browser; there is no server basket store.";
 
-/** §12.14 (desk/books): the basket answers the fixtures carry, by the request the page makes,
+/** §12.15 (desk/books): the basket answers the fixtures carry, by the request the page makes,
  * `legs|method|notional` (scripts/desk_basket_fixture.py writes them from real closes). */
 const BASKET_ANSWERS: Record<string, Record<string, unknown>> = {
   "/basket/price": (basketPrice as { answers: Record<string, unknown> }).answers,
@@ -195,7 +195,7 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   // §12.13: `GET /basket/:id` is a deferred stub like the others.
   if (method.toUpperCase() === "GET" && routeOf(path) === "/basket") return json(200, awaitingEnvelope({ reason: BASKET_REASON, until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
-  // §12.14, §12.15: a basket the fixtures priced answers; any other basket has no fixture (never a made-up price).
+  // §12.15, §12.16: a basket the fixtures priced answers; any other basket has no fixture (never a made-up price).
   if (method.toUpperCase() === "GET" && path in BASKET_ANSWERS) {
     const answer = BASKET_ANSWERS[path][basketKey(u)];
     return answer ? json(200, answer) : json(404, { error: "no fixture for this basket" });

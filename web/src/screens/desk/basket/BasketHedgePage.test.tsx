@@ -2,7 +2,7 @@
  * Basket & Hedge (DESK_FRAME3_SPEC §10): the analyst's own work is kept in
  * this browser (the baskets, their typed weights, Save, Export / Import JSON,
  * + New basket), and a saved basket at exactly 100% is priced by
- * /basket/price (§12.14): step 2, how the basket trades, from the fixture's
+ * /basket/price (§12.15): step 2, how the basket trades, from the fixture's
  * real answer. The hedge's option structures stay unavailable (§1.0.2). The
  * header's Send to Position Monitor carries the basket, which Position
  * Monitor reads as a manual subject (§9).
@@ -61,7 +61,7 @@ const loaded = async () => {
 };
 
 describe("Basket & Hedge tab", () => {
-  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot unavailable (§10, §12.14, §12.15, §1.0.2)", async () => {
+  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot unavailable (§10, §12.15, §12.16, §1.0.2)", async () => {
     seed();
     const { calls } = stubDesk();
     renderTab();
@@ -85,7 +85,7 @@ describe("Basket & Hedge tab", () => {
     expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     // §10: no Desk / Client toggle.
     expect(screen.queryByTestId("dk-view-toggle")).toBeNull();
-    // Step 3 (§12.15): the ETFs ranked by one-year R², the top pick marked, the stress test.
+    // Step 3 (§12.16): the ETFs ranked by one-year R², the top pick marked, the stress test.
     const hedge = await screen.findByRole("region", { name: /^Hedge it/ });
     const etfs = within(hedge).getByRole("region", { name: /^Hedge with an ETF/ });
     await waitFor(() => expect(etfs).toHaveTextContent("XLK fits the basket best (R² 0.69 over a year): short $1,384,473 of it against $1,000,000 and the basket's volatility falls from 44% to 25%, 44% less."));
@@ -440,7 +440,7 @@ describe("Basket & Hedge tab", () => {
     expect(within(basketCard()).getByLabelText("Basket")).toHaveValue("");
   });
 
-  it("the fixture server prices the baskets it carries, no other; the hedge and a stored basket are stubs; the price's POST is 405 (§12.0, §12.13, §12.14)", () => {
+  it("the fixture server prices the baskets it carries, no other; the hedge and a stored basket are stubs; the price's POST is 405 (§12.0, §12.13, §12.15)", () => {
     expect(JSON.parse(deskFixture("GET", "/api/desk/basket/local-1")!.body)).toMatchObject({ status: "awaiting", unavailable: { reason: "Baskets are kept in this browser; there is no server basket store." } });
     expect(JSON.parse(deskFixture("GET", "/api/desk/hedge?mode=protect")!.body)).toMatchObject({ status: "awaiting", unavailable: { reason: "option structures for a basket not yet defined in the engine." } });
     expect(JSON.parse(deskFixture("GET", "/api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000")!.body)).toMatchObject({ status: "ready", data: { top: "XLK" } });

@@ -1,5 +1,5 @@
 /**
- * Step 3 of Basket & Hedge, "Hedge it" (DESK_FRAME3_SPEC §10, §12.15;
+ * Step 3 of Basket & Hedge, "Hedge it" (DESK_FRAME3_SPEC §10, §12.16;
  * desk/books). The ETF hedge is /basket/hedge's answer for the saved basket:
  * SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by the R² of the basket's daily
  * returns on each (one year; 60 days beside it), each with its hedge ratio

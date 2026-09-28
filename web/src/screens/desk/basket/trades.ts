@@ -1,7 +1,7 @@
 /**
  * Basket & Hedge's words (DESK_FRAME3_SPEC §10, desk/books): each card leads
  * with one plain sentence stating its answer with its numbers. Every number
- * here is a served field of /basket/price (§12.14), formatted; a sentence
+ * here is a served field of /basket/price (§12.15), formatted; a sentence
  * whose numbers are not all served says what is missing instead. Pure.
  */
 
@@ -183,7 +183,7 @@ export function liquidityLead(p: BasketPriceResponse): string | null {
   return `At ${usd(p.notional)} the slowest name to trade is ${q.binding}: ${daysText(q.basket_days)} at ${pctPlain(q.participation ?? 0.2, 0)} of its ${q.adv_sessions ?? 20}-day average dollar volume.`;
 }
 
-// ── Step 3: the ETF hedge (§12.15) ────────────────────────────────────────
+// ── Step 3: the ETF hedge (§12.16) ────────────────────────────────────────
 
 /** A dollar P&L as a verb: "loses $223,092", "makes $222", "is flat". */
 export function pnlWords(usdPnl: number): string {

@@ -1,11 +1,11 @@
 """api/desk_basket.py — Basket & Hedge's live routes (desk/books).
 
 `GET /api/desk/basket/price?legs=NVDA:10,AVGO:10,…&method=hold|monthly&notional=1000000`
-prices a basket the browser keeps (DESK_FRAME3_SPEC §10, §12.14): the index
+prices a basket the browser keeps (DESK_FRAME3_SPEC §10, §12.15): the index
 and its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY),
 contribution, concentration and liquidity. `GET /api/desk/basket/hedge` with
 the same parameters ranks the hedge ETFs and runs the linear stress test
-(§12.15).
+(§12.16).
 
 Every number comes from EODHD's daily bars (api/providers/market.daily_bars:
 two years, split- and dividend-adjusted, completed sessions only, cached per
@@ -28,10 +28,10 @@ from typing import Any, Mapping
 
 from api import desk_envelope as env
 
-# The two benchmarks every basket is read against (§12.14), key → (ticker, label).
+# The two benchmarks every basket is read against (§12.15), key → (ticker, label).
 BENCHMARKS: dict[str, tuple[str, str]] = {"qqq": ("QQQ", "Nasdaq 100 (QQQ)"), "spy": ("SPY", "S&P 500 (SPY)")}
 CHART_RANGES = {"6m": 6, "1y": 12}
-# §12.15: the ETFs a basket's hedge is chosen from, in this order, with their names.
+# §12.16: the ETFs a basket's hedge is chosen from, in this order, with their names.
 HEDGE_ETFS: dict[str, str] = {
     "SMH": "VanEck Semiconductor", "SOXX": "iShares Semiconductor", "QQQ": "Nasdaq 100", "XLK": "Technology Select Sector",
     "IGV": "iShares Expanded Tech-Software", "XLU": "Utilities Select Sector", "SPY": "S&P 500", "IWM": "Russell 2000",
@@ -184,7 +184,7 @@ def _f(x: Any) -> float | None:
 
 def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], method: str, notional: float, *,
                  provider: str = PROVIDER, source: str = SOURCE) -> dict:
-    """§12.14's payload from the fetched histories: the legs' and the two
+    """§12.15's payload from the fetched histories: the legs' and the two
     benchmarks' (keyed by ticker). `provider` and `source` name where the
     closes came from (the fixture script prices Yahoo's and says so)."""
     import pandas as pd
@@ -254,7 +254,7 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
 
 def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], method: str, notional: float, *,
                  provider: str = PROVIDER, source: str = SOURCE) -> dict:
-    """§12.15's payload: the ETFs ranked by how well each fits the basket's
+    """§12.16's payload: the ETFs ranked by how well each fits the basket's
     daily returns, the top pick, and the linear stress test."""
     from src.desk import basket as bk
 

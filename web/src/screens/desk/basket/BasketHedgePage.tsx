@@ -3,10 +3,10 @@
  * analyst's own work is kept in this browser (§1.8): the baskets, their legs
  * as typed weights (Equal-weight, Normalize to 100%, × to drop, a ticker to
  * add), Save basket and Export / Import JSON. A saved basket whose weights add
- * to exactly 100% is priced by /basket/price (§12.14, desk/books) from
+ * to exactly 100% is priced by /basket/price (§12.15, desk/books) from
  * EODHD's daily bars: step 2, how the basket trades (./BasketTrades.tsx).
  * The hedge's option structures are not yet defined in the engine (v2
- * D-25–D-28): step 3 ranks the ETF hedge (/basket/hedge, §12.15) and keeps
+ * D-25–D-28): step 3 ranks the ETF hedge (/basket/hedge, §12.16) and keeps
  * the options card's slot, which prints §1.0's reason (§1.0.2).
  * Send to Position Monitor carries the basket as a manual subject (§9).
  */
@@ -58,7 +58,7 @@ import {
 } from "./weights";
 import "./basket.css";
 
-/** What /basket/price is asked for a saved basket (§12.14): its legs as saved, the method, the notional;
+/** What /basket/price is asked for a saved basket (§12.15): its legs as saved, the method, the notional;
  * null until the basket has legs whose weights add to exactly 100%. */
 export function priceParams(b: SavedBasket | null): { legs: string; method: string; notional: string } | null {
   if (!b || !b.legs.length || !sumsToHundred(b.legs)) return null;
@@ -74,7 +74,7 @@ const STORAGE_WORDS: Record<Exclude<SaveResult, "ok">, string> = {
   full: "This browser's storage is full; nothing was saved.",
 };
 
-/** The priced legs by ticker: weight at the last close and return since the start (§12.14). */
+/** The priced legs by ticker: weight at the last close and return since the start (§12.15). */
 type Live = Record<string, { weight_now: number | null; ret: number | null }>;
 function liveOf(p: BasketPriceResponse | undefined): Live | null {
   if (!p?.legs?.length) return null;

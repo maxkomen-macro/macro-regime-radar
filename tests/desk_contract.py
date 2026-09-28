@@ -409,7 +409,7 @@ PIPELINE = obj(
     )),
 )
 
-# ── §12.14 GET /basket/price (desk/books) ───────────────────────────────────
+# ── §12.15 GET /basket/price (desk/books) ───────────────────────────────────
 
 REGRESSION_FIELDS = {}
 for _w in ("1y", "60d"):
@@ -447,7 +447,7 @@ BASKET_PRICE = obj(
 )
 
 
-# ── §12.15 GET /basket/hedge (desk/books) ───────────────────────────────────
+# ── §12.16 GET /basket/hedge (desk/books) ───────────────────────────────────
 
 LOOSE_SPAN = obj(start=null(DATE), end=null(DATE), n=INT)
 HEDGE_ETF = E("SMH", "SOXX", "QQQ", "XLK", "IGV", "XLU", "SPY", "IWM")

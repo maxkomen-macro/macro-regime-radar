@@ -1,6 +1,6 @@
 /**
  * Step 2 of Basket & Hedge, "How the basket trades" (DESK_FRAME3_SPEC §10,
- * §12.14; desk/books). Everything is /basket/price's answer for the saved
+ * §12.15; desk/books). Everything is /basket/price's answer for the saved
  * basket: the index with its 50- and 200-day averages and crosses (the
  * Technicals chart, kit/TrendChart), RSI, drawdown and realized volatility;
  * the index against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), rebased, with
@@ -72,7 +72,7 @@ function IndexCard({ p, state, range, setRange }: { p: BasketPriceResponse | und
   );
 }
 
-/** RSI and drawdown over the range, from the served series (§12.14): RSI with its 30 and 70 lines, drawdown below zero. */
+/** RSI and drawdown over the range, from the served series (§12.15): RSI with its 30 and 70 lines, drawdown below zero. */
 function MomentumCharts({ pts, range }: { pts: readonly BasketPoint[]; range: BasketRange }) {
   const rsi = pts.map((q) => (fin(q.rsi) ? q.rsi : null));
   const dd = pts.map((q) => (fin(q.drawdown) ? q.drawdown * 100 : null));

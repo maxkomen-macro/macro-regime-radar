@@ -269,7 +269,7 @@ export const useStudyCatalog = () => useDesk<StudyCatalogResponse>("/study/catal
 /** §12.3: the events behind a study (the Advanced panel). */
 export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);
 
-/** §12.14: a basket kept in this browser, priced by the API from EODHD's daily bars. `legs` is
+/** §12.15: a basket kept in this browser, priced by the API from EODHD's daily bars. `legs` is
  * `TICKER:weight,…` in percent (the saved weights' digits); asked only for a saved basket. */
 export function useBasketPrice(params: { legs: string; method: string; notional: string } | null) {
   return useQuery<BasketPriceResponse, DeskApiError>({
@@ -281,7 +281,7 @@ export function useBasketPrice(params: { legs: string; method: string; notional:
   });
 }
 
-/** §12.15: the ETF hedge for the same saved basket, ranked by fit, and the linear stress test. */
+/** §12.16: the ETF hedge for the same saved basket, ranked by fit, and the linear stress test. */
 export function useBasketHedge(params: { legs: string; method: string; notional: string } | null) {
   return useQuery<BasketHedgeResponse, DeskApiError>({
     queryKey: ["desk-v2", "/basket/hedge", params],

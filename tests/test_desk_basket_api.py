@@ -1,5 +1,5 @@
 """Basket & Hedge's routes (api/desk_basket.py, desk/books; DESK_FRAME3_SPEC
-§12.14, §12.15). The provider is mocked at market.daily_bars with seeded
+§12.15, §12.16). The provider is mocked at market.daily_bars with seeded
 random walks on the real XNYS sessions of the two years to 2026-09-25, so no
 network is touched; the answers are checked against the §12 contract and a
 few values against the engine directly."""
@@ -182,7 +182,7 @@ def test_the_basket_routes_share_the_provider_ceiling():
     assert not env.DEFERRED_REASONS.get("/basket/price")
 
 
-# ── §12.15 /basket/hedge ────────────────────────────────────────────────────
+# ── §12.16 /basket/hedge ────────────────────────────────────────────────────
 
 def hedge(**q):
     return client.get("/api/desk/basket/hedge", params=q)

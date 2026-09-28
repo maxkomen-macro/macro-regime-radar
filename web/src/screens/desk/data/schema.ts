@@ -305,7 +305,7 @@ const SECTORS = {
   }),
 } as const;
 
-/** §12.14's pieces (desk/books). */
+/** §12.15's pieces (desk/books). */
 const span = o({ start: "s!", end: "s!", n: "n" }, { nul: true });
 const basketPoint = o({ date: "s!", close: "n", ma50: "n", ma200: "n", rsi: "n", drawdown: "n" });
 const comparePoint = o({ date: "s!", basket: "n", qqq: "n", spy: "n", rs_qqq: "n", rs_qqq_ma50: "n", rs_spy: "n", rs_spy_ma50: "n" });

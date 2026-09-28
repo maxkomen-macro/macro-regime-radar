@@ -4,7 +4,7 @@
  * name, method (buy-and-hold or monthly rebalance) and notional. The weights
  * are the analyst's input, so the page may tidy them (equal-weight, normalize
  * to 100%); nothing about the basket itself is computed here: the API prices
- * a saved basket (§12.14). Pure except the storage helpers, which never throw.
+ * a saved basket (§12.15). Pure except the storage helpers, which never throw.
  */
 
 export interface WorkLeg {

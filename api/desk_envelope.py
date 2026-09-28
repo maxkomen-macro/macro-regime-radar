@@ -104,7 +104,7 @@ def route_of(path: str) -> str:
 
 VOL_REASON = "needs stored SPY option snapshots and a versioned skew method."
 POSITIONS_REASON = "Positions are kept in this browser; there is no server position store."
-# desk/books: a basket is priced live (§12.14, §12.15); what stays deferred is a basket kept on a
+# desk/books: a basket is priced live (§12.15, §12.16); what stays deferred is a basket kept on a
 # server (baskets live in the browser, §1.8) and the hedge's option structures.
 BASKET_REASON = "Baskets are kept in this browser; there is no server basket store."
 OPTIONS_REASON = "option structures for a basket not yet defined in the engine."

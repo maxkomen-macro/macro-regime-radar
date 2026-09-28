@@ -656,14 +656,14 @@ test.describe("desk v2", () => {
     const hedge = page.getByRole("region", { name: /^Hedge with options/ });
     const step = page.getByRole("region", { name: /^How the basket trades/ });
     const step3 = page.getByRole("region", { name: /^Hedge it/ });
-    // §12.14: the saved basket priced from the fixture's real closes; the badge names whose.
+    // §12.15: the saved basket priced from the fixture's real closes; the badge names whose.
     await expect(page.getByRole("main").getByTestId("dk-live").first()).toHaveText("Live · Yahoo · Sep 23");
     await expect(step.getByRole("region", { name: /^Basket index/ })).toContainText("Up 113.8% since Mar 28, 2025");
     await expect(step.getByRole("img", { name: /^The basket index with its 50-day and 200-day averages/ })).toBeVisible();
     await expect(step.getByRole("img", { name: /^The basket, QQQ and SPY rebased to 100/ })).toBeVisible();
     await expect(step.getByRole("region", { name: /^Liquidity/ })).toContainText("the slowest name to trade is CEG");
     await expect(basket.getByRole("img")).toHaveCount(0);
-    // §12.15: the ETFs ranked, the top pick marked, the stress test.
+    // §12.16: the ETFs ranked, the top pick marked, the stress test.
     await expect(step3.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("XLK fits the basket best (R² 0.69 over a year)");
     await expect(step3.locator('tr[aria-current="true"]')).toHaveCount(1);
     await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("With the table's hedge, short $1,384,473 of XLK: if QQQ falls 10% the basket loses $170,542 unhedged");
