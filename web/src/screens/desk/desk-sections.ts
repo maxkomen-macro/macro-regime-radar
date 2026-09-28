@@ -13,14 +13,16 @@
  * a saved link still lands on the page that replaced it.
  */
 
-export type DeskAction = "walkthrough" | "act" | "send";
+/** The one action a tab's header shows (desk/usability §14.6: one obvious primary action per page). "link" is a
+ * page's own link, written in DeskTopBar; "new" opens the Position Monitor's form. */
+export type DeskAction = "walkthrough" | "act" | "send" | "link" | "new";
 
 export interface DeskPage {
   slug: string;
   label: string;
   /** The page title when it differs from the nav label. */
   title?: string;
-  /** One line beside the page title. */
+  /** One line under the page title: what the page is for, in plain English, 15 words at most (§14.6). */
   blurb: string;
   action?: DeskAction;
   /** false: no Desk / Client toggle in this tab's header. */
@@ -42,19 +44,19 @@ export const DESK_GROUPS: DeskGroup[] = [
     id: "market",
     label: "Market",
     pages: [
-      { slug: "overview", label: "Overview", blurb: "Where the tape is, what fired, what's closest to being wrong.", action: "walkthrough" },
-      { slug: "technicals", label: "Technicals", blurb: "S&P 500 · every marker is scored by the event-study engine", action: "act" },
-      { slug: "sectors", label: "Sectors", blurb: "who is leading, and whether the rally is wide or narrow" },
-      { slug: "macro", label: "Macro", title: "Macro & Correlations", blurb: "the rate backdrop, credit, and whether your hedges are hedging" },
-      { slug: "regime", label: "Regime", blurb: "where the economy sits, what it has meant for equities and vol, and what would change it" },
+      { slug: "overview", label: "Overview", blurb: "Where the market is, what fired, and what is closest to being wrong.", action: "walkthrough" },
+      { slug: "technicals", label: "Technicals", blurb: "Trend, momentum and risk for the S&P 500 or any US stock.", action: "act" },
+      { slug: "sectors", label: "Sectors", blurb: "Which sectors lead the S&P, and how broad the rally is.", action: "link" },
+      { slug: "macro", label: "Macro", title: "Macro & Correlations", blurb: "Rates, credit spreads, and whether bonds still hedge stocks.", action: "link" },
+      { slug: "regime", label: "Regime", blurb: "Where the economy sits, and which data prints would change it.", action: "link" },
     ],
   },
   {
     id: "research",
     label: "Research",
     pages: [
-      { slug: "event-study", label: "Event Study", blurb: "Ask what the market did after a defined shock. Get a scored answer, not an opinion.", action: "act" },
-      { slug: "signal-ledger", label: "Signal Ledger", blurb: "every signal the engine scores, on one page · click a row to open it in Event Study" },
+      { slug: "event-study", label: "Event Study", blurb: "Ask what markets did after a defined shock, and get a scored answer.", action: "act" },
+      { slug: "signal-ledger", label: "Signal Ledger", blurb: "Every scored signal on one page; click a row to study it.", action: "link" },
     ],
   },
   {
@@ -62,8 +64,8 @@ export const DESK_GROUPS: DeskGroup[] = [
     label: "Trade",
     pages: [
       // §10: no Desk / Client toggle.
-      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "build the exposure, then price the cheapest way to own it", action: "send", toggle: false },
-      { slug: "position-monitor", label: "Position Monitor", title: "Position Monitor", blurb: "Your positions, and how far each is from being wrong.", toggle: false },
+      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "Build a basket of US stocks and ETFs, kept in this browser.", action: "send", toggle: false },
+      { slug: "position-monitor", label: "Position Monitor", title: "Position Monitor", blurb: "Your positions, and how far each is from being wrong.", action: "new", toggle: false },
     ],
   },
   {
@@ -78,7 +80,7 @@ export const DESK_GROUPS: DeskGroup[] = [
         blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser.",
         toggle: false,
       },
-      { slug: "build-notes", label: "Build Notes", blurb: "what this is, how it was checked, and what I would do next" },
+      { slug: "build-notes", label: "Build Notes", blurb: "What this Desk is, how it was checked, and what comes next.", action: "link" },
     ],
   },
 ];

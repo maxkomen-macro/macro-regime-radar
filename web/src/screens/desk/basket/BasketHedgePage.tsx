@@ -457,7 +457,8 @@ function BasketCard({
       footer={
         <div className="bh-foot">
           <div className="bh-save">
-            <button type="button" className="dk-btn" data-kind="light" onClick={save} disabled={!legs || !local}>
+            {/* §14.6: the page's one primary action is the header's Send; saving is secondary. */}
+            <button type="button" className="dk-btn" onClick={save} disabled={!legs || !local}>
               Save basket
             </button>
             <span className="bh-save-hint">{dirty ? "unsaved changes" : "Save computes everything below · kept in this browser only"}</span>

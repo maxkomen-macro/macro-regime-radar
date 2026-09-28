@@ -2206,3 +2206,24 @@ label and breadcrumb read "Macro"; its page title stays "Macro &
 Correlations". The current page carries the active fill and a green bar; in
 the small line, the active fill. The breadcrumb `Radar › Desk › <Tab>` stays.
 On a phone the Menu button opens the same groups.
+
+### 14.6 One line under each title, one primary action
+
+Each page prints, under its title, one plain line saying what it is for (15
+words at most, `desk-sections.ts` `blurb`), and shows one control in the
+primary (light) style; every other button on the page is secondary.
+
+| Page | Line under the title | The one primary action |
+|---|---|---|
+| Overview | Where the market is, what fired, and what is closest to being wrong. | **Walkthrough** (header) |
+| Technicals | Trend, momentum and risk for the S&P 500 or any US stock. (a stock: "Trend, momentum and risk for NVDA; its crosses are shown, not scored.") | **Open as position →** (header) |
+| Sectors | Which sectors lead the S&P, and how broad the rally is. | **S&P 500 technicals →** (header) |
+| Macro & Correlations | Rates, credit spreads, and whether bonds still hedge stocks. | **Study a 10-year yield jump →** (header, the `10y-2sigma-20d` preset) |
+| Regime | Where the economy sits, and which data prints would change it. | **Study the S&P in <regime> →** (header: a 2σ S&P fall over 20 sessions in the current regime, §14.3; drawn once the regime is served) |
+| Event Study | Ask what markets did after a defined shock, and get a scored answer. | **Run** (in the page; the header's Act on this is secondary) |
+| Signal Ledger | Every scored signal on one page; click a row to study it. | **Ask your own question →** (header) |
+| Basket & Hedge | Build a basket of US stocks and ETFs, kept in this browser. | **Send to Position Monitor →** (header; Save basket is secondary) |
+| Position Monitor | Your positions, and how far each is from being wrong. | **+ New position** (header), then **Save position** in the form |
+| Data Pipeline | Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser. (desk/prototypes' wording, kept by the owner at the rebase: the one line over fifteen words) | **Export current study → CSV** (in the page) |
+| Build Notes | What this Desk is, how it was checked, and what comes next. | **Take the walkthrough →** (header) |
+

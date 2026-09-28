@@ -781,8 +781,8 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
   const volOff = routeOff ?? t?._blocks?.vol ?? null;
   const sectorsOff = routeOff ?? t?._blocks?.sectors ?? null;
   const cross = scored && t?.cross ? bySlug(lq.data, t.cross.kind === "death" ? "death-cross" : "golden-cross") : undefined;
-  const named = !scored ? [symbol, t?.name && t.name !== symbol ? t.name : null].filter(Boolean).join(" · ") : null;
-  const shown = scored ? page : { ...page, blurb: `${named} · the 50- and 200-day crosses are shown, not scored` };
+  // §14.6: one plain line under the title, 15 words at most; the stock's name is on its price card.
+  const shown = scored ? page : { ...page, blurb: `Trend, momentum and risk for ${symbol}; its crosses are shown, not scored.` };
   const short = symbol ?? "S&P";
   return (
     <div className="te" data-symbol={symbol ?? "^GSPC"}>

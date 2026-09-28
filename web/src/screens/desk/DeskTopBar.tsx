@@ -22,6 +22,7 @@ import { TOUR_BUTTON_ID, TOUR_STRIP_ID } from "./tour/TourStrip";
 import { parseTour, tourHref } from "./tour/tour";
 import { askFromSearch, askParams } from "./event-study/question";
 import { useMixedGenerations } from "./data/generations";
+import { useRegime } from "./data/api";
 import { InstrumentSearch } from "./kit/InstrumentSearch";
 import { symbolOf } from "./technicals/symbol";
 
@@ -54,6 +55,28 @@ export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { vi
   );
 }
 
+/** §14.6: the one action of a page whose purpose points elsewhere; nothing is drawn until it can work. */
+function PageLink({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => string }) {
+  const regime = useRegime({ enabled: page.slug === "regime" });
+  const label = regime.data?.current?.label;
+  let to: string | null = null;
+  let text = "";
+  if (page.slug === "sectors") [to, text] = [pathTo("technicals"), "S&P 500 technicals →"];
+  else if (page.slug === "macro") [to, text] = [withParam(pathTo("event-study"), "preset", "10y-2sigma-20d"), "Study a 10-year yield jump →"];
+  else if (page.slug === "signal-ledger") [to, text] = [pathTo("event-study"), "Ask your own question →"];
+  else if (page.slug === "build-notes") [to, text] = [tourHref(1), "Take the walkthrough →"];
+  else if (page.slug === "regime" && typeof label === "string" && label) {
+    const q = new URLSearchParams({ shock: "spx", window: "20", move: "down2s", while: `regime:${label}`, target: "spx", horizon: "20" });
+    [to, text] = [`${pathTo("event-study")}${pathTo("event-study").includes("?") ? "&" : "?"}${q.toString()}`, `Study the S&P in ${label} →`];
+  }
+  if (!to) return null;
+  return (
+    <Link className="dk-btn" data-kind="light" to={to} data-testid="dk-act">
+      {text}
+    </Link>
+  );
+}
+
 function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => string }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -63,7 +86,7 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
   const monitor = page.slug === "event-study" ? askParams(askFromSearch(location.search)).reduce((href, [k, v]) => withParam(href, k === "preset" ? "from" : k, v), pathTo("position-monitor")) : pathTo("position-monitor");
   if (page.action === "walkthrough")
     return (
-      <button type="button" id={TOUR_BUTTON_ID} className="dk-btn" aria-controls={touring ? TOUR_STRIP_ID : undefined} onClick={() => navigate(tourHref(1))} data-testid="dk-walkthrough">
+      <button type="button" id={TOUR_BUTTON_ID} className="dk-btn" data-kind="light" aria-controls={touring ? TOUR_STRIP_ID : undefined} onClick={() => navigate(tourHref(1))} data-testid="dk-walkthrough">
         Walkthrough
       </button>
     );
@@ -88,10 +111,12 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
   }
   if (page.action === "act")
     return (
-      <Link className="dk-btn" data-kind="light" to={monitor} data-testid="dk-act">
+      // §14.6: on Event Study the obvious primary action is Run, in the page; this one is secondary.
+      <Link className="dk-btn" data-kind={page.slug === "event-study" ? undefined : "light"} to={monitor} data-testid="dk-act">
         Act on this → Position Monitor
       </Link>
     );
+  if (page.action === "link") return <PageLink page={page} pathTo={pathTo} />;
   // §10: a basket kept in this browser is the subject sent; the page writes the open one in the address.
   const basket = new URLSearchParams(location.search).get("basket");
   if (page.action === "send")

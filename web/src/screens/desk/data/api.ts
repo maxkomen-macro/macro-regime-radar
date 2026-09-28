@@ -247,7 +247,7 @@ export const useLedger = () => useDesk<LedgerResponse>("/ledger");
 export const useTechnicals = (opts: { enabled?: boolean; symbol?: string | null } = {}) =>
   useDesk<TechnicalsResponse>("/technicals", opts.symbol ? { symbol: opts.symbol } : undefined, { enabled: opts.enabled });
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
-export const useRegime = () => useDesk<RegimeResponse>("/regime");
+export const useRegime = (opts: { enabled?: boolean } = {}) => useDesk<RegimeResponse>("/regime", undefined, opts);
 export const useMacro = (opts: { enabled?: boolean } = {}) => useDesk<MacroResponse>("/macro", undefined, opts);
 
 /** §12.2: one study; the previous answer stays on screen while the next is asked. */

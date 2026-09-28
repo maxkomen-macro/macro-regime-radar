@@ -451,11 +451,24 @@
   padding: 17px var(--dk-pad) 23px;
   min-width: 0;
 }
+/* desk/usability §14.6: the page's one-line purpose sits under its title; the badge stays at the right. */
 .dk-title {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "title badge" "sub badge";
+  column-gap: 14px;
+  row-gap: 2px;
   align-items: baseline;
-  gap: 14px;
   min-height: 36px;
+}
+.dk-title h1 {
+  grid-area: title;
+}
+.dk-title .dk-title-sub {
+  grid-area: sub;
+}
+.dk-title .dk-title-badge {
+  grid-area: badge;
 }
 .dk-title h1 {
   font-family: var(--dk-serif);
@@ -766,14 +779,16 @@
     padding: 14px 14px 23px;
   }
   .dk-title {
-    flex-wrap: wrap;
-    gap: 6px 14px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "sub" "badge";
+    row-gap: 6px;
   }
   .dk-title h1 {
     white-space: normal;
   }
   .dk-title-badge {
     margin-left: 0;
+    justify-self: start;
   }
   .dk-house-pop {
     left: 12px;

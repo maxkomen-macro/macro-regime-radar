@@ -233,4 +233,23 @@ test.describe("desk usability", () => {
     }
     await page.setViewportSize({ width: 1440, height: 960 });
   });
+
+  // ── Item 6: one line under each title, one obvious primary action ────────
+
+  test("item 6: every page has one plain line under its title and one obvious primary action", async ({ page }) => {
+    for (const p of DESK_PAGES) {
+      await open(page, `/desk/${p.slug}`);
+      const title = page.locator(".dk-title").first();
+      const line = title.locator(".dk-title-sub");
+      await expect(line, p.slug).toBeVisible();
+      const [h1Box, lineBox] = await Promise.all([title.locator("h1").boundingBox(), line.boundingBox()]);
+      // Under the title, not beside it.
+      expect(lineBox!.y, p.slug).toBeGreaterThan(h1Box!.y + h1Box!.height / 2);
+      const n = ((await line.textContent()) ?? "").trim().split(/\s+/).length;
+      expect(n, `${p.slug}: purpose line of ${n} words`).toBeLessThanOrEqual(15);
+      // One primary-styled control on the page: the header's action, or the page's own (Run, Export CSV).
+      const primaries = page.locator('.dk-main :is(a, button)[data-kind="light"]:visible, .dk-main :is(a, button)[data-kind="primary"]:visible');
+      await expect(primaries, `${p.slug}: primary actions`).toHaveCount(1);
+    }
+  });
 });

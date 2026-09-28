@@ -313,7 +313,8 @@ function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
         {rows.length ? <p className="ov-mon-note">{MONITORED_NOTE}</p> : null}
         {rows.length ? <DroppedNote n={store.unreadable.length} one="kept position" /> : null}
         <div className="ov-mon-act">
-          <Link className="dk-btn" data-kind="light" to={pathTo("position-monitor")}>
+          {/* §14.6: the page's one primary action is the header's; this one is secondary. */}
+          <Link className="dk-btn" to={pathTo("position-monitor")}>
             Act on this → Position Monitor
           </Link>
         </div>
