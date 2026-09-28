@@ -87,6 +87,150 @@
    "first": "2004-11-18",
    "last": "2026-09-23",
    "source": "asset_prices"
+  },
+  {
+   "symbol": "XLB",
+   "name": "Materials Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLE",
+   "name": "Energy Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLF",
+   "name": "Financial Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLI",
+   "name": "Industrial Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLK",
+   "name": "Technology Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLP",
+   "name": "Consumer Staples Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLU",
+   "name": "Utilities Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLV",
+   "name": "Health Care Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLY",
+   "name": "Consumer Discretionary Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "1998-12-22",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLC",
+   "name": "Communication Services Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "2018-06-19",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "XLRE",
+   "name": "Real Estate Select Sector SPDR Fund",
+   "kind": "etf",
+   "first": "2015-10-08",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "RSP",
+   "name": "Invesco S&P 500 Equal Weight ETF",
+   "kind": "etf",
+   "first": "2003-05-01",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "QQQ",
+   "name": "Invesco QQQ Trust",
+   "kind": "etf",
+   "first": "1999-03-10",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "SMH",
+   "name": "VanEck Semiconductor ETF",
+   "kind": "etf",
+   "first": "2000-06-05",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "SOXX",
+   "name": "iShares Semiconductor ETF",
+   "kind": "etf",
+   "first": "2001-07-13",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "IGV",
+   "name": "iShares Expanded Tech-Software Sector ETF",
+   "kind": "etf",
+   "first": "2001-07-17",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "TLT",
+   "name": "iShares 20+ Year Treasury Bond ETF",
+   "kind": "etf",
+   "first": "2002-07-30",
+   "last": "2026-09-23",
+   "source": "asset_prices"
+  },
+  {
+   "symbol": "UUP",
+   "name": "Invesco DB US Dollar Index Bullish Fund",
+   "kind": "etf",
+   "first": "2007-03-01",
+   "last": "2026-09-23",
+   "source": "asset_prices"
   }
  ],
  "excluded": []

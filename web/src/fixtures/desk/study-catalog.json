@@ -340,7 +340,9 @@
     "up2s",
     "down2s",
     "cross_above",
-    "cross_below"
+    "cross_below",
+    "rsi_above_70",
+    "rsi_below_30"
    ],
    "unit": "log_return"
   },
@@ -429,6 +431,123 @@
   {
    "key": "rut",
    "label": "Russell 2000",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xlb",
+   "label": "Materials sector ETF (XLB)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xle",
+   "label": "Energy sector ETF (XLE)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xlf",
+   "label": "Financials sector ETF (XLF)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xli",
+   "label": "Industrials sector ETF (XLI)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xlk",
+   "label": "Technology sector ETF (XLK)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xlp",
+   "label": "Consumer Staples sector ETF (XLP)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xlu",
+   "label": "Utilities sector ETF (XLU)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xlv",
+   "label": "Health Care sector ETF (XLV)",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "xly",
+   "label": "Consumer Discretionary sector ETF (XLY)",
    "roles": [
     "shock",
     "condition"

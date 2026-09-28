@@ -95,10 +95,10 @@ describe("InstrumentSearch", () => {
   it("falls back to the series this store prices when the search does not answer", async () => {
     stubDesk({ "/api/market/search": () => ({ status: 502, body: { detail: "EODHD is unreachable (symbol search).", kind: "unavailable" } }) });
     renderWithProviders(<InstrumentSearch ariaLabel="Search a stock" onSelect={() => {}} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Search a stock" }), { target: { value: "s" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Search a stock" }), { target: { value: "g" } });
     const list = await screen.findByRole("listbox");
-    // Tickers first (SPY), then names with a word that starts with the text (S&P 500, SPDR Gold Shares).
-    await waitFor(() => expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringMatching(/SPY.*SPDR S&P 500/), expect.stringMatching(/\^GSPC.*S&P 500/), expect.stringMatching(/GLD.*SPDR Gold/)]));
+    // Tickers first (^GSPC, GLD), then names with a word that starts with the text (LQD's "Investment Grade").
+    await waitFor(() => expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringMatching(/\^GSPC.*S&P 500/), expect.stringMatching(/GLD.*SPDR Gold/), expect.stringMatching(/LQD.*Investment Grade/)]));
     expect(list).toHaveTextContent("Search did not answer · series this store prices");
   });
 

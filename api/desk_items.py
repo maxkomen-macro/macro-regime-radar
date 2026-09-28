@@ -102,6 +102,25 @@ INSTRUMENT_NAMES: dict[str, tuple[str, str]] = {
     "HYG": ("iShares iBoxx $ High Yield Corporate Bond ETF", "etf"),
     "DJP": ("iPath Bloomberg Commodity Index Total Return ETN", "etf"),
     "GLD": ("SPDR Gold Shares", "etf"),
+    # desk/fill-etf's daily series: the eleven sector SPDRs and the breadth and theme ETFs.
+    "XLB": ("Materials Select Sector SPDR Fund", "etf"),
+    "XLE": ("Energy Select Sector SPDR Fund", "etf"),
+    "XLF": ("Financial Select Sector SPDR Fund", "etf"),
+    "XLI": ("Industrial Select Sector SPDR Fund", "etf"),
+    "XLK": ("Technology Select Sector SPDR Fund", "etf"),
+    "XLP": ("Consumer Staples Select Sector SPDR Fund", "etf"),
+    "XLU": ("Utilities Select Sector SPDR Fund", "etf"),
+    "XLV": ("Health Care Select Sector SPDR Fund", "etf"),
+    "XLY": ("Consumer Discretionary Select Sector SPDR Fund", "etf"),
+    "XLC": ("Communication Services Select Sector SPDR Fund", "etf"),
+    "XLRE": ("Real Estate Select Sector SPDR Fund", "etf"),
+    "RSP": ("Invesco S&P 500 Equal Weight ETF", "etf"),
+    "QQQ": ("Invesco QQQ Trust", "etf"),
+    "SMH": ("VanEck Semiconductor ETF", "etf"),
+    "SOXX": ("iShares Semiconductor ETF", "etf"),
+    "IGV": ("iShares Expanded Tech-Software Sector ETF", "etf"),
+    "TLT": ("iShares 20+ Year Treasury Bond ETF", "etf"),
+    "UUP": ("Invesco DB US Dollar Index Bullish Fund", "etf"),
 }
 
 

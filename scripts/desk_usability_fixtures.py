@@ -7,6 +7,8 @@ Writes, under web/src/fixtures/desk/, from the real functions the API serves:
   (main's, desk/fill-compute's RSI, MACD and seasonality included) are kept
   and checked, every one, against the same computation (run it on the
   fixture store of scripts/desk_etf_fixtures.py, PROVENANCE.md);
+- instruments.json with --instruments: the /instruments answer on the
+  store (every named instrument it holds daily closes for);
 - technicals-<ETF>.json for each stored ETF named in --etf: the instruments
   item's own answer (its stored closes, relative strength against the stored
   S&P);
@@ -63,6 +65,7 @@ def _write(name: str, doc: dict) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
+    ap.add_argument("--instruments", action="store_true", help="instruments.json: the /instruments answer on the store")
     ap.add_argument("--etf", action="append", default=[])
     ap.add_argument("--stock", action="append", default=[])
     ap.add_argument("--yahoo-standin", action="store_true")
@@ -104,6 +107,11 @@ def main() -> int:
     _write("technicals.json", fx)  # the fixture's own keys in their order, the new ones after them
     sectors = fx["sectors"]
 
+    if a.instruments:
+        inst = desk_items.desk_instruments({"desk_technicals": spx})
+        doc = {"instruments": inst["instruments"], "excluded": inst["excluded"]}
+        (OUT / "instruments.json").write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n")
+        print("wrote", OUT / "instruments.json")
     if a.etf:
         inst = desk_items.desk_instruments({"desk_technicals": spx})
         names = {r["symbol"]: r["name"] for r in inst["instruments"]}
