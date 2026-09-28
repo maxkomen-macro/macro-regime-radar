@@ -2396,3 +2396,9 @@ question pushes one.
   (`kit/format.ts` `priceText`), and the chart's axis with the decimals its
   step needs (`tickText`); a $0.40 stock reads "0.4000", never "0". The
   S&P 500, an index, stays whole (§3).
+- **R-03 · only completed sessions.** A stock's provider bars are cut at the
+  last completed NYSE session as of the request (`api/calendar`
+  `last_completed_session`) before any technical is computed: today's bar
+  while the session is open and any bar dated in the future are dropped, and
+  `excluded_bars` (`{n, after}`, null when none) says so under the price
+  chart.

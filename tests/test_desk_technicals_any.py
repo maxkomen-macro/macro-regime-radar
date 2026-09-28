@@ -206,8 +206,13 @@ def upstream(monkeypatch):
         if path == "/api/eod/NVDA.US":
             today = date.today()
             return httpx.Response(200, json=_eod_rows(today - timedelta(days=731), date(2026, 9, 18)), request=request)
+        if path == "/api/eod/AMD.US":
+            # Codex R-03's repro: bars through Tuesday 2026-09-22, asked on Monday 2026-09-21 while the session is open.
+            return httpx.Response(200, json=_eod_rows(date(2024, 9, 20), date(2026, 9, 22)), request=request)
         if path.startswith("/api/search/NVDA"):
             return httpx.Response(200, json=[{"Code": "NVDA", "Exchange": "US", "Name": "NVIDIA Corporation", "Type": "Common Stock"}], request=request)
+        if path.startswith("/api/search/AMD"):
+            return httpx.Response(200, json=[{"Code": "AMD", "Exchange": "US", "Name": "Advanced Micro Devices", "Type": "Common Stock"}], request=request)
         if path.startswith("/api/eod/"):
             return httpx.Response(404, json={"message": "Ticker Not Found."}, request=request)
         return httpx.Response(404, json={"message": "not found"}, request=request)
@@ -226,6 +231,7 @@ def test_any_other_stock_reads_two_years_of_candles(served, upstream):
     d = _tech("?symbol=NVDA")["data"]
     assert (d["symbol"], d["name"], d["scored"]) == ("NVDA", "NVIDIA Corporation", False)
     assert d["source"] == desk_v2.CANDLES_SOURCE and set(d["series"]) == {"6m", "1y"}
+    assert d["excluded_bars"] is None  # every bar is at or before the last completed session
     assert d["rs"] is not None and d["rs"]["date"] <= "2026-09-18"
     eod_call = next(c for c in upstream if c.url.path == "/api/eod/NVDA.US")
     assert eod_call.url.params.get("period") == "d"
@@ -233,6 +239,22 @@ def test_any_other_stock_reads_two_years_of_candles(served, upstream):
     n = len(upstream)
     _tech("?symbol=NVDA")
     assert len([c for c in upstream[n:] if c.url.path.startswith("/api/eod/")]) == 0
+
+
+def test_bars_after_the_last_completed_session_are_dropped_and_said(served, upstream, monkeypatch):
+    """Codex R-03: asked at 10:00 ET on Monday 2026-09-21, the provider's bars for that day (the session is
+    open) and for Tuesday (dated in the future) are dropped before any figure; the answer is Friday 09-18's."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc))
+    rows = {r["date"]: r["close"] for r in _eod_rows(date(2024, 9, 20), date(2026, 9, 22))}
+    d = _tech("?symbol=AMD")["data"]
+    assert d["date"] == "2026-09-18" and d["excluded_bars"] == {"n": 2, "after": "2026-09-18"}
+    # The provider layer rounds a close to five decimals.
+    assert math.isclose(d["price"], rows["2026-09-18"], rel_tol=1e-6)
+    assert math.isclose(d["chg_1d"], rows["2026-09-18"] / rows["2026-09-17"] - 1, rel_tol=1e-4)
+    assert max(p["date"] for p in d["series"]["1y"]) == "2026-09-18"
+    assert d["rsi_date"] == d["realized_vol"]["window"]["end"] == d["drawdown"]["window"]["end"] == "2026-09-18"
 
 
 def test_refusals_and_provider_errors_are_enveloped(served, upstream):

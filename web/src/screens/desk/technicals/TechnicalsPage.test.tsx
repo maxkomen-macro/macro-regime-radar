@@ -518,6 +518,13 @@ describe("Technicals for any stock (§14.2)", () => {
     expect(screen.getByRole("region", { name: /^Risk · drawdown/ })).toHaveTextContent("high 0.4172 on May 14");
   });
 
+  it("Codex R-03: bars the provider dated after the last completed session are not read, and the price card says so", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicalsNVDA, excluded_bars: { n: 2, after: "2026-09-18" } }) });
+    renderAt("/desk/technicals?symbol=NVDA");
+    const price = await screen.findByRole("region", { name: /^NVDA · NVIDIA Corporation/ });
+    await waitFor(() => expect(within(price).getByTestId("te-excluded-bars")).toHaveTextContent("2 bars dated after Sep 18, 2026, the last completed session, are not read."));
+  });
+
   it("Codex R-01: a stock with under a year of closes shows its drawdown as partial history with the session count", async () => {
     // Codex's repro: listed 120 sessions ago, so its "1-year high" is the high of 120 closes.
     const young = { ...technicalsNVDA, drawdown: { ...technicalsNVDA.drawdown, window: { ...technicalsNVDA.drawdown.window, n: 120 }, complete: false } };

@@ -246,6 +246,12 @@ function PriceCard({ t, state, cross, range, onRange, scored }: { t: TechnicalsR
       ) : state === "loading" ? null : (
         <Awaiting />
       )}
+      {/* Codex R-03: bars the provider dated after the last completed session are not read, and the card says so. */}
+      {ready && t.excluded_bars && t.excluded_bars.n > 0 ? (
+        <p className="te-note-line" data-testid="te-excluded-bars">
+          {t.excluded_bars.n === 1 ? "1 bar" : `${t.excluded_bars.n} bars`} dated after {dayLong(t.excluded_bars.after)}, the last completed session, {t.excluded_bars.n === 1 ? "is" : "are"} not read.
+        </p>
+      ) : null}
       {/* §14.2: a stock's crosses are shown and labelled not scored; the engine scores the S&P 500's. */}
       {ready && !scored && t.cross ? (
         <div className="te-callout" data-unscored="">

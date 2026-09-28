@@ -41,7 +41,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 OUT = ROOT / "web" / "src" / "fixtures" / "desk"
-NEW = ("symbol", "name", "scored", "drawdown", "realized_vol", "rs")
+NEW = ("symbol", "name", "scored", "drawdown", "realized_vol", "rs", "excluded_bars")
 
 
 def _served(t: dict, sectors: dict, **extra) -> dict:
@@ -100,7 +100,7 @@ def main() -> int:
         if k in spx and k not in NEW:
             assert same(fx[k], spx[k]), k
     fx.update({"symbol": "^GSPC", "name": "S&P 500", "scored": True, "drawdown": spx["drawdown"],
-               "realized_vol": spx["realized_vol"], "rs": None})
+               "realized_vol": spx["realized_vol"], "rs": None, "excluded_bars": None})
     _write("technicals.json", fx)  # the fixture's own keys in their order, the new ones after them
     sectors = fx["sectors"]
 

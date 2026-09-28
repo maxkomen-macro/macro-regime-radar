@@ -389,6 +389,8 @@ export interface TechnicalsResponse extends Envelope {
   } | null;
   /** The Ledger rows the Technicals signals list reads, in this order (v2 §13). */
   signals_allowlist?: string[];
+  /** Codex R-03: a stock's provider bars dated after the last completed session, dropped before any figure. */
+  excluded_bars?: { n: number; after: string } | null;
   series?: { "6m"?: PricePoint[]; "1y"?: PricePoint[]; "3y"?: PricePoint[] };
   /** §12.7: block envelopes, awaiting on Monday (the unwrapped data, once ready, is the deferred shape of §12.13). */
   vol?: VolResponse;
