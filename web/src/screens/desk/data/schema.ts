@@ -519,7 +519,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       labels: l("s!", { strict: true }),
       no_data: l(o({ symbol: "s!", reason: "s?" })),
       values: l(l("n", { strict: true }), { req: true, strict: true }),
+      horizon: "n",
       window: o({ start: "s!", end: "s!", n: "n" }, { nul: true }),
+      coverage: l("n"),
       lead: o(
         {
           text: "s?",

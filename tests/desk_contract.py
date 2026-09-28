@@ -398,6 +398,7 @@ MACRO = obj(
         assets=Const(["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]),
         labels=Arr(STR, min=12, max=12), no_data=Arr(obj(symbol=STR, reason=STR), max=12),
         values=Arr(Arr(null(NUM), min=12, max=12), min=12, max=12), window=SPAN,
+        horizon=Const(60), coverage=Arr(null(INT), min=12, max=12),
         lead=obj(text=null(STR), rule=Const("matrix-lead-v1"), hedging=null(BOOL), spy_tlt=null(NUM),
                  highest=null(obj(a=STR, b=STR, corr=NUM)), lowest=null(obj(a=STR, b=STR, corr=NUM))),
         quantity=STR, transform=STR, unit=Const("correlation"), date=DATE, freq=Const("daily"),

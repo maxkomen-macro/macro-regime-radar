@@ -671,8 +671,12 @@ the window's end. An asset in `no_data` prints "no data" in every cell of
 its row and column, untinted, "no data" under its name, and its reason in a
 list under the grid; no cell is filled or estimated. A legend of five
 swatches (−1, −0.5, 0, +0.5, +1) runs "−1 moves against" to "+1 moves with".
-Stamp: "60 daily returns · <window.start> to <window.end> · the same window
-for every pair · <providers>". Served awaiting: the card keeps its title and
+Stamp (Codex R-02, the counts as served, none assumed): when `window.n`
+equals `horizon`, "<n> daily returns · <window.start> to <window.end> · the
+same window for every pair · <providers>"; when fewer, "Only <n> daily
+returns to <window.end>, from <window.start>; each pair needs <horizon>"
+(and no cell has a value). The hover of a cell names the pair, its value and
+"<n> daily returns to <window.end>". Served awaiting: the card keeps its title and
 prints the reason (§1.0.2). Read as one fact (Codex R-01,
 `web/src/screens/desk/macro/matrix.ts`): before any of it is drawn the
 client checks the twelve assets in their order and twelve names, 12×12
@@ -1529,9 +1533,11 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `correlations.data[].reason` | string | required, nullable | — | — | N: non-null exactly when `corr` is null: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", or "fewer than 60 complete daily return pairs in the window to <date>" |
 | `matrix` | block envelope | required | — | — | N the 12-asset matrix (desk/matrix); awaiting with "Awaiting refresh: the full refresh stores <the twelve>; this database predates it." while none of the twelve is stored |
 | `matrix.data.assets`, `labels` | string[12] | required | — | — | A: SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP, ^VIX (the registry's series ids, in this order); their names |
-| `matrix.data.window`, `date` | `{start, end, n}`, date | required | sessions | XNYS | N: `end` (= `date`) is the newest session on which every stored asset of the twelve has a close; the 60 XNYS return dates ending there, the same window for every pair |
+| `matrix.data.window`, `date` | `{start, end, n}`, date | required | sessions | XNYS | N: `end` (= `date`) is the newest session on which every stored asset of the twelve has a close; the window is the `horizon` return dates ending there, the same for every pair; `n` (Codex R-02) is how many of them the stored calendar holds, fewer than `horizon` only when the calendar starts inside the window, and `start` the first of those |
+| `matrix.data.horizon` | integer | required | return dates | XNYS | A: 60, the return dates each pair needs (Codex R-02: the requested horizon, served apart from `window.n`) |
+| `matrix.data.coverage` | (integer or null)[12] | required | returns | — | N (Codex R-02): how many of the window's return dates each asset holds a daily return on, in `assets` order; null for an asset not stored or without a valid close. An asset with data holds all `horizon` |
 | `matrix.data.values` | number[12][12] | required, cells nullable | correlation | `date` · daily | N: Pearson's r of the two assets' daily log returns (^VIX: daily log changes of the level) over `window`, every return complete (no forward fill), computed by the same `corr_at` as `correlations`; the diagonal 1.0; null exactly in the row and column of an asset in `no_data` |
-| `matrix.data.no_data[]` | `{symbol, reason}` | required | — | — | N: the assets without a window, in `assets` order: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", "fewer than 60 complete daily returns in the window to <date>: <the first gap's reason>", or "no variation in the window to <date>" |
+| `matrix.data.no_data[]` | `{symbol, reason}` | required | — | — | N: the assets without a window, in `assets` order: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", "only <coverage> of 60 daily returns in the window to <date>: <the first gap's reason>" (or ": the stored calendar starts <date>" when the window begins before it), or "no variation in the window to <date>" |
 | `matrix.data.lead` | `{text, rule, hedging, spy_tlt, highest, lowest}` | required | — | — | N, rule `matrix-lead-v1`: `hedging` is `spy_tlt` < 0 (the SPY–TLT cell), null without it; `highest` and `lowest` the off-diagonal pairs with the largest and smallest r served, `{a, b, corr}`; `text` "Treasuries are [not ]hedging equities (SPY and TLT at <r>); the highest pair is <a> and <b> at <r> and the lowest <a> and <b> at <r>." (the hedge clause left out without the SPY–TLT cell; "The one pair served is …" with one pair; null with none), every number a served cell to two decimals |
 | `matrix.data.quantity`, `transform`, `unit`, `freq`, `source`, `providers` | string, string, `"correlation"`, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
 
@@ -1676,7 +1682,7 @@ never "below".
 `matrix` since desk/matrix (§12.8)** (`/macro` `stock_bond`,
 `correlations`, `matrix`). `stock_bond: {today, year_ago, flipped, series:
 [{date, corr}]}`, `correlations: [{asset, symbol, quantity, transform,
-corr}]`, `matrix: {assets, labels, no_data, values, window, lead}`. Each asset declares
+corr}]`, `matrix: {assets, labels, no_data, values, horizon, window, coverage, lead}`. Each asset declares
 `symbol`, `quantity` and `transform`; Pearson over the same trailing 60 XNYS
 return dates, 60 complete pairs, no forward fill (v2 §12).
 

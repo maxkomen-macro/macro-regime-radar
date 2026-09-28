@@ -5,7 +5,9 @@
  * that the grid is the grid the card claims to draw before any of it is
  * drawn: the twelve assets in their order, twelve rows of twelve cells, a
  * symmetric grid with a unit diagonal and every value inside −1 to 1, the
- * no-data list agreeing with the empty rows and columns, and the served lead
+ * no-data list agreeing with the empty rows and columns, the window, the
+ * requested horizon and each asset's coverage agreeing with the cells (Codex
+ * R-02: a value is served only over the whole horizon), and the served lead
  * stating the pairs and values the cells hold. One failed check makes the
  * whole card unavailable with the check's words; a partial or mislabeled grid
  * is not drawn.
@@ -120,5 +122,30 @@ export function matrixProblem(mx: MatrixBlock | null | undefined): string | null
       const mirror = v[j][i];
       if (j > i && (!fin(mirror) || Math.abs((c as number) - mirror) > SAME)) return `the grid is not symmetric at ${sym[i]} and ${sym[j]}`;
     }
+  const windowIssue = windowProblem(mx, empty);
+  if (windowIssue) return windowIssue;
   return leadProblem(mx, servedPairs(v));
+}
+
+/**
+ * Codex R-02: the requested horizon and the observed coverage, apart. The
+ * window must say where it starts and ends and how many return dates it holds
+ * (no count is assumed); it holds at most the horizon; an asset with data
+ * holds every one of the horizon's returns, and a value is served only over
+ * the whole horizon.
+ */
+function windowProblem(mx: MatrixBlock, empty: Set<string>): string | null {
+  const w = mx.window;
+  const h = mx.horizon;
+  if (!w || typeof w.start !== "string" || typeof w.end !== "string" || !Number.isInteger(w.n) || (w.n as number) < 0) return "the window is not stated";
+  if (!Number.isInteger(h) || (h as number) < 1) return "the horizon is not stated";
+  if ((w.n as number) > (h as number)) return "the window holds more returns than the horizon";
+  const cov = mx.coverage;
+  if (!Array.isArray(cov) || cov.length !== MATRIX_ASSETS.length) return "the coverage is not stated for the twelve assets";
+  for (let i = 0; i < MATRIX_ASSETS.length; i++) {
+    const c = cov[i];
+    if (c != null && (!Number.isInteger(c) || c < 0 || c > (w.n as number))) return `the coverage of ${mx.assets[i]} is outside the window`;
+    if (!empty.has(mx.assets[i]) && c !== h) return `${mx.assets[i]} has values over ${c ?? "no"} of the ${h} daily returns`;
+  }
+  return null;
 }

@@ -13,7 +13,7 @@ import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { servedMacro } from "../../../test/desk-variants";
-import { bpText, corrText, coverTicks, matrixStamp, matrixTint } from "./MacroPage";
+import { bpText, corrStamp, corrText, coverTicks, matrixStamp, matrixTint, sbStamp } from "./MacroPage";
 import { MATRIX_ASSETS, matrixProblem, servedPairs } from "./matrix";
 import { signed } from "../kit/format";
 import { placeLabel } from "../kit/LineChart";
@@ -397,7 +397,7 @@ describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () =>
 // ── desk/matrix: the 12-asset correlation matrix ───────────────────────────
 
 type Lead = { text: string | null; rule?: string; hedging?: boolean | null; spy_tlt?: number | null; highest?: { a: string; b: string; corr: number } | null; lowest?: { a: string; b: string; corr: number } | null };
-type Matrix = { assets: string[]; labels: string[]; values: (number | null)[][]; no_data: { symbol: string; reason: string }[]; window: { start: string; end: string; n: number }; lead: Lead; providers?: string[] };
+type Matrix = { assets: string[]; labels: string[]; values: (number | null)[][]; no_data: { symbol: string; reason: string }[]; horizon: number; window: { start: string; end: string; n: number }; coverage: (number | null)[]; lead: Lead; providers?: string[] };
 /** A deep copy of the served matrix (the fixture: the API's answer on the fixture store), safe to change in a test. */
 const servedMatrix = (): Matrix => JSON.parse(JSON.stringify((macroFixture as unknown as { matrix: { data: Matrix } }).matrix.data));
 const cellsOf = (card: HTMLElement) => [...card.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")]);
@@ -484,6 +484,7 @@ describe("the correlation matrix (desk/matrix, §12.8 matrix)", () => {
     const matrix = {
       ...withoutData({ ...servedMatrix(), values }, awaiting),
       window: { start: "2026-06-25", end: "2026-09-18", n: 60 },
+      coverage: SYM.map((x) => (x in hand ? 60 : null)),
       providers: ["Yahoo"],
     };
     // The API's sentence for these cells, written out by hand.
@@ -573,5 +574,58 @@ describe("Codex R-01: a served matrix that fails a check is not drawn; the card 
     const none = withoutData(mx, Object.fromEntries(SYM.map((x) => [x, "Awaiting refresh."])));
     expect(none.lead.text).toBeNull();
     expect(matrixProblem(none as never)).toBeNull();
+  });
+});
+
+// ── Codex R-02: the requested horizon apart from the observed coverage ──────
+
+/** The API's answer on a calendar of 30 sessions (tests/test_desk_etf.py::test_codex_r02_…): 29 of the 60 returns. */
+function shortWindow(): Matrix {
+  const mx = servedMatrix();
+  const why = "only 29 of 60 daily returns in the window to 2026-09-23: the stored calendar starts 2026-08-12";
+  return { ...withoutData(mx, Object.fromEntries(SYM.map((x) => [x, why]))), window: { start: "2026-08-13", end: "2026-09-23", n: 29 }, coverage: SYM.map(() => 29) };
+}
+
+describe("Codex R-02: the card states the returns observed, never an assumed 60", () => {
+  it("a window of 29 returns: no \"60 daily returns\" caption; the coverage it holds, every cell no data", async () => {
+    const matrix = shortWindow();
+    expect(matrixProblem(matrix as never)).toBeNull();
+    const m = servedMacro() as Record<string, unknown>;
+    stubDesk({ "/api/desk/macro": () => ({ ...m, matrix }) });
+    renderTab();
+    const card = () => screen.getByRole("region", { name: /^Correlation matrix/ });
+    await waitFor(() => expect(card()).toHaveTextContent("Only 29 daily returns to Sep 23, 2026, from Aug 13; each pair needs 60"));
+    expect(card()).not.toHaveTextContent(/60 daily returns ·/);
+    expect(cellsOf(card()).flat().every((td) => td.textContent === "no data")).toBe(true);
+    expect(card()).toHaveTextContent("SPY no data · only 29 of 60 daily returns in the window to 2026-09-23");
+  });
+  it("no count is assumed: a matrix without its served count, or its horizon, is not drawn", async () => {
+    const mx = servedMatrix();
+    const noCount = { ...mx, window: { start: mx.window.start, end: mx.window.end } };
+    const noHorizon = { ...mx, horizon: null };
+    expect(matrixProblem(noCount as never)).toBe("the window is not stated");
+    expect(matrixProblem(noHorizon as never)).toBe("the horizon is not stated");
+    expect(matrixStamp(noCount as never)).toBe("");
+    const m = servedMacro() as Record<string, unknown>;
+    stubDesk({ "/api/desk/macro": () => ({ ...m, matrix: noCount }) });
+    renderTab();
+    const card = () => screen.getByRole("region", { name: /^Correlation matrix/ });
+    await waitFor(() => expect(card()).toHaveTextContent("Awaiting refresh: the matrix as served could not be read (the window is not stated)."));
+    expect(card()).not.toHaveTextContent(/60 daily returns ·/);
+  });
+  it("values served over fewer returns than the horizon are not drawn", () => {
+    const mx = servedMatrix();
+    expect(matrixProblem({ ...mx, window: { ...mx.window, n: 29 }, coverage: SYM.map(() => 29) } as never)).toBe("SPY has values over 29 of the 60 daily returns");
+    expect(matrixProblem({ ...mx, coverage: SYM.map((x) => (x === "HYG" ? 58 : 60)) } as never)).toBe("HYG has values over 58 of the 60 daily returns");
+    expect(matrixProblem({ ...mx, window: { ...mx.window, n: 61 } } as never)).toBe("the window holds more returns than the horizon");
+    expect(matrixProblem({ ...mx, coverage: mx.coverage.slice(1) } as never)).toBe("the coverage is not stated for the twelve assets");
+  });
+  it("the other correlation stamps print the served count only", () => {
+    const row = (n?: number) => ({ asset: "TLT", symbol: "TLT", corr: 0.44, date: "2026-09-23", window: n === undefined ? undefined : { start: "2026-06-30", end: "2026-09-23", n } });
+    expect(corrStamp([row(60)] as never)).toBe("60 daily returns to Sep 23 · each against SPY");
+    expect(corrStamp([row()] as never)).toBe("daily returns to Sep 23 · each against SPY");
+    const sb = (n?: number) => ({ window: { start: "2026-07-02", end: "2026-09-25", n }, stock: { etf: "SPY" }, bond: { etf: "TLT" }, providers: ["Yahoo"] });
+    expect(sbStamp(sb(60) as never)).toMatch(/^60 daily log returns to Sep 25/);
+    expect(sbStamp(sb() as never)).toMatch(/^daily log returns to Sep 25/);
   });
 });

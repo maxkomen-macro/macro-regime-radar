@@ -239,7 +239,8 @@ const pair = (sb: StockBondBlock) => `${sb.stock?.etf ?? "SPY"} vs ${sb.bond?.et
 export function sbStamp(sb: StockBondBlock): string {
   if (!sb.window?.end) return "";
   const prov = Array.isArray(sb.providers) && sb.providers.length ? ` · ${sb.providers.join("/")}` : "";
-  return `${fin(sb.window.n) ? sb.window.n : 60} daily log returns to ${dayShort(sb.window.end)} · ${pair(sb)}, adjusted closes${prov}`;
+  // Codex R-02: the count is the served one; none is assumed.
+  return `${fin(sb.window.n) ? `${sb.window.n} ` : ""}daily log returns to ${dayShort(sb.window.end)} · ${pair(sb)}, adjusted closes${prov}`;
 }
 
 function StockBond({ m, state }: { m: MacroResponse | undefined; state: State }) {
@@ -402,7 +403,8 @@ export function corrStamp(rows: readonly CorrelationRow[]): string {
   const main = [...counts.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? 1 : -1))[0][0];
   const n = dated.find((r) => r.date === main)?.window?.n;
   const others = dated.filter((r) => r.date !== main).map((r) => `${r.symbol ?? r.asset} to ${dayShort(r.date)}`);
-  return [`${fin(n) ? n : 60} daily returns to ${dayShort(main)}`, ...others, "each against SPY"].join(" · ");
+  // Codex R-02: the count is the served one; none is assumed.
+  return [`${fin(n) ? `${n} ` : ""}daily returns to ${dayShort(main)}`, ...others, "each against SPY"].join(" · ");
 }
 
 function Correlations({ m, state }: { m: MacroResponse | undefined; state: State }) {
@@ -476,11 +478,19 @@ export function matrixTint(r: number | null, diagonal = false): string | undefin
   return r < 0 ? `rgba(38, 220, 160, ${a})` : `rgba(232, 180, 71, ${a})`;
 }
 
-/** "60 daily returns · Jun 30 to Sep 23, 2026 · the same window for every pair". */
+/**
+ * The window as served (Codex R-02): "60 daily returns · Jun 30 to Sep 23, 2026 · the same window for every pair"
+ * when the window holds the whole horizon; otherwise the coverage it holds, "Only 29 daily returns to Sep 25,
+ * 2026, from Aug 14; each pair needs 60". No count is assumed: without a served count and horizon, nothing.
+ */
 export function matrixStamp(mx: MatrixBlock): string {
   const w = mx.window;
-  if (!w?.start || !w.end) return "";
-  return [`${fin(w.n) ? w.n : 60} daily returns · ${dayShort(w.start)} to ${dayLong(w.end)}`, "the same window for every pair", ...(mx.providers?.length ? [mx.providers.join("/")] : [])].join(" · ");
+  const h = mx.horizon;
+  if (!w?.start || !w.end || !fin(w.n) || !fin(h)) return "";
+  const prov = mx.providers?.length ? [mx.providers.join("/")] : [];
+  if (w.n === h) return [`${w.n} daily returns · ${dayShort(w.start)} to ${dayLong(w.end)}`, "the same window for every pair", ...prov].join(" · ");
+  const span = w.n > 0 ? `Only ${w.n} daily returns to ${dayLong(w.end)}, from ${dayShort(w.start)}` : `No daily return to ${dayLong(w.end)}`;
+  return [`${span}; each pair needs ${h}`, ...prov].join(" · ");
 }
 
 function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
@@ -531,7 +541,7 @@ function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
                     {grid.assets.map((b, j) => {
                       const v = grid.values[i]?.[j] ?? null;
                       const why = noData.get(a) ?? noData.get(b);
-                      const tip = fin(v) ? `${a} and ${b}: ${corrText(v)}${end ? `, 60 daily returns to ${dayShort(end)}` : ""}` : `${a} and ${b}: no data${why ? `, ${why}` : ""}`;
+                      const tip = fin(v) ? `${a} and ${b}: ${corrText(v)}${end && fin(grid.window?.n) ? `, ${grid.window?.n} daily returns to ${dayShort(end)}` : ""}` : `${a} and ${b}: no data${why ? `, ${why}` : ""}`;
                       return (
                         <td key={b} title={tip} data-diag={i === j || undefined} data-nodata={!fin(v) || undefined} style={{ background: matrixTint(v, i === j) }}>
                           {fin(v) ? (i === j ? num(v, 2) : corrText(v)) : "no data"}

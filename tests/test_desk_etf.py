@@ -509,7 +509,8 @@ def test_a_hand_checked_three_asset_matrix(monkeypatch):
     for x in absent:
         assert all(c is None for c in v[i[x]]) and all(row[i[x]] is None for row in v), x
     assert d["no_data"][0]["reason"] == "Awaiting refresh: the full refresh stores QQQ; this database predates it."
-    assert d["window"] == {"start": days[1], "end": days[-1], "n": 60} and d["date"] == days[-1]
+    assert d["window"] == {"start": days[1], "end": days[-1], "n": 60} and d["date"] == days[-1] and d["horizon"] == 60
+    assert d["coverage"] == [60 if x in ("SPY", "TLT", "GLD") else None for x in MATRIX_ORDER]
     lead = d["lead"]
     assert (lead["hedging"], lead["spy_tlt"]) == (True, pytest.approx(-1.0))
     assert (lead["highest"]["a"], lead["highest"]["b"], lead["lowest"]["a"], lead["lowest"]["b"]) == ("SPY", "GLD", "SPY", "TLT")
@@ -527,7 +528,8 @@ def test_the_matrix_is_every_pair_over_60_daily_returns_to_the_last_common_close
     t = max(set.intersection(*(set(c[s]) for s in MATRIX_ORDER)))
     i = days.index(t)
     d = _item(monkeypatch, path)["matrix"]["data"]
-    assert d["assets"] == MATRIX_ORDER and d["window"] == {"start": days[i - 59], "end": t, "n": 60}
+    assert d["assets"] == MATRIX_ORDER and d["window"] == {"start": days[i - 59], "end": t, "n": 60} and d["horizon"] == 60
+    assert d["coverage"] == [60] * 12  # the synthetic ^VIX holds every return; it is no data for its variation
     assert d["no_data"] == [{"symbol": "^VIX", "reason": f"no variation in the window to {t}"}]
     for a, sa in enumerate(MATRIX_ORDER):
         for b, sb in enumerate(MATRIX_ORDER):
@@ -546,7 +548,9 @@ def test_an_asset_with_a_gap_in_the_window_is_no_data_with_the_gap_named(tmp_pat
     d = _item(monkeypatch, _db(tmp_path, drop={"GLD": (gap,)}))["matrix"]["data"]
     g = d["assets"].index("GLD")
     reason = {n["symbol"]: n["reason"] for n in d["no_data"]}["GLD"]
-    assert reason == f"fewer than 60 complete daily returns in the window to {t}: no close stored for {gap}"
+    # one close missing takes two returns (its own and the next session's): 58 of the 60
+    assert reason == f"only 58 of 60 daily returns in the window to {t}: no close stored for {gap}"
+    assert d["coverage"][g] == 58 and d["window"]["n"] == d["horizon"] == 60
     assert all(x is None for x in d["values"][g]) and d["values"][0][1] is not None and d["date"] == t
 
 
@@ -619,3 +623,26 @@ def test_each_block_names_only_its_own_series_providers(tmp_path, monkeypatch):
     item = _item(monkeypatch, path)
     for block in ("sectors", "stock_bond"):
         assert item[block]["data"]["providers"] == ["Yahoo"], block
+
+
+# ── Codex R-02: the requested horizon apart from the observed coverage ──────
+
+def test_codex_r02_a_calendar_shorter_than_the_horizon_serves_its_observed_count():
+    """Codex's repro, rebuilt from the finding: every asset holds 30 closes
+    (29 daily returns), fewer than the 60 each pair needs. Before R-02 the
+    block served window.n = 60 over a window clamped to the calendar's start,
+    so the card said "60 daily returns" over 29. Now it serves the horizon
+    (60) and the observed count (29) apart, each asset's coverage, and no pair."""
+    import numpy as np
+
+    days = store.sessions()[-30:]
+    rng = np.random.default_rng(7)
+    st = _hand_store({k: rng.normal(0, 0.01, 29).tolist() for k, _ in etf.MATRIX_ASSETS}, days)
+    d = etf.matrix(st)
+    assert d["horizon"] == 60
+    assert d["window"] == {"start": days[1], "end": days[-1], "n": 29}
+    assert d["coverage"] == [29] * 12
+    assert all(v is None for row in d["values"] for v in row)
+    why = f"only 29 of 60 daily returns in the window to {days[-1]}: the stored calendar starts {days[0]}"
+    assert [n["reason"] for n in d["no_data"]] == [why] * 12
+    assert d["lead"]["text"] is None

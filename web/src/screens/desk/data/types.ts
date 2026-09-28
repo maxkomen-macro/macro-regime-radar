@@ -693,7 +693,11 @@ export interface MatrixBlock {
   labels?: string[];
   no_data?: { symbol: string; reason: string | null }[];
   values: (number | null)[][];
+  /** Codex R-02: the requested return dates (60), apart from `window.n`, the return dates the window holds. */
+  horizon?: number | null;
   window?: Window | null;
+  /** Codex R-02: the returns each asset holds in the window, in `assets` order; null when not stored. */
+  coverage?: (number | null)[];
   lead?: { text: string | null; rule?: string; hedging?: boolean | null; spy_tlt?: number | null; highest?: MatrixPair | null; lowest?: MatrixPair | null } | null;
   quantity?: string;
   transform?: string;

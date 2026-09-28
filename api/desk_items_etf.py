@@ -53,7 +53,10 @@ Rules (the spec names each):
   HYG, LQD, GLD, UUP and ^VIX, all ending at one session `t`, the newest on
   which every stored asset has a close. An asset not stored, or without 60
   complete daily returns (or with no variation) to `t`, is "no data": its row
-  and column are null with its reason, never filled. The lead
+  and column are null with its reason, never filled. The requested horizon
+  (`horizon`, 60) is served apart from what was observed (Codex R-02):
+  `window.n` counts the return dates the calendar holds in the window, and
+  `coverage` the returns each asset holds there. The lead
   (`matrix-lead-v1`) states whether Treasuries are hedging equities (SPY
   against TLT below zero) and the highest and lowest pairs, from the served
   cells only.
@@ -524,18 +527,28 @@ def common_close(store: Store, keys: list[str]) -> int | None:
     return int(idx[-1]) if len(idx) else None
 
 
+def coverage(x, t: int) -> int:
+    """How many of the CORR_WINDOW return dates ending at t hold a return of x
+    (a return needs its session's close and the previous one's)."""
+    import numpy as np
+
+    return int(np.isfinite(x[max(t - CORR_WINDOW + 1, 0):t + 1]).sum())
+
+
 def why_no_window(store: Store, key: str, x, t: int) -> str | None:
-    """Why one asset has no 60-date window to t, or None when it has one."""
+    """Why one asset has no 60-date window to t, or None when it has one: the
+    returns it holds of the 60, and the first one missing (Codex R-02)."""
     import numpy as np
 
     lo = t - CORR_WINDOW + 1
-    if lo < 0:
-        return f"fewer than {CORR_WINDOW} daily returns in the window to {store.iso[t]}"
-    bad = np.flatnonzero(~np.isfinite(x[lo:t + 1]))
-    if len(bad):
-        i = lo + int(bad[0])
-        gap = store.gap_reason(key, i) or store.gap_reason(key, i - 1)
-        return f"fewer than {CORR_WINDOW} complete daily returns in the window to {store.iso[t]}: {gap}"
+    have = coverage(x, t)
+    if have < CORR_WINDOW:
+        if lo < 1:
+            first = f"the stored calendar starts {store.iso[0]}"
+        else:
+            i = lo + int(np.flatnonzero(~np.isfinite(x[lo:t + 1]))[0])
+            first = store.gap_reason(key, i) or store.gap_reason(key, i - 1)
+        return f"only {have} of {CORR_WINDOW} daily returns in the window to {store.iso[t]}: {first}"
     w = x[lo:t + 1]
     if float(((w - w.mean()) ** 2).sum()) == 0:
         return f"no variation in the window to {store.iso[t]}"
@@ -600,11 +613,18 @@ def matrix(store: Store) -> dict:
         for b in keys:
             row.append(corr_at(rets[a], rets[b], t) if a in ok and b in ok else None)
         values.append(row)
+    # Codex R-02: the requested horizon apart from what was observed. `window.n` counts the return dates the
+    # calendar holds in the window (fewer than the horizon when it starts inside it), `coverage` the returns each
+    # asset holds there; a pair is served only when both assets hold all `horizon` of them.
+    first = max(t - CORR_WINDOW + 1, 1)
+    observed = t - first + 1 if t >= 1 else 0
     return {
         "assets": symbols, "labels": [name for _, name in MATRIX_ASSETS],
         "no_data": [{"symbol": sym, "reason": reasons[k]} for k, sym in zip(keys, symbols) if reasons[k] is not None],
         "values": values,
-        "window": {"start": store.iso[max(t - CORR_WINDOW + 1, 0)], "end": store.iso[t], "n": CORR_WINDOW},
+        "horizon": CORR_WINDOW,
+        "window": {"start": store.iso[first] if observed else store.iso[t], "end": store.iso[t], "n": observed},
+        "coverage": [coverage(rets[k], t) if k in rets else None for k in keys],
         "lead": matrix_lead(symbols, values),
         "quantity": "adjusted close (^VIX: index level)", "transform": "daily log return (^VIX: daily log change)",
         "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
