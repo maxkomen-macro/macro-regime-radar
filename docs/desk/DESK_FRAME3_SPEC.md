@@ -2402,3 +2402,10 @@ question pushes one.
   while the session is open and any bar dated in the future are dropped, and
   `excluded_bars` (`{n, after}`, null when none) says so under the price
   chart.
+- **R-04 · a suggestion belongs to its text.** The search's suggestions
+  count only while the box holds exactly the text they were searched for
+  (`SymbolSearch`, and so `InstrumentSearch`): while the debounce is
+  pending, the list says "Searching…", and neither Enter nor a click can
+  pick a row from the previous text. Codex's repro, AAPL's results then
+  "NVDA" and Enter within 250 ms, picks nothing until NVDA's own answer, then
+  NVDA.

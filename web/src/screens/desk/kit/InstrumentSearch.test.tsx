@@ -56,6 +56,27 @@ describe("InstrumentSearch", () => {
     expect(calls.some((c) => c.startsWith("GET /api/market/search?q=N&limit=10&scope=us"))).toBe(true);
   });
 
+  it("Codex R-04: suggestions belong to the text searched; Enter inside the debounce never picks the previous text's", async () => {
+    const hit = (symbol: string, name: string) => ({ symbol, name, exchange: "US", type: "Equity", sector: null, primary: true });
+    const answers: Record<string, unknown[]> = { AAPL: [hit("AAPL", "Apple Inc")], NVDA: [hit("NVDA", "NVIDIA Corporation")] };
+    stubDesk({ "/api/market/search": (u) => ({ ...HITS, hits: answers[u.searchParams.get("q") ?? ""] ?? [] }) });
+    const onSelect = vi.fn();
+    renderWithProviders(<InstrumentSearch ariaLabel="Search a stock" onSelect={onSelect} />);
+    const box = screen.getByRole("combobox", { name: "Search a stock" });
+    fireEvent.change(box, { target: { value: "AAPL" } });
+    await screen.findByRole("option", { name: /AAPL/ });
+    // Codex's repro: AAPL's results on screen, NVDA typed, Enter at once (inside the 250 ms debounce).
+    fireEvent.change(box, { target: { value: "NVDA" } });
+    expect(screen.queryByRole("option", { name: /AAPL/ })).toBeNull();
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onSelect).not.toHaveBeenCalled();
+    // NVDA's own answer: now Enter picks NVDA, never AAPL.
+    await screen.findByRole("option", { name: /NVDA/ });
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect.mock.calls[0][0]).toMatchObject({ symbol: "NVDA" });
+  });
+
   it("arrow keys and Enter, or a click, pick a suggestion", async () => {
     const onSelect = vi.fn();
     renderWithProviders(<InstrumentSearch ariaLabel="Search a stock" onSelect={onSelect} />);

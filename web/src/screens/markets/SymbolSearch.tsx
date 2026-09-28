@@ -152,7 +152,11 @@ export default function SymbolSearch({
   // The search did not answer: the caller's own list, for the same text.
   const fallbackHits = q.isError && fallback && debounced.trim() ? fallback(debounced.trim()) : [];
   const usingFallback = !searched.length && fallbackHits.length > 0;
-  const hits = usingFallback ? fallbackHits : searched;
+  // Codex R-04: a suggestion belongs to the exact text that was searched. While the box holds other text
+  // (the debounce still pending), none is shown, and neither Enter nor a click can pick one.
+  const fresh = debounced === text;
+  const hits = !fresh ? [] : usingFallback ? fallbackHits : searched;
+  const pending = !fresh || q.isFetching || !!(aliasQuery && alt.isFetching);
   // The provider that answered is part of the result (2026-09-06).
   const provider = q.data?.provider ?? alt.data?.provider ?? null;
   const listId = useId();
@@ -419,17 +423,17 @@ export default function SymbolSearch({
               )}
             </div>
           ))}
-          {(q.isFetching || (aliasQuery && alt.isFetching)) && !hits.length && (
+          {pending && !hits.length && (
             <div style={{ padding: "8px 12px", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
               Searching…
             </div>
           )}
-          {!q.isFetching && !(aliasQuery && alt.isFetching) && !hits.length && debounced.trim().length > 0 && (
+          {!pending && !hits.length && debounced.trim().length > 0 && (
             <div style={{ padding: "8px 12px", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
               {q.isError ? "Symbol search unavailable: the data service did not answer." : `No listings match "${debounced.trim()}".`}
             </div>
           )}
-          {usingFallback ? (
+          {fresh && usingFallback ? (
             <div
               style={{ padding: "6px 12px", borderTop: "0.5px solid var(--line-hair)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)" }}
             >
