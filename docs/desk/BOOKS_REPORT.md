@@ -1,7 +1,11 @@
 # desk/books — Basket & Hedge from real prices
 
 Branch `desk/books` (worktree `mrr-books`), cut from main `4394e59` on
-2026-09-27. Six commits, one per item, **not pushed**:
+2026-09-27, and rebased onto main `23014d0` after desk/fill-etf and
+desk/fill-compute merged ("Rebase onto main `23014d0`" below: every
+conflicted file, its resolution, and the old-to-new sha map). The shas in
+the sections before it are the pre-rebase ones, kept on
+`backup/desk-books-pre-rebase`. Six commits, one per item, **not pushed**:
 
 | # | Commit | Item |
 |---|---|---|
@@ -155,9 +159,11 @@ leading with one sentence that states its answer with served numbers:
 - **Technicals**: `src/desk/technicals.level_technicals`, the same function
   `/technicals` reads (moved from `api/desk_items.py`; /technicals is byte-
   identical, checked against HEAD's function on the published DB copy and by
-  the unchanged 02-technicals compare shot), plus RSI(14) by §12.13's Wilder
-  rule, drawdown from the running peak, 21-day realized vol (sample sd of 21
-  daily log returns × √252), every cross.
+  the unchanged 02-technicals compare shot, and again against main's after
+  the rebase), plus RSI(14) by §12.13's Wilder rule and 21-day realized vol
+  (sample sd of 21 daily log returns × √252), both since the rebase from
+  desk/fill-compute's `src/analytics/technicals`, drawdown from the running
+  peak, every cross.
 - **Against QQQ and SPY**: one-session returns both have, up to the
   basket's last session; beta = cov / var of the benchmark; the last 252 and
   60 of them, complete or null with the reason ("needs 252 daily returns;
@@ -187,8 +193,9 @@ options UNAVAILABLE with the slot), §1.0.1's two lists (Build Notes prints
 them word for word, `notes/scope.ts`), §1.8 (a basket carries method and
 notional), §10 rewritten (the steps, the cards, the named-basket rules),
 §12.0 (the routes, the two new error codes), §12.13's basket note (what stays
-deferred and why), and the new **§12.14 `GET /basket/price`** and **§12.15
-`GET /basket/hedge`** field tables. `tests/desk_contract.py` transcribes both;
+deferred and why), and the new **§12.15 `GET /basket/price`** and **§12.16
+`GET /basket/hedge`** field tables (§12.14 and §12.15 before the rebase:
+desk/fill-etf's `/sectors` took §12.14 meanwhile). `tests/desk_contract.py` transcribes both;
 the fixtures (`basket-price.json`, `basket-hedge.json`, every answer in them)
 are checked against it. The deferred stubs now say what is deferred:
 `/basket/:id` "Baskets are kept in this browser; there is no server basket
@@ -209,10 +216,11 @@ engine."
    client-side `movingAverage`; the Technicals page's function is the
    server's `technicals_from_level`. That one is now the shared function
    (`src/desk/technicals.py`), reused for the basket; the Technicals page's
-   chart became the kit's `TrendChart`, drawn by both pages. RSI lives in the
-   same module, by spec §12.13's rule; `/technicals` does not serve it (§1.0
-   keeps the RSI card unavailable). **Reconcile at rebase** with
-   desk/fill-compute if it adds RSI elsewhere.
+   chart became the kit's `TrendChart`, drawn by both pages. RSI lived in the
+   same module, by spec §12.13's rule, until the rebase: desk/fill-compute's
+   `src/analytics/technicals` now holds the one RSI, realized volatility,
+   MACD and seasonality, and both pages read them from there (see "Rebase
+   onto main `23014d0`").
 3. **InstrumentSearch** (desk/usability) has not landed: adding a name is a
    plain input checked against the price endpoint (`basket/check.ts`); a
    ticker it does not list is refused in its words; an unanswered check adds
@@ -247,6 +255,86 @@ engine."
   held the port (mrr-compute on 5193 and 5293). The gate now takes the first
   free port and checks the listening process's working directory is the
   exported commit before running Playwright; the affected run was redone.
+
+## Rebase onto main `23014d0`
+
+After Codex's PUSH OK on R-15, `git fetch origin && git rebase origin/main`
+onto `23014d0` (desk/fill-etf, PR #9, and desk/fill-compute, PR #10,
+merged). The pre-rebase head, `58bf113`, is kept on the local branch
+`backup/desk-books-pre-rebase`. Commits 1, 2, 5 and 7 to 18
+applied without conflicts; 3, 4 and 6 conflicted.
+
+**Commit 3** (`8aface4` → `39e2a9c`), the technicals and the first live basket route:
+
+| File | Conflict | Resolution |
+|---|---|---|
+| `api/desk_items.py` | main (desk/fill-compute) added RSI, MACD and seasonality inside its copy of `technicals_from_level`; this branch had moved that function to `src/desk/technicals.level_technicals` | One implementation. `technicals_from_level` is `level_technicals` plus main's `rsi_fields`, `macd_fields` and `seasonality_fields`, kept as main wrote them, computed from the aligned closes `level_technicals` now returns (`_aligned`, not served); main's `vol_gap` untouched. In the same resolution `src/desk/technicals.py` drops this branch's `rsi_wilder` and `realized_vol` and reads main's `src.analytics.technicals.rsi` and `realized_vol` (÷ 100: main's is in points), `api/desk_basket.py` drops `_aligned` with `_sessions`, and `tests/test_desk_technicals.py` pins the basket's extras to main's two functions. Checked: the `/technicals` item on the published DB copy is byte-identical to main's (133,666 bytes, RSI 59.28 on Sep 21, MACD, seasonality Feb 1990 to Aug 2026); the basket's RSI is bit-identical to the old one, its realized volatility within 2e-15 |
+| `web/src/screens/desk/technicals/TechnicalsPage.tsx` | the imports: main's MACD card and gauge use `LineChart`, `extentTicks`, `DESK_ACCENTS`, `Gauge`; this branch drew the price chart with `kit/TrendChart` | Both: the price chart stays the kit's `TrendChart` (shared with Basket & Hedge; main had not changed it), main's MACD, RSI and seasonality cards unchanged. `monthTicks` is imported from `kit/TrendChart` and re-exported: main's MACD chart calls it, and this branch's bare re-export would have left the name unbound |
+| `api/desk_envelope.py` | the route list: main made `/sectors` live, this branch `/basket/price` | Live: main's nine, `/sectors`, `/basket/price`; stubs `/vol`, `/positions`, `/basket`, `/hedge`; `LIVE_ROUTES = 11`. The auto-merge had left `/sectors` among the stubs |
+| `web/src/screens/desk/data/envelope.ts` | auto-merged the same wrong order | Put in the Python list's order |
+| `tests/desk_contract.py`, `tests/test_desk_contract.py` | both sides added a live route and its fixture | Both routes and both fixtures; the contract test slices by `env.LIVE_ROUTES` (this branch) rather than main's literal 10 |
+| `docs/desk/DESK_FRAME3_SPEC.md` | §12.0's route paragraph | Lists `/sectors` (§12.14) and the basket route; neither is a stub any more |
+| `web/src/fixtures/desk/PROVENANCE.md` | the deferred rows | Main's rows (`deferred-regime.json` is gone on main, `sectors.json` is served) plus this branch's basket row |
+| `web/src/fixtures/desk/index.ts` | a comment on the stubs | Both: `/sectors` served since desk/fill-etf, `/basket/price` since desk/books |
+| `web/src/screens/desk/event-study/EventStudyPage.test.tsx` | auto-merged, not conflicted | Main's file taken whole: its timer-leak fix (wait for the object URL's revoke before restoring the stubs) replaces this branch's no-op restore |
+
+**Commit 4** (`9c7ef6b` → `c939a07`), the hedge route: `api/desk_envelope.py`
+(the list gains `/basket/hedge`, `LIVE_ROUTES = 12`; the reasons are this
+branch's `BASKET_REASON` and `OPTIONS_REASON`, and main's removal of
+`RSI_REASON` stands, which `test_desk_v2_envelope.py` checks),
+`web/src/screens/desk/data/envelope.ts`, `tests/desk_contract.py`,
+`tests/test_desk_contract.py`, `docs/desk/DESK_FRAME3_SPEC.md` and
+`web/src/fixtures/desk/PROVENANCE.md`, each resolved as in commit 3 with the
+hedge route and fixture added.
+
+**Commit 6** (`125258c` → `5440746`), the page and Build Notes:
+
+| File | Resolution |
+|---|---|
+| `CLAUDE.md` | Both session lines, desk/books first |
+| `docs/desk/BUILD_NOTES.md` | What is live: main's list (sectors, RSI, MACD, seasonality, what each regime has meant, the ETFs) plus the Basket & Hedge sentence. What I'd build next: main's order, since the sector ETFs and the RSI signals this branch listed are done; the options item keeps this branch's wording (the vol card and the options hedge on a basket) |
+
+**Follow-through** (`160d656`): desk/fill-etf's `/sectors` took §12.14, so
+the basket routes move up one, `GET /basket/price` to §12.15 and
+`GET /basket/hedge` to §12.16, in the spec and every reference (57 lines in
+20 files; main's `/sectors` references stay §12.14). The basket fixtures
+are regenerated from the same cached Yahoo closes through the merged code
+(the three realized-volatility values moved in the 15th digit; nothing else
+moved). CLAUDE.md records the rebase and the one technicals stack.
+
+| Before | After | Commit |
+|---|---|---|
+| `b86647a` | `7b3ea9e` | 1: two years of daily bars |
+| `84af304` | `b01d345` | 2: the basket engine |
+| `8aface4` | `39e2a9c` | 3: basket technicals |
+| `9c7ef6b` | `c939a07` | 4: the ETF hedge and the stress test |
+| `15476bd` | `8395018` | 5: named baskets |
+| `125258c` | `5440746` | 6: the three steps, Build Notes |
+| `0a0745f` | `b343d2f` | R-02, R-03, R-06 |
+| `2c80b97` | `ab3112c` | R-01 |
+| `5edce46` | `966ee0c` | R-04, R-05 |
+| `3d19e9b` | `aaf416e` | R-07 |
+| `3c40c01` | `024534e` | R-13 |
+| `71ad891` | `8b1ed2e` | R-08, R-09 |
+| `7897dcf` | `ac2d113` | R-10, R-12 |
+| `f5ea56e` | `a1aca75` | R-14, R-11 |
+| `9dcd5cc` | `a1fa2df` | Build Notes after the review, live shots |
+| `11f9f4f` | `59b466a` | the report after round 1 |
+| `591a01f` | `8b574f7` | R-15 |
+| `58bf113` | `5eaf0e2` | the report after round 2 |
+| — | `160d656` | the rebase follow-through |
+
+**Gates on the rebased head `160d656`** (the same harness: a `git archive`
+export with the published DB copy and the scratch store): tsc pass; vitest
+(2 workers) 126 files, **1,590 passed**; build pass; then, holding
+`/tmp/mrr-full-gates.lock` from 23:59:23 until the e2e finished, the full
+pytest, serial, 10 minutes: **1,766 passed, 1 skipped, 2 failed**. The two
+failures are the known `test_asset_history` DB-copy ones. The skip is
+main's `tests/test_desk_etf.py:192`, which needs `DESK_ETF_STORE`, the ETF
+fixture store. The provider-profile timing test passed this time. The full
+Desk e2e, `--workers=1`, on a port whose listener was checked to be the
+export: **55/55** (`web/e2e/desk.spec.ts` is the only Desk spec). Adding
+this report's rebase section is the only change after the gate.
 
 ## Gates
 
@@ -423,9 +511,9 @@ No card is FAILED.
 - **Deploy**: the API image needs this branch for `range=2Y` and the two
   routes; the first request for a basket costs one EODHD call per ticker per
   session (a ten-name basket plus eight ETFs: 18), then the day's cache.
-- **Rebase**: desk/usability's InstrumentSearch replaces the add input;
-  desk/fill-compute's RSI reconciles into `src/desk/technicals.rsi_wilder`;
-  desk/prototypes' options card mounts in `data-slot="hedge-options"`.
+- **Later rebases**: desk/usability's InstrumentSearch replaces the add
+  input; desk/prototypes' options card mounts in `data-slot="hedge-options"`.
+  (desk/fill-compute's RSI is reconciled: see "Rebase onto main `23014d0`".)
 - A request that fetches many cold histories is synchronous (four at a time);
   a slow EODHD day could pass the browser's 15 s abort. The Desk's `computing`
   (202) pattern would fit if that shows up.
