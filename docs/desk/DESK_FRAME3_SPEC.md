@@ -2293,7 +2293,10 @@ question pushes one.
 - **Loading state.** Every Desk card whose request is pending prints "Loading
   live data…" under its title (`kit/ui.tsx` `LoadingLine`, a polite status),
   and the Overview's since-last-close line says the same, until the answer, a
-  failure or an awaiting block arrives.
+  failure or an awaiting block arrives. That includes the cards main added
+  before the rebase: Technicals' RSI, MACD and seasonality, Basket & Hedge's
+  step cards (the options slot excepted, which asks nothing), and the Position
+  Monitor's Monitored card while an automatic row's level is asked.
 
 
 ### 14.11 Hover definitions
@@ -2307,10 +2310,13 @@ question pushes one.
   from the 1-year high, the 50- and 200-day averages, golden and death
   crosses, relative strength, log returns, correlation, breadth, normal (the
   baseline), overlap blocks, the 90% interval, K−2, NAV, DV01, beta, R² and
-  notional. Beta, R² and notional print on desk/books' Basket & Hedge; they
-  are defined here so its cards carry them at the rebase.
+  notional; since the rebase onto main, MACD (with its signal line and
+  histogram), seasonality, and Basket & Hedge's effective names, drawdown
+  from peak and days to trade (20% of 20-session dollar volume). Relative
+  strength names its benchmark (the S&P 500 unless the card names another).
 - **Where.** Every stat label, card title and card subtitle (`kit/ui.tsx`
-  `Stat`, `Card`, `UnservedCard`, and the pages' own card heads), the
+  `Stat`, `Card`, `UnservedCard`, and the pages' own card heads, Basket &
+  Hedge's step cards and Technicals' MACD and seasonality cards included), the
   Overview's tiles and its "vs normal", the Signal Ledger's row labels and
   "Vs normal" column, the Regime table's "VIX avg", the correlation matrix's
   caption. A printed string with a term is wrapped whole in one
@@ -2322,7 +2328,10 @@ question pushes one.
 - **Tooltip.** One per Desk (`kit/Term.tsx` `TermTip`, mounted by the shell):
   on hover or focus of a term it shows the sentence under the term (above it
   near the bottom of the window), fixed to the viewport so no card clips it;
-  Escape, scrolling or leaving the term hides it.
+  a scroll moves it with its term, and it hides when the term leaves the
+  window, on Escape, or when the pointer or focus leaves the term. (Hiding on
+  every scroll lost the tip when a scroll landed just after the pointer
+  reached a term below the fold, as on the stock page's Risk card.)
 
 ### 14.12 A card whose request failed
 
@@ -2338,9 +2347,16 @@ question pushes one.
   `FailedScope`): Technicals' cards read `/technicals` and its Signals card
   the Ledger too (`eitherFailed`), so a failed Ledger fails that card alone;
   the Overview's since-last-close line, tiles and active signals read
-  `/overview` and its Monitored card this browser's store; the Event Study's
+  `/overview` and its Monitored card this browser's store; the Position
+  Monitor's Monitored card reads its automatic rows' levels from
+  `/technicals` and `/macro`, so it loads and fails with them (with no
+  automatic row it asks nothing of its own); the Event Study's
   answer and rail read `/study` and its event list `/study/events`. The page
   title, header, search and sidebar never depend on a card's request.
+- **Basket & Hedge.** desk/books' steps keep their own failure lines, "This
+  basket could not be priced: <message> · Try again" and "The hedge could not
+  be computed: …", which already name the failure and ask again; while they
+  are asked, each step card prints "Loading live data…" (§14.10).
 - **Not a failure.** An answer served awaiting (§1.0.2) keeps its reason and
   its "Not yet served" or "Awaiting refresh" badge; a question the Event
   Study refuses (422 `unsupported`) keeps its served sentence; a Sectors body

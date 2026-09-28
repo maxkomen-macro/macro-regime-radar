@@ -76,19 +76,28 @@ export function TermTip() {
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") hide();
     };
+    // A scroll moves the tip with its term, and hides it once the term leaves the window (a scroll that lands just
+    // after the pointer reached a term would otherwise wipe the tip while the pointer is still on it).
+    const scroll = () => {
+      if (!current) return;
+      const r = current.getBoundingClientRect();
+      const vh = window.innerHeight || document.documentElement.clientHeight;
+      if (!current.isConnected || r.bottom < 0 || r.top > vh) return hide();
+      show(current);
+    };
     document.addEventListener("pointerover", over);
     document.addEventListener("pointerout", out);
     document.addEventListener("focusin", over);
     document.addEventListener("focusout", out);
     document.addEventListener("keydown", key);
-    window.addEventListener("scroll", hide, true);
+    window.addEventListener("scroll", scroll, true);
     return () => {
       document.removeEventListener("pointerover", over);
       document.removeEventListener("pointerout", out);
       document.removeEventListener("focusin", over);
       document.removeEventListener("focusout", out);
       document.removeEventListener("keydown", key);
-      window.removeEventListener("scroll", hide, true);
+      window.removeEventListener("scroll", scroll, true);
     };
   }, []);
   return (

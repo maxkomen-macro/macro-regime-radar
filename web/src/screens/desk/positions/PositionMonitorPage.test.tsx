@@ -560,3 +560,43 @@ describe("saved positions first (§14.4)", () => {
     await waitFor(() => expect(screen.queryByRole("form", { name: "Promote to position" })).toBeNull());
   });
 });
+
+describe("the Monitored card's levels come from the API (desk/usability §14.10, §14.12)", () => {
+  const macro = () => JSON.parse(deskFixture("GET", "/api/desk/macro")!.body) as unknown;
+
+  it("says Loading live data… while the 2s10s level is asked; the answer replaces it", async () => {
+    seed(RECORDS);
+    let answer: (v: unknown) => void = () => {};
+    const held = new Promise((resolve) => (answer = resolve));
+    stubDesk({ "/api/desk/macro": () => held });
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await waitFor(() => expect(within(card).getByTestId("dk-loading")).toHaveTextContent("Loading live data…"));
+    answer(macro());
+    await waitFor(() => expect(within(card).queryByTestId("dk-loading")).toBeNull());
+    expect(within(card).queryByTestId("dk-failed")).toBeNull();
+  });
+
+  it("says Couldn't load · Retry when the level's request failed, and Retry asks again", async () => {
+    seed(RECORDS);
+    let fail = true;
+    const { calls } = stubDesk({ "/api/desk/macro": () => (fail ? { status: 503, body: { detail: "forced failure" } } : macro()) });
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await waitFor(() => expect(within(card).getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry"), { timeout: 4000 });
+    fail = false;
+    const before = calls.filter((c) => c.startsWith("GET /api/desk/macro")).length;
+    fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(within(card).queryByTestId("dk-failed")).toBeNull());
+    expect(calls.filter((c) => c.startsWith("GET /api/desk/macro")).length).toBeGreaterThan(before);
+  });
+
+  it("with no automatic position the card asks nothing of its own and says nothing about loading", async () => {
+    seed(RECORDS.filter((p) => p.monitoring === "manual"));
+    stubDesk({ "/api/desk/macro": () => new Promise(() => {}) });
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(card).queryByTestId("dk-loading")).toBeNull();
+  });
+});

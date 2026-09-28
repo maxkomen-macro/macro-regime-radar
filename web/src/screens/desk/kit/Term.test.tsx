@@ -40,6 +40,33 @@ describe("hover definitions (desk/usability item 11, §14.11)", () => {
     expect(defineTerms("Last close")).toBe("Last close");
   });
 
+  it("a scroll moves the tip with its term, and hides it once the term leaves the window", () => {
+    render(
+      <>
+        <Stat label="2s10s" value="+52 bp" />
+        <TermTip />
+      </>,
+    );
+    const term = screen.getByText("2s10s").closest(".dk-term")!;
+    let top = 100;
+    term.getBoundingClientRect = () => ({ top, bottom: top + 15, left: 40, right: 120, width: 80, height: 15, x: 40, y: top, toJSON: () => ({}) }) as DOMRect;
+    act(() => {
+      fireEvent.pointerOver(term);
+    });
+    expect(screen.getByRole("tooltip")).toHaveStyle({ top: "121px" });
+    // A scroll that lands after the pointer reached the term keeps the tip, moved with the term.
+    top = 60;
+    act(() => {
+      fireEvent.scroll(window);
+    });
+    expect(screen.getByRole("tooltip")).toHaveStyle({ top: "81px" });
+    top = -40;
+    act(() => {
+      fireEvent.scroll(window);
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("shows the sentence on hover and on focus, and Escape hides it", () => {
     render(
       <>

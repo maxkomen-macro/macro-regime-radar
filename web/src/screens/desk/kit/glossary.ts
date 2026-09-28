@@ -29,7 +29,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   drawdown: { forms: ["From 1-year high", "drawdown", "Drawdown"], text: "The drawdown is how far the price sits below its highest close of the last 252 sessions." },
   ma: { forms: ["50-day average", "200-day average", "50-day", "200-day"], text: "A moving average is the mean of the last 50 or 200 daily closes; a price above both is in an uptrend." },
   cross: { forms: ["golden cross", "Golden cross", "death cross", "Death cross"], text: "A golden cross is the 50-day average rising above the 200-day; a death cross is the 50-day falling below it." },
-  rs: { forms: ["Relative strength", "relative strength"], text: "Relative strength is the price divided by the S&P 500's; a rising line means it is beating the index." },
+  rs: { forms: ["Relative strength", "relative strength"], text: "Relative strength is the price divided by a benchmark's, the S&P 500's unless the card names another; a rising line means it is beating the benchmark." },
   logret: { forms: ["log returns", "log return"], text: "A log return is the natural log of the price ratio; for moves this size it is close to the percent change." },
   corr: { forms: ["60-day correlation", "Correlation", "correlation"], text: "Correlation runs from −1 to +1: how closely two assets' daily returns move together, here over the last 60 sessions." },
   breadth: { forms: ["Breadth", "breadth"], text: "Breadth is how much of the market joins a move; here, how many sector ETFs sit above their 50-day and 200-day averages, and the average stock against the index." },
@@ -39,9 +39,15 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   lag: { forms: ["K−2"], text: "K−2 is the regime row stamped two months before the month in question, so a label uses only data already published by then." },
   nav: { forms: ["% NAV", "NAV"], text: "NAV is net asset value, the size of the whole book: a 4% NAV position is 4% of it." },
   dv01: { forms: ["DV01"], text: "DV01 is the money a position gains or loses when yields move one basis point." },
-  beta: { forms: ["beta", "Beta"], text: "Beta is how far a position tends to move for a 1% move in its benchmark." },
+  beta: { forms: ["betas", "beta", "Beta"], text: "Beta is how far a position tends to move for a 1% move in its benchmark." },
   r2: { forms: ["R²"], text: "R² is the share of a position's daily moves its benchmark explains, from 0 to 1." },
   notional: { forms: ["notional", "Notional"], text: "Notional is the face value a position controls, not the cash it costs." },
+  // The terms of the cards desk/fill-compute and desk/books added (the rebase onto main).
+  macd: { forms: ["MACD", "Signal", "Histogram", "histogram", "signal line"], text: "MACD (12, 26, 9) is the 12-day exponential average of the closes minus the 26-day; the signal line is MACD's own 9-day average, and the histogram is MACD minus the signal line." },
+  seasonality: { forms: ["Seasonality", "seasonality"], text: "Seasonality is each calendar month's average return over every complete month stored, with how often that month rose." },
+  effn: { forms: ["Effective names"], text: "Effective names is 1 divided by the sum of the squared weights: how many equal positions the basket's concentration amounts to." },
+  peak: { forms: ["From peak"], text: "From peak is how far the basket index sits below its highest close since the basket's history starts." },
+  adv: { forms: ["days to trade", "Days to trade"], text: "Days to trade is how many sessions buying or selling the position takes at 20% of each name's average daily dollar volume over the last 20 sessions." },
 };
 
 interface Form {

@@ -235,7 +235,7 @@ describe("Technicals tab", () => {
     const card = await screen.findByRole("region", { name: /Momentum · MACD/ });
     // The fixture's store has no Sep 22 close, so the MACD is held on Sep 21 and dated by its own badge (§1.6).
     await waitFor(() => expect(within(card).getByTestId("dk-live")).toHaveTextContent("Sep 21"));
-    const [line, signal, hist, cross] = within(card).getAllByText(/^(MACD|Signal|Histogram|Last crossover)$/).map((l) => l.parentElement as HTMLElement);
+    const [line, signal, hist, cross] = within(card).getAllByText(/^(MACD|Signal|Histogram|Last crossover)$/).map((l) => l.closest(".dk-stat") as HTMLElement);
     expect(line).toHaveTextContent("+4.0");
     expect(signal).toHaveTextContent("+3.7");
     expect(hist).toHaveTextContent("+0.3");

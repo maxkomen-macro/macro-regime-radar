@@ -17,7 +17,8 @@ import { dayLong, dayShort, grouped, num, pct, pctPlain } from "../kit/format";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
-import { Awaiting, Signed, Stat, StatRow } from "../kit/ui";
+import { Awaiting, LoadingLine, Signed, Stat, StatRow } from "../kit/ui";
+import { defineTerms } from "../kit/Term";
 import { excludedWords, byContribution, compareLead, concentrationLead, contributionLead, dayChange, daysText, indexLead, liquidityLead, methodSentence, momentumLead, rsLead, startSentence, usd, vsAverage } from "./trades";
 
 export type BasketRange = "6m" | "1y";
@@ -32,12 +33,14 @@ function TradeCard({ title, sub, lead, className, state, extra, children }: { ti
     <section className={`dk-card bh-card ${className ?? ""}`} aria-labelledby={hid} aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h3 className="dk-card-title" id={hid}>
-          {title}
-          {sub ? <span className="dk-card-sub"> {sub}</span> : null}
+          {defineTerms(title)}
+          {sub ? <span className="dk-card-sub"> {defineTerms(sub)}</span> : null}
         </h3>
         {extra}
       </div>
       {state === "ready" && lead ? <p className="bh-lead">{lead}</p> : null}
+      {/* §14.10: while the API answers, the card says so (a cold start can take a minute). */}
+      <LoadingLine busy={state === "loading"} />
       {children}
     </section>
   );

@@ -369,7 +369,7 @@ interface FailedValue {
 }
 const FailedContext = createContext<FailedValue | null>(null);
 
-interface QueryLike {
+export interface QueryLike {
   isError: boolean;
   error: unknown;
   isFetching?: boolean;

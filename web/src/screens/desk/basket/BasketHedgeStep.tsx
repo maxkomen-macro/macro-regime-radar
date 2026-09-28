@@ -17,7 +17,8 @@
 import { useId, type ReactNode } from "react";
 import type { BasketHedgeResponse, HedgeEtf } from "../data/types";
 import { num, pct, pctPlain } from "../kit/format";
-import { Awaiting, NotServedBadge, UnservedLine, cx } from "../kit/ui";
+import { Awaiting, LoadingLine, NotServedBadge, UnservedLine, cx } from "../kit/ui";
+import { defineTerms } from "../kit/Term";
 import { excludedWords, hedgeLead, stressLead, stressShortWords, stressWindowWords, usd } from "./trades";
 import type { SavedBasket } from "./weights";
 import { OptionsHedgeCard } from "../prototypes/OptionsHedgeCard";
@@ -34,12 +35,14 @@ function HedgeCard({ title, sub, lead, state, className, badge, children }: { ti
     <section className={cx("dk-card", "bh-card", className)} aria-labelledby={hid} aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h3 className="dk-card-title" id={hid}>
-          {title}
-          {sub ? <span className="dk-card-sub"> {sub}</span> : null}
+          {defineTerms(title)}
+          {sub ? <span className="dk-card-sub"> {defineTerms(sub)}</span> : null}
         </h3>
         {badge ? <div className="dk-card-badge">{badge}</div> : null}
       </div>
       {state === "ready" && lead ? <p className="bh-lead">{lead}</p> : null}
+      {/* §14.10: while the API answers, the card says so (a cold start can take a minute). */}
+      <LoadingLine busy={state === "loading"} />
       {children}
     </section>
   );

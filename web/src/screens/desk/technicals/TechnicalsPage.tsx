@@ -557,7 +557,7 @@ function MacdCard({ t, state, short = "S&P" }: { t: TechnicalsResponse | undefin
     <section className="dk-card te-macd" aria-labelledby="te-macd-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-macd-title">
-          Momentum · MACD<span className="dk-card-sub"> 12, 26, 9 on {theOf(short)}&apos;s closes</span>
+          {defineTerms("Momentum · MACD")}<span className="dk-card-sub"> 12, 26, 9 on {theOf(short)}&apos;s closes</span>
         </h2>
         {/* §1.6: the MACD is dated by its own session, which a gap in the closes can hold before the price's. */}
         {m && dayShort(m.date) ? <LiveBadge parts={[dayShort(m.date)]} /> : null}
@@ -629,7 +629,7 @@ function SeasonalityCard({ t, state, name = "S&P 500" }: { t: TechnicalsResponse
     <section className="dk-card te-season" aria-labelledby="te-season-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-season-title">
-          Seasonality · {name} by calendar month
+          {defineTerms(`Seasonality · ${name} by calendar month`)}
         </h2>
       </div>
       <LoadingLine busy={state === "loading"} />

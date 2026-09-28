@@ -9,6 +9,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useMacro, useTechnicals } from "../data/api";
+import { eitherFailed, type QueryLike } from "../kit/ui";
 import { levelsFrom, type Levels } from "./monitor";
 import { POSITIONS_KEY, isOpen, loadPositions, writePositions, type PositionStore, type SaveResult } from "./store";
 
@@ -31,11 +32,12 @@ export function usePositionStore(): [PositionStore, (fn: (current: PositionStore
 }
 
 /** Today's levels for the series the open automatic positions read; `always` asks for both (the Promote form's chips). */
-export function useLevels(store: PositionStore, always = false): Levels & { loading: boolean } {
+export function useLevels(store: PositionStore, always = false): Levels & { loading: boolean; reads: QueryLike } {
   const open = store.positions.filter((p) => isOpen(p) && p.monitoring === "automatic");
   const tech = useTechnicals({ enabled: always || open.some((p) => p.trigger?.series === "spx") });
   const macro = useMacro({ enabled: always || open.some((p) => p.trigger?.series === "curve_2s10s") });
-  return { ...levelsFrom(tech.data, macro.data), loading: tech.isLoading || macro.isLoading };
+  // desk/usability §14.10, §14.12: whether the levels are still asked, and the two requests as one failed scope.
+  return { ...levelsFrom(tech.data, macro.data), loading: tech.isLoading || macro.isLoading, reads: eitherFailed(tech, macro) };
 }
 
 /** The message for a write the browser did not keep. */

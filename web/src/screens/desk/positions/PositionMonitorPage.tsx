@@ -42,7 +42,7 @@ import { closed90d, exportPositions, importPositions, isOpen, newPositionId, why
 import { saveWords, useLevels, usePositionStore } from "./usePositionStore";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
 import "./positions.css";
-import { DroppedNote, droppedWords } from "../kit/ui";
+import { DroppedNote, FailedScope, LoadingLine, droppedWords, type QueryLike } from "../kit/ui";
 import { InstrumentSearch } from "../kit/InstrumentSearch";
 
 const HORIZONS = [5, 10, 20, 60];
@@ -166,51 +166,59 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
   );
 }
 
-function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose }: { views: PositionView[]; unreadable?: number; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void }) {
+const IDLE: QueryLike = { isError: false, error: null };
+
+function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, loading = false, reads = IDLE }: { views: PositionView[]; unreadable?: number; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void; loading?: boolean; reads?: QueryLike }) {
   const uid = useId();
   // The deployed share is a sum of sizes, printed only when every row has one (P-11) and every kept
   // position could be read: an unreadable one may be open, so no total is claimed (Codex R-16).
   const sized = views.every((r) => typeof r.size_nav === "number" && Number.isFinite(r.size_nav));
   const deployed = sized && !unreadable ? views.reduce((a, r) => a + (r.size_nav as number), 0) : null;
+  // §14.10, §14.12: an automatic row's level is the API's; while it is asked the card says so, and when the
+  // request failed it says Couldn't load · Retry (a row would read "now not served" either way).
+  const live = views.some((r) => r.monitoring === "automatic");
   return (
-    <section className="dk-card pm-mon" aria-labelledby="pm-mon-title">
-      <h2 className="dk-card-title" id="pm-mon-title">
-        Monitored
-      </h2>
-      <p className="pm-mon-sub">how far each is from being wrong · live</p>
-      {views.length ? (
-        <ul className="dk-mon-list pm-list">
-          {views.map((r) => (
-            <MonitoredRow key={r.id} row={r} open={openId === r.id} onClick={() => onToggle(r.id)} controls={`${uid}-${r.id}`}>
-              <Expanded v={r} pathTo={pathTo} onClose={(type, judged) => onClose(r.id, type, judged)} />
-            </MonitoredRow>
-          ))}
-        </ul>
-      ) : unreadable ? (
-        <p className="dk-await">{`No readable open position; ${droppedWords(unreadable, "kept position").replace(/\.$/, "")}.`}</p>
-      ) : (
-        <p className="dk-await">
-          No open positions in this browser.{" "}
-          <Link className="dk-link" to={withParam(pathTo("position-monitor"), "new", "1")}>
-            + New position
-          </Link>
-        </p>
-      )}
-      {views.length ? (
-        <p className="pm-note">
-          Sorted by room left · room = distance to the level as a share of the room at entry, same scale for every trade · size as % of NAV ·{" "}
-          {deployed != null ? `${Math.round(deployed * 1000) / 10}% deployed, ` : ""}
-          {unreadable ? (
-            <>{`${views.length} readable position${views.length === 1 ? "" : "s"}`} · click a row for the gate text</>
-          ) : (
-            <>
-              {views.length} position{views.length === 1 ? "" : "s"} · click a row for the gate text
-            </>
-          )}
-        </p>
-      ) : null}
-      {views.length ? <DroppedNote n={unreadable} one="kept position" /> : null}
-    </section>
+    <FailedScope q={live ? reads : IDLE}>
+      <section className="dk-card pm-mon" aria-labelledby="pm-mon-title">
+        <h2 className="dk-card-title" id="pm-mon-title">
+          Monitored
+        </h2>
+        <p className="pm-mon-sub">how far each is from being wrong · live</p>
+        <LoadingLine busy={live && loading} />
+        {views.length ? (
+          <ul className="dk-mon-list pm-list">
+            {views.map((r) => (
+              <MonitoredRow key={r.id} row={r} open={openId === r.id} onClick={() => onToggle(r.id)} controls={`${uid}-${r.id}`}>
+                <Expanded v={r} pathTo={pathTo} onClose={(type, judged) => onClose(r.id, type, judged)} />
+              </MonitoredRow>
+            ))}
+          </ul>
+        ) : unreadable ? (
+          <p className="dk-await">{`No readable open position; ${droppedWords(unreadable, "kept position").replace(/\.$/, "")}.`}</p>
+        ) : (
+          <p className="dk-await">
+            No open positions in this browser.{" "}
+            <Link className="dk-link" to={withParam(pathTo("position-monitor"), "new", "1")}>
+              + New position
+            </Link>
+          </p>
+        )}
+        {views.length ? (
+          <p className="pm-note">
+            Sorted by room left · room = distance to the level as a share of the room at entry, same scale for every trade · size as % of NAV ·{" "}
+            {deployed != null ? `${Math.round(deployed * 1000) / 10}% deployed, ` : ""}
+            {unreadable ? (
+              <>{`${views.length} readable position${views.length === 1 ? "" : "s"}`} · click a row for the gate text</>
+            ) : (
+              <>
+                {views.length} position{views.length === 1 ? "" : "s"} · click a row for the gate text
+              </>
+            )}
+          </p>
+        ) : null}
+        {views.length ? <DroppedNote n={unreadable} one="kept position" /> : null}
+      </section>
+    </FailedScope>
   );
 }
 
@@ -538,7 +546,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   const monitor = (
     <>
-      <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
+      <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} />
       <Closed store={store} />
       <StoreCard store={store} onImport={onImport} />
     </>
@@ -551,7 +559,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
         </div>
         <div className="pm-saved">
           <div className="pm-saved-main">
-            <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
+            <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} />
           </div>
           <div className="pm-right">
             <Closed store={store} />

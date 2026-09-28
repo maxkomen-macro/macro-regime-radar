@@ -170,7 +170,7 @@ test.describe("desk usability", () => {
       // Codex R-02: a stock's price at two decimals.
       await expect(price).toContainText("225.51");
       await expect(price.getByRole("img")).toBeVisible();
-      await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("RSI (14)");
+      await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("Last above 70");
       await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("+23.1%");
       await expect(main.getByRole("region", { name: /^Relative strength vs the S&P 500/ }).getByRole("img")).toBeVisible();
       // The S&P-only cards are the S&P's; one line points there.
@@ -439,6 +439,8 @@ test.describe("desk usability", () => {
   test("item 11: terms of art carry a one-sentence definition on hover", async ({ page }) => {
     const hover = async (route: string, printed: string, id: keyof typeof GLOSSARY) => {
       await open(page, route);
+      // Hover once the cards have answered: a card that re-renders from loading replaces the term under the pointer.
+      await expect(page.getByRole("main").getByTestId("dk-loading")).toHaveCount(0);
       const term = page.getByRole("main").locator("abbr.dk-term", { hasText: printed }).first();
       await expect(term, `${route}: ${printed}`).toHaveAttribute("data-term", new RegExp(`\\b${id}\\b`));
       await term.hover();
@@ -448,11 +450,16 @@ test.describe("desk usability", () => {
     };
     await hover("/desk/macro", "2s10s", "curve");
     await hover("/desk/macro", "HY spread", "oas");
-    await hover("/desk/technicals", "RSI (14)", "rsi");
+    await hover("/desk/technicals", "Momentum · RSI", "rsi");
     await hover("/desk/technicals", "21-day realized vol", "realized");
     await hover("/desk/signal-ledger", "2s10s +2σ steepening", "sigma");
     await hover("/desk/regime", "VIX avg", "vix");
     await hover("/desk/overview", "Vol · VIX", "vix");
+    // The terms of the cards main added (desk/fill-compute, desk/books), defined after the rebase.
+    await hover("/desk/technicals", "Histogram", "macd");
+    await hover("/desk/technicals?symbol=NVDA", "Seasonality", "seasonality");
+    await hover("/desk/basket-hedge", "Effective names", "effn");
+    await hover("/desk/basket-hedge", "days to trade", "adv");
     // The Event Study's Move slot explains σ with the same sentence.
     await open(page, "/desk/event-study");
     await expect(page.locator(".es-tip").first()).toHaveAttribute("data-tip", GLOSSARY.sigma.text);
@@ -465,7 +472,7 @@ test.describe("desk usability", () => {
     const signals = main.getByRole("region", { name: /^Signals/ });
     await expect(signals.getByTestId("dk-failed")).toHaveText("Couldn't load · Retry");
     await expect(main.getByTestId("dk-failed")).toHaveCount(1);
-    await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("RSI (14)");
+    await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("Last above 70");
     await expect(main.getByRole("region", { name: /S&P 500 price/ }).getByRole("img").first()).toBeVisible();
     // Nothing on the failed card awaits a refresh (the fixture's own technicals await some values, a fact of its data).
     await expect(signals).not.toContainText("Awaiting refresh");

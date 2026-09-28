@@ -195,6 +195,31 @@ describe("Basket & Hedge tab", () => {
     expect(basketCard()).not.toHaveTextContent("unsaved changes");
   });
 
+  it("while the price and the hedge are asked, each of their cards says Loading live data… (desk/usability §14.10)", async () => {
+    seed();
+    let price: (v: unknown) => void = () => {};
+    let hedge: (v: unknown) => void = () => {};
+    const heldPrice = new Promise((resolve) => (price = resolve));
+    const heldHedge = new Promise((resolve) => (hedge = resolve));
+    stubDesk({ "/api/desk/basket/price": () => heldPrice, "/api/desk/basket/hedge": () => heldHedge });
+    renderTab();
+    await loaded();
+    const trades = await screen.findByRole("region", { name: /^How the basket trades/ });
+    const hedgeStep = screen.getByRole("region", { name: /^Hedge it/ });
+    await waitFor(() => expect(within(trades).getAllByTestId("dk-loading")).toHaveLength(7));
+    // Stress and ETF hedge wait; the options slot is §1.0's reason, never loading.
+    expect(within(hedgeStep).getAllByTestId("dk-loading")).toHaveLength(2);
+    expect(within(screen.getByRole("region", { name: /^Hedge with options/ })).queryByTestId("dk-loading")).toBeNull();
+    const legsKey = "NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000";
+    price((basketPrice as { answers: Record<string, unknown> }).answers[legsKey]);
+    hedge((basketHedge as { answers: Record<string, unknown> }).answers[legsKey]);
+    await waitFor(() => expect(screen.queryAllByTestId("dk-loading")).toEqual([]));
+    // Answered, not failed: the steps carry their answers' dates and no failure line.
+    expect(trades).not.toHaveTextContent("could not be priced");
+    expect(hedgeStep).not.toHaveTextContent("could not be computed");
+    expect(within(trades).getByRole("region", { name: /^Contribution to return/ })).not.toHaveTextContent("Awaiting refresh");
+  });
+
   it("asks nothing for a basket whose weights are not at 100%, and says what prices it", async () => {
     seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l, i) => (i === 0 ? { ...l, weight: 20 } : l)) }]);
     const { calls } = stubDesk();
