@@ -368,6 +368,8 @@ TECHNICALS = obj(
                 series=Obj({"6m": Arr(RS_POINT), "1y": Arr(RS_POINT), "3y": F(Arr(RS_POINT), opt=True)}))),
     # Codex R-03: a stock's provider bars dated after the last completed session, dropped before any figure.
     excluded_bars=null(obj(n=INT, after=DATE)),
+    # A stock's provider bars without an adjusted close, left out (the merge review, as desk/books' R-07).
+    unadjusted_bars=null(obj(n=INT)),
     # The S&P 500's six scored signals (desk/fill-compute); a stock's page lists none (desk/usability §14.2).
     signals_allowlist=Arr(E("golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"), max=6),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),

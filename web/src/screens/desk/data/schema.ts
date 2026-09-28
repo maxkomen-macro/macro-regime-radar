@@ -439,6 +439,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     signals_allowlist: l("s!"),
     // Codex R-03: a stock's bars dated after the last completed session, dropped before any figure.
     excluded_bars: o({ n: "n!", after: "s!" }, { nul: true }),
+    // A stock's bars served without an adjusted close, left out (the merge review).
+    unadjusted_bars: o({ n: "n!" }, { nul: true }),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),
     series: o({ "6m": l(pricePoint), "1y": l(pricePoint), "3y": l(pricePoint) }),

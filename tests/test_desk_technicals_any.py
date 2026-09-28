@@ -209,6 +209,17 @@ def upstream(monkeypatch):
         if path == "/api/eod/AMD.US":
             # Codex R-03's repro: bars through Tuesday 2026-09-22, asked on Monday 2026-09-21 while the session is open.
             return httpx.Response(200, json=_eod_rows(date(2024, 9, 20), date(2026, 9, 22)), request=request)
+        if path in ("/api/eod/MIXD.US", "/api/eod/RAWW.US"):
+            # The merge review's repro: EODHD serving some (MIXD) or all (RAWW) bars without an adjusted close.
+            rows = _eod_rows(date(2024, 9, 20), date(2026, 9, 18))
+            for i, r in enumerate(rows):
+                if path == "/api/eod/RAWW.US" or i % 10 == 0:
+                    r["adjusted_close"] = None
+                    r["close"] = r["close"] * 2.0  # a raw close that is not the adjusted one
+            return httpx.Response(200, json=rows, request=request)
+        if path.startswith("/api/search/MIXD") or path.startswith("/api/search/RAWW"):
+            code = path.rsplit("/", 1)[-1].split("?")[0]
+            return httpx.Response(200, json=[{"Code": code, "Exchange": "US", "Name": f"{code} Inc", "Type": "Common Stock"}], request=request)
         if path.startswith("/api/search/NVDA"):
             return httpx.Response(200, json=[{"Code": "NVDA", "Exchange": "US", "Name": "NVIDIA Corporation", "Type": "Common Stock"}], request=request)
         if path.startswith("/api/search/AMD"):
@@ -255,6 +266,32 @@ def test_bars_after_the_last_completed_session_are_dropped_and_said(served, upst
     assert math.isclose(d["chg_1d"], rows["2026-09-18"] / rows["2026-09-17"] - 1, rel_tol=1e-4)
     assert max(p["date"] for p in d["series"]["1y"]) == "2026-09-18"
     assert d["rsi_date"] == d["realized_vol"]["window"]["end"] == d["drawdown"]["window"]["end"] == "2026-09-18"
+
+
+def test_a_stock_reads_adjusted_closes_only_and_says_how_many_it_left_out(served, upstream, monkeypatch):
+    """The merge review: a bar EODHD served without an adjusted close carries its raw close; it is not read
+    (as Basket & Hedge's closes are not, desk/books' R-07), and the answer counts it."""
+    from datetime import datetime, timezone
+
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 21, 14, 0, tzinfo=timezone.utc))
+    rows = _eod_rows(date(2024, 9, 20), date(2026, 9, 18))
+    raw = {r["date"] for i, r in enumerate(rows) if i % 10 == 0}
+    d = _tech("?symbol=MIXD")["data"]
+    assert d["unadjusted_bars"] == {"n": len(raw)}
+    # The series keeps the session calendar: a session whose bar was left out has no close.
+    on_raw = [p for p in d["series"]["1y"] if p["date"] in raw]
+    assert on_raw and all(p["close"] is None for p in on_raw)
+    # Every close read is an adjusted one: the doubled raw closes never reach the chart.
+    adj = {r["date"]: r["adjusted_close"] for r in rows}
+    assert all(math.isclose(p["close"], adj[p["date"]], rel_tol=1e-6) for p in d["series"]["1y"] if p["close"] is not None)
+    assert _tech("?symbol=NVDA")["data"]["unadjusted_bars"] is None
+
+
+def test_a_stock_with_no_adjusted_close_is_refused_in_the_desks_words(served, upstream):
+    r = client.get("/api/desk/technicals?symbol=RAWW")
+    body = r.json()
+    assert r.status_code == 502 and body["status"] == "error" and body["error"]["code"] == "provider"
+    assert "no adjusted closes" in body["error"]["message"]
 
 
 def test_refusals_and_provider_errors_are_enveloped(served, upstream):

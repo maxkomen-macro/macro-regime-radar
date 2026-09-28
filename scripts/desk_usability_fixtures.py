@@ -43,7 +43,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 OUT = ROOT / "web" / "src" / "fixtures" / "desk"
-NEW = ("symbol", "name", "scored", "drawdown", "realized_vol", "rs", "excluded_bars")
+NEW = ("symbol", "name", "scored", "drawdown", "realized_vol", "rs", "excluded_bars", "unadjusted_bars")
 
 
 def _served(t: dict, sectors: dict, **extra) -> dict:
@@ -52,7 +52,7 @@ def _served(t: dict, sectors: dict, **extra) -> dict:
     from api import desk_envelope as env
     from api.desk_v2 import TECHNICALS_KEYS
 
-    out = {"excluded_bars": None, **t, **extra, "freq": "daily", "vol": env.block_deferred("/technicals", "vol"), "sectors": sectors}
+    out = {"excluded_bars": None, "unadjusted_bars": None, **t, **extra, "freq": "daily", "vol": env.block_deferred("/technicals", "vol"), "sectors": sectors}
     return {k: out[k] for k in TECHNICALS_KEYS if k in out}
 
 
@@ -103,7 +103,7 @@ def main() -> int:
         if k in spx and k not in NEW:
             assert same(fx[k], spx[k]), k
     fx.update({"symbol": "^GSPC", "name": "S&P 500", "scored": True, "drawdown": spx["drawdown"],
-               "realized_vol": spx["realized_vol"], "rs": None, "excluded_bars": None})
+               "realized_vol": spx["realized_vol"], "rs": None, "excluded_bars": None, "unadjusted_bars": None})
     _write("technicals.json", fx)  # the fixture's own keys in their order, the new ones after them
     sectors = fx["sectors"]
 

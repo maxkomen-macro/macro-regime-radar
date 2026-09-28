@@ -252,6 +252,12 @@ function PriceCard({ t, state, cross, range, onRange, scored }: { t: TechnicalsR
           {t.excluded_bars.n === 1 ? "1 bar" : `${t.excluded_bars.n} bars`} dated after {dayLong(t.excluded_bars.after)}, the last completed session, {t.excluded_bars.n === 1 ? "is" : "are"} not read.
         </p>
       ) : null}
+      {/* The merge review: a bar served without an adjusted close is not read (desk/books reads adjusted closes only). */}
+      {ready && t.unadjusted_bars && t.unadjusted_bars.n > 0 ? (
+        <p className="te-note-line" data-testid="te-unadjusted-bars">
+          {t.unadjusted_bars.n === 1 ? "1 bar" : `${t.unadjusted_bars.n} bars`} without an adjusted close from the provider {t.unadjusted_bars.n === 1 ? "is" : "are"} not read.
+        </p>
+      ) : null}
       {/* §14.2: a stock's crosses are shown and labelled not scored; the engine scores the S&P 500's. */}
       {ready && !scored && t.cross ? (
         <div className="te-callout" data-unscored="">

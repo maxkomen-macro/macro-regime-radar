@@ -542,7 +542,7 @@ TECHNICALS_KEYS = ("symbol", "name", "scored", "price", "date", "freq", "source"
                    "ret_1y_dates", "ma50", "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross",
                    "move_20d_sigma", "move_20d_date", "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70",
                    "rsi_last_below_30", "macd", "seasonality", "series", "drawdown", "realized_vol", "rs",
-                   "excluded_bars", "signals_allowlist", "vol", "sectors")
+                   "excluded_bars", "unadjusted_bars", "signals_allowlist", "vol", "sectors")
 SPX_SOURCE = "asset_prices ^GSPC"
 # desk/usability item 2: the spellings that name the S&P 500 itself, the page's default.
 SPX_SYMBOLS = frozenset({"^GSPC", "GSPC", "SPX", "^SPX", "GSPC.INDX"})
@@ -603,7 +603,7 @@ def technicals_answer(params: list[tuple[str, str]]) -> dict:
         if not item["ok"]:
             raise env.Awaiting(item["reason"])
         sigma, sigma_date = move_20d()
-        out = {**item, "symbol": "^GSPC", "name": "S&P 500", "scored": True, "freq": "daily", "source": SPX_SOURCE, "excluded_bars": None,
+        out = {**item, "symbol": "^GSPC", "name": "S&P 500", "scored": True, "freq": "daily", "source": SPX_SOURCE, "excluded_bars": None, "unadjusted_bars": None,
                "move_20d_sigma": sigma, "move_20d_date": sigma_date, "rs": None,
                "signals_allowlist": list(catalog.TECHNICALS_ALLOWLIST),
                "vol": env.block_deferred("/technicals", "vol"),
@@ -619,7 +619,7 @@ def technicals_answer(params: list[tuple[str, str]]) -> dict:
         source = CANDLES_SOURCE
     # desk/usability §14.2: a stock's page reads its own figures and main's shared RSI, MACD and seasonality for it;
     # the S&P-only parts (the scored signals, the options) are not a stock's, and its sector bars are the index's.
-    out = {"excluded_bars": None, **t, "symbol": symbol, "name": name, "scored": False, "freq": "daily", "source": source,
+    out = {"excluded_bars": None, "unadjusted_bars": None, **t, "symbol": symbol, "name": name, "scored": False, "freq": "daily", "source": source,
            "move_20d_sigma": None, "move_20d_date": None, "signals_allowlist": [],
            "vol": env.block_deferred("/technicals", "vol"),
            "sectors": etf_block("/technicals", "sectors", "sectors")}
@@ -638,7 +638,13 @@ def stock_technicals(symbol: str, bench: Any) -> tuple[dict, str]:
     Codex R-03: only bars dated at or before the last completed NYSE session
     (api/calendar, as of the request) are read; a bar after it (today's while
     the session is open, or one dated in the future) is dropped before any
-    technical is computed, and `excluded_bars` says how many and after what."""
+    technical is computed, and `excluded_bars` says how many and after what.
+
+    Adjusted closes only, as Basket & Hedge reads them (desk/books' Codex
+    R-07): a bar EODHD served without an adjusted close carries its raw close,
+    which would mix unadjusted prices into every return, so it is left out and
+    `unadjusted_bars` says how many; a symbol with no adjusted close at all is
+    refused (502 `provider`)."""
     import pandas as pd
 
     from api.desk_items import technicals_from_level
@@ -653,7 +659,18 @@ def stock_technicals(symbol: str, bench: Any) -> tuple[dict, str]:
     if not inst.is_us_equity:
         raise env.Unsupported(f"Technicals read US-listed stocks and ETFs; {symbol} is not one.")
     candles = market.candles(inst.canonical, "2Y")
-    closes = {b["ts"][:10]: float(b["close"]) for b in candles["bars"] if b.get("close") is not None}
+    closes: dict[str, float] = {}
+    unadjusted = 0
+    for b in candles["bars"]:
+        c = b.get("close")
+        if not isinstance(c, (int, float)) or not math.isfinite(c) or c <= 0:
+            continue
+        if b.get("adjusted") is not True:
+            unadjusted += 1
+            continue
+        closes[b["ts"][:10]] = float(c)
+    if not closes and unadjusted:
+        raise env.Refused(502, "provider", f"{symbol}: EODHD served no adjusted closes; technicals read adjusted closes only.")
     asof = nyse.last_completed_session(_now()).isoformat()
     after = sorted(d for d in closes if d > asof)
     pairs = sorted((d, c) for d, c in closes.items() if d <= asof)
@@ -663,6 +680,7 @@ def stock_technicals(symbol: str, bench: Any) -> tuple[dict, str]:
     out = technicals_from_level(level, spec=PRICE_SPEC, ranges=STOCK_RANGES, bench=bench, source=CANDLES_SOURCE)
     out.pop("_sessions")
     out["excluded_bars"] = {"n": len(after), "after": asof} if after else None
+    out["unadjusted_bars"] = {"n": unadjusted} if unadjusted else None
     name = (market._identity(inst) or {}).get("name") or symbol
     return out, name
 

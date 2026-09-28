@@ -525,6 +525,20 @@ describe("Technicals for any stock (§14.2)", () => {
     await waitFor(() => expect(within(price).getByTestId("te-excluded-bars")).toHaveTextContent("2 bars dated after Sep 18, 2026, the last completed session, are not read."));
   });
 
+  it("a stock's bars without an adjusted close are not read, and the price card says how many (the merge review)", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ ...technicalsNVDA, unadjusted_bars: { n: 3 } }) });
+    renderAt("/desk/technicals?symbol=NVDA");
+    const price = await screen.findByRole("region", { name: /^NVDA · NVIDIA Corporation/ });
+    await waitFor(() => expect(within(price).getByTestId("te-unadjusted-bars")).toHaveTextContent("3 bars without an adjusted close from the provider are not read."));
+  });
+
+  it("a stock whose provider served no adjusted close says Couldn't load, in the Desk's words where it has them", async () => {
+    stubDesk({ "/api/desk/technicals": () => ({ status: 502, body: { error: "provider", message: "ZZZ: EODHD served no adjusted closes; technicals read adjusted closes only." } }) });
+    renderAt("/desk/technicals?symbol=ZZZ");
+    await waitFor(() => expect(screen.getAllByTestId("dk-failed").length).toBeGreaterThan(0));
+    expect(screen.queryByTestId("te-unadjusted-bars")).toBeNull();
+  });
+
   it("Codex R-01: a stock with under a year of closes shows its drawdown as partial history with the session count", async () => {
     // Codex's repro: listed 120 sessions ago, so its "1-year high" is the high of 120 closes.
     const young = { ...technicalsNVDA, drawdown: { ...technicalsNVDA.drawdown, window: { ...technicalsNVDA.drawdown.window, n: 120 }, complete: false } };
