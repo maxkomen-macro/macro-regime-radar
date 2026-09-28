@@ -335,7 +335,8 @@ test.describe("desk usability", () => {
       // Under the title, not beside it.
       expect(lineBox!.y, p.slug).toBeGreaterThan(h1Box!.y + h1Box!.height / 2);
       const n = ((await line.textContent()) ?? "").trim().split(/\s+/).length;
-      expect(n, `${p.slug}: purpose line of ${n} words`).toBeLessThanOrEqual(15);
+      // Data Pipeline's line is desk/prototypes' three sentences, kept by the owner at the rebase (2026-09-28).
+      if (p.slug !== "data-pipeline") expect(n, `${p.slug}: purpose line of ${n} words`).toBeLessThanOrEqual(15);
       // One primary-styled control on the page: the header's action, or the page's own (Run, Export CSV).
       const primaries = page.locator('.dk-main :is(a, button)[data-kind="light"]:visible, .dk-main :is(a, button)[data-kind="primary"]:visible');
       await expect(primaries, `${p.slug}: primary actions`).toHaveCount(1);
