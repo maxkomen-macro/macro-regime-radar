@@ -16,7 +16,16 @@ pushed. One commit per item, then this report.
 | R-03 | `e541569` | Codex: the Event Study page offers only the catalog's inputs |
 | — | (this update) | The findings table below and the final gates at the new head |
 
-**Final gates passed at head `8f7fa80`** (the last code commit; this report
+**Final gates after the Codex fixes passed at head `d992aba`** (R-01 to
+R-03 and the findings table; the commit on top of it records this result
+and changes documents only). Under `/tmp/mrr-full-gates.lock` (taken
+01:32:43 UTC, released 01:46:07 UTC on 2026-09-28): full pytest, one
+process, 1,625 passed, 1 skipped, 2 failed, the two known
+`test_asset_history` DB-copy failures and nothing else; the full Desk
+Playwright e2e, `--workers=1`, 54/54, on the head's own `DESK_FIXTURES=1`
+Vite (port 5211); `npm run build` passed.
+
+Earlier, **final gates passed at head `8f7fa80`** (the last code commit; this report
 adds documents only). Under the machine-wide lock `/tmp/mrr-full-gates.lock`
 (taken 00:13:14 UTC, released 00:40:06 UTC on 2026-09-28): full pytest,
 one process, 1,615 passed, 1 skipped, 7 failed: the two known
