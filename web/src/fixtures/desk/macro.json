@@ -2187,18 +2187,142 @@
   "unavailable": null
  },
  "correlations": {
-  "status": "awaiting",
-  "data": null,
-  "unavailable": {
-   "reason": "the correlations are not computed yet.",
-   "until": null
-  }
+  "status": "ready",
+  "data": [
+   {
+    "asset": "20+ year Treasuries",
+    "symbol": "TLT",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": 0.44416152863903463,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "7–10 year Treasuries",
+    "symbol": "IEF",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": 0.5022890985253555,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "High-yield bonds",
+    "symbol": "HYG",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": 0.7125775151707593,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "Investment-grade bonds",
+    "symbol": "LQD",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": 0.5376235817972554,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "Gold",
+    "symbol": "GLD",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": 0.3625127386780936,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "Dollar",
+    "symbol": "UUP",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": -0.2809194477681828,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "Small caps",
+    "symbol": "IWM",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": 0.7959504036141402,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "Nasdaq 100",
+    "symbol": "QQQ",
+    "quantity": "adjusted close",
+    "transform": "daily log return",
+    "corr": 0.886754743521665,
+    "date": "2026-09-23",
+    "window": {
+     "start": "2026-06-30",
+     "end": "2026-09-23",
+     "n": 60
+    },
+    "reason": null
+   },
+   {
+    "asset": "VIX",
+    "symbol": "VIXCLS",
+    "quantity": "index level (FRED VIXCLS)",
+    "transform": "daily log change",
+    "corr": -0.7321424963217369,
+    "date": "2026-09-22",
+    "window": {
+     "start": "2026-06-29",
+     "end": "2026-09-22",
+     "n": 60
+    },
+    "reason": null
+   }
+  ],
+  "unavailable": null
  },
  "matrix": {
   "status": "awaiting",
   "data": null,
   "unavailable": {
-   "reason": "the correlations are not computed yet.",
+   "reason": "the 12-asset matrix's assets and method are not specified yet.",
    "until": null
   }
  }

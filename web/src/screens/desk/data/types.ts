@@ -505,6 +505,19 @@ export interface DatedValue {
   source?: string;
 }
 
+export interface CorrelationRow {
+  asset: string;
+  symbol?: string;
+  quantity?: string;
+  transform?: string;
+  corr: number | null;
+  /** The newest session both series hold a value: the window's end. */
+  date?: string | null;
+  window?: Window | null;
+  /** Why `corr` is null, else null. */
+  reason?: string | null;
+}
+
 export interface MacroResponse extends Envelope {
   curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null; freq?: string; source?: string };
   /** §12.8 (desk/fill-etf): SPY's daily log returns against TLT's, 60 return dates, every pair complete. */
@@ -542,8 +555,8 @@ export interface MacroResponse extends Envelope {
     line_window?: Window;
     peak_12m: { date: string; hy: number | null } | null;
   };
-  /** §12.13: each asset declares its symbol, quantity and transform. */
-  correlations?: { asset: string; symbol?: string; quantity?: string; transform?: string; corr: number | null }[];
+  /** §12.8 (desk/fill-etf): each asset against SPY over 60 daily returns to its own `date`, declaring its symbol, quantity and transform. */
+  correlations?: CorrelationRow[];
   /** `labels` is PROPOSED (§12.13): the assets' names, in `assets` order. */
   matrix?: { assets: string[]; labels?: string[]; window: number | null; values: (number | null)[][] };
   /** §12.0: the cards' served reads (none on Monday). */

@@ -203,7 +203,7 @@
      "last": null,
      "feeds": [],
      "status": "missing",
-     "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it yet: the correlations on Macro & Correlations and Basket & Hedge are not served."
+     "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge is not served."
     },
     {
      "label": "Russell 2000",
@@ -228,6 +228,7 @@
      "feeds": [
       "Overview",
       "Event Study",
+      "Macro",
       "Ledger"
      ],
      "status": "current",
@@ -265,7 +266,7 @@
      "last": null,
      "feeds": [],
      "status": "missing",
-     "note": "USD/JPY (JPY=X) is awaiting the next full refresh: this database has no JPY=X rows in desk_series yet. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "USD/JPY (JPY=X) is awaiting the next full refresh: this database has no JPY=X rows in desk_series yet. No Desk tab reads it: the dollar row on Macro & Correlations reads UUP."
     },
     {
      "label": "Gold (COMEX front month)",
@@ -587,6 +588,7 @@
      "first": "2000-05-26",
      "last": "2026-09-23",
      "feeds": [
+      "Macro",
       "Sectors"
      ],
      "status": "current",
@@ -600,9 +602,11 @@
      "freq": "daily",
      "first": "1999-03-10",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Macro"
+     ],
      "status": "current",
-     "note": "Stored from 1999-03-10 (asset_prices), with each session's volume. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "Stored from 1999-03-10 (asset_prices), with each session's volume."
     },
     {
      "label": "Semiconductor ETF (SMH)",
@@ -668,9 +672,11 @@
      "freq": "daily",
      "first": "2002-07-30",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Macro"
+     ],
      "status": "current",
-     "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "High-yield corporate bond ETF (HYG)",
@@ -680,9 +686,11 @@
      "freq": "daily",
      "first": "2007-04-11",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Macro"
+     ],
      "status": "current",
-     "note": "Stored from 2007-04-11 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "Stored from 2007-04-11 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Investment-grade corporate bond ETF (LQD)",
@@ -692,9 +700,11 @@
      "freq": "daily",
      "first": "2002-07-30",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Macro"
+     ],
      "status": "current",
-     "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "Stored from 2002-07-30 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "Gold ETF (GLD)",
@@ -704,9 +714,11 @@
      "freq": "daily",
      "first": "2004-11-18",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Macro"
+     ],
      "status": "current",
-     "note": "Stored from 2004-11-18 by the allocation refresh (asset_prices), with each session's volume. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "Stored from 2004-11-18 by the allocation refresh (asset_prices), with each session's volume."
     },
     {
      "label": "US dollar index ETF (UUP)",
@@ -716,9 +728,11 @@
      "freq": "daily",
      "first": "2007-03-01",
      "last": "2026-09-23",
-     "feeds": [],
+     "feeds": [
+      "Macro"
+     ],
      "status": "current",
-     "note": "Stored from 2007-03-01, the provider's first close (asset_prices), with each session's volume. No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
+     "note": "Stored from 2007-03-01, the provider's first close (asset_prices), with each session's volume."
     }
    ]
   }

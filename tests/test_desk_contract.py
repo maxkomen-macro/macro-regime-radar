@@ -120,9 +120,11 @@ def test_every_field_is_required_typed_and_null_only_where_allowed(route):
 
 
 def _add_extra_key(parent: dict, key: str) -> None:
-    """A key outside the table, on an object or on a ready block's data."""
+    """A key outside the table, on an object or on a ready block's data (on its
+    first row when the data is an array, as /macro's correlations are)."""
     v = parent[key]
-    (v["data"] if set(v) == dc.BLOCK_KEYS else v)["zz_extra"] = 1
+    target = v["data"] if set(v) == dc.BLOCK_KEYS else v
+    (target[0] if isinstance(target, list) else target)["zz_extra"] = 1
 
 
 def test_a_key_outside_the_table_fails_at_the_top_of_every_payload():

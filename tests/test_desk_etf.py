@@ -324,7 +324,8 @@ def _returns(c: dict, days: list[str], sym: str) -> list[float | None]:
 
 
 def _pearson(x: list, y: list) -> float | None:
-    if any(v is None for v in x + y):
+    """numpy's r, or None where it is undefined (a pair missing, or no variance, as a clipped level gives)."""
+    if any(v is None for v in x + y) or np.std(x) == 0 or np.std(y) == 0:
         return None
     return float(np.corrcoef(np.array(x), np.array(y))[0, 1])
 
@@ -388,3 +389,72 @@ def test_the_macro_route_serves_stock_bond_from_the_etf_item(tmp_path, install_w
     assert sb["status"] == "ready" and sb["data"]["today"] is not None
     assert desk_v2_macro.macro_payload()["stock_bond"] == sb
     assert "SPY" in pipe.STOCK_BOND_SERIES and "Macro" in pipe.feeds_of("TLT") and "TLT" not in pipe.NO_LIVE_READER
+
+
+# ── Item 5: what moves with the S&P (§12.8 correlations) ────────────────────
+
+def _vix(path: Path) -> dict[str, float]:
+    import sqlite3
+
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        return dict(conn.execute("SELECT date, value FROM desk_series WHERE series_id = 'VIXCLS'"))
+    finally:
+        conn.close()
+
+
+CORR_ORDER = ["TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "IWM", "QQQ", "VIXCLS"]
+
+
+def test_each_asset_is_correlated_with_spy_over_60_daily_returns_to_its_own_date(tmp_path, monkeypatch):
+    path = _db(tmp_path)
+    c, days = store.closes(path), store.sessions()
+    c["VIXCLS"] = {d: v for d, v in _vix(path).items() if d in set(days)}  # on the XNYS calendar, as aligned
+    rows = _item(monkeypatch, path)["correlations"]["data"]
+    assert [r["symbol"] for r in rows] == CORR_ORDER
+    for r in rows:
+        sym = r["symbol"]
+        t = max(set(c["SPY"]) & set(c[sym]))
+        i = days.index(t)
+        assert r["date"] == t and r["window"] == {"start": days[i - 59], "end": t, "n": 60}, sym
+        want_r = _corr(c, days, "SPY", sym, i)
+        assert (r["corr"] is None) == (want_r is None) and (want_r is None or r["corr"] == pytest.approx(want_r, abs=1e-12)), sym
+        # the synthetic VIX sits at its 9.0 floor through the window: complete pairs, no variation
+        assert r["reason"] == (None if want_r is not None else f"no variation in one of the two series in the window to {t}"), sym
+        want = ("index level (FRED VIXCLS)", "daily log change") if sym == "VIXCLS" else ("adjusted close", "daily log return")
+        assert (r["quantity"], r["transform"]) == want, sym
+    assert rows[-1]["asset"] == "VIX" and rows[0]["asset"] == "20+ year Treasuries"
+
+
+def test_a_row_the_store_cannot_compute_says_why_and_the_rest_stand(tmp_path, monkeypatch):
+    """QQQ not stored: its row awaits the refresh. GLD without a close inside
+    its window: no forward fill, so its row says the window is incomplete."""
+    days = store.sessions()
+    t = max(store.closes(_db(tmp_path, "probe.db"))["SPY"])
+    path = _db(tmp_path, only=tuple(x for x in store.ETFS if x != "QQQ"), drop={"GLD": (days[days.index(t) - 3],)})
+    rows = {r["symbol"]: r for r in _item(monkeypatch, path)["correlations"]["data"]}
+    assert rows["QQQ"]["corr"] is None and rows["QQQ"]["date"] is None
+    assert rows["QQQ"]["reason"] == "Awaiting refresh: the full refresh stores QQQ; this database predates it."
+    assert rows["GLD"]["corr"] is None and rows["GLD"]["reason"] == f"fewer than 60 complete daily return pairs in the window to {t}"
+    assert rows["TLT"]["corr"] is not None
+
+
+def test_without_vix_stored_the_list_leaves_it_out(tmp_path, monkeypatch):
+    import sqlite3
+
+    path = _db(tmp_path)
+    conn = sqlite3.connect(path)
+    conn.execute("DELETE FROM desk_series WHERE series_id = 'VIXCLS'")
+    conn.commit()
+    conn.close()
+    rows = _item(monkeypatch, path)["correlations"]["data"]
+    assert [r["symbol"] for r in rows] == CORR_ORDER[:-1]
+
+
+def test_the_macro_route_serves_the_correlations_and_keeps_the_matrix_awaiting(tmp_path, install_worker, monkeypatch):
+    _serve(install_worker, monkeypatch, _db(tmp_path), items=MACRO_ITEMS)
+    m = dc.check_response("/macro", client.get("/api/desk/macro"))
+    assert m["data"]["correlations"]["status"] == "ready" and len(m["data"]["correlations"]["data"]) == 9
+    assert m["data"]["matrix"]["unavailable"]["reason"] == "the 12-asset matrix's assets and method are not specified yet."
+    for sym in CORR_ORDER:
+        assert "Macro" in pipe.feeds_of(sym), sym

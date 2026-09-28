@@ -72,11 +72,11 @@ export function bpEvents(): Record<string, unknown> {
 
 // ── Deferred blocks served (§12.13): Monday serves them awaiting; these render the cards built for them. ──
 
-/** /macro with every block served: stock–bond as the fixture serves it (desk/fill-etf, the API's answer), and the
- * correlations and the matrix from their deferred shapes (the mockup's values, test inputs only). */
+/** /macro with every block served: stock–bond and the correlations as the fixture serves them (desk/fill-etf, the
+ * API's answer), and the matrix from its deferred shape (the mockup's values, a test input only). */
 export function servedMacro(): Record<string, unknown> {
-  const sb = (macro as { stock_bond: { data: unknown } }).stock_bond.data;
-  return { ...macro, stock_bond: sb, correlations: deferredMacro.correlations, matrix: deferredMacro.matrix };
+  const m = macro as { stock_bond: { data: unknown }; correlations: { data: unknown } };
+  return { ...macro, stock_bond: m.stock_bond.data, correlations: m.correlations.data, matrix: deferredMacro.matrix };
 }
 
 /** /regime with its stats and changes blocks served. */

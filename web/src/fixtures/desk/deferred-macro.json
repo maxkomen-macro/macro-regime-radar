@@ -1,49 +1,5 @@
 {
- "note": "The deferred shapes of /macro's correlations and matrix blocks (§12.13), with the mockup's values. The unit tests render a card from this when they test it served. (stock_bond is served since desk/fill-etf; macro.json carries the API's answer.)",
- "correlations": [
-  {
-   "asset": "10-year Treasury (price)",
-   "symbol": "IEF",
-   "quantity": "adjusted close",
-   "transform": "daily log return",
-   "corr": 0.31
-  },
-  {
-   "asset": "Gold",
-   "symbol": "GC=F",
-   "quantity": "settle",
-   "transform": "daily log return",
-   "corr": 0.12
-  },
-  {
-   "asset": "Dollar",
-   "symbol": "DX-Y.NYB",
-   "quantity": "close",
-   "transform": "daily log return",
-   "corr": -0.22
-  },
-  {
-   "asset": "Oil",
-   "symbol": "DCOILWTICO",
-   "quantity": "spot price",
-   "transform": "daily log return",
-   "corr": 0.18
-  },
-  {
-   "asset": "Nasdaq",
-   "symbol": "^NDX",
-   "quantity": "close",
-   "transform": "daily log return",
-   "corr": 0.92
-  },
-  {
-   "asset": "High-yield credit",
-   "symbol": "HYG",
-   "quantity": "adjusted close",
-   "transform": "daily log return",
-   "corr": 0.64
-  }
- ],
+ "note": "The deferred shape of /macro's matrix block (§12.13), with the mockup's values. The unit tests render the matrix from this when they test it served. (stock_bond and correlations are served since desk/fill-etf; macro.json carries the API's answer.)",
  "matrix": {
   "assets": [
    "spx",

@@ -98,6 +98,7 @@ SECTOR_ETFS: tuple[str, ...] = ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP",
 LEADERSHIP_SERIES: tuple[str, ...] = ("SPY", *SECTOR_ETFS)   # /sectors and /technicals' sectors block
 BREADTH_SERIES: tuple[str, ...] = ("SPY", *SECTOR_ETFS, "RSP", "IWM")  # /sectors' breadth block
 STOCK_BOND_SERIES: tuple[str, ...] = ("SPY", "TLT")                     # /macro's stock_bond block
+CORRELATION_SERIES: tuple[str, ...] = ("SPY", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "IWM", "QQQ", "VIXCLS")  # /macro's correlations
 CREDIT_SERIES: tuple[str, ...] = ("BAMLH0A0HYM2", "BAMLC0A0CM")                # /macro credit: HY stored, IG's watermark
 
 
@@ -119,7 +120,7 @@ def tab_readers() -> dict[str, set[str]]:
         "Technicals": {"^GSPC"} | _studies_read(TECHNICALS_STUDIES) | set(LEADERSHIP_SERIES),
         "Event Study": _studies_read(CATALOG_INPUTS),
         "Regime": set(REGIME_INPUTS) | set(RECESSION_MODEL),   # the rows, the next prints, the recession score
-        "Macro": set(CURVE_SERIES) | set(CREDIT_SERIES) | set(STOCK_BOND_SERIES),
+        "Macro": set(CURVE_SERIES) | set(CREDIT_SERIES) | set(STOCK_BOND_SERIES) | set(CORRELATION_SERIES),
         "Sectors": set(LEADERSHIP_SERIES) | set(BREADTH_SERIES),
         "Ledger": ledger,
         "Position Monitor": {"^GSPC", "DGS2", "DGS10"},        # the S&P from /technicals, 2s10s from /macro
@@ -129,13 +130,11 @@ def tab_readers() -> dict[str, set[str]]:
 TAB_ORDER: tuple[str, ...] = ("Overview", "Technicals", "Event Study", "Regime", "Macro", "Sectors", "Ledger", "Position Monitor")
 
 # A registered series no live tab reads yet says so, in its row's note.
-_CORRELATIONS_UNSERVED = "No Desk tab reads it yet: the correlations on Macro & Correlations are not served."
 NO_LIVE_READER: dict[str, str] = {
-    "^NDX": "No Desk tab reads it yet: the correlations on Macro & Correlations and Basket & Hedge are not served.",
+    "^NDX": "No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge is not served.",
     "^RUT": "No Desk tab reads it: Sectors compares small caps with large through IWM against SPY.",
-    "JPY=X": _CORRELATIONS_UNSERVED,
+    "JPY=X": "No Desk tab reads it: the dollar row on Macro & Correlations reads UUP.",
     # desk/fill-etf: stored; the tabs that read them are served by items 4 and 5
-    **{t: _CORRELATIONS_UNSERVED for t in ("QQQ", "IEF", "HYG", "LQD", "GLD", "UUP")},
     **{t: "No Desk tab reads it yet: Basket & Hedge is not served." for t in ("SMH", "SOXX", "IGV")},
 }
 

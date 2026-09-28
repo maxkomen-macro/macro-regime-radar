@@ -42,6 +42,11 @@ Rules (the spec names each):
   before `t` − 12 calendar months. Flipped: the session whose correlation
   took the sign it holds today, the newest change of sign among the sessions
   with a complete window (a zero or incomplete one is skipped).
+- What moves with the S&P (§12.8 `correlations`): the same 60-date Pearson
+  correlation of SPY's daily log returns with TLT, IEF, HYG, LQD, GLD, UUP,
+  IWM and QQQ (adjusted closes, daily log returns) and, when the store holds
+  it, VIX (FRED VIXCLS, daily log changes of the level), each on its own
+  newest session both series hold a value.
 
 Stdlib at import; numpy, pandas and the engine are imported at the point of
 use. The connection is closed in a `finally` (verifier V-54).
@@ -365,6 +370,17 @@ def incomplete(store: Store, t: int) -> str:
     return f"fewer than {CORR_WINDOW} complete daily return pairs in the window to {store.iso[t]}"
 
 
+def why_no_corr(store: Store, x, y, t: int) -> str:
+    """Why the correlation on session t is null: an incomplete window, or one
+    of the two series without any variation in it."""
+    import numpy as np
+
+    lo = t - CORR_WINDOW + 1
+    if lo < 0 or not (np.isfinite(x[lo:t + 1]).all() and np.isfinite(y[lo:t + 1]).all()):
+        return incomplete(store, t)
+    return f"no variation in one of the two series in the window to {store.iso[t]}"
+
+
 def stock_bond(store: Store) -> dict:
     """The /macro stock_bond block: SPY against TLT, today, a year ago, the
     last change of sign, and the one-year line."""
@@ -374,7 +390,8 @@ def stock_bond(store: Store) -> dict:
     missing = [k.upper() for k in (BENCHMARK, "tlt") if not store.has(k)]
     if missing:
         raise awaiting_refresh(missing)
-    corr = rolling_corr(daily_returns(store, BENCHMARK), daily_returns(store, "tlt"))
+    rs, rt = daily_returns(store, BENCHMARK), daily_returns(store, "tlt")
+    corr = rolling_corr(rs, rt)
     t = both_close(store, BENCHMARK, "tlt")
     if t is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
@@ -389,7 +406,7 @@ def stock_bond(store: Store) -> dict:
         if now != prev:
             flipped_on, flipped_to = store.iso[int(i)], ("positive" if now > 0 else "negative")
     return {
-        "today": today, "today_date": store.iso[t], "today_reason": None if today is not None else incomplete(store, t),
+        "today": today, "today_date": store.iso[t], "today_reason": None if today is not None else why_no_corr(store, rs, rt, t),
         "year_ago": year_ago, "year_ago_date": store.iso[ago] if ago >= 0 else None,
         "flipped": flipped_on[:7] if flipped_on else None, "flipped_on": flipped_on, "flipped_to": flipped_to,
         "series": series,
@@ -399,6 +416,68 @@ def stock_bond(store: Store) -> dict:
         "transform": "daily log return", "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
         "providers": provider_words(store.providers),
     }
+
+
+# The assets the correlations list reads, in the list's order, and VIX when it is stored.
+CORR_ASSETS: tuple[tuple[str, str], ...] = (
+    ("tlt", "20+ year Treasuries"), ("ief", "7–10 year Treasuries"), ("hyg", "High-yield bonds"),
+    ("lqd", "Investment-grade bonds"), ("gld", "Gold"), ("uup", "Dollar"), ("iwm", "Small caps"), ("qqq", "Nasdaq 100"),
+)
+VIX = ("vix", "VIX")
+
+
+def corr_at(x, y, t: int, w: int = CORR_WINDOW) -> float | None:
+    """Pearson's r of x and y over the w return dates ending at t; null unless every pair is complete."""
+    import numpy as np
+
+    if t - w + 1 < 0:
+        return None
+    a, b = x[t - w + 1:t + 1], y[t - w + 1:t + 1]
+    if not (np.isfinite(a).all() and np.isfinite(b).all()):
+        return None
+    da, db = a - a.mean(), b - b.mean()
+    sab, saa, sbb = float((da * db).sum()), float((da * da).sum()), float((db * db).sum())
+    if saa == 0 or sbb == 0:
+        return None
+    r = sab / math.sqrt(saa * sbb)
+    return r if math.isfinite(r) else None
+
+
+def correlations(store: Store) -> list[dict]:
+    """The /macro correlations block: each asset against SPY, 60 daily returns
+    to its own newest session with both values; a row the store cannot compute
+    says why. VIX is listed only when the store holds it."""
+    from src.desk import series as registry
+
+    if not store.has(BENCHMARK):
+        raise awaiting_refresh(["SPY"])
+    spy = daily_returns(store, BENCHMARK)
+    assets = [*CORR_ASSETS, *([VIX] if store.has(VIX[0]) else [])]
+    rows = []
+    for key, name in assets:
+        spec = registry.get(key)
+        row = {"asset": name, "symbol": spec.series_id,
+               "quantity": "index level (FRED VIXCLS)" if key == "vix" else "adjusted close",
+               "transform": "daily log change" if key == "vix" else "daily log return",
+               "corr": None, "date": None, "window": None, "reason": None}
+        if not store.has(key):
+            row["reason"] = awaiting_refresh([spec.series_id]).reason
+            rows.append(row)
+            continue
+        t = both_close(store, BENCHMARK, key)
+        if t is None:
+            row["reason"] = "no session on which both hold a value"
+            rows.append(row)
+            continue
+        ra = daily_returns(store, key)
+        r = corr_at(spy, ra, t)
+        row.update({"corr": r, "date": store.iso[t],
+                    "window": {"start": store.iso[max(t - CORR_WINDOW + 1, 0)], "end": store.iso[t], "n": CORR_WINDOW},
+                    "reason": None if r is not None else why_no_corr(store, spy, ra, t)})
+        rows.append(row)
+    if all(r["corr"] is None and r["reason"] and r["reason"].startswith("Awaiting refresh") for r in rows):
+        raise awaiting_refresh([r["symbol"] for r in rows])
+    return rows
 
 
 # ── The item ────────────────────────────────────────────────────────────────
@@ -414,8 +493,9 @@ def desk_etf(ctx: dict) -> dict:
     cutoff = es.resolve_as_of(None, es.DB_PATH)
     conn = _connect()
     try:
-        store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm", "tlt"], cutoff)
+        store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm", *(k for k, _ in CORR_ASSETS), VIX[0]], cutoff)
     finally:
         conn.close()
     return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store)),
-            "stock_bond": part("stock_bond", lambda: stock_bond(store))}
+            "stock_bond": part("stock_bond", lambda: stock_bond(store)),
+            "correlations": part("correlations", lambda: correlations(store))}

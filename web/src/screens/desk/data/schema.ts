@@ -397,7 +397,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       line_window: o({ start: "s!", end: "s!", n: "n" }),
       peak_12m: o({ date: "s!", hy: "n" }, { nul: true }),
     }),
-    correlations: l(o({ asset: "s!", symbol: "s", quantity: "s", transform: "s", corr: "n" })),
+    correlations: l(o({ asset: "s!", symbol: "s", quantity: "s", transform: "s", corr: "n", date: "s?", window: o({ start: "s!", end: "s!", n: "n" }, { nul: true }), reason: "s?" })),
     // The matrix is one grid: its names and every row of values, or nothing (Codex G1-5).
     matrix: o({ assets: l("s!", { req: true, strict: true }), labels: l("s!", { strict: true }), window: "n", values: l(l("n", { strict: true }), { req: true, strict: true }) }),
     reads: reads(["curve", "front_end", "stock_bond", "credit", "correlations"]),

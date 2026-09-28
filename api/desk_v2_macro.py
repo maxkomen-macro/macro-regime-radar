@@ -189,7 +189,7 @@ def macro_payload() -> dict:
         "credit": stored_block(item["credit"]),
         # desk/fill-etf: SPY against TLT from the ETF item (api/desk_items_etf.py), a block of its own
         "stock_bond": _etf_block("stock_bond"),
-        "correlations": env.block_deferred("/macro", "correlations"),
+        "correlations": _etf_block("correlations"),
         "matrix": env.block_deferred("/macro", "matrix"),
     }
 

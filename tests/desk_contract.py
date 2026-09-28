@@ -339,8 +339,11 @@ MACRO = obj(
         transform=Const("daily log return"), unit=Const("correlation"), date=DATE, freq=Const("daily"),
         source=Const("asset_prices"), providers=Arr(STR),
     )),
-    correlations=Deferred("the correlations are not computed yet."),
-    matrix=Deferred("the correlations are not computed yet."),
+    correlations=Block(Arr(obj(
+        asset=STR, symbol=STR, quantity=STR, transform=E("daily log return", "daily log change"),
+        corr=null(NUM), date=null(DATE), window=null(SPAN), reason=null(STR),
+    ), min=1, max=9)),
+    matrix=Deferred("the 12-asset matrix's assets and method are not specified yet."),
 )
 
 # ── §12.9 GET /pipeline ─────────────────────────────────────────────────────

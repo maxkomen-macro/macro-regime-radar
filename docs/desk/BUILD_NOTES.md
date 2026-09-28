@@ -76,7 +76,7 @@ Nothing else on the site is fitted.
 Live on the published snapshot: Overview, Technicals (price, averages,
 crosses, S&P signals, sector leadership), Event Study for the catalog of
 questions, Regime (label, history, recession score, next prints), Macro
-(curve, credit, the stock–bond correlation), Sectors (leadership and breadth), Signal Ledger, Position Monitor (in
+(curve, credit, the stock–bond correlation, what moves with the S&P), Sectors (leadership and breadth), Signal Ledger, Position Monitor (in
 your browser), the Client view, Data Pipeline, and this page. The sector
 ETFs and the other Desk ETFs are stored by the same refresh step as the
 S&P's closes, with their volume, full history back to each fund's first
@@ -87,9 +87,9 @@ Designed and drawn, not yet served, each for a stated reason:
 - Options and skew: needs a stored history of SPY option snapshots and a
   written method for picking strikes and expiries. A number without that
   isn't auditable, so there isn't one.
-- What moves with the S&P, beyond bonds: the stock–bond card reads SPY
-  against TLT's own prices now (a negated yield change is not a bond
-  return, so it waited for the ETF); the list of other assets comes next.
+- The 12-asset correlation matrix: the correlation cards read ETF prices
+  now (TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ against SPY, and VIX), but
+  which twelve assets the matrix holds, and how, isn't written down yet.
 - Breadth from the stocks themselves: the Sectors card counts the 11
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
@@ -123,9 +123,8 @@ more than the engine computes, and the honest fix was to label them.
 In order: constituent-level breadth, the stocks inside the index rather
 than the 11 sector ETFs (it needs a constituent list and a price per
 stock); the RSI signals; a stored options surface so the vol card and the
-hedge pricing can go live; Treasury and credit total-return series so the
-correlation cards mean what they say; then the per-study confidence
-selector. After that, a server-side position store with accounts, so the
+hedge pricing can go live; the 12-asset correlation matrix; then the
+per-study confidence selector. After that, a server-side position store with accounts, so the
 discipline gate can be shared across a desk instead of living in one
 browser.
 
