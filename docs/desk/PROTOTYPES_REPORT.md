@@ -27,7 +27,8 @@ section at the end.
 | 13 | `5e9a559` | **After the rebase:** Data Pipeline's subtitle, Build Notes' two sentences, Positioning's "(illustrative)" headers |
 | 14 | `09f9b36` | **After the rebase:** those headers keep Positioning's table inside its card |
 | 15 | `3ae4a22` | The report's rebase section, the live shots |
-| 16 | this commit | **Before review:** Positioning and the event study drawn for the AI Infrastructure 10 preset; one line for any other basket |
+| 16 | `0bcb5d4` | **Before review:** Positioning and the event study drawn for the AI Infrastructure 10 preset; one line for any other basket |
+| 17 | this commit | **Before review:** Data Pipeline's subtitle ends "No live number is re-derived in the browser." |
 
 ## What a PROTOTYPE card is (spec §1.0.3)
 
@@ -292,8 +293,9 @@ them 8 s and the test 30 s.
    is re-derived in the browser.") sat above a PROTOTYPE card whose values
    are illustrative and computed in the browser. Reworded by the owner at the
    rebase (commit 13): "Every live number comes from stored data; prototype
-   cards are marked." The subtitle's third sentence, "Nothing is re-derived
-   in the browser.", stays (see the open calls).
+   cards are marked." Its third sentence, "Nothing is re-derived in the
+   browser.", now reads "No live number is re-derived in the browser."
+   (commit 17), since the prototypes are priced and drawn in the browser.
 5. **Build Notes' own sentences.** The owner's section "What's live, and why
    the rest isn't yet" says of options "A number without that isn't
    auditable, so there isn't one" and of basket pricing "It's absent until
@@ -444,7 +446,7 @@ desk/books' preset; the sample basket was then saved as a visitor would.
 | Basket & Hedge · Hedge with options: the three routes | **PROTOTYPE** | Priced in the browser from the live inputs (for the preset: puts on SOXX, strikes 95.5%/86.4% of SOXX; NVDA, AVGO, AMD at 30%; the OTC put); footnote last. Same shots. |
 | Basket & Hedge · Positioning | **PROTOTYPE** | Retaken after commit 16. The preset (a fresh browser): all ten names with values, "weighted over all 10 names", 4 of 10 crowded, headers "Short int. (illustrative)", "Days to cover (illustrative)", "Put/call OI (illustrative)", no "no data" row. The sample basket: its labels valued "—" and "Illustrative values are shown for the AI Infrastructure 10 preset.", no table. `live-preset-positioning-1440.png`, `live-sample-positioning-1440.png` |
 | Basket & Hedge · Event study on this basket | **PROTOTYPE** | Retaken after commit 16. The preset: "After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.", 57 events, Suggestive, the chart. The sample basket: the labels and the same one line. `live-preset-step3-1440.png`, `live-sample-positioning-study-1440.png` |
-| Data Pipeline · subtitle | **LIVE-verified** | "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. Nothing is re-derived in the browser." `live-pipeline-subtitle.png` |
+| Data Pipeline · subtitle | **LIVE-verified** | Retaken after commit 17: "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser." `live-pipeline-subtitle.png` |
 | Build Notes · the two sentences | **LIVE-verified** | Both bullets read "Where a number isn't computed yet, the card says so or is a marked prototype." (2 matches on the page, rendered from the file). `live-build-notes-two-sentences.png` |
 
 No card touched by the rebase or after it is FAILED.
@@ -471,10 +473,8 @@ the rebase onto desk/books).
    for AI Infrastructure 10, and any other basket prints "Illustrative
    values are shown for the AI Infrastructure 10 preset." A renamed preset,
    or the preset with another method or notional, is still the preset.
-3. **"Nothing is re-derived in the browser."** The subtitle's last sentence
-   now follows "prototype cards are marked", but the options card is priced
-   in the browser. Rule 7 scopes it to live numbers; reword if you prefer
-   ("No live number is re-derived in the browser.").
+3. **"Nothing is re-derived in the browser."** Settled by commit 17: the
+   subtitle now reads "No live number is re-derived in the browser."
 4. **Illustrative numbers on real tickers.** Positioning prints short
    interest and 13F shares for NVDA, AVGO, CRWV and the rest; they are
    illustrative, now marked in the column headers as well as the footnote.

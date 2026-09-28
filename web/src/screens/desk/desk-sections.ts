@@ -63,7 +63,7 @@ export const DESK_GROUPS: DeskGroup[] = [
         slug: "data-pipeline",
         label: "Data Pipeline",
         title: "Where every number comes from",
-        blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. Nothing is re-derived in the browser.",
+        blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser.",
         toggle: false,
       },
       { slug: "build-notes", label: "Build Notes", blurb: "what this is, how it was checked, and what I would do next" },

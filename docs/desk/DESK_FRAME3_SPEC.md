@@ -1094,8 +1094,8 @@ index series."
 Header `● Last full refresh <last_refresh_utc> · validation <passed|failed>`,
 or "unknown" for either when not served (v2 D-33). Title "Where every number
 comes from" · "Every panel in Desk resolves to a row here. Every live
-number comes from stored data; prototype cards are marked. Nothing is
-re-derived in the browser." Lineage strip: 1 SOURCES
+number comes from stored data; prototype cards are marked. No live number
+is re-derived in the browser." Lineage strip: 1 SOURCES
 (FRED API, Yahoo Finance, EODHD) → 2 FETCH (GitHub Actions) → 3 VALIDATE
 (schema + range checks, as-of ≤ today, gap detection) → 4 TRANSFORM
 (z-scores, MAs, regime labels, forward returns) → 5 STORE (SQLite snapshot,
