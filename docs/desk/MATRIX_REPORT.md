@@ -55,9 +55,12 @@ to Live.
    the numbers it cites are part of the block.
 4. **Its own card rather than under Advanced.** §6 and the PNG put "full
    12-asset matrix" under the correlation card's Advanced. The brief asks for
-   a card with a lead, so it is a full-width card under the 2×2. The
-   correlation card's Advanced now lists only "rolling windows · by regime".
-   Neither is served, so it stays disabled.
+   a card with a lead, so it is a full-width card under the 2×2. Rolling
+   windows and the correlations by regime are not served. At review the
+   owner asked that the correlation card carry no Advanced control at all
+   rather than a disabled one, so it has none. Build Notes lists both views
+   under "What I'd build next", and §6 says the control returns when one is
+   served.
 5. **Colors.** "Negative to positive" uses the same mapping as the "What
    moves" bars: green for negative (moves against), amber for positive
    (moves with), gray for zero and the diagonal. These are rgba tints of

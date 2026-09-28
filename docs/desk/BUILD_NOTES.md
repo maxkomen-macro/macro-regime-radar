@@ -121,8 +121,9 @@ more than the engine computes, and the honest fix was to label them.
 In order: constituent-level breadth, the stocks inside the index rather
 than the 11 sector ETFs (it needs a constituent list and a price per
 stock); a stored options surface so the vol card and the options hedge on
-a basket can go live; then the
-per-study confidence selector. After that, a server-side position store with accounts, so the
+a basket can go live; rolling-window and by-regime views of the
+correlations (the "What moves with the S&P" card carries no Advanced
+control until one is served); then the per-study confidence selector. After that, a server-side position store with accounts, so the
 discipline gate can be shared across a desk instead of living in one
 browser.
 

@@ -405,12 +405,11 @@ export function corrStamp(rows: readonly CorrelationRow[]): string {
 }
 
 function Correlations({ m, state }: { m: MacroResponse | undefined; state: State }) {
-  const adv = useAdvanced();
   const quiet = state === "loading";
   const unserved = useBlockUnserved(m, "correlations");
   const rows = Array.isArray(m?.correlations) ? m.correlations : [];
   // §1.0.2: the block, or the whole answer, served awaiting.
-  if (unserved) return <UnservedCard headingId="mc-corr" className="mc-card" title="What moves with the S&P" sub="60-day correlation · each asset against the index" labels={[]} block={unserved} advanced />;
+  if (unserved) return <UnservedCard headingId="mc-corr" className="mc-card" title="What moves with the S&P" sub="60-day correlation · each asset against the index" labels={[]} block={unserved} />;
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-corr" aria-busy={quiet}>
       <CardHead id="mc-corr" title="What moves with the S&P" sub="60-day correlation · each asset against the index" />
@@ -456,10 +455,8 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
         <Awaiting>the correlations</Awaiting>
       )}
       <DroppedNote n={droppedOf(m, "correlations")} one="asset" />
-      <div className="dk-card-foot">
-        {/* desk/matrix: the full matrix is its own card below; rolling windows and the matrix by regime are not served. */}
-        <AdvancedPanel adv={adv} items="rolling windows · by regime" missing="Rolling windows and the correlations by regime are not served yet." />
-      </div>
+      {/* desk/matrix: no Advanced control. The full matrix is its own card below; rolling windows and the
+          correlations by regime are not served, and Build Notes lists them under what comes next. */}
     </section>
   );
 }

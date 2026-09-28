@@ -654,9 +654,10 @@ positive one), the signed value to two decimals, and its `symbol` (hover:
 `quantity`, `transform`). A row served null prints "not available · <reason>",
 or "Awaiting refresh" when its reason begins so. Stamp: "60 daily returns to
 <the rows' common date>", then each row dated otherwise ("<symbol> to <date>"),
-then "each against SPY". No meaning word is served. `Advanced ▸` (rolling
-windows · by regime) is disabled: neither is served. The full matrix is its
-own card (below).
+then "each against SPY". No meaning word is served. The card has no
+`Advanced ▸` control: the full matrix is its own card (below), and rolling
+windows and the correlations by regime are not served (Build Notes lists
+them under what comes next); the control returns when one of them is.
 
 **Correlation matrix** (`60-day correlation of daily returns · every pair of
 12 assets`, full width): LIVE (desk/matrix), from `/macro` `matrix` (§12.8).

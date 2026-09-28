@@ -129,7 +129,7 @@ describe("Macro tab", () => {
     expect(within(card).getByRole("img", { name: "High-yield spread at the 16th percentile of three years, tight" })).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: /High-yield spread over the last year; peak 3\.5% on Mar 30/ })).toBeInTheDocument();
   });
-  it("what moves with the S&P: nine rows as served, each with the symbol it declares, dated; its Advanced not yet served", async () => {
+  it("what moves with the S&P: nine rows as served, each with the symbol it declares, dated; no Advanced control", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What moves with the S&P/ });
     const list = await within(card).findByRole("list", { name: "Correlation with the S&P" });
@@ -151,9 +151,10 @@ describe("Macro tab", () => {
     // The rows' own dates: since desk/fill-compute the VIX is the CBOE close (^VIX), dated like the ETFs.
     expect(card).toHaveTextContent("60 daily returns to Sep 23 · each against SPY");
     expect(card).not.toHaveTextContent("VIXCLS");
-    // desk/matrix: the full matrix is its own card; rolling windows and by regime are not served.
-    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
-    expect(card).toHaveTextContent("Advanced ▸ not yet served");
+    // desk/matrix: the full matrix is its own card; rolling windows and by regime are not served, so the card
+    // carries no Advanced control at all (Build Notes lists them under what comes next).
+    expect(within(card).queryByTestId("dk-advanced")).toBeNull();
+    expect(card).not.toHaveTextContent("Advanced");
     expect(within(card).queryByRole("table")).toBeNull();
   });
   it("names each card by its title and subtitle", async () => {
@@ -358,14 +359,13 @@ describe("a route served awaiting (§12.0, §1.0.2)", () => {
 
 describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () => {
   const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
-  it("as the fixture serves /macro: the correlations and the matrix stand, the correlations' Advanced says not yet served; the curve, stock–bond and credit stand", async () => {
+  it("as the fixture serves /macro: the correlations (no Advanced control) and the matrix stand; the curve, stock–bond and credit stand", async () => {
     // /macro as the fixture serves it (desk/matrix): stock–bond, the correlations and the matrix served.
     stubDesk();
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89"));
     const card = screen.getByRole("region", { name: /^What moves with the S&P/ });
-    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
-    expect(card).toHaveTextContent("Advanced ▸ not yet served");
+    expect(within(card).queryByTestId("dk-advanced")).toBeNull();
     expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent("+0.44");
     expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.96%");
     expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("2.73%");
