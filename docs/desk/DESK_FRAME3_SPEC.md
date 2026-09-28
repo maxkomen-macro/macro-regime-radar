@@ -648,7 +648,7 @@ middle (left and green for a negative correlation, right and amber for a
 positive one), the signed value to two decimals, and its `symbol` (hover:
 `quantity`, `transform`). A row served null prints "not available · <reason>",
 or "Awaiting refresh" when its reason begins so. Stamp: "60 daily returns to
-<the rows' common date>", then each row dated otherwise ("VIXCLS to <date>"),
+<the rows' common date>", then each row dated otherwise ("<symbol> to <date>"),
 then "each against SPY". No meaning word is served. The 12-asset matrix under
 Advanced is `matrix` (awaiting, "the 12-asset matrix's assets and method are
 not specified yet."): `Advanced ▸` disabled.
@@ -1419,10 +1419,10 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `stock_bond.data.stock`, `bond` | `{etf, name}` | required | — | — | A: SPY, TLT |
 | `stock_bond.data.transform`, `unit`, `date`, `freq`, `source`, `providers` | `"daily log return"`, `"correlation"`, date, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
 | `correlations` | block envelope, data an array | required | — | — | N what moves with the S&P (desk/fill-etf); awaiting with "Awaiting refresh: …" while SPY, or every listed asset, is not stored |
-| `correlations.data[]` | `{asset, symbol, quantity, transform, corr, date, window, reason}` | required | — | — | in this order: TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ, and VIX (FRED VIXCLS) when the store holds it |
+| `correlations.data[]` | `{asset, symbol, quantity, transform, corr, date, window, reason}` | required | — | — | in this order: TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ, and VIX (`asset_prices` ^VIX since desk/fill-compute) when the store holds it |
 | `correlations.data[].corr` | number | required, nullable | correlation | `date` · daily | N: Pearson's r of SPY's daily log returns and the asset's (VIX: daily log changes of the level) over the 60 XNYS return dates ending at `date`, the newest session both hold a value, every pair complete (no forward fill) |
 | `correlations.data[].date`, `window` | date, `{start, end, n}` | required, nullable (when the asset is not stored) | — | XNYS | N |
-| `correlations.data[].symbol`, `quantity`, `transform` | string | required | — | — | A: the registry's series id; "adjusted close" (VIX "index level (FRED VIXCLS)"); "daily log return" (VIX "daily log change") |
+| `correlations.data[].symbol`, `quantity`, `transform` | string | required | — | — | A: the registry's series id; "adjusted close" (VIX "index level (^VIX)"); "daily log return" (VIX "daily log change") |
 | `correlations.data[].reason` | string | required, nullable | — | — | N: non-null exactly when `corr` is null: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", or "fewer than 60 complete daily return pairs in the window to <date>" |
 | `matrix` | block envelope | required | — | — | awaiting: "the 12-asset matrix's assets and method are not specified yet." |
 

@@ -142,12 +142,13 @@ describe("Macro tab", () => {
       "Dollar−0.28UUP",
       "Small caps+0.80IWM",
       "Nasdaq 100+0.89QQQ",
-      "VIX−0.73VIXCLS",
+      "VIX−0.75^VIX",
     ]);
     expect(within(list).getByText("IEF")).toHaveAttribute("title", "adjusted close, daily log return");
-    expect(within(list).getByText("VIXCLS")).toHaveAttribute("title", "index level (FRED VIXCLS), daily log change");
-    // The rows' own dates: VIX is FRED's, a session behind.
-    expect(card).toHaveTextContent("60 daily returns to Sep 23 · VIXCLS to Sep 22 · each against SPY");
+    expect(within(list).getByText("^VIX")).toHaveAttribute("title", "index level (^VIX), daily log change");
+    // The rows' own dates: since desk/fill-compute the VIX is the CBOE close (^VIX), dated like the ETFs.
+    expect(card).toHaveTextContent("60 daily returns to Sep 23 · each against SPY");
+    expect(card).not.toHaveTextContent("VIXCLS");
     fireEvent.click(within(card).getByTestId("dk-advanced"));
     expect(within(card).getByRole("table")).toHaveTextContent("60-day correlation, every pair");
     expect(within(card).getAllByRole("row")).toHaveLength(13);

@@ -102,7 +102,7 @@ SECTOR_ETFS: tuple[str, ...] = ("XLB", "XLC", "XLE", "XLF", "XLI", "XLK", "XLP",
 LEADERSHIP_SERIES: tuple[str, ...] = ("SPY", *SECTOR_ETFS)   # /sectors and /technicals' sectors block
 BREADTH_SERIES: tuple[str, ...] = ("SPY", *SECTOR_ETFS, "RSP", "IWM")  # /sectors' breadth block
 STOCK_BOND_SERIES: tuple[str, ...] = ("SPY", "TLT")                     # /macro's stock_bond block
-CORRELATION_SERIES: tuple[str, ...] = ("SPY", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "IWM", "QQQ", "VIXCLS")  # /macro's correlations
+CORRELATION_SERIES: tuple[str, ...] = ("SPY", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "IWM", "QQQ", "^VIX")  # /macro's correlations
 CREDIT_SERIES: tuple[str, ...] = ("BAMLH0A0HYM2", "BAMLC0A0CM")                # /macro credit: HY stored, IG's watermark
 
 

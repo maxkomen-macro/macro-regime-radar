@@ -23,6 +23,7 @@ def add_vix_close(conn: sqlite3.Connection) -> int:
     rows = conn.execute(
         "SELECT date, value FROM desk_series WHERE series_id = 'VIXCLS' AND value IS NOT NULL ORDER BY date"
     ).fetchall()
+    asset_history.ensure_table(conn)  # a store older than desk/fill-etf has no volume column yet
     return asset_history.write_series(conn, "^VIX", "1d", [(d, float(v)) for d, v in rows], provider="test")
 
 

@@ -78,6 +78,12 @@ closes are the provider's as of 2026-09-27; a dividend paid after Sep 23
 restates earlier adjusted closes, so a later rebuild can move the last
 digits.
 
+Since desk/fill-compute was rebased onto desk/fill-etf, the fixture store also
+holds the ^VIX close the Desk reads (the audit's store's ^VIX rows as
+desk/fill-compute added them, Yahoo, cut at 2026-09-23), so the correlation
+list's VIX row is ^VIX's (−0.75 to Sep 23; it was FRED VIXCLS's −0.73 to
+Sep 22) and the pipeline's ^VIX row feeds Macro as well.
+
 `consistency.test.ts` holds the fixtures to each other (one label per slug,
 one comparison session, the firing rows, the regime lag) and to the audit's
 real values.
