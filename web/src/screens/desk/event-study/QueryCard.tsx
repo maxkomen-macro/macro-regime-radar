@@ -112,6 +112,7 @@ export default function QueryCard({
   // Codex R-03: the Shock and Target slots offer only the series some catalog study reads (its shock, its target,
   // or the S&P its condition reads); a served series outside the catalog (the legacy engine's) is not offered.
   const read = catalog ? new Set(catalog.flatMap((c) => (c.question ? [c.question.shock, c.question.target, ...(c.question.while === "spx_below_50" ? ["spx"] : [])] : []))) : null;
+  // The hint counts these choices, never the served list (Codex R-04).
   const seriesList = (series ?? []).filter((s) => !read || read.has(s.key)).map((s) => ({ id: s.key, label: s.label }));
   const byChip = new Map((catalog ?? []).map((c) => [c.slug, c]));
   const download = () => {
@@ -208,7 +209,7 @@ export default function QueryCard({
       )}
       <p className="es-spelled">
         <span className="dk-stat-label">The question, spelled out</span>
-        <span className="es-hint">change any slot and it becomes your own · {series ? (seriesLost ? `every slot lists the same series; ${droppedWords(seriesLost, "series", "series").replace(/\.$/, "")}` : `every slot lists the same ${series.length} series`) : seriesFailed ? "the series list is awaiting refresh" : "every slot lists the same series"}</span>
+        <span className="es-hint">change any slot and it becomes your own · {series ? (seriesLost ? `every slot lists the same series; ${droppedWords(seriesLost, "series", "series").replace(/\.$/, "")}` : `every slot lists the same ${seriesList.length} series`) : seriesFailed ? "the series list is awaiting refresh" : "every slot lists the same series"}</span>
       </p>
       <div className="es-slots">
         <Slot label="Shock" value={draft?.shock ?? ""} options={opts("shock", seriesList)} onChange={set("shock")} disabled={!draft || !series} awaiting={seriesFailed} />

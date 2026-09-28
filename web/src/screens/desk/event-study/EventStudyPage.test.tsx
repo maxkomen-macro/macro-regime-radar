@@ -611,17 +611,22 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(rail()).toHaveTextContent(/Last five events · S&P 500 a month later\s*No events/);
   });
 
-  it("Codex R-03: the Shock and Target slots offer only the catalog's inputs, whatever else a study serves", async () => {
+  it("Codex R-03, R-04: the Shock and Target slots offer only the catalog's inputs, whatever else a study serves, and the hint counts those", async () => {
     const extra = { key: "xlk", label: "Technology sector ETF (XLK)", roles: ["shock", "condition"], ops: [], unit: "log_return" };
+    // The fixture's eight series (the catalog's inputs) plus XLK: nine served, eight offered.
+    expect(study.series).toHaveLength(8);
     stubDesk({ "/api/desk/study": () => ({ ...study, series: [...study.series, extra] }) });
     renderTab();
     const card = await screen.findByRole("region", { name: "The answer" });
     await waitFor(() => expect(card).toHaveTextContent("at 1 month"));
     for (const slot of ["Shock", "What happens to"]) {
-      const values = [...(screen.getByLabelText(slot) as HTMLSelectElement).options].map((o) => o.value);
+      const values = [...(screen.getByLabelText(slot) as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
       expect(values, slot).not.toContain("xlk");
       expect(values, slot).toContain("gold");
+      expect(values, slot).toHaveLength(8);
     }
+    expect(document.body).toHaveTextContent("every slot lists the same 8 series");
+    expect(document.body).not.toHaveTextContent("every slot lists the same 9 series");
   });
 
   it("Codex R-23: a preset link keeps its horizon through the address, the request, the answer and the export", async () => {
