@@ -3,13 +3,15 @@
  * §1.0.3): per name in the open basket, short interest as a share of float,
  * days to cover, the put/call open-interest ratio and a crowding flag, and the
  * basket's weighted figures above them. Illustrative values from
- * proto-positioning.json (./positioning.ts); the Advanced section states the
- * flag's rule and each name's 13F share.
+ * proto-positioning.json (./positioning.ts), drawn for the AI Infrastructure
+ * 10 preset (./drawn-for.ts): any other basket keeps the labels and prints one
+ * line. The Advanced section states the flag's rule and each name's 13F share.
  */
 
 import type { SavedBasket } from "../basket/weights";
 import { PrototypeCard } from "../kit/Prototype";
 import { AdvancedPanel, Stat, StatRow, useAdvanced } from "../kit/ui";
+import { isDrawnFor, OTHER_BASKET_LINE } from "./drawn-for";
 import { CROWDING_WORDS, positioning, type Positioning } from "./positioning";
 import { prototype } from "./registry";
 import "./prototypes.css";
@@ -64,6 +66,17 @@ export function coverageWords(p: Positioning): string {
 export function PositioningCard({ basket }: { basket: SavedBasket }) {
   const adv = useAdvanced();
   const entry = prototype("positioning");
+  if (!isDrawnFor(basket.legs))
+    return (
+      <PrototypeCard id={entry.id} className="bh-card pr-positioning" title={entry.title} sub="who is short, and who is crowded in" production={entry.production}>
+        <StatRow cols={3}>
+          {["Short interest", "Days to cover", "Crowded"].map((l) => (
+            <Stat key={l} label={l} value="—" size="sm" />
+          ))}
+        </StatRow>
+        <p className="pr-why">{OTHER_BASKET_LINE}</p>
+      </PrototypeCard>
+    );
   const p = positioning(legsOf(basket));
   const covered = coverageWords(p);
   const weighted = p.weightedSi != null;

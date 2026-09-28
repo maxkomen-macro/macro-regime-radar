@@ -70,8 +70,8 @@ drawn finished with illustrative values and a footnote saying so.
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
 | Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
-| Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket | short interest, open interest and 13F holdings not ingested |
-| Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | PROTOTYPE (§1.0.3), drawn for the sample basket | no basket index series is stored for the engine to run on |
+| Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | short interest, open interest and 13F holdings not ingested |
+| Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | no basket index series is stored for the engine to run on |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
 | Data Pipeline: "Sync to Snowflake" (§11) | PROTOTYPE (§1.0.3); the bridge's "Generate Snowflake DDL" and "Export current study → CSV" stay LIVE | no Snowflake account or sync job exists; the schema is proposed |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
@@ -1046,11 +1046,22 @@ label and prints the reason in plain words ("Not priced: the hedge ratio,
 and the names, and a dealer's quote for the basket put, stored with each
 basket."
 
-**Positioning** (in step 3, below the options slot, left, for the basket open): PROTOTYPE
+Both cards below are drawn for desk/books' first-visit preset, AI
+Infrastructure 10 (NVDA AVGO AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each;
+`web/src/screens/desk/prototypes/drawn-for.ts`), so a first visit sees every
+name with illustrative values. A basket is the preset when it holds those
+names at those weights, in any order; its name, method and notional do not
+decide it. Any other basket keeps each card's title, stat labels (valued
+"—") and footnote, and prints one line: "Illustrative values are shown for
+the AI Infrastructure 10 preset."
+
+**Positioning** (in step 3, below the options slot, left): PROTOTYPE
 (§1.0.3), from `proto-positioning.json`. Stats: SHORT INTEREST (of float,
 weighted over the names with data) · DAYS TO COVER (the same) · CROWDED
 (<flagged> of <names with data>). Each says what it covers: "weighted over
-all 7 names", or "weighted over 50% of the basket (1 of 2 names)"; with no
+all 10 names" for the preset; the pure function behind it
+(`positioning.ts`, `coverageWords`) also words a partial basket, "weighted
+over 50% of the basket (1 of 2 names)"; with no
 name with data, or none carrying weight, the figure is "—" and says why
 ("no name with data", "the names with data carry 0% of the basket"), never
 NaN (Codex R-01). One row per name: weight, short interest % of float, days
@@ -1064,13 +1075,14 @@ short-interest files, OCC open interest, 13F holdings."
 
 **Event study on this basket** (in step 3, below the options slot, right): PROTOTYPE
 (§1.0.3), from `proto-basket-study.json`, styled as an Event Study answer
-(§4): the question in serif, "After this basket falls 2σ over 5 days, it was
-higher a month later <up>% of the time."; EVENTS · UP A MONTH LATER (against
+(§4): the question in serif, naming the basket as saved, "After AI
+Infrastructure 10 falls 2σ over 5 days, it was higher a month later <up>% of
+the time."; EVENTS · UP A MONTH LATER (against
 a normal month) · MEDIAN AT A MONTH (against a normal month, §1.9's log
 display) · VERDICT (§1.5's rule v1 on the card's own numbers at h = 20); the
 Event Study's horizon chart; §12.2's why over the month's row; the
-provenance line. Drawn for the sample basket alone (its legs at its
-weights); another basket keeps the labels and names the sample. Footnote:
+provenance line (the index from Aug 2009, once half the preset's weight is
+listed). Footnote:
 "Illustrative values · In production: the existing engine run on the basket
 index series."
 

@@ -26,7 +26,8 @@ section at the end.
 | 12 | `dbfcdfa` | **After the rebase:** Hedge with options reads step 3's served `/basket/hedge` answer, in desk/books' options slot |
 | 13 | `5e9a559` | **After the rebase:** Data Pipeline's subtitle, Build Notes' two sentences, Positioning's "(illustrative)" headers |
 | 14 | `09f9b36` | **After the rebase:** those headers keep Positioning's table inside its card |
-| 15 | this commit | The report's rebase section, the live shots |
+| 15 | `3ae4a22` | The report's rebase section, the live shots |
+| 16 | this commit | **Before review:** Positioning and the event study drawn for the AI Infrastructure 10 preset; one line for any other basket |
 
 ## What a PROTOTYPE card is (spec §1.0.3)
 
@@ -131,33 +132,37 @@ names, and a dealer's quote for the basket put, stored with each basket."
 
 ### 4 · Basket & Hedge "Positioning" (`PositioningCard`)
 
-Per name in the open basket: weight, short interest % of float, days to
-cover, put/call open interest, and a crowding flag by the rule Advanced
-states (Crowded short at 10% of float or more, else Crowded long when 25% of
-the funds a 13F sample tracks hold it in their top ten). The sample basket:
-SHORT INTEREST 5.3% of float weighted, DAYS TO COVER 1.8, CROWDED 4 of 7
-(NVDA, AVGO long; CRWV 17.8%, SMCI 14.9% short). Each figure says what it
-covers ("weighted over all 7 names"; for a basket with other names "weighted
-over 50% of the basket (1 of 2 names)"), a name without data reads "no
-data" and is in no count, and a figure with no covered weight is "—" with
-the reason (Codex R-01). The three illustrative numeric columns' headers end
-"(illustrative)", on a line of their own under the column's name (weight is
-the basket's own). In step 3, below the options slot, left. Footnote: "…In production: exchange short-interest
+Drawn for desk/books' first-visit preset, AI Infrastructure 10 (commit 16;
+`prototypes/drawn-for.ts`), so a first visit sees all ten names. Per name:
+weight, short interest % of float, days to cover, put/call open interest,
+and a crowding flag by the rule Advanced states (Crowded short at 10% of
+float or more, else Crowded long when 25% of the funds a 13F sample tracks
+hold it in their top ten). The preset: SHORT INTEREST 4.8% of float, DAYS
+TO COVER 1.7, both "weighted over all 10 names", CROWDED 4 of 10 (NVDA,
+AVGO long; CRWV 18.3%, NBIS 15.9% short). The three illustrative numeric
+columns' headers end "(illustrative)", on a line of their own under the
+column's name (weight is the basket's own). Any other basket keeps the
+title, the three labels valued "—" and the footnote, and prints "Illustrative
+values are shown for the AI Infrastructure 10 preset." The coverage words of
+Codex R-01 ("weighted over 50% of the basket (1 of 2 names)", "no name with
+data", no NaN) stay in the pure function and its tests. In step 3, below the
+options slot, left. Footnote: "…In production: exchange short-interest
 files, OCC open interest, 13F holdings."
 
 ### 5 · Basket & Hedge "Event study on this basket" (`BasketStudyCard`)
 
 Styled as an Event Study answer, reusing its horizon chart (`Bars`, now
-exported from `event-study/AnswerCard.tsx`): "After this basket falls 2σ over
-5 days, it was higher a month later 65% of the time."; EVENTS 41 (40
-complete at a month), UP A MONTH LATER 65% (26 of 40, 60% in a normal
-month), MEDIAN AT A MONTH +3.1% vs +2.2%, VERDICT Suggestive, which is §1.5's
-rule v1 applied to the card's own numbers (40 ≥ 10; interval −1.4% to +3.6%
-spans zero, so no exclusion; the excess leans up at 5, 10 and 20). The why
-line in §12.2's template; the index from Jun 2014, names joining as they
-list. Drawn for the sample basket alone (its legs now travel in
-`proto-basket-study.json`, pinned equal to `baskets.json`'s first basket by a
-test). In step 3, below the options slot, right. Footnote: "…In production: the
+exported from `event-study/AnswerCard.tsx`), drawn for the same preset
+(commit 16) and naming the basket as saved: "After AI Infrastructure 10
+falls 2σ over 5 days, it was higher a month later 64% of the time."; EVENTS
+57 (56 complete at a month), UP A MONTH LATER 64% (36 of 56, 61% in a normal
+month), MEDIAN AT A MONTH +3.4% vs +2.4% (log return ×100), VERDICT
+Suggestive, which is §1.5's rule v1 applied to the card's own numbers (56 ≥
+10; interval −1.1% to +3.8% spans zero, so no exclusion; the excess leans up
+at 5, 10 and 20). The why line in §12.2's template; the index from Aug 2009,
+once half the preset's weight is listed, names joining as they list. Any
+other basket keeps the labels and prints the same one line as Positioning.
+In step 3, below the options slot, right. Footnote: "…In production: the
 existing engine run on the basket index series."
 
 ### 6 · Data Pipeline "Sync to Snowflake" (`SnowflakeSyncCard`)
@@ -323,10 +328,12 @@ them 8 s and the test 30 s.
 11. **Existing browser tests changed:** the Technicals test expects the vol
     column to be the PROTOTYPE; the Basket test finds the basket card with
     `exact: true` (the prototype cards' names contain "basket").
-12. **Positioning after the rebase** keeps working for any basket (a name
-    without an illustrative row reads "no data"); the event study is drawn
-    for the sample basket only and says so for any other, including the
-    preset desk/books now seeds (see the open calls).
+12. **Which basket the prototypes are drawn for.** After the rebase they
+    were drawn for the 7-name sample basket while desk/books seeds the
+    10-name preset. Commit 16 redraws both for the preset; the fixture tests'
+    sample basket (`baskets.json`) is now "another basket" and prints the
+    one line. The options card still prices any saved basket from its served
+    answer.
 
 ## Run against the real API, before the rebase (definition of done)
 
@@ -435,8 +442,8 @@ desk/books' preset; the sample basket was then saved as a visitor would.
 |---|---|---|
 | Basket & Hedge · Hedge with options: the inputs row "from your basket · live" | **LIVE-verified** | Preset: the page's `/basket/hedge` answer was `ready`, EODHD, prices Sep 25, notional 1,000,000, top SOXX, hedge ratio 1.0998, basis 60d, R² 0.8624, window Jul 1 to Sep 25 (60), basket vol 57.7%; the row printed "$1.0M · AI Infrastructure 10 · SOXX, first of 8 by R², ahead of SMH at 0.84 · 1.10 · 0.86, 60 sessions to Sep 25". Sample basket: SMH, 0.9124, R² 0.7345 served; "SMH … ahead of SOXX at 0.68 · 0.91 · 0.73" printed. The page loaded no `basket-hedge.json` (its only fixture modules were the three `proto-*.json` the prototypes own). `live-preset-options-hedge-1440.png`, `live-preset-options-hedge-390.png`, `live-sample-options-hedge-1440.png`, `live-preset-step3-1440.png` |
 | Basket & Hedge · Hedge with options: the three routes | **PROTOTYPE** | Priced in the browser from the live inputs (for the preset: puts on SOXX, strikes 95.5%/86.4% of SOXX; NVDA, AVGO, AMD at 30%; the OTC put); footnote last. Same shots. |
-| Basket & Hedge · Positioning (headers, layout) | **PROTOTYPE** | Headers "Short int. (illustrative)", "Days to cover (illustrative)", "Put/call OI (illustrative)"; the preset's four names without a row read "no data" (6 of 10 covered, and the figures say so). `live-preset-positioning-1440.png`, `live-sample-positioning-1440.png` |
-| Basket & Hedge · Event study on this basket | **PROTOTYPE** | Filled for the sample basket; for the preset it keeps its labels and names the sample (`live-preset-step3-1440.png`). |
+| Basket & Hedge · Positioning | **PROTOTYPE** | Retaken after commit 16. The preset (a fresh browser): all ten names with values, "weighted over all 10 names", 4 of 10 crowded, headers "Short int. (illustrative)", "Days to cover (illustrative)", "Put/call OI (illustrative)", no "no data" row. The sample basket: its labels valued "—" and "Illustrative values are shown for the AI Infrastructure 10 preset.", no table. `live-preset-positioning-1440.png`, `live-sample-positioning-1440.png` |
+| Basket & Hedge · Event study on this basket | **PROTOTYPE** | Retaken after commit 16. The preset: "After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.", 57 events, Suggestive, the chart. The sample basket: the labels and the same one line. `live-preset-step3-1440.png`, `live-sample-positioning-study-1440.png` |
 | Data Pipeline · subtitle | **LIVE-verified** | "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. Nothing is re-derived in the browser." `live-pipeline-subtitle.png` |
 | Build Notes · the two sentences | **LIVE-verified** | Both bullets read "Where a number isn't computed yet, the card says so or is a marked prototype." (2 matches on the page, rendered from the file). `live-build-notes-two-sentences.png` |
 
@@ -460,12 +467,10 @@ the rebase onto desk/books).
 1. **Merge.** desk/books is merged and this branch sits on it; the inputs row
    is LIVE-verified on a local API. On Render it goes live when main with
    desk/books is deployed there (Render serves `23014d0` today).
-2. **The preset and two prototypes.** desk/books seeds "AI Infrastructure 10"
-   on a first visit. The event study is drawn only for the 7-name sample
-   basket, so on the preset it shows its labels and names a basket the
-   visitor does not have (the file is `web/src/fixtures/desk/baskets.json`,
-   importable); Positioning has no row for AMD, TSM, MU or NBIS and says so.
-   Redrawing both for the preset is a fixture change, not done here.
+2. **The preset and two prototypes.** Settled by commit 16: both are drawn
+   for AI Infrastructure 10, and any other basket prints "Illustrative
+   values are shown for the AI Infrastructure 10 preset." A renamed preset,
+   or the preset with another method or notional, is still the preset.
 3. **"Nothing is re-derived in the browser."** The subtitle's last sentence
    now follows "prototype cards are marked", but the options card is priced
    in the browser. Rule 7 scopes it to live numbers; reword if you prefer

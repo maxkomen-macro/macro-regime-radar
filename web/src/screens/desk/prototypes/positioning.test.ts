@@ -4,10 +4,11 @@
  */
 import { describe, expect, it } from "vitest";
 import p from "../../../fixtures/desk/proto-positioning.json";
-import { sampleBasket } from "./basket-study";
+import { PRESET } from "../basket/weights";
 import { crowding, positioning, RULES } from "./positioning";
+import { coverageWords } from "./PositioningCard";
 
-const legs = sampleBasket().legs.map((l) => ({ symbol: l.symbol, name: l.name ?? null, weight: Number(l.weight) }));
+const legs = PRESET.legs.map((l) => ({ symbol: l.symbol, name: l.name ?? null, weight: Number(l.weight) }));
 
 describe("positioning", () => {
   it("the flag: crowded short at 10% of float or more, else crowded long at a 25% 13F top-ten share", () => {
@@ -18,17 +19,20 @@ describe("positioning", () => {
     expect(crowding({ si_pct_float: 9.9, top10_13f_pct: 24 })).toBeNull();
   });
 
-  it("the sample basket: every name has a row; two crowded short, two crowded long", () => {
+  it("the AI Infrastructure 10 preset: every name has a row; two crowded short, two crowded long", () => {
     const x = positioning(legs);
     expect(x.missing).toEqual([]);
     expect(x.rows.map((r) => [r.symbol, r.flag])).toEqual([
       ["NVDA", "long"],
       ["AVGO", "long"],
-      ["VRT", null],
-      ["CRWV", "short"],
+      ["AMD", null],
+      ["TSM", null],
+      ["MU", null],
       ["ANET", null],
+      ["VRT", null],
       ["CEG", null],
-      ["SMCI", "short"],
+      ["CRWV", "short"],
+      ["NBIS", "short"],
     ]);
     expect(x.flagged).toBe(4);
   });
@@ -38,15 +42,15 @@ describe("positioning", () => {
     const names = p.names as Record<string, { si_pct_float: number; days_to_cover: number }>;
     const si = legs.reduce((a, l) => a + (l.weight / 100) * names[l.symbol].si_pct_float, 0);
     expect(x.weightedSi).toBeCloseTo(si, 12);
-    expect(x.weightedSi!.toFixed(1)).toBe("5.3");
-    expect(x.weightedDtc!.toFixed(1)).toBe("1.8");
+    expect(x.weightedSi!.toFixed(1)).toBe("4.8");
+    expect(x.weightedDtc!.toFixed(1)).toBe("1.7");
     expect(x.coveredWeight).toBe(100);
   });
 
   it("a name with no illustrative row is listed apart, and the weights are the named ones'", () => {
     const x = positioning([{ symbol: "ZZZZ", name: null, weight: 50 }, { symbol: "CRWV", name: "CoreWeave", weight: 50 }]);
     expect(x.missing.map((l) => l.symbol)).toEqual(["ZZZZ"]);
-    expect(x.weightedSi).toBeCloseTo(17.8, 12);
+    expect(x.weightedSi).toBeCloseTo(18.3, 12);
   });
 });
 
@@ -59,7 +63,7 @@ describe("Codex R-01: coverage is disclosed, a name without data is never counte
     expect(x.totalWeight).toBe(100);
     expect(x.rows.map((r) => r.symbol)).toEqual(["CRWV"]);
     expect(x.missing.map((l) => l.symbol)).toEqual(["MSFT"]);
-    expect(x.weightedSi).toBeCloseTo(17.8, 12);
+    expect(x.weightedSi).toBeCloseTo(18.3, 12);
     expect(x.flagged).toBe(1);
   });
 
@@ -79,5 +83,15 @@ describe("Codex R-01: coverage is disclosed, a name without data is never counte
     expect(x.weightedDtc).toBeNull();
     // CRWV's own flag stands: crowding is per name, not weighted.
     expect(x.flagged).toBe(1);
+  });
+});
+
+describe("Codex R-01: the coverage words the card prints under each weighted figure", () => {
+  const leg = (symbol: string, weight: number) => ({ symbol, name: null, weight });
+  it("all names, part of the basket, no name with data, no weight with data", () => {
+    expect(coverageWords(positioning(legs))).toBe("weighted over all 10 names");
+    expect(coverageWords(positioning([leg("CRWV", 50), leg("MSFT", 50)]))).toBe("weighted over 50% of the basket (1 of 2 names)");
+    expect(coverageWords(positioning([leg("MSFT", 100)]))).toBe("no name with data");
+    expect(coverageWords(positioning([leg("CRWV", 0), leg("MSFT", 100)]))).toBe("the names with data carry 0% of the basket");
   });
 });

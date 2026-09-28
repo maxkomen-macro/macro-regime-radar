@@ -4,7 +4,9 @@
  * question in serif, events, how often the basket was up a month later, the
  * median against a normal month, the verdict, and the horizon chart the Event
  * Study draws. Illustrative values from proto-basket-study.json
- * (./basket-study.ts), drawn for the sample basket alone.
+ * (./basket-study.ts), drawn for the AI Infrastructure 10 preset alone
+ * (./drawn-for.ts); the question names the basket. Any other basket keeps the
+ * labels and prints one line.
  */
 
 import type { SavedBasket } from "../basket/weights";
@@ -13,7 +15,8 @@ import { dayLong, monthYear, pctPlain, year } from "../kit/format";
 import { PrototypeCard } from "../kit/Prototype";
 import { moveText, tipOf } from "../kit/units";
 import { AdvancedPanel, Signed, Stat, StatRow, useAdvanced, VerdictPill } from "../kit/ui";
-import { basketStudy, isSampleBasket, SAMPLE_NAME, type BasketStudy } from "./basket-study";
+import { basketStudy, type BasketStudy } from "./basket-study";
+import { isDrawnFor, OTHER_BASKET_LINE } from "./drawn-for";
 import { prototype } from "./registry";
 import "./prototypes.css";
 
@@ -74,9 +77,8 @@ function Horizons({ st }: { st: BasketStudy }) {
 export function BasketStudyCard({ basket }: { basket: SavedBasket }) {
   const adv = useAdvanced();
   const entry = prototype("basket-study");
-  const legs = basket.legs.map((l) => ({ symbol: l.symbol, name: l.name ?? null, weight: Number(l.weight) }));
   const labels = ["Events", "Up a month later", "Median at a month", "Verdict"];
-  if (!isSampleBasket(legs))
+  if (!isDrawnFor(basket.legs))
     return (
       <PrototypeCard id={entry.id} className="bh-card pr-study" title={entry.title} sub="after a 2σ fall over 5 days" production={entry.production}>
         <StatRow cols={4}>
@@ -84,7 +86,7 @@ export function BasketStudyCard({ basket }: { basket: SavedBasket }) {
             <Stat key={l} label={l} value="—" size="sm" />
           ))}
         </StatRow>
-        <p className="pr-why">Illustrative values are drawn for the {SAMPLE_NAME} sample basket; open it to see this card filled.</p>
+        <p className="pr-why">{OTHER_BASKET_LINE}</p>
       </PrototypeCard>
     );
   const st = basketStudy();
@@ -107,7 +109,7 @@ export function BasketStudyCard({ basket }: { basket: SavedBasket }) {
       }
     >
       <p className="es-headline pr-study-q">
-        After this basket falls 2σ over {st.window} days, it was higher a month later {pctPlain(m.up_pct ?? NaN)} of the time.
+        After {basket.name} falls 2σ over {st.window} days, it was higher a month later {pctPlain(m.up_pct ?? NaN)} of the time.
       </p>
       <StatRow cols={4}>
         <Stat label="Events" value={String(st.matchedN)} sub={`${m.n} complete at a month`} size="sm" />

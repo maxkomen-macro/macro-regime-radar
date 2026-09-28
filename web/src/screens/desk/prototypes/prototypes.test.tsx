@@ -15,7 +15,6 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
-import sample from "../../../fixtures/desk/baskets.json";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import { SAVED_BASKETS_KEY } from "../basket/weights";
@@ -173,9 +172,10 @@ describe("§1.0.3 rule 4: no LIVE module imports a prototype fixture", () => {
 
 describe("§1.0.3: every PROTOTYPE card on its page, and no prototype value outside one", () => {
   const realFetch = globalThis.fetch;
+  // A first visit: no basket store, so Basket & Hedge seeds the AI Infrastructure 10 preset the prototypes are drawn for.
   beforeEach(() => {
     stubDesk();
-    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify((sample as { baskets: unknown[] }).baskets));
+    localStorage.removeItem(SAVED_BASKETS_KEY);
   });
   afterEach(() => {
     globalThis.fetch = realFetch;

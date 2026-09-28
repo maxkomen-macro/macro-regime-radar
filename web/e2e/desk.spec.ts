@@ -101,7 +101,7 @@ test.describe("desk v2", () => {
   // and none of its values printed outside it. Run this against a preview of `vite build` too (E2E_BASE_URL):
   // routeDesk answers in the browser, so the production bundle reads the same fixtures.
   test("PROTOTYPE cards (§1.0.3): each ends with its footnote and carries no badge; no prototype value is printed outside one", async ({ page }) => {
-    await seedBaskets(page);
+    // A first visit: Basket & Hedge seeds the AI Infrastructure 10 preset, the basket the prototypes are drawn for.
     const all = Object.values(PROTOTYPE_MARKERS).flat();
     for (const slug of BUILT) {
       await open(page, `/desk/${slug}`);
@@ -723,16 +723,16 @@ test.describe("desk v2", () => {
     await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
-    // §1.0.3: Positioning, per name in the saved basket, in step 3 below the options slot.
+    // §1.0.3: Positioning and the event study are drawn for the AI Infrastructure 10 preset; this basket is another,
+    // so each keeps its labels and prints one line (step 3, below the options slot).
     const positions = step3.getByRole("region", { name: /^Positioning/ });
     await expect(positions).toHaveAttribute("data-prototype", "positioning");
-    await expect(positions.getByRole("table").getByRole("row")).toHaveCount(8);
-    await expect(positions).toContainText("Crowded short");
-    // §1.0.3: the event study on the basket, as an Event Study answer.
-    const study = page.getByRole("region", { name: /^Event study on this basket/ });
+    await expect(positions).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    await expect(positions.getByRole("table")).toHaveCount(0);
+    const study = step3.getByRole("region", { name: /^Event study on this basket/ });
     await expect(study).toHaveAttribute("data-prototype", "basket-study");
-    await expect(study).toContainText("After this basket falls 2σ over 5 days, it was higher a month later 65% of the time.");
-    await expect(study.getByRole("img")).toHaveCount(1);
+    await expect(study).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    await expect(study.getByRole("img")).toHaveCount(0);
     // Weights as typed, saved in this browser.
     await basket.getByLabel("Weight of SMCI, percent").fill("8");
     await expect(basket).toContainText("total 96%");
@@ -785,6 +785,12 @@ test.describe("desk v2", () => {
     await expect(basket.getByLabel("Notional, dollars")).toHaveValue("1,000,000");
     await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("since Mar 28, 2025");
     await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best");
+    // §1.0.3: the prototypes are drawn for this basket: Positioning lists all ten names, the event study names it.
+    const positions = page.getByRole("region", { name: /^Positioning/ });
+    await expect(positions.getByRole("table").getByRole("row")).toHaveCount(11);
+    await expect(positions).not.toContainText("no data");
+    await expect(positions.getByRole("columnheader", { name: "Short int. (illustrative)" })).toHaveCount(1);
+    await expect(page.getByRole("region", { name: /^Event study on this basket/ })).toContainText("After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     // Technicals links here with ?add=: the name is checked against the price endpoint (not served in these tests, so

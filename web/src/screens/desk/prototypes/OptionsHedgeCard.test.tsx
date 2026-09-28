@@ -9,9 +9,11 @@ import hedgeAnswers from "../../../fixtures/desk/basket-hedge.json";
 import type { BasketHedgeResponse } from "../data/types";
 import { legsKey } from "../basket/weights";
 import { OptionsHedgeCard } from "./OptionsHedgeCard";
-import { sampleBasket } from "./basket-study";
+import baskets from "../../../fixtures/desk/baskets.json";
+import type { SavedBasket } from "../basket/weights";
 
-const sample = sampleBasket();
+/** The fixture tests' sample basket (baskets.json's first), which the fixture server hedges. */
+const sample = (baskets as { baskets: SavedBasket[] }).baskets[0];
 const served = (hedgeAnswers as unknown as { answers: Record<string, BasketHedgeResponse> }).answers[`${legsKey(sample.legs)}|hold|1000000`];
 const card = () => screen.getByRole("region", { name: /^Hedge with options/ });
 

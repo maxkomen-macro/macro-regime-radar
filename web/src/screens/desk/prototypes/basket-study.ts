@@ -4,15 +4,13 @@
  * weeks, a month and three months later, in the Event Study's shape (§4,
  * §12.2), from proto-basket-study.json. Its verdict is §1.5's rule v1 on the
  * card's own numbers, at a month (h = 20, as the Ledger reads it). Drawn for
- * the sample basket the fixture carries (baskets.json's) alone: another basket
- * has no illustrative study. Pure.
+ * the AI Infrastructure 10 preset alone (./drawn-for.ts; the fixture names it
+ * in `basket`): another basket has no illustrative study. Pure.
  */
 
 import s from "../../../fixtures/desk/proto-basket-study.json" with { type: "json" };
 import type { StudyHorizon, Verdict } from "../data/types";
 import { horizonLabel } from "../event-study/question";
-import type { SavedBasket } from "../basket/weights";
-import type { BasketLeg } from "./basket-inputs";
 
 export interface BasketStudy {
   matchedN: number;
@@ -44,17 +42,6 @@ export function verdictV1(rows: readonly Pick<Row, "h" | "n" | "median" | "basel
   });
   if (lean.every((v) => v > 0) || lean.every((v) => v < 0)) return "suggestive";
   return "no_edge";
-}
-
-/** The sample basket the illustrative study was drawn for, as this browser saves it. */
-export function sampleBasket(): SavedBasket {
-  return { id: s.basket.id, name: s.basket.name, legs: s.basket.legs.map((l) => ({ ...l })), saved_at: "2026-09-22T20:00:00Z" };
-}
-
-/** Whether the open basket is the sample the illustrative study was drawn for (its legs at its weights). */
-export function isSampleBasket(legs: readonly BasketLeg[]): boolean {
-  const sample = sampleBasket().legs;
-  return legs.length === sample.length && legs.every((l, i) => l.symbol === sample[i].symbol && l.weight === Number(sample[i].weight));
 }
 
 export function basketStudy(): BasketStudy {
@@ -89,6 +76,3 @@ export function basketStudy(): BasketStudy {
     verdict: verdictV1(s.horizons, 20),
   };
 }
-
-/** The sample basket's name, for the words another basket's card prints. */
-export const SAMPLE_NAME = sampleBasket().name;

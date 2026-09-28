@@ -9,10 +9,12 @@ import hedgeAnswers from "../../../fixtures/desk/basket-hedge.json";
 import { legsKey } from "../basket/weights";
 import { putValue, years } from "./black-scholes";
 import { inputsFrom, type HedgeAnswer } from "./basket-inputs";
-import { sampleBasket } from "./basket-study";
+import baskets from "../../../fixtures/desk/baskets.json";
+import type { SavedBasket } from "../basket/weights";
 import { etfStrike, hedge, largest, pct2, STRUCTURES, usd, usdM, type Priced } from "./options";
 
-const sample = sampleBasket();
+/** The fixture tests' sample basket (baskets.json's first), which the fixture server hedges. */
+const sample = (baskets as { baskets: SavedBasket[] }).baskets[0];
 /** The fixture server's /basket/hedge answer for the sample basket (desk/books, real closes). */
 const answer = (hedgeAnswers as { answers: Record<string, HedgeAnswer> }).answers[`${legsKey(sample.legs)}|hold|1000000`];
 const inputs = inputsFrom(answer, sample)!;
