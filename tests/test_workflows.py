@@ -381,3 +381,19 @@ def test_both_writers_publish_the_validation_verdict_in_a_step_that_never_blocks
     mods = {a.name.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     mods |= {n.module.split(".")[0] for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and n.module}
     assert mods <= {"__future__", "hashlib", "json", "sys", "pathlib"}, mods
+
+
+def test_the_keep_warm_workflow_pings_the_api_every_ten_minutes_and_touches_nothing():
+    """desk/usability item 10 (DESK_FRAME3_SPEC §14.10): a cron every ten minutes asks the deployed API's
+    liveness route; it reads no secret, holds no permission, writes nothing, and a failed ping fails only itself."""
+    doc = _load("keep-api-warm.yml")
+    assert doc["name"] == "Keep the API warm"
+    on = _on(doc)
+    assert on["schedule"] == [{"cron": "*/10 * * * *"}] and "workflow_dispatch" in on
+    assert doc["permissions"] == {}
+    (job,) = doc["jobs"].values()
+    assert job["timeout-minutes"] <= 5
+    text = (WF / "keep-api-warm.yml").read_text()
+    assert "secrets." not in text and "git push" not in text and "gh release" not in text
+    run = "\n".join(s.get("run", "") for s in job["steps"])
+    assert "/health/live" in run and "macro-economic-radar-api.onrender.com" in "\n".join(str(s.get("env", "")) for s in job["steps"])

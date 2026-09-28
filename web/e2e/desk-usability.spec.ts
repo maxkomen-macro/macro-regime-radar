@@ -10,6 +10,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { settle } from "./lib/drive";
 import { auditPalette, bannedWordsOnPage, routeDesk, type Override } from "./lib/desk-fixtures";
+import { deskFixture } from "../src/fixtures/desk/index";
 import { DESK_PAGES } from "../src/screens/desk/desk-sections";
 import positionSample from "../src/fixtures/desk/positions.json" with { type: "json" };
 import { POSITIONS_KEY } from "../src/screens/desk/positions/store";
@@ -326,5 +327,26 @@ test.describe("desk usability", () => {
     await open(page, "/desk/position-monitor?new=1&instrument=NVDA");
     await expect(page.getByRole("combobox", { name: "Instrument", exact: true })).toHaveValue("NVDA");
     await expect(page.getByText(/Discipline gate/)).toBeVisible();
+  });
+
+  // ── Item 10: a cold start reads as loading ───────────────────────────────
+
+  test("item 10: while a page's answers are pending, every card says Loading live data…, then the data replaces it", async ({ page }) => {
+    // Every /api/desk answer held for two seconds: a cold API.
+    await page.route((u) => u.pathname.startsWith("/api/"), async (route) => {
+      const url = new URL(route.request().url());
+      await new Promise((r) => setTimeout(r, 2000));
+      const reply = deskFixture(route.request().method(), `${url.pathname}${url.search}`, undefined, route.request().headers()["accept"] ?? "");
+      if (reply) return route.fulfill({ status: reply.status, contentType: reply.contentType, body: reply.body });
+      return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "not served here" }) });
+    });
+    const cards: Record<string, number> = { overview: 6, technicals: 5, macro: 4, regime: 4, sectors: 2, "signal-ledger": 1, "event-study": 2, "data-pipeline": 1 };
+    for (const [slug, n] of Object.entries(cards)) {
+      await page.goto(`/desk/${slug}`, { waitUntil: "domcontentloaded" });
+      const loading = page.getByRole("main").getByTestId("dk-loading");
+      await expect(loading.first(), slug).toHaveText("Loading live data…");
+      expect(await loading.count(), `${slug}: loading lines`).toBeGreaterThanOrEqual(n);
+      await expect(loading, `${slug}: loading lines once answered`).toHaveCount(0, { timeout: 20_000 });
+    }
   });
 });

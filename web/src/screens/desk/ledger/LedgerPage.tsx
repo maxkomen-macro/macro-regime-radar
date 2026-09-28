@@ -16,7 +16,7 @@ import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { dayLong, dayShort, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
-import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill, LoadingLine } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
 
@@ -197,6 +197,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
           <Stat label="No edge" awaiting={state === "awaiting" || (ready && !verdictsCounted)} value={verdictsCounted ? String(noEdge.length) : undefined} />
         </div>
         <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
+          <LoadingLine busy={state === "loading"} />
           <div className="lg-chips" role="group" aria-label="Filter">
             {chips.map((c) => (
               <button key={c.id} type="button" className="dk-chip" aria-pressed={filter === c.id} disabled={!ready} onClick={() => setFilter(c.id)}>

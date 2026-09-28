@@ -11,7 +11,7 @@
 import type { StudyHorizon, StudyResponse, TargetUnit } from "../data/types";
 import { dayLong, isFiniteNumber as fin, monthYear, pctPlain, year } from "../kit/format";
 import { useBox } from "../kit/LineChart";
-import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved } from "../kit/ui";
+import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved, LoadingLine } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
 import { isLog, isUnit, moveText, scaleOf, tickText, tipOf, whisker } from "../kit/units";
 
@@ -185,6 +185,7 @@ export default function AnswerCard({
     const p = fin(horizon) ? horizonPhrase(horizon) : null;
     return (
       <section className="dk-card es-answer" aria-label="The answer" aria-busy={!failed && !unserved}>
+        <LoadingLine busy={!failed && !unserved} />
         {unserved ? (
           <div className="es-pills">
             <NotServedBadge block={unserved} />
@@ -253,6 +254,7 @@ export default function AnswerCard({
   return (
     <section className="dk-card es-answer" aria-label="The answer" aria-busy={busy || undefined} data-busy={busy || undefined}>
       <h2 className="es-headline">{study.headline}</h2>
+      <LoadingLine busy={busy} />
       <div className="es-pills">
         {/* §4: nothing when the state is not served (a stale study with no evaluable session included); stale is never "firing today"; a firing study counts its days. */}
         {study.firing_now == null || study.stale == null ? null : study.stale ? (

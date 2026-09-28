@@ -361,6 +361,17 @@ export function AdvancedPanel({ adv, items, missing, children, enabled = false }
   );
 }
 
+/** desk/usability §14.10: while a card's request is pending it says so, one line under its title, so a cold
+ * start reads as loading, never as a blank card. Nothing when the answer is in (or failed, or is served awaiting). */
+export function LoadingLine({ busy }: { busy?: boolean | null }) {
+  if (!busy) return null;
+  return (
+    <p className="dk-loading" role="status" aria-live="polite" data-testid="dk-loading">
+      Loading live data…
+    </p>
+  );
+}
+
 /** A card body with nothing served (§1.7): gray words, no number. */
 export function Awaiting({ children, className }: { children?: ReactNode; className?: string }) {
   const ctx = useContext(UnservedContext);

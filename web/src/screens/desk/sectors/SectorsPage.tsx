@@ -18,7 +18,7 @@ import { dayShort, endDay, leadershipGaps, pct } from "../kit/format";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars, { relTone } from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import "./sectors.css";
 
@@ -89,6 +89,7 @@ function Leadership({ s, state }: { s: SectorsResponse | undefined; state: State
         title="Sector leadership"
         sub={`${windowWord(s)} return relative to the S&P · ${gaps.missing.length ? `${gaps.ranked} of ${rows.length} with data` : "all eleven"}`}
       />
+      <LoadingLine busy={quiet} />
       {quiet ? null : (
         <StatRow cols={3}>
           <Stat label="Leading" awaiting={topV == null} value={top?.name} tone={topV != null ? relTone(topV) : undefined} sub={topV != null ? <span title={LOG_TIP}>{pct(topV)} vs the index{among}</span> : undefined} />
@@ -250,6 +251,7 @@ function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State })
   return (
     <section className="dk-card sc-card" aria-labelledby="sc-breadth" aria-busy={quiet}>
       <CardHead id="sc-breadth" title="Breadth" sub={`is the rally wide or narrow? · of ${total} sectors`} />
+      <LoadingLine busy={quiet} />
       {quiet ? null : (
         <StatRow cols={3}>
           {/* §12.14: each count says what it is counted over, and when; no month-ago count and no words are served. */}

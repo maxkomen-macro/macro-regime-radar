@@ -17,7 +17,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine } from "../kit/ui";
 import "./regime.css";
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
@@ -131,6 +131,7 @@ function Card({ id, title, sub, children, footer, busy }: { id: string; title: s
           <span className="dk-card-sub"> {sub}</span>
         </h2>
       </div>
+      <LoadingLine busy={busy} />
       <div className="dk-card-body">{children}</div>
       <div className="dk-card-foot">{footer}</div>
     </section>

@@ -38,7 +38,7 @@ import { DESK_ACCENTS } from "../kit/palette";
 import Gauge from "../kit/Gauge";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import RankBars from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord, LoadingLine } from "../kit/ui";
 import { ProtectionCard } from "../prototypes/ProtectionCard";
 import { SPX_SYMBOLS, symbolOf } from "./symbol";
 import "./technicals.css";
@@ -85,6 +85,7 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
         </h2>
         <p className="te-vol-sub">S&amp;P 500 options, read from the SPY chain at last close.</p>
       </div>
+      <LoadingLine busy={state === "loading"} />
       {state !== "ready" || !vol ? (
         <>
           {[...VOL_LABELS, "SKEW · WHERE IT SITS"].map((l, i) => (
@@ -226,6 +227,7 @@ function PriceCard({ t, state, cross, range, onRange, scored }: { t: TechnicalsR
         </h2>
         <RangeChips className="te-range" ranges={chips} value={range} onChange={onRange} />
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
         <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? grouped(t.price) : undefined} sub={ready && fin(t.chg_1d) && t.chg_1d_dates ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.chg_1d_dates.to)}</Signed> : undefined} />
         <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? grouped(t.ma50) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
@@ -297,6 +299,7 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
           Signals<span className="dk-card-sub"> what fired, and what usually follows</span>
         </h2>
       </div>
+      <LoadingLine busy={tState === "loading" || lState === "loading"} />
       <StatRow cols={3}>
         {/* §3: 1-YEAR RETURN dated by `ret_1y_dates`; TREND the served state since `state_since`; LAST 20 DAYS in σ. */}
         <Stat label="1-year return" awaiting={aw || (ready && !fin(t.ret_1y))} value={ready && fin(t.ret_1y) ? pct(t.ret_1y) : undefined} tone={ready && fin(t.ret_1y) ? (t.ret_1y >= 0 ? "up" : "down") : undefined} sub={ready && t.ret_1y_dates && dayLong(t.ret_1y_dates.from) ? `since ${dayLong(t.ret_1y_dates.from)}` : undefined} />
@@ -388,6 +391,7 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
           Sector leadership · {s && fin(s.window_months) ? `${s.window_months}-month` : "3-month"} relative strength vs S&amp;P
         </h2>
       </div>
+      <LoadingLine busy={state === "loading"} />
       {state === "ready" && endsLine(rows) ? <p className="te-sect-read">{endsLine(rows, gaps.among)}</p> : null}
       {state === "ready" && rows.length ? (
         <>
@@ -693,6 +697,7 @@ function RiskCard({ t, state, scored }: { t: TechnicalsResponse | undefined; sta
           Risk · drawdown and volatility<span className="dk-card-sub"> how far from its high, and how much it moves</span>
         </h2>
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
         <Stat
           label="From 1-year high"
@@ -729,6 +734,7 @@ function RelativeCard({ t, state, range }: { t: TechnicalsResponse | undefined; 
           Relative strength vs the S&amp;P 500<span className="dk-card-sub"> its price divided by the index, rebased to 100</span>
         </h2>
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
         <Stat label="Against its 50-day" awaiting={aw || (ready && !fin(rs?.vs_ma50))} value={ready && fin(rs?.vs_ma50) ? pct(rs.vs_ma50) : undefined} tone={ready && fin(rs?.vs_ma50) ? (rs.vs_ma50 >= 0 ? "up" : "down") : undefined} sub={ready && fin(rs?.vs_ma50) ? (rs.vs_ma50 >= 0 ? "leading the S&P" : "lagging the S&P") : undefined} />
         <Stat label="3-month change" awaiting={aw || (ready && !fin(rs?.chg_3m))} value={ready && fin(rs?.chg_3m) ? pct(rs.chg_3m) : undefined} tone={ready && fin(rs?.chg_3m) ? (rs.chg_3m >= 0 ? "up" : "down") : undefined} sub={ready && rs?.chg_3m_dates ? `since ${dayLong(rs.chg_3m_dates.from)}` : undefined} />

@@ -18,7 +18,7 @@ import { droppedOf } from "../data/schema";
 import type { PipelineGroup } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { Awaiting, DroppedNote, droppedWords, Unserved } from "../kit/ui";
+import { Awaiting, DroppedNote, droppedWords, Unserved, LoadingLine } from "../kit/ui";
 import { dayLong, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
@@ -306,6 +306,7 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
               <p className="pl-head-sub">{total ? `${total} series · grouped · generated from the registry` : "grouped · generated from the registry"}</p>
               <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} disabled={!groups.length} />
             </div>
+            <LoadingLine busy={!p && !q.isError} />
             {text.trim() && !hit ? (
               <p className="pl-miss" role="status">
                 {/* Codex R-16: a series the boundary could not read may be the one asked for. */}

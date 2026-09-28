@@ -490,6 +490,13 @@
   flex: none;
 }
 
+/* desk/usability §14.10: a pending card says so under its title. */
+.dk-loading {
+  font-size: 12.5px;
+  color: var(--dk-t3);
+  margin: 4px 0 6px;
+}
+
 /* ── Card skeleton (§1.4) ─────────────────────────────────────────────── */
 .dk-card {
   background: var(--dk-card);

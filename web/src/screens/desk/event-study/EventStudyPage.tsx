@@ -26,7 +26,7 @@ import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
 import { WINDOWS, apiParams, askFromSearch, presetHorizon, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
-import { DroppedNote, Unserved } from "../kit/ui";
+import { DroppedNote, Unserved, LoadingLine } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import "./study.css";
 
@@ -240,6 +240,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         <div className="es-grid" data-busy={placeholder || undefined}>
           <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon ?? undefined} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
+            <LoadingLine busy={(!study && !q.isError) || placeholder} />
             {study ? (
               <StudyRail
                 study={study}

@@ -20,7 +20,7 @@ import { dayLong, dayShort, endDay, monthYear, num, ordinal } from "../kit/forma
 import Gauge from "../kit/Gauge";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { matrixProblem } from "./matrix";
 import "./macro.css";
@@ -154,6 +154,7 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-curve" aria-busy={quiet}>
       <CardHead id="mc-curve" title="Yield curve" sub="today against a month ago" />
+      <LoadingLine busy={quiet} />
       {c ? (
         <>
           <StatRow cols={3}>
@@ -257,6 +258,7 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-sb" aria-busy={quiet}>
       <CardHead id="mc-sb" title="Do bonds still hedge stocks?" sub="60-day correlation of daily returns, one year" />
+      <LoadingLine busy={quiet} />
       {sb ? (
         <>
           <StatRow cols={3}>
@@ -334,6 +336,7 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-credit" aria-busy={quiet}>
       <CardHead id="mc-credit" title="Credit" sub="high-yield spread over Treasuries" />
+      <LoadingLine busy={quiet} />
       {c ? (
         <>
           <StatRow cols={3}>
@@ -416,6 +419,7 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-corr" aria-busy={quiet}>
       <CardHead id="mc-corr" title="What moves with the S&P" sub="60-day correlation · each asset against the index" />
+      <LoadingLine busy={quiet} />
       {rows.length ? (
         <>
           <p className="mc-axis" aria-hidden="true">

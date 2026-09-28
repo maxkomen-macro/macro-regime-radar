@@ -20,7 +20,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
-import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import { REGIME_TONE } from "../kit/palette";
@@ -75,6 +75,11 @@ function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefine
             {it.tag ? <span data-tone="up"> {it.tag}</span> : null}
           </span>
         ))
+      ) : !data && !failed ? (
+        // §14.10: a pending answer says so.
+        <span className="ov-since-item dk-loading" role="status" data-testid="dk-loading">
+          Loading live data…
+        </span>
       ) : failed ? (
         <span className="ov-since-item" style={{ color: "var(--dk-t3)" }}>
           Awaiting refresh
@@ -120,6 +125,7 @@ function Tile({ label, state, badge, value, tone, sub, unserved }: { label: stri
         <span className="ov-tile-label">{label}</span>
         {unserved ? <NotServedBadge block={unserved} /> : state === "ready" ? badge : null}
       </div>
+      <LoadingLine busy={state === "loading" && !unserved} />
       {unserved ? (
         // §1.0.2: the tile keeps its label, prints the served reason, and no number.
         <UnservedLine block={unserved} className="ov-tile-unserved" />
@@ -253,6 +259,7 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
         </h2>
       </div>
       <div className="dk-card-body" aria-busy={!data && !failed}>
+        <LoadingLine busy={!data && !failed} />
         {rows ? (
           rows.length ? (
             <ul className="ov-signals">

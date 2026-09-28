@@ -277,7 +277,11 @@ refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built;
 a PROTOTYPE card (§1.0.3) carries no badge and ends with its footnote.
 
 ### 1.7 Empty, busy and awaiting states
-- `computing` (202): the card stays quiet and busy while the client polls.
+- `computing` (202): the card stays busy while the client polls, and says
+  "Loading live data…" under its title (desk/usability §14.10).
+- A card whose request is pending says "Loading live data…" under its title
+  (§14.10); the line goes when the answer, a failure or an awaiting block
+  arrives.
 - A list whose rows the response boundary could not read says so ("1 row could
   not be read."; event, series, month, sector … as fits), and nothing is
   counted or called empty from the rows that are left (Codex round 2, R-16).
@@ -2266,4 +2270,23 @@ the walkthrough, `?tour=`, were already there):
 
 A filter, a range and the Advanced panel replace the history entry; a new
 question pushes one.
+
+### 14.10 Cold start
+
+- **Keep-warm workflow.** `.github/workflows/keep-api-warm.yml`, named "Keep
+  the API warm": a GitHub Actions cron every ten minutes (`*/10 * * * *`, and
+  on demand) that asks `https://macro-economic-radar-api.onrender.com/health/live`,
+  up to three tries 10 s apart, 45 s each. No secret, `permissions: {}`,
+  nothing written; a failed ping fails only that run. GitHub runs scheduled
+  workflows on a best-effort basis, so the interval is at least ten minutes.
+- **Render plan.** docs/redesign/DEPLOY.md §3a (prices read 2026-09-21) calls
+  for the 1 CPU / 2 GB instance ($25/month) and rules out the free tier
+  because it spins down when idle; the running plan could not be read from
+  this machine (no Render dashboard access). On a paid instance the ping keeps
+  the process and its generation warm after a deploy and guards against a
+  downgrade to a sleeping tier; on a free instance it is what keeps it awake.
+- **Loading state.** Every Desk card whose request is pending prints "Loading
+  live data…" under its title (`kit/ui.tsx` `LoadingLine`, a polite status),
+  and the Overview's since-last-close line says the same, until the answer, a
+  failure or an awaiting block arrives.
 

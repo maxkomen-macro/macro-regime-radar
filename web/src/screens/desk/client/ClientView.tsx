@@ -17,7 +17,7 @@ import { DeskApiError, unavailableOf, useStudy, useStudyCatalog } from "../data/
 import type { StudyResponse } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, pctPlain, year } from "../kit/format";
-import { Awaiting, DroppedNote, Signed, Unserved, useUnserved } from "../kit/ui";
+import { Awaiting, DroppedNote, Signed, Unserved, useUnserved, LoadingLine } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { apiParams, askFromSearch, atMonth, readLastStudy, targetLabel } from "../event-study/question";
 import { isUnit, moveText, scaleOf, tipOf } from "../kit/units";
@@ -178,6 +178,7 @@ export default function ClientView({ page }: { page: DeskPage }) {
   const state = (ok: boolean) => (ok ? "value" : (!s && !failed) || refusal ? "loading" : thin ? "too few cases to say" : "awaiting");
   return (
     <div className="cv" aria-busy={(!s && !failed) || undefined}>
+      <LoadingLine busy={(!s && !failed) || undefined} />
       <Unserved block={unavailableOf(q.error)}>
         <div className="cv-grid">
           <div className="cv-main">
