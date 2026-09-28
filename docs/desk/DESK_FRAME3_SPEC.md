@@ -71,6 +71,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
 | Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
 | Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket | short interest, open interest and 13F holdings not ingested |
+| Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | PROTOTYPE (§1.0.3), drawn for the sample basket | no basket index series is stored for the engine to run on |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
 | Client view | LIVE for Event Study's current study, at h = 20 | — |
@@ -1041,6 +1042,18 @@ else Crowded long when at least 25% of the funds a 13F sample tracks hold the
 name in their top ten. A name the fixture has no row for is listed without
 numbers. Footnote: "Illustrative values · In production: exchange
 short-interest files, OCC open interest, 13F holdings."
+
+**Event study on this basket** (under the step 3, right): PROTOTYPE
+(§1.0.3), from `proto-basket-study.json`, styled as an Event Study answer
+(§4): the question in serif, "After this basket falls 2σ over 5 days, it was
+higher a month later <up>% of the time."; EVENTS · UP A MONTH LATER (against
+a normal month) · MEDIAN AT A MONTH (against a normal month, §1.9's log
+display) · VERDICT (§1.5's rule v1 on the card's own numbers at h = 20); the
+Event Study's horizon chart; §12.2's why over the month's row; the
+provenance line. Drawn for the sample basket alone (its legs at its
+weights); another basket keeps the labels and names the sample. Footnote:
+"Illustrative values · In production: the existing engine run on the basket
+index series."
 
 ---
 

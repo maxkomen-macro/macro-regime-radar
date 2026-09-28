@@ -727,6 +727,11 @@ test.describe("desk v2", () => {
     await expect(positions).toHaveAttribute("data-prototype", "positioning");
     await expect(positions.getByRole("table").getByRole("row")).toHaveCount(8);
     await expect(positions).toContainText("Crowded short");
+    // §1.0.3: the event study on the basket, as an Event Study answer.
+    const study = page.getByRole("region", { name: /^Event study on this basket/ });
+    await expect(study).toHaveAttribute("data-prototype", "basket-study");
+    await expect(study).toContainText("After this basket falls 2σ over 5 days, it was higher a month later 65% of the time.");
+    await expect(study.getByRole("img")).toHaveCount(1);
     // Weights as typed, saved in this browser.
     await basket.getByLabel("Weight of SMCI, percent").fill("8");
     await expect(basket).toContainText("total 96%");

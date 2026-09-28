@@ -10,6 +10,7 @@ import { ordinal, signed } from "../kit/format";
 import { basketInputs, sampleBasket } from "./basket-inputs";
 import { hedge, usd } from "./options";
 import { CROWDING_WORDS, positioning } from "./positioning";
+import { basketStudy } from "./basket-study";
 import { costText, protection, strikeText } from "./protection";
 
 function protectionMarkers(): string[] {
@@ -32,8 +33,15 @@ function positioningMarkers(): string[] {
   return [CROWDING_WORDS.short, CROWDING_WORDS.long, ...p.rows.filter((r) => r.flag === "short").map((r) => `${r.si.toFixed(1)}%`)];
 }
 
+/** The study's question and its why. */
+function studyMarkers(): string[] {
+  const st = basketStudy();
+  return [`After this basket falls 2σ over ${st.window} days`, `${st.month.n} completed outcomes in ${st.month.n_blocks} overlap blocks`];
+}
+
 export const PROTOTYPE_MARKERS: Readonly<Record<string, readonly string[]>> = {
   protection: protectionMarkers(),
   "options-hedge": [...new Set(optionsMarkers())],
   positioning: positioningMarkers(),
+  "basket-study": studyMarkers(),
 };

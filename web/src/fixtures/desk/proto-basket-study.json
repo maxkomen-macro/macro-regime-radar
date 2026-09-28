@@ -1,0 +1,80 @@
+{
+ "kind": "mrr.desk.prototype.basket-study",
+ "note": "Illustrative: an event study on the sample basket's index, in the Event Study's shape (DESK_FRAME3_SPEC §1.0.3, §12.2): the basket falls 2σ over 5 days, the basket a week to three months later. Not the engine's output.",
+ "basket_id": "local-1",
+ "index": {
+  "from": "2014-06-06",
+  "rule": "weights as saved, a name joining the index when it lists, rebalanced monthly"
+ },
+ "question": {
+  "shock": "basket",
+  "window": 5,
+  "move": "down2s",
+  "while": "none",
+  "target": "basket",
+  "target_unit": "log_return"
+ },
+ "sample_start": "2015-06-08",
+ "sample_end": "2026-09-21",
+ "matched_n": 41,
+ "last_event": "2026-04-02",
+ "cooldown": 5,
+ "horizons": [
+  {
+   "h": 5,
+   "n": 41,
+   "up_n": 25,
+   "median": 0.012,
+   "baseline_median": 0.006,
+   "baseline_up_pct": 0.56,
+   "ci_lo": -0.006,
+   "ci_hi": 0.017,
+   "blocks": 36,
+   "adverse_share": 0.21
+  },
+  {
+   "h": 10,
+   "n": 41,
+   "up_n": 26,
+   "median": 0.019,
+   "baseline_median": 0.011,
+   "baseline_up_pct": 0.58,
+   "ci_lo": -0.009,
+   "ci_hi": 0.024,
+   "blocks": 35,
+   "adverse_share": 0.19
+  },
+  {
+   "h": 20,
+   "n": 40,
+   "up_n": 26,
+   "median": 0.031,
+   "baseline_median": 0.022,
+   "baseline_up_pct": 0.6,
+   "ci_lo": -0.014,
+   "ci_hi": 0.036,
+   "blocks": 34,
+   "adverse_share": 0.18,
+   "worst": {
+    "value": -0.238,
+    "event_date": "2020-02-27"
+   },
+   "best": {
+    "value": 0.214,
+    "event_date": "2025-04-04"
+   }
+  },
+  {
+   "h": 60,
+   "n": 38,
+   "up_n": 27,
+   "median": 0.074,
+   "baseline_median": 0.063,
+   "baseline_up_pct": 0.64,
+   "ci_lo": -0.031,
+   "ci_hi": 0.058,
+   "blocks": 31,
+   "adverse_share": 0.27
+  }
+ ]
+}

@@ -570,3 +570,34 @@ describe("Positioning (PROTOTYPE, §1.0.3): per name in the basket open here", (
     expect(c).toHaveTextContent(/Crowded\s*1 of 2/);
   });
 });
+
+describe("Event study on this basket (PROTOTYPE, §1.0.3): as an Event Study answer", () => {
+  it("the question, events, up a month later, the median against a normal month, the verdict and the horizon chart; its footnote last", async () => {
+    seed();
+    renderTab();
+    await loaded();
+    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
+    expect(c).toHaveAttribute("data-prototype", "basket-study");
+    expect(c).toHaveTextContent("After this basket falls 2σ over 5 days, it was higher a month later 65% of the time.");
+    expect(c).toHaveTextContent(/Events\s*41\s*40 complete at a month/);
+    expect(c).toHaveTextContent(/Up a month later\s*65%\s*26 of 40 · 60% in a normal month/);
+    expect(c).toHaveTextContent(/Median at a month\s*\+3\.1%\s*vs \+2\.2% in a normal month/);
+    expect(within(c).getByText("Suggestive")).toHaveAttribute("data-verdict", "suggestive");
+    expect(within(c).getByRole("img")).toBeInTheDocument();
+    expect(c).toHaveTextContent("40 completed outcomes in 34 overlap blocks; the 90% interval on the excess median runs −1.4% to +3.6%; 18.0% of resampled medians are adverse against a 3% bar.");
+    expect(within(c).queryByTestId("dk-live")).toBeNull();
+    expect(c.querySelector("[data-prototype-foot]")!.textContent).toBe("Illustrative values · In production: the existing engine run on the basket index series.");
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    expect(c).toHaveTextContent("the interval spans zero");
+    expect(c).toHaveTextContent("all lean up: Suggestive");
+  });
+
+  it("another basket has no illustrative study: the labels, and the sample it is drawn for", async () => {
+    seed([{ ...BASKETS[0], legs: BASKETS[0].legs.slice(0, 3).map((l) => ({ ...l, weight: l.symbol === "NVDA" ? 40 : 30 })) }]);
+    renderTab();
+    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
+    expect(c).toHaveTextContent("Illustrative values are drawn for the AI infrastructure sample basket; open it to see this card filled.");
+    expect(within(c).queryByRole("img")).toBeNull();
+    expect(c).not.toHaveTextContent("Suggestive");
+  });
+});

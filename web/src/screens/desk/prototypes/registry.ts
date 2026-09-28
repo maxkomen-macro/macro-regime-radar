@@ -34,6 +34,12 @@ export const PROTOTYPES: readonly PrototypeEntry[] = [
     title: "Positioning",
     production: "exchange short-interest files, OCC open interest, 13F holdings.",
   },
+  {
+    id: "basket-study",
+    page: "basket-hedge",
+    title: "Event study on this basket",
+    production: "the existing engine run on the basket index series.",
+  },
 ];
 
 /** A registry row by id; throws on an unknown id, so a card cannot ship without its row. */
@@ -49,4 +55,4 @@ export function isPrototypeFixture(path: string): boolean {
 }
 
 /** The names a module outside prototypes/ may import from it: the cards themselves, which a page places. */
-export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard", "PositioningCard"];
+export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard", "PositioningCard", "BasketStudyCard"];

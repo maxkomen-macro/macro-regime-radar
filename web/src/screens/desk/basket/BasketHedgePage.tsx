@@ -10,7 +10,8 @@
  * the options slot, the PROTOTYPE cards of §1.0.3 (../prototypes/, mounted
  * by ./BasketHedgeStep.tsx): "Hedge with options", priced in the browser
  * from the basket engine's inputs and assumed volatilities; below the slot,
- * "Positioning", per name.
+ * "Positioning", per name, and "Event study on this basket", as an Event
+ * Study answer.
  * Send to Position Monitor carries the basket as a manual subject (§9).
  */
 
@@ -27,6 +28,7 @@ import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
 import { checkTicker } from "./check";
 import { PositioningCard } from "../prototypes/PositioningCard";
+import { BasketStudyCard } from "../prototypes/BasketStudyCard";
 import {
   DEFAULT_METHOD,
   DEFAULT_NOTIONAL,
@@ -610,10 +612,11 @@ function StepThree({ local, q, priceAsOf }: { local: SavedBasket | null; q: Retu
         </p>
       ) : null}
       <BasketHedgeStep h={q.data} state={state} basket={local} />
-      {/* §10, §1.0.3: Positioning, a PROTOTYPE per name in the saved basket (none when none is open). */}
+      {/* §10, §1.0.3: Positioning and the event study, PROTOTYPE cards for the saved basket (none when none is open). */}
       {local?.legs.length ? (
         <div className="pr-below">
           <PositioningCard basket={local} />
+          <BasketStudyCard basket={local} />
         </div>
       ) : null}
     </section>
