@@ -905,9 +905,9 @@ Steps 2 and 3 each carry their own answer's `● Live · <provider> · prices
 <prices_as_of>`; when `/basket/hedge` and `/basket/price` answer different
 sessions, step 3 says so in amber (Codex R-08).
 - **Hedge with options**: the slot for the options card (desk/prototypes).
-  UNAVAILABLE here: title, subtitle, the three mode labels (Protect the
-  basket, Express the S&P lean, Neutralize NDX beta) and HEDGE RATIO · COST
-  OF WAITING · ROLL kept, the reason printed, Advanced disabled. The deferred
+  UNAVAILABLE here, and plain (Codex R-14): title, subtitle, the `○ Not yet
+  served` badge and the reason, in a `data-slot="hedge-options"` container;
+  no mode button, stat or Advanced control that cannot act. The deferred
   option shapes, with the corrections that apply when they are built, are in
   §12.13.
 

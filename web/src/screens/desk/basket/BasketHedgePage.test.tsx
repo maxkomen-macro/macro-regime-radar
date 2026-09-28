@@ -96,16 +96,14 @@ describe("Basket & Hedge tab", () => {
     const stress = within(hedge).getByRole("region", { name: /^Stress test/ });
     expect(stress).toHaveTextContent("If QQQ falls 10% the basket loses $170,542 unhedged and makes $5,810 hedged with XLK; if SPY falls 10% the basket loses $238,851 unhedged and makes $1,924 hedged with XLK.");
     expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
-    // The options slot keeps its title, modes and labels, and prints why it is not served (§1.0.2).
+    // The options slot is plain (Codex R-14): its title, badge and why it is not served; no control that cannot act.
     const h = optionsCard();
     expect(h).toHaveTextContent("Hedge with options priced off the SPY / QQQ surface");
     expect(h.querySelector('[data-slot="hedge-options"]')).not.toBeNull();
-    const modes = within(within(h).getByRole("group", { name: "Hedge mode" })).getAllByRole("button");
-    expect(modes.map((m) => m.textContent)).toEqual(["Protect the basket", "Express the S&P lean", "Neutralize NDX beta"]);
-    for (const m of modes) expect(m).toBeDisabled();
-    expect(h).toHaveTextContent(/Hedge ratio\s*—\s*Cost of waiting\s*—\s*Roll\s*—/);
     expect(within(h).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1);
-    expect(within(h).getByTestId("dk-advanced")).toBeDisabled();
+    expect(within(h).queryAllByRole("button")).toHaveLength(0);
+    expect(within(h).queryByTestId("dk-advanced")).toBeNull();
+    expect(within(h).getByTestId("dk-live")).toHaveTextContent("Not yet served");
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
   });
 

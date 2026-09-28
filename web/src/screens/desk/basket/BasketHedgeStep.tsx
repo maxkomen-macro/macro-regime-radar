@@ -13,7 +13,7 @@
 import { useId, type ReactNode } from "react";
 import type { BasketHedgeResponse, HedgeEtf } from "../data/types";
 import { num, pct, pctPlain } from "../kit/format";
-import { AdvancedPanel, Awaiting, NotServedBadge, Stat, StatRow, Unserved, UnservedLine, cx, useAdvanced } from "../kit/ui";
+import { Awaiting, NotServedBadge, UnservedLine, cx } from "../kit/ui";
 import { excludedWords, hedgeLead, stressLead, stressWindowWords, usd } from "./trades";
 
 type State = "loading" | "awaiting" | "ready";
@@ -21,9 +21,6 @@ const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinit
 
 /** §1.0: the option structures have no served envelope, so the slot prints §1.0's reason (§1.0.2). */
 export const OPTIONS_UNAVAILABLE = { reason: "Option structures for a basket are not yet defined in the engine.", until: null } as const;
-
-/** The option modes the slot keeps as labels (§10). */
-export const MODES = ["Protect the basket", "Express the S&P lean", "Neutralize NDX beta"] as const;
 
 function HedgeCard({ title, sub, lead, state, className, badge, children }: { title: string; sub?: string; lead?: string | null; state: State; className?: string; badge?: ReactNode; children: ReactNode }) {
   const hid = useId();
@@ -144,32 +141,14 @@ function StressCard({ h, state }: { h: BasketHedgeResponse | undefined; state: S
 }
 
 /**
- * The slot for the options card (desk/prototypes builds it). Until it lands here the slot keeps its title,
- * its three mode labels and its stat labels, and prints why it is not served (§1.0.2).
+ * The slot for the options card (desk/prototypes builds it). Until it lands here the slot is plain (Codex
+ * R-14): its title, its badge and why it is not served, and no control that cannot act.
  */
 function OptionsSlot() {
-  const adv = useAdvanced();
   return (
     <HedgeCard className="bh-options" title="Hedge with options" sub="priced off the SPY / QQQ surface" state="ready" badge={<NotServedBadge />}>
       <div className="bh-options-slot" data-slot="hedge-options">
-        <div className="bh-modes" role="group" aria-label="Hedge mode">
-          {MODES.map((m) => (
-            <button key={m} type="button" disabled>
-              {m}
-            </button>
-          ))}
-        </div>
-        <Unserved block={OPTIONS_UNAVAILABLE}>
-          <StatRow cols={3}>
-            {["Hedge ratio", "Cost of waiting", "Roll"].map((l) => (
-              <Stat key={l} label={l} />
-            ))}
-          </StatRow>
-        </Unserved>
         <UnservedLine block={OPTIONS_UNAVAILABLE} />
-      </div>
-      <div className="dk-card-foot">
-        <AdvancedPanel adv={adv} items="full chain · greeks · roll dates · what the hedge does under −10% / −20%" />
       </div>
     </HedgeCard>
   );

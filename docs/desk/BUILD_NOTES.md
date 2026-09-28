@@ -129,6 +129,12 @@ per-study confidence selector. After that, a server-side position store with acc
 discipline gate can be shared across a desk instead of living in one
 browser.
 
+On Basket & Hedge: importing a basket file treats an imported basket as
+one already saved here when the name and the names match, even if its
+method or notional differs, so a monthly or larger copy is dropped as
+already here. The import should keep both, or ask which to keep (review
+R-11).
+
 ## How it works, in detail
 
 Four diagrams, one per part of the system, each with the components under

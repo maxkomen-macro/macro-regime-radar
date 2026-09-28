@@ -667,10 +667,9 @@ test.describe("desk v2", () => {
     await expect(step3.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("XLK fits the basket best (R² 0.69 over a year)");
     await expect(step3.locator('tr[aria-current="true"]')).toHaveCount(1);
     await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("If QQQ falls 10% the basket loses $170,542 unhedged");
-    // §10: the options slot keeps its labels and prints the reason.
-    await expect(hedge.getByRole("group", { name: "Hedge mode" }).getByRole("button")).toHaveCount(3);
-    for (const b of await hedge.getByRole("group", { name: "Hedge mode" }).getByRole("button").all()) await expect(b).toBeDisabled();
-    await expect(hedge.getByRole("radio")).toHaveCount(0);
+    // §10 (Codex R-14): the options slot is plain: no control that cannot act, the reason printed.
+    await expect(hedge.getByRole("button")).toHaveCount(0);
+    await expect(hedge.locator('[data-slot="hedge-options"]')).toHaveCount(1);
     await expect(hedge).toContainText("Option structures for a basket are not yet defined in the engine.");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
