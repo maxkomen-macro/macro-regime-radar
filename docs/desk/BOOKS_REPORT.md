@@ -26,7 +26,15 @@ finding or tightly related group per commit (the table below):
 | `7897dcf` | R-10, R-12: no zero-weight leg, and ticker checks bound to their basket |
 | `f5ea56e` | R-14, R-11: a plain options slot; the import follow-up in Build Notes |
 | `9dcd5cc` | Build Notes' basket method after the review; the live shots re-taken on the fixed head |
-| the commit that carries this report | the findings table and the gates |
+| `11f9f4f` | this report after round 1: the findings table and the gates |
+
+Codex's second review (of `f5d98c2..11f9f4f`) found R-01 to R-14 fixed
+(R-11 deferred) and one new blocking finding, R-15, fixed in one commit:
+
+| Commit | Findings |
+|---|---|
+| `591a01f` | R-15: the stress holds the short the ETF table recommends, and the card names it |
+| the commit that carries this report | the R-15 row and the gates after it |
 
 Commits 3 to 6 were re-made after gates found faults in them, each time by
 amending the commit at fault and replaying the ones after it (no rebase, no
@@ -46,12 +54,14 @@ push; every earlier sha is still reachable):
 - The final e2e on `878b4db` found "never" on the Build Notes page (my
   basket section); commit 6 was amended to `f5d98c2` with "stay fixed".
 
-## Codex's findings on `f5d98c2`
+## Codex's findings
 
 Codex reviewed `f5d98c2` against main `4394e59` and returned DO NOT PUSH
-with 14 findings, seven blocking. Each test below was built from Codex's
-own repro (read from its session log) and asserts the corrected value
-beside the one Codex reported; all pass at the head.
+with 14 findings, seven blocking; its second review, of `f5d98c2..11f9f4f`,
+confirmed R-01 to R-14 fixed (R-11 deferred) and added R-15, blocking. Each
+test below was built from Codex's own repro (read from its session log) and
+asserts the corrected value beside the one Codex reported; all pass at the
+head.
 
 | ID | Severity | Fix commit | Test |
 |---|---|---|---|
@@ -69,6 +79,7 @@ beside the one Codex reported; all pass at the head.
 | R-12 | high | `7897dcf` | `BasketHedgePage.test.tsx` "Codex R-12: …" (a QQQ check held while basket B is opened adds nothing to B) |
 | R-13 | high | `3c40c01` | `tests/test_providers.py::test_codex_r13_a_stale_daily_entry_is_refreshed_once_under_concurrency` (four concurrent calls: one upstream computation, were four) |
 | R-14 | low | `f5ea56e` | `BasketHedgePage.test.tsx` (the options slot has no button and no Advanced control); `web/e2e/desk.spec.ts` (the same in the browser) |
+| R-15 | blocking (round 2) | `591a01f` | `tests/test_desk_basket.py::test_codex_r15_the_stress_holds_the_short_the_table_recommends` (121 XNYS sessions, $1M basket: the table recommends $1M of SMH; QQQ −10% hedged −$200,000, was about $0 from a silently refitted $3M short; the pre-fix `stress` from `11f9f4f` run on the same case gives hedge ratio 3.0 and $0); `tests/test_desk_basket_api.py::test_codex_r15_the_answer_stresses_the_short_its_table_recommends` (the same through `hedge_answer`: the stress row's `short_usd` is the table's); `::test_the_stress_without_a_recommended_short_says_so`; `trades.test.ts` "Codex R-15: …" and `BasketHedgePage.test.tsx` (the card names the short it holds) |
 
 The fixture script gained `--cache`: Yahoo re-adjusts its closes on every
 download, so the fixtures moved by a dollar between regenerations; with one
@@ -157,12 +168,15 @@ leading with one sentence that states its answer with served numbers:
   says so); hedge ratio = beta; dollars to short = beta × notional;
   volatility left = sd of basket − beta × ETF, × √252 (= basket vol ×
   √(1 − R²)).
-- **Stress**: every beta of a row on one shared window (R-01): the last n
-  sessions (n from the top pick's basis) up to the basket's last session on
-  which the basket, the top ETF and the shock each have a one-session return;
-  basket move = β(basket, shock) × −10%; the short's P&L = −β(basket, ETF) ×
-  notional × β(ETF, shock) × −10% (β = 1 when the ETF is the shock); the
-  footnote names the window (R-09); no convexity, no costs.
+- **Stress**: hedged means the short the ETF table recommends for the top
+  pick, `short_usd` = its hedge ratio × notional, held as it is under both
+  shocks and named on the card (R-15). The shock betas are fitted on one
+  shared window (R-01): the last n sessions (n from the top pick's basis) up
+  to the basket's last session on which the basket, the top ETF and the
+  shock each have a one-session return; basket move = β(basket, shock) ×
+  −10%; the short's P&L = −`short_usd` × β(ETF, shock) × −10% (β = 1 when
+  the ETF is the shock); the footnote names the window (R-09); no
+  convexity, no costs.
 - **Dates**: steps 2 and 3 each show their own answer's date, and a hedge
   answered at another session than the price is said (R-08).
 
@@ -267,12 +281,32 @@ full pytest and the full Desk e2e (`--workers=1`) once, holding
 | `7897dcf` R-10/12 | pass | 126 files, 1,562 | pass | 710 passed | at the head |
 | `f5ea56e` R-14/11 | pass | 126 files, 1,562 | pass | 710 passed | at the head |
 | `9dcd5cc` (docs and shots) | pass | 126 files, 1,562 | pass | full: 1,650 passed (below) | 55/55 (below) |
+| `591a01f` R-15 | pass | 126 files, 1,563 | pass | basket/provider/desk: 713 passed; full: 1,653 passed (below) | 55/55 (below) |
 
 The fix commits' pytest ran `tests/test_providers.py`,
 `tests/test_api_lookup.py`, `tests/test_provider_no_yahoo.py` and every
 `tests/test_desk*.py` (23 files), with no failure on any of the eight.
 
-**The final gate after the review.** On `9dcd5cc`, the head before this
+**The final gate after R-15.** On `591a01f`, the head before this report's
+round-2 update. The light gate first: tsc pass, vitest (2 workers) 126
+files and **1,563 passed**, build pass, and the provider tests plus every
+`tests/test_desk*.py`, **713 passed**. Then the final gate. It repeated
+tsc, vitest (1,563) and the build, all passing. Then it held
+`/tmp/mrr-full-gates.lock` from 23:24:00 until the e2e finished; another
+session's full pytest took the lock at 23:35:08, after the script's exit
+trap had released it.
+- The full pytest, serial, 9 minutes: **1,653 passed, 3 failed**. Two are
+  the known `test_asset_history` DB-copy failures. The third is
+  `test_provider_no_yahoo.py::test_the_profile_makes_its_two_eodhd_calls_concurrently`
+  again: its calls overlapped, but it took 0.85 s against its 0.71 s bound
+  under load. Run alone on the same export afterwards it **passed**
+  (0.40 s).
+- The full Desk e2e, `--workers=1`, on a port whose listener was checked to
+  be the export: **55/55**.
+
+Adding this report's round-2 update is the only change after the gate.
+
+**The final gate after round 1.** On `9dcd5cc`, the head before this
 report: tsc pass; vitest (2 workers) 126 files, **1,562 passed**; build pass;
 then, holding `/tmp/mrr-full-gates.lock` from 22:24:21 until the e2e
 finished (released by the script's exit trap; mrr-usability took it at
@@ -285,7 +319,8 @@ whose calls overlapped (that assertion held) but took 0.75 s against its
 listener was checked to be the export: **55/55**. The profile's code is as
 on main; the cache class it shares (`KeyedTTLCache.get`) gained R-13's
 optional `stale` argument, which the profile does not pass (one `is not None`
-test per hit). Adding this report is the only change after the gate.
+test per hit). At the time, adding this report (`11f9f4f`) was the only
+change after that gate.
 
 **The first final gates, before the review.** On `878b4db` (commit 6 before the report), holding
 `/tmp/mrr-full-gates.lock` from 19:43:54 until the e2e finished: the full
@@ -355,6 +390,16 @@ Shots: `docs/desk/shots/desk-books/`: `live-before-*` (the live site before),
 ZZZZQ refused: "ZZZZQ was not added: No listing found for 'ZZZZQ' on
 EODHD.", then Save priced eleven names), `live-technicals-render-*`.
 
+After R-15 (`591a01f`) both baskets were shot live again through the same
+relay. Cards 1 to 9 came out byte-identical to `9dcd5cc`'s shots. The options
+card's pixels moved with its position but its content is the same, so the
+committed shot was kept. The stress card and the full page are re-taken. The
+stress figures did not move: every name has every session of the 60-session
+window, so the table's ratio and the shared window's refit agree. What is new
+is the short the card names. The compare shot `09-basket-hedge` was
+regenerated from the fixtures; it had last been made in commit 6, before the
+round-1 changes to the page.
+
 | Card | Page | Verdict | Evidence |
 |---|---|---|---|
 | Page badge `● Live · EODHD · Sep 25`, and steps 2 and 3 each with its own `prices Sep 25` (R-08) | Basket & Hedge | LIVE-verified | preset page shot |
@@ -367,7 +412,7 @@ EODHD.", then Save priced eleven names), `live-technicals-render-*`.
 | Concentration | Basket & Hedge | LIVE-verified | `…-07-concentration.png` |
 | Liquidity | Basket & Hedge | LIVE-verified (relay: adjusted close × volume) | `…-08-liquidity.png` |
 | Hedge with an ETF | Basket & Hedge | LIVE-verified (ranked on 60 days live) | `…-09-hedge-with-an-etf.png` |
-| Stress test | Basket & Hedge | LIVE-verified (the footnote names the 60-session window it was fitted on, R-09) | `…-10-stress-test.png` |
+| Stress test | Basket & Hedge | LIVE-verified (the lead and footnote name the short it holds, the table's $1,099,833 of SOXX for the preset, R-15; the footnote names the 60-session window, R-09) | `…-10-stress-test.png`, re-taken on `591a01f` |
 | Hedge with options | Basket & Hedge | PROTOTYPE (the slot; the card is desk/prototypes', no values and no controls on this branch) | `…-11-hedge-with-options.png` |
 | S&P 500 price and its two trend lines (now the kit's TrendChart) | Technicals | LIVE-verified against the deployed API | `live-technicals-render-02-s-p-500.png`, identical numbers to `live-before-technicals.png` |
 
