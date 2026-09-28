@@ -337,8 +337,10 @@ test.describe("desk usability", () => {
       const n = ((await line.textContent()) ?? "").trim().split(/\s+/).length;
       // Data Pipeline's line is desk/prototypes' three sentences, kept by the owner at the rebase (2026-09-28).
       if (p.slug !== "data-pipeline") expect(n, `${p.slug}: purpose line of ${n} words`).toBeLessThanOrEqual(15);
-      // One primary-styled control on the page: the header's action, or the page's own (Run, Export CSV).
-      const primaries = page.locator('.dk-main :is(a, button)[data-kind="light"]:visible, .dk-main :is(a, button)[data-kind="primary"]:visible');
+      // One primary-styled control on the page: the header's action, or the page's own (Run, Export CSV). A PROTOTYPE
+      // card's own control (Data Pipeline's "Sync to Snowflake", which plays the illustrative sync) is the card's,
+      // not the page's action, so it is not counted (desk/prototypes, kept as merged).
+      const primaries = page.locator('.dk-main :is(a, button):is([data-kind="light"], [data-kind="primary"]):visible:not([data-prototype] *)');
       await expect(primaries, `${p.slug}: primary actions`).toHaveCount(1);
     }
   });

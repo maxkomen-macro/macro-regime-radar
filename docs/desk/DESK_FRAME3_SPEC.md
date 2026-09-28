@@ -2243,6 +2243,10 @@ primary (light) style; every other button on the page is secondary.
 | Data Pipeline | Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser. (desk/prototypes' wording, kept by the owner at the rebase: the one line over fifteen words) | **Export current study → CSV** (in the page) |
 | Build Notes | What this Desk is, how it was checked, and what comes next. | **Take the walkthrough →** (header) |
 
+A PROTOTYPE card's own control (Data Pipeline's "Sync to Snowflake", which plays the
+illustrative sync, desk/prototypes) belongs to the card, not the page: it is not the
+page's primary action and the one-action check does not count it.
+
 ### 14.7 Start here
 
 The Overview opens with a Start here strip (§2): four numbered links in the
