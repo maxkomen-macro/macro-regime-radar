@@ -40,13 +40,15 @@
         "awaiting": 0
       },
       "answers": [
-        "200 /api/desk/ledger",
         "200 /api/desk/technicals",
+        "200 /api/desk/ledger",
         "200 /api/desk/overview",
         "200 /api/desk/ledger",
         "200 /api/desk/technicals",
         "200 /api/desk/overview"
-      ]
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
     },
     {
       "file": "04-technicals-nvda.png",
@@ -163,11 +165,11 @@
       "answers": [
         "200 /api/desk/technicals",
         "200 /api/desk/overview",
-        "200 /api/desk/technicals",
-        "200 /api/desk/overview",
         "200 /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000",
         "200 /api/desk/basket/hedge?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000"
-      ]
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
     },
     {
       "file": "11-position-monitor.png",
@@ -213,10 +215,13 @@
       },
       "answers": [
         "200 /api/desk/pipeline",
+        "200 /api/desk/technicals",
         "200 /api/desk/pipeline",
         "200 /api/desk/technicals",
         "200 /api/desk/overview"
-      ]
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
     },
     {
       "file": "13-build-notes.png",
@@ -228,10 +233,10 @@
       },
       "answers": [
         "200 /api/desk/technicals",
-        "200 /api/desk/overview",
-        "200 /api/desk/technicals",
         "200 /api/desk/overview"
-      ]
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
     },
     {
       "file": "14-desk-search-N.png",

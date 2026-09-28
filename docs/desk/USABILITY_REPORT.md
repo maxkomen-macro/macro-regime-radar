@@ -8,49 +8,54 @@ everything is one search away, and no control on screen does nothing. The
 contract changes are in `docs/desk/DESK_FRAME3_SPEC.md` §14 (one section per
 item) and the amended §1.0, §1.1, §1.4, §1.7, §2, §3, §4, §5, §9, §10, §12.
 
-**Status (2026-09-28, overnight):** rebased onto `2c62d403`; not pushed,
-no PR, not merged: the Codex review ended DO NOT PUSH on `d09d6e51` (its one
-finding is fixed in `cab74622`, which awaits a re-review). Gates and shots
-below.
+**Status (2026-09-28, final overnight run):** rebased onto `910a05fd`
+(desk/prototypes merged); every gate green at `eda8e4c2`; Codex's review of
+HEAD against origin/main ended **PUSH OK**. Not pushed (this session cannot
+push); the owner's push, PR and merge commands are in the morning note.
 
-## Commits (after the second rebase)
+## Commits (after the third rebase, onto `910a05fd`)
 
 | # | sha | what |
 |---|---|---|
-| 1 | `035cb856` | Desk-wide stock search (InstrumentSearch) |
-| 2 | `9c96ac5c` | Technicals for any stock (`?symbol=`) |
-| 3 | `6224dfc3` | Event Study answers any question, on request |
-| 4 | `567113ec` | Position Monitor opens on the saved positions |
-| 5 | `aa3651ce` | Nav groups Market · Research · Trade, About this build |
-| 6 | `f55a0f90` | One plain line under each title, one primary action |
-| 7 | `f84ef25a` | Start here on the Overview |
-| 8 | `ba47bc0f` | Analyst Desk → on the landing page |
-| 9 | `cacd01de` | Every stateful Desk view is a deep link |
-| 10 | `cad926cd` | Cold start: keep the API warm, say Loading live data… |
-| 11 | `ca725ed8` | Hover definitions for every term of art |
-| 12 | `78d36ca9` | A card whose request failed says Couldn't load · Retry |
-| 13 | `cfc9ebae` | No control that does nothing (the Desk guard) |
-| 13 | `ba3f4481` | Follow-up: the guard waits for the Advanced it opens (test only) |
-| 1 | `d4c83712` | Follow-up: the Position Monitor's suggestions show their names (found by the live check) |
-| R-01 | `0e4cebc9` | Codex: the one-year drawdown needs 252 valid closes, else it says partial |
-| R-02 | `619b1f6e` | Codex: a stock's price and averages print with their decimals |
-| R-03 | `9ae3c87d` | Codex: a stock's technicals read completed sessions only |
-| R-04 | `c4e0a68c` | Codex: a suggestion can be picked only for the text it was searched for |
-| R-05 | `9d7916a4` | Codex: the Event Study builder's series come with the catalog |
-| R-06 | `fa43ae8d` | Codex: the provider ceiling classifies Technicals on decoded parameters |
-| R-07 | `939d1e11` | Codex: every Event Study mode is in the address |
-| R-08 | `e416aa33` | Codex: one malformed asset_prices row drops its instrument, not the list |
-| R-08 r2 | `976c1199` | Codex round 2: canonical dates only, conversion isolated per instrument |
-| F-1 | `401223d4` | Rebase follow-through: main's stored ETFs are named and searchable |
-| F-2 | `81b68151` | Rebase follow-through: Basket & Hedge's ticker field is the Desk's stock search |
-| F-3 | `cc8c12ad` | Rebase follow-through: main's new cards load, fail and define their terms like the rest |
-| F-4 | `4df5cfe1` | Rebase follow-through: the guard on the merged Desk; the scope cut's Basket & Hedge terms and purpose line |
-| M-1 | `e0c2fb84` | Codex merge review: a stock's technicals read adjusted closes only |
-| M-2 | `c718d89a` | Codex merge review: the guard on Macro's five cards and the Position Monitor's Close… form |
-| M-3 | `d09d6e51` | Codex merge review, round 2: a failed refetch shows nothing from the answer before it |
-| M-4 | `cab74622` | Codex merge review, final round: a close the browser does not keep says so on the Monitored card |
-| T | `143a8c7f` | desk/fill-etf's R-03 test pinned to the rebase ruling (the full pytest's third failure) |
-| — | (this commit) | This report, CLAUDE.md, the final shots |
+| 1 | `985cc782` | Desk-wide stock search (InstrumentSearch) |
+| 2 | `df562689` | Technicals for any stock (`?symbol=`) |
+| 3 | `e4ad2393` | Event Study answers any question, on request |
+| 4 | `090a5ac8` | Position Monitor opens on the saved positions |
+| 5 | `c0fb28ff` | Nav groups Market · Research · Trade, About this build |
+| 6 | `375d70f0` | One plain line under each title, one primary action |
+| 7 | `2365dffc` | Start here on the Overview |
+| 8 | `39e76781` | Analyst Desk → on the landing page |
+| 9 | `5293c422` | Every stateful Desk view is a deep link |
+| 10 | `537c0834` | Cold start: keep the API warm, say Loading live data… |
+| 11 | `d335655b` | Hover definitions for every term of art |
+| 12 | `8d509ee6` | A card whose request failed says Couldn't load · Retry |
+| 13 | `ead9b078` | No control that does nothing (the Desk guard) |
+| 13 | `a4215d3e` | Follow-up: the guard waits for the Advanced it opens (test only) |
+| 1 | `ec33d62e` | Follow-up: the Position Monitor's suggestions show their names (found by the live check) |
+| R-01 | `8a955fca` | Codex: the one-year drawdown needs 252 valid closes, else it says partial |
+| R-02 | `5e6ec666` | Codex: a stock's price and averages print with their decimals |
+| R-03 | `59588ed8` | Codex: a stock's technicals read completed sessions only |
+| R-04 | `02d4a3f7` | Codex: a suggestion can be picked only for the text it was searched for |
+| R-05 | `449d8744` | Codex: the Event Study builder's series come with the catalog |
+| R-06 | `e5be2f9e` | Codex: the provider ceiling classifies Technicals on decoded parameters |
+| R-07 | `7e1d9856` | Codex: every Event Study mode is in the address |
+| R-08 | `4d5e07ac` | Codex: one malformed asset_prices row drops its instrument, not the list |
+| R-08 r2 | `0cba7360` | Codex round 2: canonical dates only, conversion isolated per instrument |
+| F-1 | `86e32a82` | Rebase follow-through: main's stored ETFs are named and searchable |
+| F-2 | `7d0d8a84` | Rebase follow-through: Basket & Hedge's ticker field is the Desk's stock search |
+| F-3 | `16e4e61f` | Rebase follow-through: main's new cards load, fail and define their terms like the rest |
+| F-4 | `12784791` | Rebase follow-through: the guard on the merged Desk; the scope cut's Basket & Hedge terms and purpose line |
+| M-1 | `adfe0cb7` | Codex merge review: a stock's technicals read adjusted closes only |
+| M-2 | `54763452` | Codex merge review: the guard on Macro's five cards and the Position Monitor's Close… form |
+| M-3 | `70746957` | Codex merge review, round 2: a failed refetch shows nothing from the answer before it |
+| M-4 | `bd4f8921` | Codex merge review, final round: a close the browser does not keep says so on the Monitored card |
+| T | `24138cc0` | desk/fill-etf's R-03 test pinned to the rebase ruling (the full pytest's third failure) |
+| — | `76495893` | This report, CLAUDE.md, the final shots (before the third rebase) |
+| F-5 | `16958871` | Rebase follow-through: desk/prototypes' tests under the no-dead-control rule |
+| E | `a9394e19` | The Desk data module loads in Node (the e2e specs' imports) |
+| E6 | `26dca89b` | Item 6's e2e names Data Pipeline's line as the owner's exception |
+| E6 | `eda8e4c2` | Item 6's one-action check leaves a PROTOTYPE card's own control out |
+| — | (this commit) | The report after the third rebase, the four shots retaken |
 
 ## Codex round 1 (on `535c9c1`, before the rebases)
 
@@ -59,21 +64,42 @@ repro; the contract is in spec §14.14. Shas are the rebased ones.
 
 | ID | finding | fix | test |
 |---|---|---|---|
-| R-01 | The one-year drawdown printed a complete-looking number on less than a year of valid closes | `0e4cebc9` | `tests/test_desk_technicals_any.py::test_a_drawdown_on_less_than_a_year_of_valid_closes_is_partial_and_says_how_many`; `TechnicalsPage.test.tsx` "Codex R-01: a stock with under a year of closes…" and the S&P's 251 of 252 |
-| R-02 | A stock's price and averages were whole numbers: $0.40 read 0 | `619b1f6e` | `kit/format.test.ts` "prices (Codex R-02)"; `TechnicalsPage.test.tsx` "Codex R-02: a stock under $1…" (price, averages, axis, the high) |
-| R-03 | A stock's technicals read provider bars after the last completed session | `9ae3c87d` | `tests/test_desk_technicals_any.py::test_bars_after_the_last_completed_session_are_dropped_and_said`; `TechnicalsPage.test.tsx` "Codex R-03…" |
-| R-04 | Enter inside the search's debounce picked the previous text's suggestion | `c4e0a68c` | `kit/InstrumentSearch.test.tsx` "Codex R-04…"; since F-2 also `BasketHedgePage.test.tsx` "Codex R-04 in the basket…" |
-| R-05 | A failed or unavailable question disabled the builder's Shock and "What happens to" | `9d7916a4` | `tests/test_desk_study_on_demand.py::test_the_catalog_serves_the_builders_series_with_no_study_asked`; `EventStudyPage.test.tsx` "Codex R-05…" |
-| R-06 | `?%73ymbol=NVDA` reached EODHD outside the provider ceiling | `fa43ae8d` | `tests/test_security.py::test_a_technicals_symbol_waits_with_the_provider_calls_however_its_key_is_spelled` |
-| R-07 | Only My saved questions was in the address | `939d1e11` | `EventStudyPage.test.tsx` "Codex R-07: every mode is in the address…"; e2e item 3 now expects `&mode=build` |
-| R-08 | One malformed `asset_prices` row failed the whole instruments item | `e416aa33`; round 2 `976c1199` | `tests/test_desk_instruments.py::test_one_malformed_row_drops_its_instrument_with_a_reason_and_keeps_the_rest`; round 2: `test_a_noncanonical_date_excludes_its_instrument_and_keeps_the_rest` (GLD valid, SPY '2025-W01-1'), `test_a_date_that_passes_the_check_and_still_fails_to_convert_costs_only_its_instrument`, `test_only_a_canonical_calendar_date_is_read` |
+| R-01 | The one-year drawdown printed a complete-looking number on less than a year of valid closes | `8a955fca` | `tests/test_desk_technicals_any.py::test_a_drawdown_on_less_than_a_year_of_valid_closes_is_partial_and_says_how_many`; `TechnicalsPage.test.tsx` "Codex R-01: a stock with under a year of closes…" and the S&P's 251 of 252 |
+| R-02 | A stock's price and averages were whole numbers: $0.40 read 0 | `5e6ec666` | `kit/format.test.ts` "prices (Codex R-02)"; `TechnicalsPage.test.tsx` "Codex R-02: a stock under $1…" (price, averages, axis, the high) |
+| R-03 | A stock's technicals read provider bars after the last completed session | `59588ed8` | `tests/test_desk_technicals_any.py::test_bars_after_the_last_completed_session_are_dropped_and_said`; `TechnicalsPage.test.tsx` "Codex R-03…" |
+| R-04 | Enter inside the search's debounce picked the previous text's suggestion | `02d4a3f7` | `kit/InstrumentSearch.test.tsx` "Codex R-04…"; since F-2 also `BasketHedgePage.test.tsx` "Codex R-04 in the basket…" |
+| R-05 | A failed or unavailable question disabled the builder's Shock and "What happens to" | `449d8744` | `tests/test_desk_study_on_demand.py::test_the_catalog_serves_the_builders_series_with_no_study_asked`; `EventStudyPage.test.tsx` "Codex R-05…" |
+| R-06 | `?%73ymbol=NVDA` reached EODHD outside the provider ceiling | `e5be2f9e` | `tests/test_security.py::test_a_technicals_symbol_waits_with_the_provider_calls_however_its_key_is_spelled` |
+| R-07 | Only My saved questions was in the address | `7e1d9856` | `EventStudyPage.test.tsx` "Codex R-07: every mode is in the address…"; e2e item 3 now expects `&mode=build` |
+| R-08 | One malformed `asset_prices` row failed the whole instruments item | `4d5e07ac`; round 2 `0cba7360` | `tests/test_desk_instruments.py::test_one_malformed_row_drops_its_instrument_with_a_reason_and_keeps_the_rest`; round 2: `test_a_noncanonical_date_excludes_its_instrument_and_keeps_the_rest` (GLD valid, SPY '2025-W01-1'), `test_a_date_that_passes_the_check_and_still_fails_to_convert_costs_only_its_instrument`, `test_only_a_canonical_calendar_date_is_read` |
 
 **Round 2** (Codex on `00fc5ff`): R-01 to R-07 fixed with no new blocking
 issue; R-08 not fixed, because an ISO week date ('2025-W01-1') passed the
 check and crashed the item in pandas. `976c1199` requires canonical
 YYYY-MM-DD dates and converts inside the per-instrument isolation.
 
+## The final overnight review (Codex CLI, read-only, HEAD against `910a05fd`)
+
+The owner's brief: "Review desk/usability HEAD against origin/main: the
+Position Monitor's failed-close note (cab74622) and the conflict resolutions
+from the rebase onto the desk/prototypes merge. Report only blocking issues
+and end with PUSH OK or DO NOT PUSH." Each run read the branch HEAD against
+origin/main, with the conflict list attached.
+
+| HEAD | verdict |
+|---|---|
+| `16958871` | PUSH OK: no blocking issues, the failed-close note and the resolutions included |
+| `a9394e19` (the guarded env read) | PUSH OK |
+| `26dca89b` (item 6's named exception) | PUSH OK |
+| `eda8e4c2` (item 6 leaves a PROTOTYPE card's control out) | PUSH OK |
+
+The standalone review of `cab74622` that flagged `tests/test_desk_etf.py:601`
+read one commit on its own; `143a8c7f` (now `24138cc0`) had already fixed it
+on the branch.
+
 ## The overnight review (Codex CLI, read-only, after the rebase onto `2c62d403`)
+
+Shas in this section are the ones reviewed then, before the third rebase; the commits table maps each commit to its current sha.
 
 The owner's brief: "Review desk/usability against origin/main: the rebase
 conflict resolutions, the scope-cut and glossary commits, the Basket & Hedge
@@ -148,10 +174,40 @@ commit R-01 (3006e9a): desk_items.py: HEAD (usability_fields) with R-01's comple
 
 ### Onto `2c62d403` (desk/matrix)
 
+Pre-rebase shas.
+
 - desk-usability 2 (707f62b9): web/src/fixtures/desk/PROVENANCE.md: main's desk/matrix paragraph kept, then desk/usability's section.
 - desk-usability 11 (ee3f1c19): MacroPage.tsx: main's (desk/matrix) correlation matrix card, not my Advanced-panel matrix; its title and subtitle carry the correlation definition through CardHead's defineTerms.
 - desk-usability 12 (dd50dd29): MacroPage.tsx: the FailedScope wraps main's 2×2 and its matrix card; the matrix card gets the LoadingLine (loading, or Couldn't load · Retry) the 2×2's cards carry.
 - desk-usability 13 (48c30af5): MacroPage.tsx and spec §6: main's (desk/matrix: the correlation card has no Advanced; the matrix is its own card), which meets the guard; MacroPage.test.tsx: my §14.13 no-Advanced assertion and main's matrix tests both kept; the failed-/macro test counts five failed cards (the matrix included, per the item-12 resolution).
+
+### Onto `910a05fd` (desk/prototypes, the final overnight run)
+
+Pre-rebase shas; the commits table has the current ones.
+
+- desk-usability 2 (9c96ac5c): TechnicalsPage.tsx: my S&P/stock layouts, with desk/prototypes' ProtectionCard standing in the S&P page's vol column exactly as main decides it (volIsPrototype); main's isSpx also reads the answer's `symbol`, so a stock's page is never the S&P's; imports both. TechnicalsPage.test.tsx and BasketHedgePage.test.tsx: both sides' describe blocks (main's R-03 describe closed where git factored its closing out).
+- desk-usability 6 (f55a0f90): desk-sections.ts: desk/prototypes' Data Pipeline line kept (the owner's instruction), so desk-sections.test.ts exempts that page from the 15-word rule by name; spec §14.6 table records it.
+- desk-usability 10 (cad926cd): TechnicalsPage.tsx imports: main's (isAwaitingRefresh, ProtectionCard) and mine (LoadingLine), unioned.
+- desk-usability 12 (78d36ca9): TechnicalsPage.tsx imports unioned; TechnicalsPage.test.tsx: my failed-/technicals test (Couldn't load · Retry) with main's never-the-PROTOTYPE check, main's other-instrument test kept, main's R-03 failed-request test now expects Couldn't load · Retry; e2e desk.spec.ts: desk/prototypes' PROTOTYPE-card test kept, my R-09 comment.
+- desk-usability 13 (cfc9ebae): BasketHedgePage.test.tsx: desk/prototypes' Hedge with options and Positioning tests kept, my old 'added from Technicals' block removed (as commit 13 removes it); e2e desk.spec.ts: main's (the S&P vol column is the PROTOTYPE now, so my Not-yet-served protection-card check has no card to read).
+- the report commit (6961a6d0): CLAUDE.md: desk/prototypes' PROTOTYPE-cards entry and the Desk usability entry, both.
+
+After it, F-5 (`16958871`) moved two of desk/prototypes' unit tests to the
+no-dead-control rule (an Advanced that would open nothing is absent, not
+disabled), and `a9394e19` guards `data/api.ts`'s top-level
+`import.meta.env` read: `e2e/desk.spec.ts` now imports `kit/Prototype`, whose
+`kit/ui` reads `DeskApiError` from `data/api.ts` since §14.12, and Playwright
+loads it in Node. A build-time `VITE_API_BASE` is still inlined (checked
+with a build).
+
+The PROTOTYPE cards (the options card in step 3's slot, Positioning, the
+basket event study, the Protection card on Technicals, the Snowflake sync on
+Data Pipeline) keep their "Illustrative values · In production" footnotes and
+"(illustrative)" headers; the guard whitelists `[data-prototype]` for
+disabled controls only, and its banned strings found none in them. Build
+Notes' "How this was built" and desk/prototypes' wording changes are kept;
+Data Pipeline's line is desk/prototypes' three sentences, so item 6's
+fifteen-word test names that page as the owner's exception.
 
 Main's Event Study timer-leak fix (the export test waits for
 `revokeObjectURL` before restoring its stubs,
@@ -224,6 +280,23 @@ there.
 
 ## Gates
 
+### Final overnight run (at `eda8e4c2`, on `910a05fd`)
+
+| gate | result |
+|---|---|
+| tsc, vitest, build | green; vitest 1751 passed (140 files) |
+| pytest `tests/test_desk*` (no Python file conflicted in this rebase) | 786 passed, 1 skipped (at `16958871`; no Python changed after it) |
+| Desk e2e (`e2e/desk.spec.ts`, `e2e/desk-usability.spec.ts`, `--workers=1`) under `/tmp/mrr-full-gates.lock` | 83 passed (03:33 to 03:38 ET) |
+
+Three e2e runs led there. At `16958871` the specs did not load
+(`import.meta.env` in Node; fixed in `a9394e19`). At `a9394e19`, 82 of 83:
+item 6's fifteen-word check met Data Pipeline's kept line (`26dca89b`). At
+`26dca89b`, 82 of 83: item 6 counted the Snowflake PROTOTYPE card's own
+button as a second page action (`eda8e4c2`).
+
+### Before the third rebase
+
+
 Per commit: `npx tsc -b --noEmit`, `npx vitest run --maxWorkers=2 --minWorkers=1`,
 `npm run build`, the related pytest files. The full pytest (no parallel
 workers; `tests/test_streamlit_backports.py` under the Streamlit interpreter)
@@ -281,6 +354,13 @@ from `143a8c7f`:
 | [12](shots/final/12-data-pipeline.png) | Data Pipeline | clean |
 | [13](shots/final/13-build-notes.png) | Build Notes | clean |
 | [14](shots/final/14-desk-search-N.png) | The Desk search after "N": NOW, NVDA, NFLX, NBIS, US equities | clean |
+
+**Retaken at `eda8e4c2`** (after the rebase onto `910a05fd`), same store
+and relay: 03 Technicals for the S&P (the Protection PROTOTYPE in the vol
+column), 10 Basket & Hedge with the preset (the three steps, and
+desk/prototypes' Hedge with options, Positioning and the basket event study),
+12 Data Pipeline (the Snowflake sync PROTOTYPE), 13 Build Notes ("How this
+was built"). Each clean at capture: no loading, failed or awaiting line.
 
 The pre-rebase real-API check (80 shots, `docs/desk/shots/desk-usability/`,
 before the rebases) is superseded by this set and not committed.
