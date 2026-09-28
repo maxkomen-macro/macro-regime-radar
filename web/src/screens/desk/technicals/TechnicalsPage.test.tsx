@@ -282,6 +282,23 @@ describe("Technicals tab", () => {
     expect(within(card).queryByRole("table")).toBeNull();
   });
 
+  it("Codex R-08: a visit whose 20th session has no stored close says so, not that the sessions have not passed", async () => {
+    stubDesk({
+      "/api/desk/technicals": () => ({
+        ...technicals,
+        rsi_last_above_70: { ...technicals.rsi_last_above_70, after_20d: null, after_20d_status: "missing" },
+        rsi_last_below_30: { ...technicals.rsi_last_below_30, after_20d: null, after_20d_to: null, after_20d_status: "pending" },
+      }),
+    });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /Momentum · RSI/ });
+    await waitFor(() => expect(card).toHaveTextContent("Jun 2"));
+    const [above, below] = within(card).getAllByText(/^(Last above 70|Last below 30)$/).map((l) => l.parentElement as HTMLElement);
+    expect(above).toHaveTextContent("the close 20 sessions later (Jul 1) is not stored");
+    expect(above).not.toHaveTextContent("have not passed");
+    expect(below).toHaveTextContent("20 sessions have not passed yet");
+  });
+
   it("a zone's last session within 20 sessions of the data says they have not passed yet", async () => {
     stubDesk({ "/api/desk/technicals": () => ({ ...technicals, rsi_last_above_70: { date: "2026-09-15", rsi: 71.2, after_20d: null, after_20d_to: null } }) });
     renderTab();

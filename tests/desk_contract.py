@@ -318,7 +318,7 @@ SECTORS = Obj(dict(LEADERSHIP, breadth=Block(BREADTH)))
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 
 POINT = obj(date=DATE, close=null(NUM), ma50=null(NUM), ma200=null(NUM))
-RSI_VISIT = obj(date=DATE, rsi=NUM, after_20d=null(NUM), after_20d_to=null(DATE))
+RSI_VISIT = obj(date=DATE, rsi=NUM, after_20d=null(NUM), after_20d_to=null(DATE), after_20d_status=RETURN_STATUS)
 # desk/fill-compute item 9: MACD(12, 26, 9), src/analytics/technicals.macd.
 MACD_POINT = obj(date=DATE, macd=null(NUM), signal=null(NUM), hist=null(NUM))
 MACD = obj(date=DATE, macd=NUM, signal=NUM, hist=NUM, last_cross=null(obj(date=DATE, kind=E("above", "below"))),

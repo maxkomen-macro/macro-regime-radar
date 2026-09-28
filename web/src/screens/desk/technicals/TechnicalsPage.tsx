@@ -414,15 +414,17 @@ export function rsiDirection(now: number | null | undefined, prev: number | null
   return now > prev ? "rising" : now < prev ? "falling" : "flat";
 }
 
-/** A zone's last session: its day, and the S&P's simple return over the next 20 sessions once they have passed. */
-function visitSub(v: TechnicalsResponse["rsi_last_above_70"]) {
+/** A zone's last session: its day, and the S&P's simple return over the next 20 sessions once they have passed;
+ * Codex R-08: a window not complete yet and a close not stored each say their own reason. */
+export function visitSub(v: TechnicalsResponse["rsi_last_above_70"]) {
   if (!v) return undefined;
-  if (fin(v.after_20d))
+  if (fin(v.after_20d) && (v.after_20d_status ?? "complete") === "complete")
     return (
       <>
         S&amp;P <Signed value={v.after_20d}>{pct(v.after_20d)}</Signed> 20 sessions later
       </>
     );
+  if (v.after_20d_status === "missing") return `the close 20 sessions later${dayShort(v.after_20d_to) ? ` (${dayShort(v.after_20d_to)})` : ""} is not stored`;
   return "20 sessions have not passed yet";
 }
 

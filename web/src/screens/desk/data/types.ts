@@ -264,6 +264,8 @@ export interface RsiVisit {
   rsi: number | null;
   after_20d: number | null;
   after_20d_to: string | null;
+  /** Codex R-08: the 20-session window complete, not complete yet, or missing a stored close. */
+  after_20d_status?: ReturnStatus | null;
 }
 
 /** §12.7: one session of the MACD chart; each value null where the MACD is undefined. */

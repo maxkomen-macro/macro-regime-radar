@@ -248,7 +248,7 @@ const nextPrint = o(
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s?") });
 const seasonRow = o({ month: "n", label: "s!", n: "n", avg: "n", pct_up: "n", first_year: "n", last_year: "n" });
 const macdPoint = o({ date: "s!", macd: "n", signal: "n", hist: "n" });
-const rsiVisit = o({ date: "s!", rsi: "n", after_20d: "n", after_20d_to: "s?" }, { nul: true });
+const rsiVisit = o({ date: "s!", rsi: "n", after_20d: "n", after_20d_to: "s?", after_20d_status: e(["complete", "pending", "missing"], { nul: true }) }, { nul: true });
 /** The deferred vol and sectors shapes (§12.13), served as `/technicals` blocks and as their own stubs. */
 const VOL = {
   source: "s",

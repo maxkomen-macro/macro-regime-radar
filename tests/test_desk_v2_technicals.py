@@ -259,10 +259,10 @@ def test_the_rsi_fields_on_a_level():
         assert v["date"] == day.strftime("%Y-%m-%d") and v["rsi"] == pytest.approx(float(hits.iloc[-1]))
         later = [d for d in lvl.index if d > day]
         if len(later) >= 20:
-            assert v["after_20d_to"] == later[19].strftime("%Y-%m-%d")
+            assert v["after_20d_to"] == later[19].strftime("%Y-%m-%d") and v["after_20d_status"] == "complete"
             assert v["after_20d"] == pytest.approx(float(lvl[later[19]] / lvl[day] - 1), rel=1e-12)
         else:
-            assert v["after_20d"] is None and v["after_20d_to"] is None
+            assert v["after_20d"] is None and v["after_20d_to"] is None and v["after_20d_status"] == "pending"
 
 
 def test_a_gap_holds_the_rsi_on_the_session_before_it():
@@ -477,3 +477,20 @@ def test_the_published_copy_seasonality(install_worker, monkeypatch):
     assert (by["Jan"]["n"], by["Jan"]["first_year"], by["Sep"]["last_year"]) == (36, 1991, 2025)
     assert by["Nov"]["avg"] == pytest.approx(0.021739, abs=5e-7) and by["Nov"]["pct_up"] == pytest.approx(0.75)
     assert by["Sep"]["avg"] == pytest.approx(-0.007177, abs=5e-7) and by["Sep"]["pct_up"] == pytest.approx(0.5)
+
+
+def test_codex_r08_an_rsi_visits_missing_close_is_not_a_window_still_open():
+    """Codex R-08: the S&P's return 20 sessions after an RSI visit was null both
+    while those sessions had not passed and when the twentieth's close was not
+    stored, and the card said "20 sessions have not passed yet" for both."""
+    dates = _xnys("2025-01-01", "2026-09-18")
+    lvl = _level(dates, seed=5)
+    t = desk_items.technicals_from_level(lvl)
+    visit = next(v for v in (t["rsi_last_above_70"], t["rsi_last_below_30"]) if v and v["after_20d_status"] == "complete")
+    held = desk_items.technicals_from_level(lvl.drop(pd.Timestamp(visit["after_20d_to"])))
+    key = "rsi_last_above_70" if visit is t["rsi_last_above_70"] else "rsi_last_below_30"
+    gone = held[key]
+    assert gone["date"] == visit["date"], "the gap is after the visit, so the visit is the same"
+    assert (gone["after_20d"], gone["after_20d_to"], gone["after_20d_status"]) == (None, visit["after_20d_to"], "missing")
+    recent = desk_items.rsi_fields(np.array([50.0] * 30 + [75.0] + [50.0] * 5), np.ones(36), [f"d{i}" for i in range(36)])
+    assert recent["rsi_last_above_70"]["after_20d_status"] == "pending" and recent["rsi_last_above_70"]["after_20d"] is None

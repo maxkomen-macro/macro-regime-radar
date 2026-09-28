@@ -332,8 +332,10 @@ def rsi_fields(rsi: Any, px: Any, iso: list[str]) -> dict:
     until fifteen contiguous closes re-seed it); `rsi_prev` is the RSI on the
     session before `rsi_date`, null when it is not defined there. The last
     session strictly above 70, and strictly below 30, each with its RSI and
-    the S&P's simple return over the next 20 sessions (null until 20 sessions
-    with a close on the twentieth have passed)."""
+    the S&P's simple return over the next 20 sessions, and that return's
+    status (Codex R-08): `complete`; `pending` while the twentieth session is
+    after the newest stored close (the window is not complete yet); `missing`
+    when it is not, but its close, or the visit's own, is not stored."""
     import math
 
     import numpy as np
@@ -355,9 +357,11 @@ def rsi_fields(rsi: Any, px: Any, iso: list[str]) -> dict:
             return None
         j = int(hits[-1])
         end = j + RSI_AFTER
-        after = f(px[end] / px[j] - 1) if end < len(px) and math.isfinite(px[j]) else None
-        return {"date": iso[j], "rsi": float(rsi[j]), "after_20d": after,
-                "after_20d_to": iso[end] if after is not None else None}
+        if end >= len(px):
+            return {"date": iso[j], "rsi": float(rsi[j]), "after_20d": None, "after_20d_to": None, "after_20d_status": "pending"}
+        after = f(px[end] / px[j] - 1) if math.isfinite(px[j]) else None
+        return {"date": iso[j], "rsi": float(rsi[j]), "after_20d": after, "after_20d_to": iso[end],
+                "after_20d_status": "complete" if after is not None else "missing"}
 
     valid = np.isfinite(rsi)
     return {
