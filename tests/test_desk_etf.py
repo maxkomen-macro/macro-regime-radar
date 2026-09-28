@@ -588,23 +588,41 @@ def test_codex_r01_the_ranking_says_how_many_sectors_it_ranks_and_names_the_rest
 
 # ── Codex R-03: the catalog page offers only what the catalog asks ──────────
 
-def test_codex_r03_the_study_series_are_the_catalogs_inputs_and_the_legacy_roles_stay(tmp_path):
+def test_codex_r03_every_listed_shock_can_be_asked_and_the_legacy_roles_stay(tmp_path, monkeypatch):
     """Codex's repro: the nine sector ETFs, tier 2 with roles since item 1,
     were listed in /study's series[] with ops [] (a Shock the page could not
-    ask). series[] is now the registry's series some catalog study reads; the
-    legacy /api/desk/event-study keeps every role (its assets list them)."""
+    ask). desk/usability's builder computes any well-formed question on
+    request (§14.3), so by the owner's rebase ruling (2026-09-28) series[] is
+    every stored series with a role, the sector ETFs included, not only the
+    catalog's inputs; every series with the shock role carries its moves, the
+    catalog's among them, so none is a Shock the page cannot ask. The legacy
+    /api/desk/event-study keeps every role (its assets list them)."""
     from api import desk_catalog, desk_v2
     from src.desk import event_study as es
 
+    assets = es.assets_with_coverage(_db(tmp_path))
+
+    def result(name: str):
+        if name != "desk_assets":
+            raise KeyError(name)
+        return assets
+
+    monkeypatch.setattr(desk_v2, "_result", result)
     listed = desk_v2._series_list()
     keys = [s["key"] for s in listed]
-    assert keys == ["spx", "gold", "us10y", "curve_2s10s", "vix", "hy_oas", "wti", "dxy"]
-    assert set(keys) == desk_catalog.series_read()
-    assert not any(k.startswith("xl") for k in keys)
-    shocks = {q.question.shock for q in desk_catalog.CATALOG if q.question}
-    assert all(s["ops"] or s["key"] not in shocks for s in listed)
+    stored = {r["key"] for r in [*assets["shocks"], *assets["targets"]] if r.get("status") == "stored"}
+    assert keys == [s.key for s in registry.SERIES if s.available and s.roles and s.tier <= 2 and s.key in stored]
     nine = {t.lower() for t in registry.SECTOR_NAMES}
-    assets = es.assets_with_coverage(_db(tmp_path))
+    assert nine <= set(keys)
+    # A series the store lacks is not offered (WTI and the dollar await the full refresh here).
+    assert not {"wti", "dxy"} & set(keys)
+    ops_catalog = desk_catalog.ops_by_shock()
+    for s in listed:
+        if "shock" in s["roles"]:
+            assert {"up2s", "down2s"} <= set(s["ops"]), s["key"]
+            assert set(ops_catalog.get(s["key"], [])) <= set(s["ops"]), s["key"]
+        else:
+            assert s["ops"] == [] or set(s["ops"]) <= set(ops_catalog.get(s["key"], [])), s["key"]
     assert nine <= {a["key"] for a in assets["shocks"]}
     assert all(registry.get(k).roles == ("shock", "condition") for k in nine)
 
