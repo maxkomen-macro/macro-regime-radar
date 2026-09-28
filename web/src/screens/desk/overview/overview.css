@@ -9,6 +9,70 @@
 .ov .dk-title {
   margin-bottom: -2px;
 }
+/* desk/usability §14.7: the Start here strip, four numbered steps. */
+.ov-start {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 7px 14px;
+  border: 1px solid var(--dk-border);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+}
+.ov-start-label {
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dk-t3);
+}
+.ov-start ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.ov-start li {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.ov-start a {
+  color: var(--dk-t1);
+  text-decoration: none;
+  font-size: 13.5px;
+  border-radius: 6px;
+  padding: 2px 6px;
+}
+.ov-start a:hover {
+  background: var(--dk-active);
+}
+.ov-start a[aria-current="page"] {
+  background: var(--dk-active);
+}
+.ov-start-n {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--dk-green);
+  color: var(--dk-green);
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+.ov-start-phrase {
+  color: var(--dk-t3);
+}
+.ov-start-arrow {
+  color: var(--dk-t4);
+}
 .ov-since {
   display: flex;
   align-items: center;

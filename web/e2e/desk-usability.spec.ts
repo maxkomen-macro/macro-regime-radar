@@ -252,4 +252,20 @@ test.describe("desk usability", () => {
       await expect(primaries, `${p.slug}: primary actions`).toHaveCount(1);
     }
   });
+
+  // ── Item 7: Start here ───────────────────────────────────────────────────
+
+  test("item 7: the Overview's Start here strip walks Overview → Basket & Hedge → Technicals → Event Study", async ({ page }) => {
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await open(page, "/desk/overview");
+      const strip = page.getByRole("navigation", { name: "Start here" });
+      await expect(strip.getByRole("link")).toHaveText(["1 Overview · read the market", "2 Basket & Hedge · build the exposure", "3 Technicals · check the trend", "4 Event Study · test the idea"]);
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.getByRole("navigation", { name: "Start here" }).getByRole("link", { name: /Technicals/ }).click();
+    await expect(page).toHaveURL(/\/desk\/technicals$/);
+  });
 });

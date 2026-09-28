@@ -351,6 +351,12 @@ is kept, no total and no empty state is drawn from the readable records alone
 
 Action button: **Walkthrough** (the first-visit walkthrough, from frame-2).
 
+**Start here** (desk/usability §14.7; full width, box style, above the
+since-last-close line): `START HERE` mono label, then four numbered links, `1
+Overview · read the market → 2 Basket & Hedge · build the exposure → 3
+Technicals · check the trend → 4 Event Study · test the idea`; the Overview
+step is marked current.
+
 **Since-last-close line** (full width, box style): `SINCE LAST CLOSE` mono
 label, then, separated by `·`: each new fire with `(new)` in green; each
 signal still firing with its `firing_day`; the VIX change in points
@@ -2226,4 +2232,12 @@ primary (light) style; every other button on the page is secondary.
 | Position Monitor | Your positions, and how far each is from being wrong. | **+ New position** (header), then **Save position** in the form |
 | Data Pipeline | Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser. (desk/prototypes' wording, kept by the owner at the rebase: the one line over fifteen words) | **Export current study → CSV** (in the page) |
 | Build Notes | What this Desk is, how it was checked, and what comes next. | **Take the walkthrough →** (header) |
+
+### 14.7 Start here
+
+The Overview opens with a Start here strip (§2): four numbered links in the
+order the brief sets, Overview → Basket & Hedge → Technicals → Event Study,
+each with one short phrase (read the market, build the exposure, check the
+trend, test the idea). Green numbered circles; the arrows gray; on a phone
+the steps wrap and the page never scrolls sideways.
 

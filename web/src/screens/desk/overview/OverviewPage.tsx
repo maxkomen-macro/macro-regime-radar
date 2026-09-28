@@ -323,6 +323,38 @@ function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
   );
 }
 
+/** desk/usability §14.7: the order to walk the Desk in, one short phrase a step. */
+export const START_HERE: readonly { slug: string; label: string; phrase: string }[] = [
+  { slug: "overview", label: "Overview", phrase: "read the market" },
+  { slug: "basket-hedge", label: "Basket & Hedge", phrase: "build the exposure" },
+  { slug: "technicals", label: "Technicals", phrase: "check the trend" },
+  { slug: "event-study", label: "Event Study", phrase: "test the idea" },
+];
+
+/** §14.7: "Start here", four numbered links in the order to walk the Desk. */
+function StartHere({ pathTo }: { pathTo: (slug: string) => string }) {
+  return (
+    <nav className="ov-start" aria-label="Start here" data-testid="ov-start">
+      <span className="ov-start-label">Start here</span>
+      <ol>
+        {START_HERE.map((s, i) => (
+          <li key={s.slug}>
+            <Link to={pathTo(s.slug)} aria-current={s.slug === "overview" ? "page" : undefined}>
+              <b className="ov-start-n">{i + 1}</b> {s.label}
+              <span className="ov-start-phrase"> · {s.phrase}</span>
+            </Link>
+            {i < START_HERE.length - 1 ? (
+              <span className="ov-start-arrow" aria-hidden="true">
+                →
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
 export default function OverviewPage({ page }: { page: DeskPage }) {
   const { pathTo } = useDeskView();
   const q = useOverview();
@@ -333,6 +365,7 @@ export default function OverviewPage({ page }: { page: DeskPage }) {
   return (
     <div className="ov">
       <PageTitle page={page} />
+      <StartHere pathTo={pathTo} />
       <Unserved block={unserved}>
         <SinceLine data={data?.since_last_close} failed={failed || (!!data && !data.since_last_close)} unserved={unserved ?? data?._blocks?.since_last_close ?? null} />
         <Tiles data={data} failed={failed} />

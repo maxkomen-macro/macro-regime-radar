@@ -238,3 +238,20 @@ describe("the VIX's gap to realized (desk/fill-compute)", () => {
     expect(gapWords({ ...vol, gap: null })).toBe("No session has both the VIX and 21 S&P returns stored.");
   });
 });
+
+describe("Start here (§14.7)", () => {
+  it("four numbered links, Overview → Basket & Hedge → Technicals → Event Study, one short phrase each", async () => {
+    stubDesk();
+    renderWithProviders(
+      <Routes>
+        <Route path="/desk/:page?" element={<DeskShell />} />
+      </Routes>,
+      { route: "/desk/overview" },
+    );
+    const strip = await screen.findByRole("navigation", { name: "Start here" });
+    const links = within(strip).getAllByRole("link");
+    expect(links.map((a) => a.textContent)).toEqual(["1 Overview · read the market", "2 Basket & Hedge · build the exposure", "3 Technicals · check the trend", "4 Event Study · test the idea"]);
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/desk/overview", "/desk/basket-hedge", "/desk/technicals", "/desk/event-study"]);
+    expect(links[0]).toHaveAttribute("aria-current", "page");
+  });
+});
