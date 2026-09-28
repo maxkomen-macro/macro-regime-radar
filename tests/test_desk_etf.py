@@ -478,3 +478,26 @@ def test_codex_r01_the_ranking_says_how_many_sectors_it_ranks_and_names_the_rest
     ]
     full = _item(monkeypatch, _db(tmp_path, "full.db"))["sectors"]["data"]
     assert (full["ranked_n"], full["missing"]) == (11, [])
+
+
+# ── Codex R-03: the catalog page offers only what the catalog asks ──────────
+
+def test_codex_r03_the_study_series_are_the_catalogs_inputs_and_the_legacy_roles_stay(tmp_path):
+    """Codex's repro: the nine sector ETFs, tier 2 with roles since item 1,
+    were listed in /study's series[] with ops [] (a Shock the page could not
+    ask). series[] is now the registry's series some catalog study reads; the
+    legacy /api/desk/event-study keeps every role (its assets list them)."""
+    from api import desk_catalog, desk_v2
+    from src.desk import event_study as es
+
+    listed = desk_v2._series_list()
+    keys = [s["key"] for s in listed]
+    assert keys == ["spx", "gold", "us10y", "curve_2s10s", "vix", "hy_oas", "wti", "dxy"]
+    assert set(keys) == desk_catalog.series_read()
+    assert not any(k.startswith("xl") for k in keys)
+    shocks = {q.question.shock for q in desk_catalog.CATALOG if q.question}
+    assert all(s["ops"] or s["key"] not in shocks for s in listed)
+    nine = {t.lower() for t in registry.SECTOR_NAMES}
+    assets = es.assets_with_coverage(_db(tmp_path))
+    assert nine <= {a["key"] for a in assets["shocks"]}
+    assert all(registry.get(k).roles == ("shock", "condition") for k in nine)

@@ -252,6 +252,18 @@ def ops_by_shock() -> dict[str, list[str]]:
     return {k: sorted(v, key=MOVES.index) for k, v in out.items()}
 
 
+def series_read() -> set[str]:
+    """Codex R-03 (desk/fill-etf): the registry keys some catalog study reads,
+    as its shock, its target, or the S&P its spx_below_50 condition reads."""
+    out: set[str] = set()
+    for s in CATALOG:
+        if s.question is not None:
+            out |= {s.question.shock, s.question.target}
+            if s.question.while_ == "spx_below_50":
+                out.add("spx")
+    return out
+
+
 def fixes_for(study: Study) -> list[str]:
     """Plan R15: `widen_window` when the question with the next larger window
     is a catalog study; `drop_condition` when the question with `while: none` is."""

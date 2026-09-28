@@ -1041,7 +1041,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `provenance.engine_version` | string | required | — | — | A |
 | `provenance.series_start` | object, key → date | required | — | each input's first stored observation | E `provenance.inputs` |
 | `warnings` | string[] | required (may be empty) | — | — | E `provenance.warnings`, each served verbatim except the engine's "calendar sessions without a value: …" entry: when an input's stored history starts before 1970-01-01, the served copy appends, right after that input's count, "(includes N pre-1970 holidays the engine calendar treats as sessions)". N counts the dates that are an `api/calendar` holiday before 1970, inside the input's stored range, a session of the study's own calendar, and a date on which the input has no stored value. A study with no pre-1970 input serves the engine's warnings unchanged. |
-| `series` | array | required | — | — | E registry (`series.with_role`) |
+| `series` | array | required | — | — | E registry (`series.with_role`), limited to the series some catalog study reads: its shock, its target, or the S&P of `spx_below_50` (Codex R-03, desk/fill-etf; the legacy `/api/desk/event-study` keeps every role). The page's Shock and Target slots offer these only |
 | `series[].key`, `label` | string | required | — | — | E |
 | `series[].roles` | array of `shock` \| `target` \| `condition` | required | — | — | E registry `roles` |
 | `series[].ops` | array of `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A: the moves the catalog allows for that series as shock |

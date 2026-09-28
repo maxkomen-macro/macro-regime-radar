@@ -611,6 +611,19 @@ describe("the study's served contract (Codex round 1, group 2)", () => {
     expect(rail()).toHaveTextContent(/Last five events · S&P 500 a month later\s*No events/);
   });
 
+  it("Codex R-03: the Shock and Target slots offer only the catalog's inputs, whatever else a study serves", async () => {
+    const extra = { key: "xlk", label: "Technology sector ETF (XLK)", roles: ["shock", "condition"], ops: [], unit: "log_return" };
+    stubDesk({ "/api/desk/study": () => ({ ...study, series: [...study.series, extra] }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: "The answer" });
+    await waitFor(() => expect(card).toHaveTextContent("at 1 month"));
+    for (const slot of ["Shock", "What happens to"]) {
+      const values = [...(screen.getByLabelText(slot) as HTMLSelectElement).options].map((o) => o.value);
+      expect(values, slot).not.toContain("xlk");
+      expect(values, slot).toContain("gold");
+    }
+  });
+
   it("Codex R-23: a preset link keeps its horizon through the address, the request, the answer and the export", async () => {
     const { calls } = stubDesk();
     const urls = globalThis.URL as unknown as { createObjectURL?: unknown; revokeObjectURL?: unknown };

@@ -109,7 +109,10 @@ export default function QueryCard({
   // §4: an option that does not lead to a catalog study, given the other slots, is disabled.
   const off = (k: SlotKey, id: string) => gateSlots && !!catalog && !!draft && !leadsToStudy(catalog, draft, k, parse(k, id));
   const opts = (k: SlotKey, list: { id: string; label: string }[]): Option[] => list.map((o) => ({ ...o, off: off(k, o.id) }));
-  const seriesList = (series ?? []).map((s) => ({ id: s.key, label: s.label }));
+  // Codex R-03: the Shock and Target slots offer only the series some catalog study reads (its shock, its target,
+  // or the S&P its condition reads); a served series outside the catalog (the legacy engine's) is not offered.
+  const read = catalog ? new Set(catalog.flatMap((c) => (c.question ? [c.question.shock, c.question.target, ...(c.question.while === "spx_below_50" ? ["spx"] : [])] : []))) : null;
+  const seriesList = (series ?? []).filter((s) => !read || read.has(s.key)).map((s) => ({ id: s.key, label: s.label }));
   const byChip = new Map((catalog ?? []).map((c) => [c.slug, c]));
   const download = () => {
     const blob = new Blob([exportSaved(saved)], { type: "application/json" });

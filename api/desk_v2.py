@@ -788,10 +788,15 @@ def share(x: float) -> str:
 # ── The /study projection (plan §1.2, §2) ───────────────────────────────────
 
 def _series_list() -> list[dict]:
-    """The registry's available tier-1 and tier-2 series with a role, in order (§12.2 `series`)."""
+    """§12.2 `series`: the registry's available tier-1 and tier-2 series with a
+    role that some catalog study reads, in registry order (Codex R-03,
+    desk/fill-etf: the Event Study page offers only what the catalog can ask,
+    so the nine sector ETFs, whose roles the legacy /api/desk/event-study
+    keeps, are not listed)."""
     ops = catalog.ops_by_shock()
+    read = catalog.series_read()
     return [{"key": s.key, "label": s.label, "roles": list(s.roles), "ops": ops.get(s.key, []), "unit": s.unit}
-            for s in registry.SERIES if s.available and s.roles and s.tier <= 2]
+            for s in registry.SERIES if s.available and s.roles and s.tier <= 2 and s.key in read]
 
 
 def served_warnings(provenance: dict, pre1970: dict[str, int]) -> list[str]:
