@@ -22,6 +22,7 @@ import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved } from "../kit/ui";
 import { droppedOf } from "../data/schema";
+import { matrixProblem } from "./matrix";
 import "./macro.css";
 
 type State = "loading" | "awaiting" | "ready";
@@ -489,7 +490,14 @@ function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
   const title = "Correlation matrix";
   const sub = "60-day correlation of daily returns · every pair of 12 assets";
   if (unserved) return <UnservedCard headingId="mc-mx" className="mc-card mc-mx-card" title={title} sub={sub} labels={[]} block={unserved} />;
-  const grid = mx && Array.isArray(mx.values) && mx.values.length === mx.assets.length ? mx : null;
+  // Codex R-01: the grid is read as one fact. A served matrix that fails any check (the assets and their order,
+  // 12×12, symmetry, the unit diagonal, the no-data list, the lead against the cells) is not drawn at all.
+  const problem = mx ? matrixProblem(mx) : null;
+  if (problem) {
+    const block = { reason: `Awaiting refresh: the matrix as served could not be read (${problem}).`, until: null };
+    return <UnservedCard headingId="mc-mx" className="mc-card mc-mx-card" title={title} sub={sub} labels={[]} block={block} />;
+  }
+  const grid = mx ?? null;
   const noData = new Map((grid?.no_data ?? []).map((n) => [n.symbol, n.reason ?? ""]));
   const name = (i: number) => grid?.labels?.[i] ?? "";
   const end = grid?.window?.end;

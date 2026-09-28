@@ -673,7 +673,17 @@ list under the grid; no cell is filled or estimated. A legend of five
 swatches (−1, −0.5, 0, +0.5, +1) runs "−1 moves against" to "+1 moves with".
 Stamp: "60 daily returns · <window.start> to <window.end> · the same window
 for every pair · <providers>". Served awaiting: the card keeps its title and
-prints the reason (§1.0.2).
+prints the reason (§1.0.2). Read as one fact (Codex R-01,
+`web/src/screens/desk/macro/matrix.ts`): before any of it is drawn the
+client checks the twelve assets in their order and twelve names, 12×12
+cells, every value within −1 to 1, symmetry, a unit diagonal, the
+`no_data` list (each entry an asset of the grid, once, with a reason)
+against the empty rows and columns (a cell is null exactly when one of its
+assets is listed), and the lead against the cells (`highest`, `lowest`,
+`spy_tlt` and `hedging` equal to the grid's, and the sentence naming those
+pairs with those values to two decimals, in order, and no other number). A
+matrix failing any check is not drawn: the card is unavailable with
+"Awaiting refresh: the matrix as served could not be read (<the check>)."
 
 ---
 

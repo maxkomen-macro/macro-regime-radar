@@ -14,6 +14,8 @@ import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { servedMacro } from "../../../test/desk-variants";
 import { bpText, corrText, coverTicks, matrixStamp, matrixTint } from "./MacroPage";
+import { MATRIX_ASSETS, matrixProblem, servedPairs } from "./matrix";
+import { signed } from "../kit/format";
 import { placeLabel } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import macroFixture from "../../../fixtures/desk/macro.json";
@@ -394,9 +396,35 @@ describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () =>
 
 // ── desk/matrix: the 12-asset correlation matrix ───────────────────────────
 
-type Matrix = { assets: string[]; labels: string[]; values: (number | null)[][]; no_data: { symbol: string; reason: string }[]; window: { start: string; end: string; n: number }; lead: { text: string | null } };
-const servedMatrix = () => (macroFixture as unknown as { matrix: { data: Matrix } }).matrix.data;
+type Lead = { text: string | null; rule?: string; hedging?: boolean | null; spy_tlt?: number | null; highest?: { a: string; b: string; corr: number } | null; lowest?: { a: string; b: string; corr: number } | null };
+type Matrix = { assets: string[]; labels: string[]; values: (number | null)[][]; no_data: { symbol: string; reason: string }[]; window: { start: string; end: string; n: number }; lead: Lead; providers?: string[] };
+/** A deep copy of the served matrix (the fixture: the API's answer on the fixture store), safe to change in a test. */
+const servedMatrix = (): Matrix => JSON.parse(JSON.stringify((macroFixture as unknown as { matrix: { data: Matrix } }).matrix.data));
 const cellsOf = (card: HTMLElement) => [...card.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")]);
+const SYM: string[] = [...MATRIX_ASSETS];
+
+/** matrix-lead-v1 as the API writes it (api/desk_items_etf.matrix_lead), for the grids the tests build. */
+function leadFor(values: (number | null)[][]): Lead {
+  const pairs = servedPairs(values);
+  if (!pairs.length) return { text: null, rule: "matrix-lead-v1", hedging: null, spy_tlt: null, highest: null, lowest: null };
+  const pick = (dir: 1 | -1) => pairs.reduce((b, p) => (dir * p.corr > dir * b.corr ? p : b), pairs[0]);
+  const [hi, lo] = [pick(1), pick(-1)];
+  const st = values[SYM.indexOf("SPY")][SYM.indexOf("TLT")];
+  const pairsText =
+    pairs.length === 1
+      ? `the one pair served is ${SYM[hi.i]} and ${SYM[hi.j]} at ${signed(hi.corr, 2)}`
+      : `the highest pair is ${SYM[hi.i]} and ${SYM[hi.j]} at ${signed(hi.corr, 2)} and the lowest ${SYM[lo.i]} and ${SYM[lo.j]} at ${signed(lo.corr, 2)}`;
+  const text = st == null ? `${pairsText[0].toUpperCase()}${pairsText.slice(1)}.` : `Treasuries are ${st < 0 ? "hedging" : "not hedging"} equities (SPY and TLT at ${signed(st, 2)}); ${pairsText}.`;
+  const pair = (p: { i: number; j: number; corr: number }) => ({ a: SYM[p.i], b: SYM[p.j], corr: p.corr });
+  return { text, rule: "matrix-lead-v1", hedging: st == null ? null : st < 0, spy_tlt: st, highest: pair(hi), lowest: pair(lo) };
+}
+
+/** The served matrix with some assets' rows and columns emptied and listed without data, the lead rewritten for the rest. */
+function withoutData(mx: Matrix, reasons: Record<string, string>): Matrix {
+  const out = new Set(Object.keys(reasons).map((s) => SYM.indexOf(s)));
+  const values = mx.values.map((row, i) => row.map((v, j) => (out.has(i) || out.has(j) ? null : v)));
+  return { ...mx, values, no_data: SYM.filter((s) => s in reasons).map((symbol) => ({ symbol, reason: reasons[symbol] })), lead: leadFor(values) };
+}
 
 describe("the correlation matrix (desk/matrix, §12.8 matrix)", () => {
   it("prints the served lead, the window and end date, and every cell as served, colored negative to positive", async () => {
@@ -419,13 +447,17 @@ describe("the correlation matrix (desk/matrix, §12.8 matrix)", () => {
     // hover: the pair, its value and the window's end
     expect(cells[0][5]).toHaveAttribute("title", "SPY and TLT: +0.44, 60 daily returns to Sep 23");
   });
-  it("an asset without the history is no data in its row and column, with its reason; nothing is filled", async () => {
+  it("the served matrix passes every check, and the tests' lead is the API's sentence", () => {
     const mx = servedMatrix();
-    const k = mx.assets.indexOf("^VIX");
+    expect(matrixProblem(mx as never)).toBeNull();
+    expect(leadFor(mx.values)).toEqual(mx.lead);
+  });
+  it("an asset without the history is no data in its row and column, with its reason; nothing is filled", async () => {
+    const k = SYM.indexOf("^VIX");
     const why = "fewer than 60 complete daily returns in the window to 2026-09-23: no close stored for 2026-09-18";
-    const values = mx.values.map((row, i) => row.map((v, j) => (i === k || j === k ? null : v)));
+    const matrix = withoutData(servedMatrix(), { "^VIX": why });
     const m = servedMacro() as Record<string, unknown>;
-    stubDesk({ "/api/desk/macro": () => ({ ...m, matrix: { ...mx, values, no_data: [{ symbol: "^VIX", reason: why }] } }) });
+    stubDesk({ "/api/desk/macro": () => ({ ...m, matrix }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /^Correlation matrix/ });
     await waitFor(() => expect(card).toHaveTextContent(`^VIX no data · ${why}`));
@@ -438,36 +470,42 @@ describe("the correlation matrix (desk/matrix, §12.8 matrix)", () => {
     expect(cells[0][k]).toHaveAttribute("title", `SPY and ^VIX: no data, ${why}`);
     expect(within(card).getByRole("rowheader", { name: /\^VIX/ })).toHaveTextContent("^VIXno data");
   });
-  it("a hand-checked 3-asset grid: SPY, TLT and GLD", async () => {
-    // By hand (tests/test_desk_etf.py::test_a_hand_checked_three_asset_matrix): r(SPY, TLT) = −1,
-    // r(SPY, GLD) = 1/√3 = 0.5774, r(TLT, GLD) = −1/√3.
+  it("a hand-checked 3-asset case: SPY, TLT and GLD with data, the other nine awaiting the refresh", async () => {
+    // By hand (tests/test_desk_etf.py::test_a_hand_checked_three_asset_matrix, the same three over the same 60 returns):
+    // r(SPY, TLT) = −1, r(SPY, GLD) = 1/√3 = 0.5774, r(TLT, GLD) = −1/√3.
     const third = 1 / Math.sqrt(3);
+    const hand: Record<string, Record<string, number>> = {
+      SPY: { SPY: 1, TLT: -1, GLD: third },
+      TLT: { SPY: -1, TLT: 1, GLD: -third },
+      GLD: { SPY: third, TLT: -third, GLD: 1 },
+    };
+    const values = SYM.map((a) => SYM.map((b) => hand[a]?.[b] ?? null));
+    const awaiting = Object.fromEntries(SYM.filter((x) => !(x in hand)).map((x) => [x, `Awaiting refresh: the full refresh stores ${x}; this database predates it.`]));
     const matrix = {
-      assets: ["SPY", "TLT", "GLD"],
-      labels: ["S&P 500", "20+ year Treasuries", "Gold"],
-      no_data: [],
-      values: [
-        [1, -1, third],
-        [-1, 1, -third],
-        [third, -third, 1],
-      ],
+      ...withoutData({ ...servedMatrix(), values }, awaiting),
       window: { start: "2026-06-25", end: "2026-09-18", n: 60 },
-      lead: { text: "Treasuries are hedging equities (SPY and TLT at −1.00); the highest pair is SPY and GLD at +0.58 and the lowest SPY and TLT at −1.00." },
       providers: ["Yahoo"],
     };
+    // The API's sentence for these cells, written out by hand.
+    expect(matrix.lead.text).toBe("Treasuries are hedging equities (SPY and TLT at −1.00); the highest pair is SPY and GLD at +0.58 and the lowest SPY and TLT at −1.00.");
     const m = servedMacro() as Record<string, unknown>;
     stubDesk({ "/api/desk/macro": () => ({ ...m, matrix }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /^Correlation matrix/ });
     await waitFor(() => expect(card).toHaveTextContent("Treasuries are hedging equities (SPY and TLT at −1.00)"));
-    expect(cellsOf(card).map((r) => r.map((td) => td.textContent))).toEqual([
+    const cells = cellsOf(card);
+    const at = (a: string, b: string) => cells[SYM.indexOf(a)][SYM.indexOf(b)];
+    expect(["SPY", "TLT", "GLD"].map((a) => ["SPY", "TLT", "GLD"].map((b) => at(a, b).textContent))).toEqual([
       ["1.00", "−1.00", "+0.58"],
       ["−1.00", "1.00", "−0.58"],
       ["+0.58", "−0.58", "1.00"],
     ]);
-    expect(cellsOf(card)[0][1].getAttribute("style")).toContain("rgba(38, 220, 160, 0.5)");
-    expect(cellsOf(card)[0][2].getAttribute("style")).toContain(`rgba(232, 180, 71, ${Number((0.06 + 0.44 * third).toFixed(3))})`);
+    expect(at("QQQ", "SPY").textContent).toBe("no data");
+    expect(at("SPY", "^VIX").textContent).toBe("no data");
+    expect(at("SPY", "TLT").getAttribute("style")).toContain("rgba(38, 220, 160, 0.5)");
+    expect(at("SPY", "GLD").getAttribute("style")).toContain(`rgba(232, 180, 71, ${Number((0.06 + 0.44 * third).toFixed(3))})`);
     expect(card).toHaveTextContent("60 daily returns · Jun 25 to Sep 18, 2026 · the same window for every pair · Yahoo");
+    expect(card).toHaveTextContent("QQQ no data · Awaiting refresh: the full refresh stores QQQ; this database predates it.");
   });
   it("the tint uses the palette's green, amber and gray only, stronger with |r|", () => {
     expect(matrixTint(-1)).toBe("rgba(38, 220, 160, 0.500)");
@@ -477,5 +515,63 @@ describe("the correlation matrix (desk/matrix, §12.8 matrix)", () => {
     expect(matrixTint(null)).toBeUndefined();
     expect(matrixStamp({ assets: [], values: [], window: null })).toBe("");
     expect(DESK_ACCENTS.green).toBe("#26dca0");
+  });
+});
+
+// ── Codex R-01: the matrix is read as one fact ──────────────────────────────
+
+/** Each case is a served matrix the card drew before R-01: one field changed, the rest as served. */
+const R01: [string, (mx: Matrix) => Matrix, string][] = [
+  ["the assets in another order, the cells unchanged (a mislabeled grid)", (mx) => ({ ...mx, assets: [mx.assets[1], mx.assets[0], ...mx.assets.slice(2)] }), "the assets are not SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP, ^VIX in that order"],
+  ["eleven names for twelve assets", (mx) => ({ ...mx, labels: mx.labels.slice(1) }), "the assets' names are not twelve"],
+  ["eleven rows", (mx) => ({ ...mx, values: mx.values.slice(0, 11) }), "the grid is not 12 by 12"],
+  ["a row of eleven cells", (mx) => ({ ...mx, values: mx.values.map((r, i) => (i === 4 ? r.slice(0, 11) : r)) }), "the grid is not 12 by 12"],
+  ["SPY against QQQ not QQQ against SPY", (mx) => ({ ...mx, values: mx.values.map((r, i) => r.map((v, j) => (i === 0 && j === 1 ? 0.5 : v))) }), "the grid is not symmetric at SPY and QQQ"],
+  ["a diagonal cell of 0.9", (mx) => ({ ...mx, values: mx.values.map((r, i) => r.map((v, j) => (i === 3 && j === 3 ? 0.9 : v))) }), "the diagonal is not 1 at SMH"],
+  ["a value above 1", (mx) => ({ ...mx, values: mx.values.map((r, i) => r.map((v, j) => ((i === 0 && j === 1) || (i === 1 && j === 0) ? 1.2 : v))) }), "SPY and QQQ have a value outside −1 to 1"],
+  ["an asset listed without data whose cells are served", (mx) => ({ ...mx, no_data: [{ symbol: "^VIX", reason: "no variation in the window to 2026-09-23" }] }), "^VIX is listed without data but has a value against SPY"],
+  ["an empty pair with neither asset listed without data", (mx) => ({ ...mx, values: mx.values.map((r, i) => r.map((v, j) => ((i === 0 && j === 1) || (i === 1 && j === 0) ? null : v))) }), "SPY and QQQ have no value though neither is listed without data"],
+  ["a no-data entry without its reason", (mx) => ({ ...withoutData(mx, { "^VIX": "x" }), no_data: [{ symbol: "^VIX", reason: "" }] }), "^VIX is listed without data but without its reason"],
+  ["the lead's highest pair not the grid's", (mx) => ({ ...mx, lead: { ...mx.lead, highest: { a: "TLT", b: "LQD", corr: mx.values[5][8] as number } } }), "the lead's highest pair is not the grid's"],
+  ["the lead's lowest value off the cell", (mx) => ({ ...mx, lead: { ...mx.lead, lowest: { ...(mx.lead.lowest as { a: string; b: string; corr: number }), corr: -0.8 } } }), "the lead's lowest pair is not the grid's"],
+  ["the lead's SPY and TLT value off the cell", (mx) => ({ ...mx, lead: { ...mx.lead, spy_tlt: 0.1 } }), "the lead's SPY and TLT value is not the grid's"],
+  ["the lead calling a hedge on a positive SPY and TLT cell", (mx) => ({ ...mx, lead: { ...mx.lead, hedging: true } }), "the lead's hedging call does not follow the SPY and TLT cell"],
+  ["the sentence printing another value", (mx) => ({ ...mx, lead: { ...mx.lead, text: (mx.lead.text as string).replace("+0.96", "+0.91") } }), "the lead's sentence does not state the grid's pairs and values"],
+  ["the sentence naming another pair", (mx) => ({ ...mx, lead: { ...mx.lead, text: (mx.lead.text as string).replace("IEF and LQD", "TLT and LQD") } }), "the lead's sentence does not state the grid's pairs and values"],
+  ["the sentence adding a number", (mx) => ({ ...mx, lead: { ...mx.lead, text: `${mx.lead.text as string} QQQ rose +1.50.` } }), "the lead's sentence does not state the grid's pairs and values"],
+  ["the sentence saying hedging on a positive cell", (mx) => ({ ...mx, lead: { ...mx.lead, text: (mx.lead.text as string).replace("are not hedging", "are hedging") } }), "the lead's hedging words do not follow the SPY and TLT cell"],
+  ["a sentence with no pair served", (mx) => ({ ...withoutData(mx, Object.fromEntries(SYM.map((x) => [x, "Awaiting refresh: the full refresh stores it."]))), lead: mx.lead }), "the lead states pairs the grid does not serve"],
+];
+
+describe("Codex R-01: a served matrix that fails a check is not drawn; the card says why", () => {
+  it.each(R01)("%s", async (_name, change, why) => {
+    const mx = change(servedMatrix());
+    expect(matrixProblem(mx as never)).toBe(why);
+    const m = servedMacro() as Record<string, unknown>;
+    stubDesk({ "/api/desk/macro": () => ({ ...m, matrix: mx }) });
+    renderTab();
+    // The card remounts as the unavailable card once the answer is read, so it is found again after.
+    const card = () => screen.getByRole("region", { name: /^Correlation matrix/ });
+    await waitFor(() => expect(card()).toHaveTextContent(`Awaiting refresh: the matrix as served could not be read (${why}).`));
+    expect(within(card()).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
+    // Atomic: no grid, no cell, no lead, no stamp.
+    expect(within(card()).queryByRole("table")).toBeNull();
+    expect(card().querySelectorAll("td")).toHaveLength(0);
+    expect(card()).not.toHaveTextContent(/\d+ daily returns ·/);
+    expect(card()).not.toHaveTextContent("Treasuries are");
+    // The rest of the page stands.
+    expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89");
+  });
+  it("the checks pass the grids the API serves: all twelve, some without data, and none with data", () => {
+    const mx = servedMatrix();
+    expect(matrixProblem(mx as never)).toBeNull();
+    expect(matrixProblem(withoutData(mx, { "^VIX": "no variation in the window to 2026-09-23", QQQ: "Awaiting refresh: the full refresh stores QQQ; this database predates it." }) as never)).toBeNull();
+    // one pair left: the API's "one pair served" sentence
+    const two = withoutData(mx, Object.fromEntries(SYM.filter((x) => x !== "SPY" && x !== "GLD").map((x) => [x, "Awaiting refresh."])));
+    expect(two.lead.text).toBe(`The one pair served is SPY and GLD at ${signed(mx.values[0][9] as number, 2)}.`);
+    expect(matrixProblem(two as never)).toBeNull();
+    const none = withoutData(mx, Object.fromEntries(SYM.map((x) => [x, "Awaiting refresh."])));
+    expect(none.lead.text).toBeNull();
+    expect(matrixProblem(none as never)).toBeNull();
   });
 });

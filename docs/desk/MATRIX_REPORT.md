@@ -134,3 +134,14 @@ in 124 files, build clean, 282 pytest passed and 1 skipped. The skip is the
 fixture-store parity test; it passes when `DESK_ETF_STORE` points at the
 fixture store. The full pytest and the Desk e2e wait for the owner's
 "go full gates" (`/tmp/mrr-full-gates.lock`).
+
+## Codex round 1 (on `b1ba2a2`: DO NOT PUSH, three findings)
+
+Codex checked the math (144 cells against NumPy to 1.7e-14) and returned three
+findings. Each is fixed in its own commit, with tests built from the finding.
+Codex's exact repro inputs were not in the message I received, so each test
+rebuilds the repro from the finding's description.
+
+| # | Finding | Fix | Test |
+|---|---|---|---|
+| R-01 | The card drew whatever grid the answer held: reordered assets, a ragged or asymmetric grid, a lead naming other pairs | `macro/matrix.ts` `matrixProblem` checks the matrix as one fact before any of it is drawn (§6). A failure makes the whole card unavailable with the failed check in words | `MacroPage.test.tsx` "Codex R-01": 19 served matrices, each with one field changed, each rendered: the card shows the reason and draws no table, cell, lead or stamp. The served fixture and the API's other shapes (some assets without data, one pair, none) pass |
