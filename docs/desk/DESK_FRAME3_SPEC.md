@@ -151,7 +151,7 @@ is not served; its numbers are illustrative, and it says so in one place.
    without the block, keeps the LIVE card in that state and never falls
    back to illustrative figures (Codex R-03).
 7. **Outside the claims.** A page's claims about its served data (Data
-   Pipeline's "Nothing is synthetic") cover its served panels, not its
+   Pipeline's "Every live number comes from stored data") cover its served panels, not its
    PROTOTYPE cards; §1.0.1's lists are unchanged: a prototyped block stays
    "Designed, not yet served" until it is served.
 8. **Same rules otherwise.** §1.3's five colors, the ban list, §1.9's units.
@@ -1054,7 +1054,8 @@ all 7 names", or "weighted over 50% of the basket (1 of 2 names)"; with no
 name with data, or none carrying weight, the figure is "—" and says why
 ("no name with data", "the names with data carry 0% of the basket"), never
 NaN (Codex R-01). One row per name: weight, short interest % of float, days
-to cover, put/call open-interest ratio, and a crowding flag by the rule
+to cover, put/call open-interest ratio (those three column headers end
+"(illustrative)"), and a crowding flag by the rule
 Advanced states: Crowded short at a short interest of 10% of float or more,
 else Crowded long when at least 25% of the funds a 13F sample tracks hold the
 name in their top ten, else "none". A name without data reads "no data"
@@ -1080,8 +1081,9 @@ index series."
 **Data Pipeline** (`screens/10-data-pipeline.png`). No Desk/Client toggle.
 Header `● Last full refresh <last_refresh_utc> · validation <passed|failed>`,
 or "unknown" for either when not served (v2 D-33). Title "Where every number
-comes from" · "Every panel in Desk resolves to a row here. Nothing is
-synthetic; nothing is re-derived in the browser." Lineage strip: 1 SOURCES
+comes from" · "Every panel in Desk resolves to a row here. Every live
+number comes from stored data; prototype cards are marked. Nothing is
+re-derived in the browser." Lineage strip: 1 SOURCES
 (FRED API, Yahoo Finance, EODHD) → 2 FETCH (GitHub Actions) → 3 VALIDATE
 (schema + range checks, as-of ≤ today, gap detection) → 4 TRANSFORM
 (z-scores, MAs, regime labels, forward returns) → 5 STORE (SQLite snapshot,

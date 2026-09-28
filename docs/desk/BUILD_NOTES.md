@@ -88,8 +88,8 @@ and hedged with the ETF that fits it best.
 Designed and drawn, not yet served, each for a stated reason:
 
 - Options and skew: needs a stored history of SPY option snapshots and a
-  written method for picking strikes and expiries. A number without that
-  isn't auditable, so there isn't one.
+  written method for picking strikes and expiries. Where a number isn't
+  computed yet, the card says so or is a marked prototype.
 - Breadth from the stocks themselves: the Sectors card counts the 11
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
@@ -101,8 +101,8 @@ Designed and drawn, not yet served, each for a stated reason:
   The discipline gate in the browser is a workflow check, not a server
   rule.
 - Hedging a basket with options: the arithmetic for a beta-adjusted put
-  spread on a basket has to be exactly right or absent. It's absent until
-  it's right; the card has its slot on the page.
+  spread on a basket has to be exactly right or absent. Where a number
+  isn't computed yet, the card says so or is a marked prototype.
 
 ## Prototypes, and how I would build them
 

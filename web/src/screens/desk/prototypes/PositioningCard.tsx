@@ -92,9 +92,9 @@ export function PositioningCard({ basket }: { basket: SavedBasket }) {
             <tr>
               <th scope="col">Name</th>
               <th scope="col">Weight</th>
-              <th scope="col">Short int.</th>
-              <th scope="col">Days to cover</th>
-              <th scope="col">Put/call OI</th>
+              <th scope="col">Short int. (illustrative)</th>
+              <th scope="col">Days to cover (illustrative)</th>
+              <th scope="col">Put/call OI (illustrative)</th>
               <th scope="col">Crowding</th>
             </tr>
           </thead>
