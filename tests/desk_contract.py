@@ -501,7 +501,7 @@ BASKET_HEDGE = obj(
 
 INSTRUMENTS = obj(instruments=Arr(obj(
     symbol=STR, name=STR, kind=E("etf", "index"), first=DATE, last=DATE, source=Const("asset_prices"),
-)))
+)), excluded=Arr(obj(symbol=STR, reason=STR)))  # Codex R-08: an instrument whose stored rows could not be read, and why
 
 
 # ── The routes ──────────────────────────────────────────────────────────────

@@ -115,7 +115,12 @@ def desk_instruments(ctx: dict) -> dict:
     S&P 500 (the `desk_technicals` item's level, listed before this one), so
     /technicals?symbol=<a stored ETF> is a lookup. An ETF whose technicals
     cannot be computed is left out of `technicals`, and the route then asks
-    the provider like any other stock."""
+    the provider like any other stock.
+
+    Codex R-08: each instrument's rows are read and checked on their own (a
+    real ISO date, a finite positive close); one malformed row drops that
+    instrument, listed in `excluded` with the reason, and every other
+    instrument stands. Its first and last sessions are its checked rows'."""
     import pandas as pd
 
     from src.analytics import dbpath
@@ -124,23 +129,23 @@ def desk_instruments(ctx: dict) -> dict:
     conn = dbpath.connect_ro(es.DB_PATH)
     try:
         if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'asset_prices'").fetchone():
-            return {"instruments": [], "technicals": {}}
+            return {"instruments": [], "technicals": {}, "excluded": []}
         cutoff = es.resolve_as_of(None, es.DB_PATH)
-        rows = conn.execute(
-            "SELECT symbol, MIN(date), MAX(date) FROM asset_prices WHERE interval = '1d' AND date <= ? GROUP BY symbol",
-            (cutoff,),
-        ).fetchall()
-        stored = {sym: (first, last) for sym, first, last in rows}
-        out, closes = [], {}
+        out, closes, excluded = [], {}, []
         for sym, (name, kind) in INSTRUMENT_NAMES.items():
-            if sym in stored:
-                first, last = stored[sym]
-                out.append({"symbol": sym, "name": name, "kind": kind, "first": first, "last": last, "source": "asset_prices"})
-                if kind == "etf":
-                    closes[sym] = conn.execute(
-                        "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = '1d' AND date <= ? ORDER BY date",
-                        (sym, cutoff),
-                    ).fetchall()
+            rows = conn.execute(
+                "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = '1d' AND date <= ? ORDER BY date",
+                (sym, cutoff),
+            ).fetchall()
+            if not rows:
+                continue
+            bad = [why for why in (_row_problem(d, c) for d, c in rows) if why]
+            if bad:
+                excluded.append({"symbol": sym, "reason": f"{len(bad)} stored row{'' if len(bad) == 1 else 's'} could not be read ({bad[0]}); not offered until the store is repaired."})
+                continue
+            out.append({"symbol": sym, "name": name, "kind": kind, "first": rows[0][0], "last": rows[-1][0], "source": "asset_prices"})
+            if kind == "etf":
+                closes[sym] = rows
     finally:
         conn.close()
     from src.desk.technicals import PRICE_SPEC
@@ -157,7 +162,24 @@ def desk_instruments(ctx: dict) -> dict:
             continue
         t.pop("_sessions")
         technicals[sym] = t
-    return {"instruments": out, "technicals": technicals}
+    return {"instruments": out, "technicals": technicals, "excluded": excluded}
+
+
+def _row_problem(d: Any, close: Any) -> str | None:
+    """Why one stored daily row cannot be read (Codex R-08), or None: its date must be a real ISO date and its
+    close a finite positive number."""
+    import math
+    from datetime import date as _date
+
+    try:
+        if not isinstance(d, str) or len(d) != 10:
+            raise ValueError
+        _date.fromisoformat(d)
+    except ValueError:
+        return f"{d!r} is not a date"
+    if isinstance(close, bool) or not isinstance(close, (int, float)) or not math.isfinite(close) or close <= 0:
+        return f"{d}: close {close!r} is not a positive number"
+    return None
 
 
 # /overview's data_status contributors (plan N9): the tier-1 inputs of the twelve Ledger

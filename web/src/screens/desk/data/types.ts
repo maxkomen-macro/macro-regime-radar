@@ -152,6 +152,8 @@ export interface Instrument {
 
 export interface InstrumentsResponse extends Envelope {
   instruments?: Instrument[];
+  /** Codex R-08: an instrument whose stored rows could not be read, and why; the rest stand. */
+  excluded?: { symbol: string; reason: string }[];
 }
 
 // ── §12.1 /overview ───────────────────────────────────────────────────────

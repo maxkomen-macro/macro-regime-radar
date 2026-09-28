@@ -2426,3 +2426,9 @@ question pushes one.
   the same address change. With no `mode`, a preset opens on Common
   questions and six slots on Build your own; a cold load of any address
   opens the tab it names.
+- **R-08 · one bad row costs one instrument.** The instruments item reads
+  and checks each instrument's `asset_prices` rows on its own (a real ISO
+  date, a finite positive close); a malformed row drops that instrument,
+  served in `/instruments`' `excluded` (`{symbol, reason}`), and every other
+  instrument, and its technicals, stands. Before, one text close or bad date
+  failed the whole item, and the search's fallback list with it.

@@ -55,6 +55,39 @@ def test_the_item_lists_the_named_instruments_the_store_holds(monkeypatch, tmp_p
     ]
     # desk/usability item 2: each stored ETF's technicals ride with the list; two closes are too few for any.
     assert set(out["technicals"]) <= {"SPY", "GLD"}
+    assert out["excluded"] == []
+
+
+@pytest.mark.parametrize("bad", [
+    ("GLD", "1d", "2026-06-01", "abc"),        # a close stored as text
+    ("GLD", "1d", "2026-06-01", None),         # no close
+    ("GLD", "1d", "2026-06-01", float("nan")),  # not a number
+    ("GLD", "1d", "2026-06-01", -3.0),         # not a price
+    ("GLD", "1d", "2026-02-30", 180.0),        # not a date
+])
+def test_one_malformed_row_drops_its_instrument_with_a_reason_and_keeps_the_rest(monkeypatch, tmp_path, bad):
+    """Codex R-08: the item read every instrument's closes at once, so one malformed asset_prices row failed the
+    whole item (and the search's fallback list with it). Each instrument's rows are checked on their own now."""
+    import numpy as np
+
+    path = tmp_path / "macro_radar.db"
+    days = [d.strftime("%Y-%m-%d") for d in __import__("pandas").bdate_range("2021-01-04", "2026-09-18")]
+    rng = np.random.default_rng(2)
+    with sqlite3.connect(path) as c:
+        c.execute("CREATE TABLE asset_prices (symbol TEXT, interval TEXT, date TEXT, close REAL, provider TEXT)")
+        for sym, base in (("SPY", 400.0), ("GLD", 170.0)):
+            px = base * np.cumprod(1 + rng.normal(0.0003, 0.01, len(days)))
+            c.executemany("INSERT INTO asset_prices VALUES (?, '1d', ?, ?, 'eodhd')", [(sym, d, float(p)) for d, p in zip(days, px)])
+        c.execute("DELETE FROM asset_prices WHERE symbol = ? AND date = ?", (bad[0], bad[2]))
+        c.execute("INSERT INTO asset_prices VALUES (?, ?, ?, ?, 'eodhd')", bad)
+    from src.desk import event_study as es
+
+    monkeypatch.setattr(es, "DB_PATH", path)
+    out = desk_items.desk_instruments({})
+    assert [r["symbol"] for r in out["instruments"]] == ["SPY"]
+    assert set(out["technicals"]) == {"SPY"}
+    [ex] = out["excluded"]
+    assert ex["symbol"] == "GLD" and ex["reason"].startswith("1 stored row could not be read (") and bad[2] in ex["reason"]
 
 
 def test_a_store_without_the_table_lists_none(monkeypatch, tmp_path):
@@ -63,7 +96,7 @@ def test_a_store_without_the_table_lists_none(monkeypatch, tmp_path):
     from src.desk import event_study as es
 
     monkeypatch.setattr(es, "DB_PATH", path)
-    assert desk_items.desk_instruments({}) == {"instruments": [], "technicals": {}}
+    assert desk_items.desk_instruments({}) == {"instruments": [], "technicals": {}, "excluded": []}
 
 
 @pytest.fixture()
@@ -74,6 +107,7 @@ def served(install_worker, monkeypatch, synth_path):  # noqa: F811
 def test_the_route_serves_the_item_in_the_envelope(served):
     body = dc.check_response("/instruments", client.get("/api/desk/instruments"))
     rows = body["data"]["instruments"]
+    assert body["data"]["excluded"] == []
     assert [r["symbol"] for r in rows][:1] == ["^GSPC"]
     assert all(r["source"] == "asset_prices" for r in rows)
     r = client.get("/api/desk/instruments?q=spy")

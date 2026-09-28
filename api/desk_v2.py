@@ -329,7 +329,8 @@ def instruments_answer(params: list[tuple[str, str]]) -> dict:
     not answer (a lookup of the generation's item)."""
     if params:
         raise env.Unsupported(f"{params[0][0]} is not a parameter of /instruments.")
-    return {"instruments": _result("desk_instruments")["instruments"]}
+    item = _result("desk_instruments")
+    return {"instruments": item["instruments"], "excluded": item.get("excluded", [])}
 
 
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────

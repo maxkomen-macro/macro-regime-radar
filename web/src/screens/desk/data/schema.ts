@@ -336,6 +336,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/instruments": o({
     ...envelope,
     instruments: l(o({ symbol: "s!", name: "s!", kind: e(["etf", "index"]), first: "s?", last: "s?", source: "s" })),
+    // Codex R-08: an instrument whose stored rows could not be read, and why; the rest stand.
+    excluded: l(o({ symbol: "s!", reason: "s!" })),
   }),
   "/overview": o({
     ...envelope,
