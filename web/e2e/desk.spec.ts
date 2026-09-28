@@ -666,7 +666,7 @@ test.describe("desk v2", () => {
     // §12.15: the ETFs ranked, the top pick marked, the stress test.
     await expect(step3.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("XLK fits the basket best (R² 0.69 over a year)");
     await expect(step3.locator('tr[aria-current="true"]')).toHaveCount(1);
-    await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("If QQQ falls 10% the basket loses $170,542 unhedged");
+    await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("With the table's hedge, short $1,384,473 of XLK: if QQQ falls 10% the basket loses $170,542 unhedged");
     // §10 (Codex R-14): the options slot is plain: no control that cannot act, the reason printed.
     await expect(hedge.getByRole("button")).toHaveCount(0);
     await expect(hedge.locator('[data-slot="hedge-options"]')).toHaveCount(1);

@@ -225,16 +225,47 @@ def test_the_stress_is_linear_in_betas_fitted_on_one_shared_window(served):
     ref = bk.price_basket({s: h[s] for s in ("NVDA", "AVGO")}, {"NVDA": 0.5, "AVGO": 0.5}, sessions=cal)
     level = dict(zip(ref["dates"], ref["index"]))
     top_lv = dict(zip(h[d["top"]].dates, h[d["top"]].close))
+    top = d["etfs"][0]
     for s in d["stress"]:
         assert s["window"]["end"] == ref["end"] and s["window"]["n"] == 252
         bench = dict(zip(h[s["shock"]].dates, h[s["shock"]].close))
         bb = bk.regression(level, bench, 252, cal, ref["end"])["beta"]
         be = 1.0 if s["shock"] == d["top"] else bk.regression(top_lv, bench, 252, cal, ref["end"])["beta"]
-        ratio = bk.regression(level, top_lv, 252, cal, ref["end"])["beta"]
-        assert s["hedge_ratio"] == pytest.approx(ratio)
+        # The short is the table's, as it recommends it (Codex R-15).
+        ratio = top["hedge_ratio"]
+        assert s["hedge_ratio"] == ratio and s["short_usd"] == top["short_usd"]
         assert s["unhedged_usd"] == pytest.approx(1e6 * bb * -0.1)
         assert s["hedged_usd"] == pytest.approx(1e6 * (bb - ratio * be) * -0.1)
         assert s["hedged_move"] == pytest.approx(s["hedged_usd"] / 1e6)
+
+
+def test_codex_r15_the_answer_stresses_the_short_its_table_recommends():
+    """Codex's R-15 repro through the answer itself: the basket moves three times SMH for its first 60 returns
+    and with it for the last 60, QQQ has only the first 61 prices; the table recommends shorting $1M of SMH, and
+    the QQQ stress holds that $1M short: −$200,000 hedged, not the refitted hedge's $0."""
+    from src.desk import basket as bk
+
+    cal = SESSIONS[-121:]
+    smh_r = np.array([-0.01 if i % 2 == 0 else 0.01 for i in range(120)])
+
+    def lv(rets):
+        return list(100.0 * np.cumprod(np.concatenate([[1.0], 1 + np.asarray(rets)])))
+
+    def hist(closes, n=None):
+        n = len(closes) if n is None else n
+        return bk.History(tuple(cal[:n]), tuple(float(c) for c in closes[:n]), tuple([1e9] * n))
+
+    rng = np.random.default_rng(15)
+    histories = {"BSK": hist(lv(np.concatenate([3 * smh_r[:60], smh_r[60:]]))), "SMH": hist(lv(smh_r)), "QQQ": hist(lv(smh_r), 61)}
+    for sym in ("SOXX", "XLK", "IGV", "XLU", "SPY", "IWM"):
+        histories[sym] = hist(lv(rng.normal(0, 0.01, 120)))
+    d = desk_basket.hedge_answer(histories, [("BSK", 100.0)], "hold", 1_000_000.0)
+    top = d["etfs"][0]
+    assert d["top"] == "SMH" and top["basis"] == "60d" and top["short_usd"] == pytest.approx(1_000_000.0)
+    q = next(s for s in d["stress"] if s["shock"] == "QQQ")
+    assert q["window"] == {"start": cal[0], "end": cal[60], "n": 60}
+    assert q["short_usd"] == top["short_usd"] and q["hedge_ratio"] == top["hedge_ratio"]
+    assert q["unhedged_usd"] == pytest.approx(-300_000.0) and q["hedged_usd"] == pytest.approx(-200_000.0)
 
 
 def test_a_young_basket_is_ranked_on_sixty_days_and_says_so(served):

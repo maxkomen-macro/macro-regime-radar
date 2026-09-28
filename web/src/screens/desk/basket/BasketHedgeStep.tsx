@@ -6,15 +6,16 @@
  * (beta), the dollars to short for the notional, the volatility left after
  * the short and the cut; the top pick highlighted. The stress test is linear
  * in the fitted betas: the basket if QQQ or SPY falls 10%, unhedged and
- * hedged with the top pick. Then the slot for the options card, which is not
- * served here: it keeps its title and labels and prints its reason (§1.0.2).
+ * hedged with the short the table recommends for the top pick, held as it is
+ * (Codex R-15), and the card says which short that is. Then the slot for the
+ * options card, which is not served here: its title and its reason (§1.0.2).
  */
 
 import { useId, type ReactNode } from "react";
 import type { BasketHedgeResponse, HedgeEtf } from "../data/types";
 import { num, pct, pctPlain } from "../kit/format";
 import { Awaiting, NotServedBadge, UnservedLine, cx } from "../kit/ui";
-import { excludedWords, hedgeLead, stressLead, stressWindowWords, usd } from "./trades";
+import { excludedWords, hedgeLead, stressLead, stressShortWords, stressWindowWords, usd } from "./trades";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -133,7 +134,7 @@ function StressCard({ h, state }: { h: BasketHedgeResponse | undefined; state: S
       )}
       {state === "ready" && rows.length ? (
         <p className="bh-foot-note">
-          The basket moves its beta to the benchmark times the move; the short moves the ETF&apos;s own beta to it (one for the benchmark itself). {h ? stressWindowWords(h) : null}
+          {h ? stressShortWords(h) : null} The basket moves its beta to the benchmark times the move; the short moves the ETF&apos;s own beta to it (one for the benchmark itself). {h ? stressWindowWords(h) : null}
         </p>
       ) : null}
     </HedgeCard>

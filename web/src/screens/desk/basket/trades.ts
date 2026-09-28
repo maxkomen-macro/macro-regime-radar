@@ -202,16 +202,32 @@ export function hedgeLead(h: BasketHedgeResponse): string | null {
   return `${top.symbol} fits the basket best (R² ${num(r2, 2)} over ${over}): short ${usd(top.short_usd)} of it against ${usd(h.notional)} and the basket's volatility falls from ${pctPlain(top.basket_vol, 0)} to ${pctPlain(top.residual_vol, 0)}, ${pctPlain(top.vol_reduction, 0)} less.`;
 }
 
-/** The stress card's lead: each shock, unhedged and hedged with the top pick. */
+/** The short the stress holds (Codex R-15): the table's recommended position, the same on every row. */
+export function stressShort(h: BasketHedgeResponse): { symbol: string; short_usd: number; hedge_ratio: number | null } | null {
+  const s = (h.stress ?? []).find((r) => r.hedge && fin(r.short_usd));
+  return s ? { symbol: s.hedge as string, short_usd: s.short_usd as number, hedge_ratio: fin(s.hedge_ratio) ? s.hedge_ratio : null } : null;
+}
+
+/** The stress card's lead: the short it holds, then each shock unhedged and hedged. */
 export function stressLead(h: BasketHedgeResponse): string | null {
   const rows = (h.stress ?? []).filter((s) => fin(s.unhedged_usd) && fin(s.move));
   if (!rows.length) return null;
+  const short = stressShort(h);
+  const hedged = short !== null && rows.some((s) => fin(s.hedged_usd));
   const parts = rows.map((s) => {
     const head = `if ${s.shock} falls ${pctPlain(Math.abs(s.move as number), 0)} the basket ${pnlWords(s.unhedged_usd as number)} unhedged`;
-    return fin(s.hedged_usd) && s.hedge ? `${head} and ${pnlWords(s.hedged_usd)} hedged with ${s.hedge}` : head;
+    return hedged && fin(s.hedged_usd) ? `${head} and ${pnlWords(s.hedged_usd)} hedged` : head;
   });
   const s = parts.join("; ");
-  return `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+  return hedged ? `With the table's hedge, short ${usd(short.short_usd)} of ${short.symbol}: ${s}.` : `${s.charAt(0).toUpperCase()}${s.slice(1)}.`;
+}
+
+/** The stress card's first footnote sentence: which short the hedged column holds, and that it is held as it is. */
+export function stressShortWords(h: BasketHedgeResponse): string | null {
+  const short = stressShort(h);
+  if (!short) return null;
+  const ratio = short.hedge_ratio !== null ? ` (${num(short.hedge_ratio, 2)}× the basket)` : "";
+  return `Hedged holds the short the table above recommends, ${usd(short.short_usd)} of ${short.symbol}${ratio}, as it is under both shocks.`;
 }
 
 // ── Step 1: the basket (§10) ──────────────────────────────────────────────

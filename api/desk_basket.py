@@ -285,8 +285,10 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         "excluded": excluded(histories, [s for s, _ in legs] + [s for s in HEDGE_ETFS if s not in {x for x, _ in legs}]),
         "etfs": rows,
         "top": top["symbol"] if top else None,
+        # The stress holds the table's recommended short as it is (Codex R-15).
         "stress": bk.stress(level, shocks, top["symbol"] if top else None, etf_levels[top["symbol"]] if top else None,
-                            top["basis"] if top else None, notional, sessions, cutoff),
+                            top["basis"] if top else None, notional, sessions, cutoff,
+                            hedge_ratio=top["hedge_ratio"] if top else None),
     }
 
 

@@ -292,14 +292,49 @@ def test_codex_r01_the_stress_never_reads_etf_closes_after_the_basket():
     qqq = _levels(cal, q)
     smh = _levels(cal, np.concatenate([q[:60], 3 * q[60:]]))
     basket = _levels(cal[:61], q[:60])
-    rows = bk.stress(basket, {"QQQ": qqq}, "SMH", smh, "60d", 1_000_000.0, cal, cutoff=cal[60])
+    # The ETF ranking reads up to the same cutoff, and its hedge ratio is the one the stress holds (Codex R-15).
+    fit = bk.hedge_rows(basket, {"SMH": smh}, 1_000_000.0, cal, cutoff=cal[60])[0]
+    assert fit["beta_60d"] == pytest.approx(1.0) and fit["window_60d"]["end"] == cal[60]
+    rows = bk.stress(basket, {"QQQ": qqq}, "SMH", smh, "60d", 1_000_000.0, cal, cutoff=cal[60], hedge_ratio=fit["hedge_ratio"])
     r = rows[0]
     assert r["window"] == {"start": cal[0], "end": cal[60], "n": 60}
     assert r["basket_beta"] == pytest.approx(1.0) and r["hedge_beta"] == pytest.approx(1.0) and r["hedge_ratio"] == pytest.approx(1.0)
     assert r["unhedged_usd"] == pytest.approx(-100_000.0) and r["hedged_usd"] == pytest.approx(0.0, abs=1e-6)
-    # The ETF ranking reads up to the same cutoff.
-    fit = bk.hedge_rows(basket, {"SMH": smh}, 1_000_000.0, cal, cutoff=cal[60])[0]
-    assert fit["beta_60d"] == pytest.approx(1.0) and fit["window_60d"]["end"] == cal[60]
+
+
+# ── Codex R-15: the stress holds the short the table recommends ──
+
+def r15_case():
+    """Codex's R-15 repro: 121 XNYS sessions; SMH's returns alternate −1% / +1%; the basket moves three times SMH
+    for its first 60 returns and with SMH for the last 60; QQQ has only the first 61 prices, identical to SMH's."""
+    cal = _xnys("2025-01-02", "2025-12-31")[:121]
+    smh_r = np.array([-0.01 if i % 2 == 0 else 0.01 for i in range(120)])
+    smh = _levels(cal, smh_r)
+    basket = _levels(cal, np.concatenate([3 * smh_r[:60], smh_r[60:]]))
+    qqq = dict(list(smh.items())[:61])
+    return cal, basket, smh, qqq
+
+
+def test_codex_r15_the_stress_holds_the_short_the_table_recommends():
+    """The table fits the last 60 returns (beta 1) and recommends shorting $1M of SMH. QQQ's window is the first
+    60 returns, the only ones it has: the basket's beta to QQQ is 3 and SMH's is 1, so the $1M short leaves
+    −$200,000 hedged. Refitting the hedge on that window (beta 3, a $3M short) reported about $0."""
+    cal, basket, smh, qqq = r15_case()
+    top = bk.hedge_rows(basket, {"SMH": smh}, 1_000_000.0, cal, cutoff=cal[-1])[0]
+    assert top["basis"] == "60d" and top["hedge_ratio"] == pytest.approx(1.0) and top["short_usd"] == pytest.approx(1_000_000.0)
+    r = bk.stress(basket, {"QQQ": qqq}, "SMH", smh, top["basis"], 1_000_000.0, cal, cutoff=cal[-1],
+                  hedge_ratio=top["hedge_ratio"])[0]
+    assert r["window"] == {"start": cal[0], "end": cal[60], "n": 60}
+    assert r["basket_beta"] == pytest.approx(3.0) and r["hedge_beta"] == pytest.approx(1.0)
+    assert r["hedge_ratio"] == pytest.approx(1.0) and r["short_usd"] == pytest.approx(1_000_000.0)
+    assert r["unhedged_usd"] == pytest.approx(-300_000.0) and r["hedge_usd"] == pytest.approx(100_000.0)
+    assert r["hedged_usd"] == pytest.approx(-200_000.0) and r["hedged_move"] == pytest.approx(-0.2)
+
+
+def test_the_stress_without_a_recommended_short_says_so():
+    cal, basket, smh, qqq = r15_case()
+    r = bk.stress(basket, {"QQQ": qqq}, "SMH", smh, "60d", 1e6, cal, cutoff=cal[-1], hedge_ratio=None)[0]
+    assert r["short_usd"] is None and r["hedged_usd"] is None and r["reason"] == "no ETF fits the basket over a complete window"
 
 
 def test_the_stress_says_why_when_the_three_share_too_few_returns():
@@ -307,6 +342,6 @@ def test_the_stress_says_why_when_the_three_share_too_few_returns():
     q = np.full(60, 0.001)
     lv = _levels(cal, q)
     gapped = {d: v for i, (d, v) in enumerate(lv.items()) if i != 30}
-    r = bk.stress(lv, {"SPY": gapped}, "SMH", lv, "60d", 1e6, cal, cutoff=cal[-1])[0]
+    r = bk.stress(lv, {"SPY": gapped}, "SMH", lv, "60d", 1e6, cal, cutoff=cal[-1], hedge_ratio=1.0)[0]
     assert r["unhedged_usd"] is None and r["window"]["n"] == 58
     assert r["reason"] == "needs 60 daily returns the basket, SMH and SPY all have; there are 58"

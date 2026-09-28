@@ -475,26 +475,30 @@ def _beta(y: np.ndarray, x: np.ndarray) -> float | None:
 
 def stress(basket: Mapping[str, float], shocks: Mapping[str, Mapping[str, float]], top: str | None,
            top_levels: Mapping[str, float] | None, basis: str | None, notional: float, sessions: Sequence[str],
-           cutoff: str, move: float = STRESS_MOVE) -> list[dict]:
-    """The basket's P&L if a benchmark moves `move` (−10%), linear in betas all
-    fitted on one shared window (Codex R-01): the last n sessions (n from
-    `basis`, 252 or 60) up to the basket's `cutoff` on which the basket, the
-    top ETF and the benchmark each have a one-session return. On that window:
-    beta(basket, benchmark), beta(ETF, benchmark) (1 when the ETF is the
-    benchmark) and the hedge ratio beta(basket, ETF). Unhedged, notional ×
-    beta(basket, benchmark) × move; the short, hedge ratio × notional of the
-    ETF, which moves beta(ETF, benchmark) × move; hedged, the two added."""
+           cutoff: str, move: float = STRESS_MOVE, *, hedge_ratio: float | None) -> list[dict]:
+    """The basket's P&L if a benchmark moves `move` (−10%), hedged with the
+    position the ETF table recommends: `hedge_ratio` (the top row's, dollars of
+    ETF short per dollar of basket), so a short of hedge ratio × notional of
+    `top`, held as it is (Codex R-15: never refitted per benchmark). The shock
+    betas are fitted on one shared window (Codex R-01): the last n sessions (n
+    from `basis`, 252 or 60) up to the basket's `cutoff` on which the basket,
+    the top ETF and the benchmark each have a one-session return. On that
+    window: beta(basket, benchmark) and beta(ETF, benchmark) (1 when the ETF is
+    the benchmark). Unhedged, notional × beta(basket, benchmark) × move; the
+    short, which moves beta(ETF, benchmark) × move against it; hedged, the two
+    added."""
     n = WINDOWS.get(basis or "", None)
     cal = list(sessions)
     within = np.array([d <= cutoff for d in cal])
     rb = session_returns(on_calendar(basket, cal))
     re = session_returns(on_calendar(top_levels, cal)) if top_levels is not None else None
+    held = hedge_ratio if hedge_ratio is not None and math.isfinite(hedge_ratio) else None
     out = []
     for sym, levels in shocks.items():
         row = {"shock": sym, "move": move, "window": None, "reason": None, "basket_beta": None, "basket_move": None,
-               "unhedged_usd": None, "hedge": top, "hedge_ratio": None, "hedge_beta": None, "hedge_move": None,
-               "hedge_usd": None, "hedged_usd": None, "hedged_move": None}
-        if n is None or top is None or re is None:
+               "unhedged_usd": None, "hedge": top, "hedge_ratio": held, "short_usd": None if held is None else held * notional,
+               "hedge_beta": None, "hedge_move": None, "hedge_usd": None, "hedged_usd": None, "hedged_move": None}
+        if n is None or top is None or re is None or held is None:
             row["reason"] = "no ETF fits the basket over a complete window"
             out.append(row)
             continue
@@ -510,16 +514,14 @@ def stress(basket: Mapping[str, float], shocks: Mapping[str, Mapping[str, float]
         row["window"] = {"start": cal[int(use[0]) - 1], "end": cal[int(use[-1])], "n": n}
         bb = _beta(rb[use], rs[use])
         be = 1.0 if top == sym else _beta(re[use], rs[use])
-        ratio = _beta(rb[use], re[use])
         if bb is not None:
             row["basket_beta"] = bb
             row["basket_move"] = bb * move
             row["unhedged_usd"] = notional * bb * move
-            if be is not None and ratio is not None:
-                row["hedge_ratio"] = ratio
+            if be is not None:
                 row["hedge_beta"] = be
                 row["hedge_move"] = be * move
-                row["hedge_usd"] = -ratio * notional * be * move
+                row["hedge_usd"] = -row["short_usd"] * be * move
                 row["hedged_usd"] = row["unhedged_usd"] + row["hedge_usd"]
                 row["hedged_move"] = row["hedged_usd"] / notional
         out.append(row)

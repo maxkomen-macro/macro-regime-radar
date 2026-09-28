@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import type { BasketHedgeResponse, BasketPriceResponse } from "../data/types";
-import { asOfMismatch, stressWindowWords, excludedWords, hedgeLead, pnlWords, stressLead, compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
+import { asOfMismatch, stressShortWords, stressWindowWords, excludedWords, hedgeLead, pnlWords, stressLead, compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
 
 const ANSWERS = (basketPrice as unknown as { answers: Record<string, BasketPriceResponse> }).answers;
 const SAMPLE = ANSWERS["NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000"];
@@ -70,13 +70,27 @@ describe("Basket & Hedge's lead sentences", () => {
   it("the hedge's sentences: the top pick with its fit, short and volatility; the stress, unhedged and hedged", () => {
     const h = HEDGES[PRESET];
     expect(hedgeLead(h)).toBe("SMH fits the basket best (R² 0.74 over a year): short $1,233,779 of it against $1,000,000 and the basket's volatility falls from 57% to 29%, 49% less.");
-    expect(stressLead(h)).toBe("If QQQ falls 10% the basket loses $223,092 unhedged and makes $222 hedged with SMH; if SPY falls 10% the basket loses $286,219 unhedged and makes $6,534 hedged with SMH.");
+    expect(stressLead(h)).toBe("With the table's hedge, short $1,233,779 of SMH: if QQQ falls 10% the basket loses $223,092 unhedged and makes $222 hedged; if SPY falls 10% the basket loses $286,219 unhedged and makes $6,534 hedged.");
     expect(pnlWords(-0.4)).toBe("is flat");
     expect(pnlWords(-1234.6)).toBe("loses $1,235");
     // A young basket is ranked on 60 sessions and says so.
     const young = { ...h, etfs: h.etfs!.map((e, i) => (i === 0 ? { ...e, basis: "60d" as const, r2_1y: null } : e)) };
     expect(hedgeLead(young)).toMatch(/^SMH fits the basket best \(R² 0\.77 over 60 sessions\)/);
     expect(hedgeLead({ ...h, top: null })).toBeNull();
+  });
+
+  it("Codex R-15: the stress card says which short it holds, the table's, and holds it as it is", () => {
+    const h = HEDGES[PRESET];
+    // Codex's repro as served: the table recommends $1M of SMH; QQQ's window gives the basket a beta of 3 and SMH 1.
+    const row = { ...h.stress![0], shock: "QQQ" as const, hedge: "SMH", hedge_ratio: 1, short_usd: 1_000_000, basket_beta: 3, basket_move: -0.3, unhedged_usd: -300_000, hedge_beta: 1, hedge_move: -0.1, hedge_usd: 100_000, hedged_usd: -200_000, hedged_move: -0.2 };
+    const r15 = { ...h, stress: [row, { ...row, shock: "SPY" as const }] };
+    expect(stressLead(r15)).toBe("With the table's hedge, short $1,000,000 of SMH: if QQQ falls 10% the basket loses $300,000 unhedged and loses $200,000 hedged; if SPY falls 10% the basket loses $300,000 unhedged and loses $200,000 hedged.");
+    expect(stressShortWords(r15)).toBe("Hedged holds the short the table above recommends, $1,000,000 of SMH (1.00× the basket), as it is under both shocks.");
+    expect(stressShortWords(h)).toBe("Hedged holds the short the table above recommends, $1,233,779 of SMH (1.23× the basket), as it is under both shocks.");
+    // No recommended short: the lead gives the unhedged figures alone and the footnote names no short.
+    const none = { ...h, stress: h.stress!.map((s) => ({ ...s, hedge: null, hedge_ratio: null, short_usd: null, hedge_usd: null, hedged_usd: null, hedged_move: null })) };
+    expect(stressLead(none)).toBe("If QQQ falls 10% the basket loses $223,092 unhedged; if SPY falls 10% the basket loses $286,219 unhedged.");
+    expect(stressShortWords(none)).toBeNull();
   });
 
   it("Codex R-07: closes left out for want of an adjusted close are said, by symbol", () => {

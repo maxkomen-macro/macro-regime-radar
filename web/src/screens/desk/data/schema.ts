@@ -704,6 +704,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         unhedged_usd: "n",
         hedge: "s?",
         hedge_ratio: "n",
+        short_usd: "n",
         hedge_beta: "n",
         hedge_move: "n",
         hedge_usd: "n",

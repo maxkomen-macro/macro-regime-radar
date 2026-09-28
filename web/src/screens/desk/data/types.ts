@@ -983,8 +983,10 @@ export interface StressRow {
   basket_move: number | null;
   unhedged_usd: number | null;
   hedge: string | null;
-  /** beta(basket, hedge ETF) on this row's window. */
+  /** The ETF table's hedge ratio for `hedge`, held as the table recommends it (Codex R-15). */
   hedge_ratio: number | null;
+  /** The dollars of `hedge` the stress assumes short: the table's `short_usd`. */
+  short_usd: number | null;
   hedge_beta: number | null;
   hedge_move: number | null;
   hedge_usd: number | null;

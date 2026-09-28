@@ -464,8 +464,8 @@ BASKET_HEDGE = obj(
     stress=Arr(obj(
         shock=E("QQQ", "SPY"), move=Const(-0.1), window=null(LOOSE_SPAN), reason=null(STR),
         basket_beta=null(NUM), basket_move=null(NUM), unhedged_usd=null(NUM),
-        hedge=null(HEDGE_ETF), hedge_ratio=null(NUM), hedge_beta=null(NUM), hedge_move=null(NUM), hedge_usd=null(NUM),
-        hedged_usd=null(NUM), hedged_move=null(NUM),
+        hedge=null(HEDGE_ETF), hedge_ratio=null(NUM), short_usd=null(NUM), hedge_beta=null(NUM), hedge_move=null(NUM),
+        hedge_usd=null(NUM), hedged_usd=null(NUM), hedged_move=null(NUM),
     ), min=2, max=2),
 )
 
