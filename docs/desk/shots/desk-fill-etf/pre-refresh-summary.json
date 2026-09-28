@@ -1,0 +1,60 @@
+[
+ {
+  "label": "pre-refresh",
+  "card": "sectors-leadership",
+  "text": "Sector leadership 3-month return relative to the S&P · all elevenLeading—Lagging—Pattern—Awaiting refresh: the full refresh stores XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY; this database predates it.Advanced ▸ not yet served"
+ },
+ {
+  "label": "pre-refresh",
+  "card": "sectors-breadth",
+  "text": "Breadth is the rally wide or narrow? · of 11 sectorsAwaiting refreshAbove 50-day—Above 200-day—Equal vs cap weight—Awaiting refresh: the full refresh stores XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY; this database predates it.Advanced ▸ not yet served"
+ },
+ {
+  "label": "pre-refresh",
+  "page": "sectors",
+  "api_status": "awaiting",
+  "generation_id": "g1-91af8a611b",
+  "as_of": "2026-09-27"
+ },
+ {
+  "label": "pre-refresh",
+  "card": "technicals-sector-leadership",
+  "text": "Sector leadership · 3-month relative strength vs S&PAwaiting refreshAwaiting refresh: the full refresh stores XLB, XLC, XLE, XLF, XLI, XLK, XLP, XLRE, XLU, XLV, XLY; this database predates it.Advanced ▸ not yet served"
+ },
+ {
+  "label": "pre-refresh",
+  "page": "technicals",
+  "api_status": "ready",
+  "generation_id": "g1-91af8a611b",
+  "as_of": "2026-09-27"
+ },
+ {
+  "label": "pre-refresh",
+  "card": "macro-stock-bond",
+  "text": "Do bonds still hedge stocks? 60-day correlation of daily returns, one yearAwaiting refreshToday—A year ago—Flipped—Awaiting refresh: the full refresh stores TLT; this database predates it.Advanced ▸ not yet served"
+ },
+ {
+  "label": "pre-refresh",
+  "card": "macro-what-moves",
+  "text": "What moves with the S&P 60-day correlation · each asset against the index← moves against · a hedgemoves with · same bet →20+ year TreasuriesAwaiting refresh7–10 year Treasuriesnot available · fewer than 60 complete daily return pairs in the window to 2026-09-23High-yield bondsnot available · fewer than 60 complete daily return pairs in the window to 2026-09-23Investment-grade bondsnot available · "
+ },
+ {
+  "label": "pre-refresh",
+  "page": "macro",
+  "api_status": "ready",
+  "generation_id": "g1-91af8a611b",
+  "as_of": "2026-09-27"
+ },
+ {
+  "label": "pre-refresh",
+  "card": "pipeline-inventory",
+  "text": "Series inventory46 series · grouped · generated from the registry▸Rates8 series ● missing▸Credit2 series ● current▸Equities & vol4 series ● missing▸FX & commodities4 series ● missing▸Macro (monthly)4 series ● current▾Sector ETFs11 series ● missingSeriesIDFromAs ofFeedsStatusMaterials sector ETF (XLB) · EODHD first, Yahoo disclosed fallback (stored), dailyXLB——Technicals, Sectorsmissing · Materials"
+ },
+ {
+  "label": "pre-refresh",
+  "page": "data-pipeline",
+  "api_status": "ready",
+  "generation_id": "g1-91af8a611b",
+  "as_of": "2026-09-27"
+ }
+]
