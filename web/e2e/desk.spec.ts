@@ -796,6 +796,31 @@ test.describe("desk v2", () => {
     await expect(page).toHaveURL(/\/desk\/basket-hedge\?basket=local-1$/);
   });
 
+  test("data pipeline: Sync to Snowflake, a PROTOTYPE, replays connect → stage → merge → verify beside the real DDL and CSV (§11, §1.0.3)", async ({ page }) => {
+    await open(page, "/desk/data-pipeline");
+    const sync = page.getByRole("region", { name: /^Sync to Snowflake/ });
+    await expect(sync).toHaveAttribute("data-prototype", "snowflake-sync");
+    await expect(sync.getByRole("table").getByRole("row")).toHaveCount(7);
+    await expect(sync).toContainText("Verified: 6 of 6 tables match the snapshot");
+    await sync.getByRole("button", { name: "Sync to Snowflake" }).click();
+    await expect(sync.getByRole("button", { name: "Syncing…" })).toBeDisabled();
+    await expect(sync).toContainText("Verified: 6 of 6 tables match the snapshot", { timeout: 10_000 });
+    await expect(page.getByRole("button", { name: "Generate Snowflake DDL" })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "Export current study → CSV" })).toBeEnabled();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      expect(await auditPalette(page)).toEqual([]);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
+    }
+    // Under reduced motion the replay completes at once, and nothing animates.
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await open(page, "/desk/data-pipeline");
+    await page.getByRole("region", { name: /^Sync to Snowflake/ }).getByRole("button", { name: "Sync to Snowflake" }).click();
+    await expect(page.getByRole("region", { name: /^Sync to Snowflake/ })).toContainText("Verified: 6 of 6 tables match the snapshot");
+    expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
+  });
+
   test("keyboard: every stop has a name and a ring; the toggle and the action are stops", async ({ page }) => {
     await open(page, "/desk/overview");
     const stops = await tabWalk(page);

@@ -11,6 +11,8 @@ import { basketInputs, sampleBasket } from "./basket-inputs";
 import { hedge, usd } from "./options";
 import { CROWDING_WORDS, positioning } from "./positioning";
 import { basketStudy } from "./basket-study";
+import { grouped } from "../kit/format";
+import { sync } from "./snowflake-sync";
 import { costText, protection, strikeText } from "./protection";
 
 function protectionMarkers(): string[] {
@@ -39,9 +41,16 @@ function studyMarkers(): string[] {
   return [`After this basket falls 2σ over ${st.window} days`, `${st.month.n} completed outcomes in ${st.month.n_blocks} overlap blocks`];
 }
 
+/** The sync's target, and its largest tables' row counts. */
+function syncMarkers(): string[] {
+  const s = sync();
+  return [s.target.warehouse, ...s.tables.filter((t) => t.sourceRows > 100000).map((t) => grouped(t.sourceRows))];
+}
+
 export const PROTOTYPE_MARKERS: Readonly<Record<string, readonly string[]>> = {
   protection: protectionMarkers(),
   "options-hedge": [...new Set(optionsMarkers())],
   positioning: positioningMarkers(),
   "basket-study": studyMarkers(),
+  "snowflake-sync": syncMarkers(),
 };

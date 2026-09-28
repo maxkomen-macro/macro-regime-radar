@@ -1,0 +1,99 @@
+{
+ "kind": "mrr.desk.prototype.snowflake-sync",
+ "note": "Illustrative: one daily sync of the SQLite snapshot into the proposed Snowflake schema (RAW, CUR, MART), step by step, with each table's row counts (DESK_FRAME3_SPEC §1.0.3). Nothing here connects to Snowflake.",
+ "target": {
+  "account": "mrr-desk",
+  "database": "MRR_DESK",
+  "warehouse": "MRR_LOAD_XS",
+  "role": "MRR_LOADER",
+  "stage": "@MRR_DESK.RAW.DESK_STAGE"
+ },
+ "steps": [
+  {
+   "key": "connect",
+   "label": "Connect",
+   "detail": "key-pair auth as MRR_LOADER on MRR_LOAD_XS",
+   "seconds": 0.8
+  },
+  {
+   "key": "stage",
+   "label": "Stage",
+   "detail": "the changed rows as Parquet to the DESK_STAGE stage",
+   "seconds": 2.6
+  },
+  {
+   "key": "merge",
+   "label": "Merge",
+   "detail": "MERGE on each table's key; MART rebuilt, then swapped in",
+   "seconds": 3.4
+  },
+  {
+   "key": "verify",
+   "label": "Verify",
+   "detail": "row counts and HASH_AGG against the SQLite snapshot",
+   "seconds": 1.1
+  }
+ ],
+ "tables": [
+  {
+   "table": "RAW.PRICES_DAILY",
+   "key": "source, symbol, dt",
+   "mode": "merge",
+   "staged": 31,
+   "inserted": 31,
+   "updated": 0,
+   "rows_before": 214988,
+   "source_rows": 215019
+  },
+  {
+   "table": "RAW.FRED_OBS",
+   "key": "series_id, dt, realtime_start",
+   "mode": "merge",
+   "staged": 44,
+   "inserted": 44,
+   "updated": 0,
+   "rows_before": 412306,
+   "source_rows": 412350
+  },
+  {
+   "table": "CUR.SERIES_DAILY",
+   "key": "series_key, dt",
+   "mode": "merge",
+   "staged": 63,
+   "inserted": 58,
+   "updated": 5,
+   "rows_before": 198774,
+   "source_rows": 198832
+  },
+  {
+   "table": "CUR.REGIME_LABEL",
+   "key": "dt",
+   "mode": "merge",
+   "staged": 363,
+   "inserted": 0,
+   "updated": 0,
+   "rows_before": 363,
+   "source_rows": 363
+  },
+  {
+   "table": "MART.EVENT_STUDY",
+   "key": "study_id, horizon",
+   "mode": "rebuild",
+   "staged": 52,
+   "inserted": 52,
+   "updated": 0,
+   "rows_before": 52,
+   "source_rows": 52
+  },
+  {
+   "table": "MART.INDEX_LEVELS",
+   "key": "basket_id, dt",
+   "mode": "rebuild",
+   "staged": 2951,
+   "inserted": 2951,
+   "updated": 0,
+   "rows_before": 2950,
+   "source_rows": 2951
+  }
+ ]
+}

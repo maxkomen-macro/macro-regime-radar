@@ -73,6 +73,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket | short interest, open interest and 13F holdings not ingested |
 | Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | PROTOTYPE (§1.0.3), drawn for the sample basket | no basket index series is stored for the engine to run on |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
+| Data Pipeline: "Sync to Snowflake" (§11) | PROTOTYPE (§1.0.3); the bridge's "Generate Snowflake DDL" and "Export current study → CSV" stay LIVE | no Snowflake account or sync job exists; the schema is proposed |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
 | Client view | LIVE for Event Study's current study, at h = 20 | — |
 
@@ -1080,7 +1081,19 @@ listing dates), Equity ETFs (SPY, RSP, IWM, QQQ, SMH, SOXX, IGV) and Bond,
 gold & dollar ETFs (TLT, IEF, HYG, LQD, GLD, UUP). The bridge
 card is titled "Proposed export schema (not the current SQLite layout)", with
 the DDL block and the buttons **Export current study → CSV** (§12.4) and
-**Generate Snowflake DDL** (`/pipeline/ddl`).
+**Generate Snowflake DDL** (`/pipeline/ddl`). Under the two cards, **Sync to
+Snowflake**: PROTOTYPE (§1.0.3), from `proto-snowflake-sync.json`. The
+target (account, database, warehouse, role); the flow CONNECT → STAGE →
+MERGE → VERIFY, each step with what it does and how long it took; a table of
+the proposed schema's six tables with their key and row counts (STAGED,
+MERGED as inserted · updated or unchanged, a MART table rebuilt; ROWS IN
+SNOWFLAKE, ROWS IN THE SNAPSHOT, CHECK); the status line "Verified: <n> of
+6 tables match the snapshot · <rows> rows staged · <s> s on <warehouse>". It
+opens on the last run; its button **Sync to Snowflake** replays the steps
+(at once under reduced motion). Footnote: "Illustrative values · In
+production: a job after each validated refresh: stage the changed rows,
+MERGE on each key, check counts and hashes." The real DDL and CSV buttons
+are unchanged.
 
 **Build Notes** (`screens/11-build-notes.png`). TOC sidebar from the file's
 sections. Rendered from `docs/desk/BUILD_NOTES.md`, a markdown render,

@@ -40,6 +40,12 @@ export const PROTOTYPES: readonly PrototypeEntry[] = [
     title: "Event study on this basket",
     production: "the existing engine run on the basket index series.",
   },
+  {
+    id: "snowflake-sync",
+    page: "data-pipeline",
+    title: "Sync to Snowflake",
+    production: "a job after each validated refresh: stage the changed rows, MERGE on each key, check counts and hashes.",
+  },
 ];
 
 /** A registry row by id; throws on an unknown id, so a card cannot ship without its row. */
@@ -55,4 +61,4 @@ export function isPrototypeFixture(path: string): boolean {
 }
 
 /** The names a module outside prototypes/ may import from it: the cards themselves, which a page places. */
-export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard", "PositioningCard", "BasketStudyCard"];
+export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard", "PositioningCard", "BasketStudyCard", "SnowflakeSyncCard"];

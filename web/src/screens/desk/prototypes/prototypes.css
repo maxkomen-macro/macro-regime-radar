@@ -286,7 +286,8 @@
   font-weight: 400;
   font-size: 12px;
 }
-.pr-table td.pr-left {
+.pr-table td.pr-left,
+.pr-table th.pr-left {
   text-align: left;
   font-family: var(--dk-sans);
 }
@@ -375,4 +376,69 @@
   font-family: var(--dk-mono);
   font-size: 11px;
   color: var(--dk-t4);
+}
+
+/* ── Data Pipeline: sync to Snowflake ── */
+.pr-sync .dk-card-head {
+  align-items: center;
+}
+.dk .pr-sync-btn {
+  margin-left: auto;
+}
+.pr-sync-target {
+  margin-top: 4px;
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  color: var(--dk-t3);
+}
+.pr-steps {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.pr-steps li {
+  padding: 10px 12px;
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card-2);
+}
+.pr-steps li[data-state="done"] .pr-step-mark {
+  color: var(--dk-green);
+}
+.pr-steps li[data-state="running"] {
+  border-color: var(--dk-blue);
+}
+.pr-steps li[data-state="running"] .pr-step-mark {
+  color: var(--dk-blue);
+}
+.pr-steps li[data-state="pending"] .pr-step-mark {
+  color: var(--dk-t4);
+}
+.pr-step-detail {
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--dk-t2);
+}
+.pr-step-time {
+  margin-top: 4px;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t4);
+}
+.pr-sync .pr-table-wrap {
+  margin-top: 12px;
+}
+.pr-sync-status {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--dk-t2);
+}
+@media (max-width: 900px) {
+  .pr-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
