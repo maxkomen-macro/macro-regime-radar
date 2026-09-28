@@ -208,7 +208,8 @@ def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
         raise env.Awaiting(item["reason"])
     hit, (payload, trace) = memo(("/study", study.slug, h), lambda: (study_projection(study, h, item), item["trace"]))
     out = dict(payload)
-    out.update(now_fields(trace, cross=study.question.move.startswith("cross"), allowance=publication_allowance(study)))
+    out.update(now_fields(trace, cross=study.question.move.startswith("cross"), allowance=publication_allowance(study),
+                          inputs=item["native"]["provenance"]["inputs"]))
     out["provenance"] = {**payload["provenance"], "engine_version": env.ENGINE_VERSION}
     out["served_from_cache"] = hit
     out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 1)
@@ -543,7 +544,7 @@ def _ledger_static() -> list[tuple[dict, Any, bool]]:
         row = {"slug": slug, "label": s.label, "short": s.short, "group": catalog.LEDGER_GROUP[slug],
                "available": available, "unavailable": unavailable, "horizon": 20, **{k: None for k in LEDGER_STATS}}
         if not available:
-            out.append((row, None, False))
+            out.append((row, None, False, None))
             continue
         item = _item(slug)
         native, table = item["native"], item["events"]
@@ -558,7 +559,7 @@ def _ledger_static() -> list[tuple[dict, Any, bool]]:
             up_pct=H["hit_rate"], median=H["median"], baseline_median=H["baseline_median"],
             vs_normal=vs_normal(H["delta"], unit), target_unit=unit, display_unit=display_unit(unit),
             verdict=verdict_v1(by_h, 20))
-        out.append((row, item["trace"], s.question.move.startswith("cross")))  # (see ledger_rows for the allowance)
+        out.append((row, item["trace"], s.question.move.startswith("cross"), native["provenance"]["inputs"]))
     return out
 
 
@@ -568,13 +569,14 @@ def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
     statistics and firing fields are null and it is not stale (S-19)."""
     _hit, static = memo(("/ledger",), _ledger_static)
     rows = []
-    for base, trace, cross in static:
+    for base, trace, cross, inputs in static:
         row = dict(base)
         if trace is None:
             row.update(firing_now=None, firing_day=None, evaluated_on=None, stale=False)
             rows.append(({k: row[k] for k in LEDGER_KEYS}, None))
             continue
-        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]))
+        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]),
+                         inputs=inputs)
         row.update(firing_now=f["firing_now"], firing_day=f["firing_day"], evaluated_on=f["evaluated_on"], stale=f["stale"])
         rows.append(({k: row[k] for k in LEDGER_KEYS}, f))
     return rows
@@ -722,6 +724,42 @@ def publication_allowance(study: catalog.Study) -> int:
     return out
 
 
+def input_rule(key: str) -> tuple[str, int]:
+    """Codex R-03: one input's own publication calendar and tolerance. An
+    exchange close (asset_prices, market) is due on the XNYS session itself,
+    no grace; a FRED daily series within `api/freshness.DAILY_TOLERANCE`
+    business days on its own calendar (the bond market's for rates and
+    spreads, api/freshness.DESK_REFRESH_SERIES); a slower one its own
+    tolerance (DESK_SLOW_PUBLICATION: WTI, 8)."""
+    from api import freshness as fr
+
+    spec = registry.get(key)
+    if spec.source != "fred":
+        return "nyse", 0
+    meta = fr.DESK_REFRESH_SERIES.get(spec.series_id, {})
+    slow = fr.DESK_SLOW_PUBLICATION.get(spec.series_id, {})
+    return meta.get("calendar", "nyse"), int(slow.get("tolerance", fr.DAILY_TOLERANCE))
+
+
+def inputs_behind(inputs: list[dict], comparison: str) -> list[dict]:
+    """Each input (the study's provenance `inputs`: key, last) judged on its own
+    calendar and tolerance against the comparison session: how many of its
+    business days its newest stored value trails the comparison session by,
+    and whether that is more than its tolerance."""
+    from datetime import date as _date
+
+    out = []
+    cmp_ = _date.fromisoformat(comparison)
+    for m in inputs:
+        calendar, tolerance = input_rule(m["key"])
+        last = _date.fromisoformat(str(m["last"])[:10])
+        between = nyse.bond_business_days_between if calendar == "bond" else nyse.business_days_between
+        lag = between(last, cmp_)
+        out.append({"key": m["key"], "last": last.isoformat(), "calendar": calendar, "lag": lag, "tolerance": tolerance,
+                    "stale": lag > tolerance})
+    return out
+
+
 def sessions_behind(evaluated_on: str, comparison: str) -> int:
     """XNYS sessions after `evaluated_on` up to and including `comparison`."""
     from datetime import date as _date
@@ -729,7 +767,8 @@ def sessions_behind(evaluated_on: str, comparison: str) -> int:
     return nyse.business_days_between(_date.fromisoformat(evaluated_on), _date.fromisoformat(comparison))
 
 
-def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowance: int = 0) -> dict:
+def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowance: int = 0,
+                 inputs: list[dict] | None = None) -> dict:
     """A study's firing state from its signal trace: `fires = trigger and holds`
     per session (the raw trigger, before any cooldown; a cross only on its
     strict crossing session). `evaluated_on` is the last evaluable session and
@@ -739,7 +778,10 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
     session is not the run's or is not evaluable. `stale` when `evaluated_on`
     trails the comparison session by more than `allowance` XNYS sessions (its
     inputs' publication cadence, desk/fill-compute: 0 for exchange closes), or
-    is dated after it."""
+    is dated after it, or (Codex R-03) when any of `inputs` (the study's
+    provenance inputs) trails the comparison session by more than its own
+    tolerance on its own calendar (`inputs_behind`), so a FRED series' grace
+    never covers a stale exchange close."""
     import numpy as np
 
     ev = trace.evaluable
@@ -747,7 +789,7 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
     sessions = trace.sessions
     evaluable = np.flatnonzero(ev)
     if not len(evaluable):
-        return {"evaluated_on": None, "firing_now": None, "firing_day": None, "stale": True,
+        return {"evaluated_on": None, "firing_now": None, "firing_day": None, "stale": True, "stale_inputs": [],
                 "state_comparison": None, "state_prev": None}
     last = int(evaluable[-1])
     firing_now = bool(fires[last])
@@ -767,14 +809,16 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
 
     # Dated after the comparison session (a clock behind the data) is stale as before: never firing today.
     stale = sessions[last] != comparison and (sessions[last] > comparison or sessions_behind(sessions[last], comparison) > allowance)
+    stale_inputs = [m["key"] for m in inputs_behind(inputs or [], comparison) if m["stale"]]
     return {"evaluated_on": sessions[last], "firing_now": firing_now, "firing_day": firing_day,
-            "stale": stale, "state_comparison": state(comparison), "state_prev": state(prev)}
+            "stale": stale or bool(stale_inputs), "stale_inputs": stale_inputs,
+            "state_comparison": state(comparison), "state_prev": state(prev)}
 
 
-def now_fields(trace: Any, *, cross: bool, allowance: int = 0) -> dict:
+def now_fields(trace: Any, *, cross: bool, allowance: int = 0, inputs: list[dict] | None = None) -> dict:
     """The /study fields that depend on "now" (plan §0.5), for this response."""
     comparison, prev = sessions_now()
-    f = firing_state(trace, comparison, prev, cross=cross, allowance=allowance)
+    f = firing_state(trace, comparison, prev, cross=cross, allowance=allowance, inputs=inputs)
     return {"firing_now": f["firing_now"], "firing_day": f["firing_day"], "evaluated_on": f["evaluated_on"],
             "comparison_session": comparison, "prev_session": prev, "stale": f["stale"]}
 

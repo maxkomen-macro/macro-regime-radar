@@ -115,7 +115,7 @@ def test_the_memo_serves_the_ledger_and_now_moves_over_it(served, monkeypatch):
         if route == "/study":
             entries = [value[0]]                        # (payload, trace)
         elif route == "/ledger":
-            entries = [row for row, _trace, _cross in value]
+            entries = [row for row, _trace, _cross, _inputs in value]
         else:
             entries = list(value)                       # /study/events rows
         for entry in entries:
@@ -133,3 +133,19 @@ def test_the_ledger_rows_feed_the_firing_lists(served, monkeypatch):
         assert r["available"] and not r["stale"] and f["state_comparison"] is True
     for item in still:
         assert item["firing_day"] == rows[item["slug"]][0]["firing_day"] >= 2
+
+
+def test_codex_r03_the_ledger_judges_each_input_on_its_own_calendar(served, monkeypatch):
+    """Codex R-03 on the route: the synthetic store ends Friday 2026-09-18 for
+    every series. On Tuesday the 22nd, the 2s10s and HY rows read FRED series
+    two business days behind (within FRED's grace) and the S&P two sessions
+    behind (an exchange close has none): stale, as every S&P row is."""
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 22, 21, 0, tzinfo=timezone.utc))
+    d = _ledger()
+    by = {r["slug"]: r for r in d["signals"] if r["available"]}
+    assert d["comparison_session"] == "2026-09-22"
+    for slug in ("2s10s-2sigma-steepening", "hy-2sigma-20d", "golden-cross", "spx-20d-2sigma"):
+        assert by[slug]["evaluated_on"] == "2026-09-18" and by[slug]["stale"] is True, slug
+    # One session later than the data, the FRED rows' own grace and the S&P's are both honoured.
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc))
+    assert all(r["stale"] is False for r in _ledger()["signals"] if r["available"])

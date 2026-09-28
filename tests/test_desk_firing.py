@@ -161,3 +161,41 @@ def test_a_fred_study_a_session_behind_is_not_stale_on_the_ledger(monkeypatch):
     t = trace([0, 0, 0, 0, 0, 0, 1, 0], evaluable=[1, 1, 1, 1, 1, 1, 1, 0])
     f = desk_v2.firing_state(t, "2026-09-21", "2026-09-18", cross=False, allowance=3)
     assert f["stale"] is False and f["firing_now"] is True and f["firing_day"] == 1
+
+
+# ── Codex R-03: each input on its own calendar and tolerance ────────────────
+
+def _inputs(**last):
+    return [{"key": k, "last": d} for k, d in last.items()]
+
+
+def test_codex_r03_a_fred_grace_never_covers_a_stale_exchange_close():
+    """The repro: the 2s10s study reads a FRED series (grace 3) and the S&P (an
+    exchange close, no grace). Both two sessions behind: the study-wide
+    allowance of 3 called it current; the S&P alone makes it stale."""
+    t = trace([0] * len(SESSIONS), evaluable=[s <= "2026-09-16" for s in SESSIONS])
+    old = desk_v2.firing_state(t, "2026-09-18", "2026-09-17", cross=False, allowance=3)
+    assert old["stale"] is False  # what the allowance alone says
+    f = desk_v2.firing_state(t, "2026-09-18", "2026-09-17", cross=False, allowance=3,
+                             inputs=_inputs(curve_2s10s="2026-09-16", spx="2026-09-16"))
+    assert f["stale"] is True and f["stale_inputs"] == ["spx"]
+
+
+def test_a_fred_input_within_its_grace_and_a_current_close_are_current():
+    t = trace([0] * len(SESSIONS), evaluable=[s <= "2026-09-16" for s in SESSIONS])
+    f = desk_v2.firing_state(t, "2026-09-18", "2026-09-17", cross=False, allowance=3,
+                             inputs=_inputs(curve_2s10s="2026-09-16", spx="2026-09-18"))
+    assert f["stale"] is False and f["stale_inputs"] == []
+    four = desk_v2.firing_state(t, "2026-09-21", "2026-09-18", cross=False, allowance=3,
+                                inputs=_inputs(curve_2s10s="2026-09-15", spx="2026-09-21"))
+    assert four["stale"] is True and four["stale_inputs"] == ["curve_2s10s"]
+
+
+def test_each_input_counts_on_its_own_calendar():
+    """DGS10 follows the bond market: from Wed Oct 7 to Tue Oct 13, 2026 is three
+    bond days (Columbus Day is not one) though four NYSE sessions, so it is
+    current; an exchange close dated Oct 7 is four sessions behind, stale."""
+    got = {m["key"]: m for m in desk_v2.inputs_behind(_inputs(us10y="2026-10-07", spx="2026-10-07"), "2026-10-13")}
+    assert (got["us10y"]["calendar"], got["us10y"]["lag"], got["us10y"]["stale"]) == ("bond", 3, False)
+    assert (got["spx"]["calendar"], got["spx"]["lag"], got["spx"]["stale"]) == ("nyse", 4, True)
+    assert desk_v2.input_rule("wti") == ("nyse", 8) and desk_v2.input_rule("vix") == ("nyse", 0)
