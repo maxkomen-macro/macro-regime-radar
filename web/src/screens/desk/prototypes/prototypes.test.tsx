@@ -195,8 +195,9 @@ describe("§1.0.3: every PROTOTYPE card on its page, and no prototype value outs
         { route: `/desk/${page}` },
       );
       const here = PROTOTYPES.filter((p) => p.page === page);
-      await screen.findByRole("heading", { level: 1 });
-      await waitFor(() => expect(container.querySelectorAll("[data-prototype]")).toHaveLength(here.length), { timeout: 4000 });
+      // A page renders from a lazy chunk: under a loaded machine its first heading can take longer than findBy's 1 s.
+      await screen.findByRole("heading", { level: 1 }, { timeout: 8000 });
+      await waitFor(() => expect(container.querySelectorAll("[data-prototype]")).toHaveLength(here.length), { timeout: 8000 });
       for (const p of here) {
         const card = container.querySelector(`[data-prototype="${p.id}"]`)!;
         expect(card, p.id).not.toBeNull();
@@ -207,13 +208,16 @@ describe("§1.0.3: every PROTOTYPE card on its page, and no prototype value outs
         expect(foots[0].contains(all[all.length - 1]), `${p.id}: footnote last`).toBe(true);
         expect(foots[0].textContent).toBe(`${PROTOTYPE_LEAD}${p.production}`);
         expect(card.querySelector('[data-testid="dk-live"]'), `${p.id}: no badge`).toBeNull();
-        await waitFor(() => {
-          for (const m of PROTOTYPE_MARKERS[p.id]) expect(card.textContent, `${p.id} prints ${m}`).toContain(m);
-        });
+        await waitFor(
+          () => {
+            for (const m of PROTOTYPE_MARKERS[p.id]) expect(card.textContent, `${p.id} prints ${m}`).toContain(m);
+          },
+          { timeout: 8000 },
+        );
       }
       const outside = container.cloneNode(true) as HTMLElement;
       outside.querySelectorAll("[data-prototype]").forEach((n) => n.remove());
       const text = outside.textContent ?? "";
       expect(allMarkers.filter((m) => text.includes(m))).toEqual([]);
-    });
+    }, 30_000);
 });

@@ -6,14 +6,13 @@
  * React, no CSS), so the browser tests can import it.
  */
 
-import { ordinal, signed } from "../kit/format";
+import { grouped, ordinal, signed } from "../kit/format";
 import { basketInputs, sampleBasket } from "./basket-inputs";
+import { basketStudy } from "./basket-study";
 import { hedge, usd } from "./options";
 import { CROWDING_WORDS, positioning } from "./positioning";
-import { basketStudy } from "./basket-study";
-import { grouped } from "../kit/format";
-import { sync } from "./snowflake-sync";
 import { costText, protection, strikeText } from "./protection";
+import { sync } from "./snowflake-sync";
 
 function protectionMarkers(): string[] {
   const p = protection();
