@@ -2414,3 +2414,8 @@ question pushes one.
   role, each with its moves), and the builder's Shock and "What happens to"
   read it first, so a question that fails or is served unavailable keeps
   both slots editable; the study's own list is the fallback.
+- **R-06 · the provider ceiling reads what the route reads.** The
+  middleware decides that a `/technicals` request names a symbol (and so
+  waits with the provider calls) on the decoded query parameters, as the
+  route does: `?%73ymbol=NVDA` is bounded exactly like `?symbol=NVDA`; the
+  S&P's own answer (no symbol) stays a stored-data lookup.

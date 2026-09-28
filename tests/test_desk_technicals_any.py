@@ -272,5 +272,7 @@ def test_a_symbol_waits_with_the_provider_calls():
     from api import security
 
     assert security.DESK_TECHNICALS_PATH == "/api/desk/technicals"
-    src = __import__("inspect").getsource(security)
-    assert 'path == DESK_TECHNICALS_PATH and b"symbol=" in' in src
+    # Codex R-06: on the decoded parameters (the behaviour is pinned in tests/test_security.py).
+    names = security.SecurityMiddleware._names_symbol
+    assert names({"query_string": b"symbol=NVDA"}) and names({"query_string": b"%73ymbol=NVDA"})
+    assert not names({"query_string": b""}) and not names({"query_string": b"range=1y"})

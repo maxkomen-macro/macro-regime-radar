@@ -408,7 +408,7 @@ class SecurityMiddleware:
             sem = self.expensive
         elif path in DESK_STUDY_PATHS:
             sem = self.db if self._preset_lookup(scope, path) else self.desk_study
-        elif path.startswith(PROVIDER_PREFIX) or path in DESK_BASKET_PATHS or (path == DESK_TECHNICALS_PATH and b"symbol=" in (scope.get("query_string") or b"")):
+        elif path.startswith(PROVIDER_PREFIX) or path in DESK_BASKET_PATHS or (path == DESK_TECHNICALS_PATH and self._names_symbol(scope)):
             # desk/books: a basket, and desk/usability item 2: Technicals for a stock, may ask EODHD, so they wait with the provider calls.
             sem = self.provider
         elif is_question:
@@ -438,6 +438,12 @@ class SecurityMiddleware:
         finally:
             if sem is not None:
                 sem.release()
+
+    @staticmethod
+    def _names_symbol(scope: dict) -> bool:
+        """A Technicals request that names a symbol, which may ask EODHD (desk/usability §14.2). Codex R-06: read
+        on the decoded parameters, as the route reads them, so `?%73ymbol=NVDA` is `?symbol=NVDA` here too."""
+        return "symbol" in parse_qs((scope.get("query_string") or b"").decode("latin-1"), keep_blank_values=True)
 
     @staticmethod
     def _preset_lookup(scope: dict, path: str = "/api/desk/event-study") -> bool:
