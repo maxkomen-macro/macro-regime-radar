@@ -179,7 +179,31 @@ describe("Event Study tab", () => {
     fireEvent.change(screen.getByLabelText("Over the next"), { target: { value: "60" } });
     expect(screen.getByRole("button", { name: "Build your own" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("es-run"));
-    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60"));
+    // Codex R-07: the question asked from Build your own carries its mode.
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=60&mode=build"));
+  });
+
+  it("Codex R-07: every mode is in the address and a cold load opens it", async () => {
+    const pressed = (name: RegExp) => screen.getByRole("button", { name }).getAttribute("aria-pressed");
+    // Codex's repro: Build your own on a preset, then a reload, showed Common questions.
+    const first = renderTab("/desk/event-study?preset=gold-2sigma-spx-weak");
+    await waitFor(() => expect(screen.getByLabelText("Shock")).toHaveValue("gold"));
+    fireEvent.click(screen.getByRole("button", { name: "Build your own" }));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?preset=gold-2sigma-spx-weak&mode=build"));
+    first.unmount();
+    for (const [m, name] of [["build", /^Build your own$/], ["saved", /^My saved questions/], ["common", /^Common questions$/]] as const) {
+      const { unmount } = renderTab(`/desk/event-study?preset=gold-2sigma-spx-weak&mode=${m}`);
+      await waitFor(() => expect(pressed(name)).toBe("true"));
+      unmount();
+    }
+    // Six slots with no mode are Build your own; with mode=common, Common questions.
+    const six = "shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20";
+    let r = renderTab(`/desk/event-study?${six}`);
+    await waitFor(() => expect(pressed(/^Build your own$/)).toBe("true"));
+    r.unmount();
+    r = renderTab(`/desk/event-study?${six}&mode=common`);
+    await waitFor(() => expect(pressed(/^Common questions$/)).toBe("true"));
+    r.unmount();
   });
 
   it("there is no confidence control and nothing asks with a confidence (§14.3, §12.2)", async () => {
@@ -199,7 +223,13 @@ describe("Event Study tab", () => {
     expect(screen.getByRole("button", { name: "My saved questions · 1" })).toHaveAttribute("aria-pressed", "true");
     expect(JSON.parse(localStorage.getItem(SAVED_KEY) ?? "[]")).toHaveLength(1);
     // The words use /study series[]'s labels, the engine registry's (§12.2).
-    expect(within(screen.getByRole("group", { name: "My saved questions" })).getByRole("button", { name: /Gold \(COMEX front month\) up 2σ or more over 20 days/ })).toBeInTheDocument();
+    const chip = within(screen.getByRole("group", { name: "My saved questions" })).getByRole("button", { name: /Gold \(COMEX front month\) up 2σ or more over 20 days/ });
+    expect(chip).toBeInTheDocument();
+    // Codex R-07: the tab is in the address, and a saved question picked from it keeps it there.
+    expect(screen.getByTestId("loc").textContent).toContain("mode=saved");
+    fireEvent.click(chip);
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=gold&window=20&move=up2s&while=spx_below_50&target=spx&horizon=20&mode=saved"));
+    expect(screen.getByRole("button", { name: "My saved questions · 1" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("fewer than 10 events: one sentence and two fixes, no chart", async () => {
@@ -468,7 +498,7 @@ describe("the catalog drives the chips and the slots (§4, §12.3)", () => {
     expect(screen.getByLabelText("Move")).toHaveValue("up2s");
     expect(screen.getByLabelText("Window")).toHaveValue("60");
     fireEvent.click(screen.getByTestId("es-run"));
-    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=spx&window=60&move=up2s&while=none&target=spx&horizon=20"));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/event-study?shock=spx&window=60&move=up2s&while=none&target=spx&horizon=20&mode=build"));
   });
 
   it("a question outside the catalog is answered like any study (§14.3)", async () => {

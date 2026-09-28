@@ -82,9 +82,11 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const [unreadable] = useState(() => unreadableSaved().length);
   const [draft, setDraft] = useState<Question | null>("question" in ask ? ask.question : null);
   const [dirty, setDirty] = useState(false);
-  // desk/usability §14.9: the open Advanced panel and the saved-questions tab live in the address too.
+  // desk/usability §14.9: the open Advanced panel and the mode live in the address too. Codex R-07: every mode
+  // (Common questions, My saved questions, Build your own) is `mode=` in the address and the page reads it from
+  // there alone, so a cold load opens the tab the link was on; with no `mode`, a preset is Common, six slots Build.
   const asked = search.get("mode");
-  const [mode, setModeState] = useState<Mode>(asked === "saved" || asked === "build" || asked === "common" ? asked : "preset" in ask ? "common" : "build");
+  const mode: Mode = asked === "saved" || asked === "build" || asked === "common" ? asked : "preset" in ask ? "common" : "build";
   const setParam = (k: string, v: string | null) =>
     setSearch(
       (prev) => {
@@ -95,10 +97,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
       },
       { replace: true },
     );
-  const setMode = (m: Mode) => {
-    setModeState(m);
-    setParam("mode", m === "saved" ? "saved" : null);
-  };
+  const setMode = (m: Mode) => setParam("mode", m);
   const adv = search.get("adv") === "1";
   const setAdv = (f: (open: boolean) => boolean) => setParam("adv", f(adv) ? "1" : null);
   const [exporting, setExporting] = useState(false);
@@ -136,20 +135,22 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const catalogSeries = Array.isArray(cq.data?.series) ? cq.data.series : null;
   const seriesList = catalogSeries ?? (Array.isArray(study?.series) ? study.series : null);
   const label = (k: string) => seriesList?.find((s) => s.key === k)?.label ?? k;
-  const go = (next: Ask) => {
-    const nextSearch = searchFor(next, search);
-    if (nextSearch === search.toString()) return void q.refetch();
-    setSearch(new URLSearchParams(nextSearch), { replace: false });
+  // A new question carries the mode it is asked from, in the same address change (never a second write).
+  const go = (next: Ask, nextMode: Mode = mode) => {
+    const p = new URLSearchParams(searchFor(next, search));
+    p.set("mode", nextMode);
+    if (p.toString() === search.toString()) return void q.refetch();
+    setSearch(p, { replace: false });
   };
 
   const onPreset = (slug: string) => {
-    setMode("common");
     if ("preset" in ask && ask.preset === slug) {
+      setMode("common");
       setDirty(false);
       if (study?.question) setDraft(slotsOf(study.question));
       return;
     }
-    go({ preset: slug });
+    go({ preset: slug }, "common");
   };
   const onRun = () => {
     if (!draft) return;
@@ -166,7 +167,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     writeSaved(next);
     setMode("saved");
   };
-  const onPickSaved = (s: SavedQuestion) => go({ question: s.question });
+  const onPickSaved = (s: SavedQuestion) => go({ question: s.question }, "saved");
   const onFix = (fix: string) => {
     const base = study?.question ?? draft;
     const next = base ? applyFix(base, fix) : null;

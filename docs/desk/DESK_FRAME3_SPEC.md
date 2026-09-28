@@ -2419,3 +2419,10 @@ question pushes one.
   waits with the provider calls) on the decoded query parameters, as the
   route does: `?%73ymbol=NVDA` is bounded exactly like `?symbol=NVDA`; the
   S&P's own answer (no symbol) stays a stored-data lookup.
+- **R-07 · every Event Study mode is in the address.** Common questions, My
+  saved questions and Build your own are `mode=common|saved|build`; the page
+  reads the mode from the address alone (no second copy in state), writes it
+  on every change, and a new question carries the mode it was asked from in
+  the same address change. With no `mode`, a preset opens on Common
+  questions and six slots on Build your own; a cold load of any address
+  opens the tab it names.
