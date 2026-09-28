@@ -41,6 +41,90 @@ Build Notes kept in step, no invented number in a LIVE block.
 Commits 11 and 12 are fixes to items 4 and 7, kept as their own commits rather than rewriting history under
 items 8–10. Their messages say what they fix.
 
+## Rebase onto main (desk/fill-etf merged)
+
+Codex round 3 returned PUSH OK on `d496891`. The branch was then rebased onto origin/main `dccd5bc` (Merge PR #9,
+desk/fill-etf). The pre-rebase head is kept as the local branch `backup/fill-compute-pre-rebase` (`4679e16`).
+Every sha above is pre-rebase; each maps to its rebased commit here:
+
+| Before | After | Commit |
+|---|---|---|
+| `788ff57` | dropped (main keeps its own fix) | web test: keep the revokeObjectURL stub until the download's timer fires |
+| `422c1d0` | `edfc74d` | desk fill 1: RSI-14 on the S&P (Wilder), served by /technicals, the Momentum card live |
+| `540d498` | `5b6cd58` | desk fill 2: RSI above 70 / below 30 as catalog studies scored by the engine |
+| `a4aa0e0` | `df40261` | desk fill 3: the VIX gap to the S&P's 21-day realized volatility and the band word |
+| `cc3c424` | `40acf0d` | desk fill 4: what each regime has meant since 1996, and the last five changes |
+| `6fadfea` | `53cc1ea` | desk fill 5: What would change it reads the same label as Where we are |
+| `4deb01f` | `4fc915a` | desk fill 6: the classifier line on Regime, and "First month in this regime" |
+| `c4da724` | `849f1a0` | desk fill 7: the VIX from ^GSPC's path, and stale judged by each input's publication cadence |
+| `2077ca4` | `cdca566` | desk fill 8: the Macro tab's month on the 10-year and 2-year, checked against the raw FRED rows |
+| `26873cb` | `127588c` | desk fill 9: MACD (12, 26, 9) on Technicals, symbol-agnostic in the shared technicals module |
+| `6cbe2ab` | `672ded2` | desk fill 10: the S&P's seasonality by calendar month, symbol-agnostic in the shared technicals module |
+| `cecea91` | `db79777` | desk fill 11: the Data Pipeline names Regime as a reader of ^GSPC and ^VIX |
+| `57dceb5` | `c05eb33` | desk fill 12: item 7's follow-through, a store without ^VIX and the tests that read VIXCLS |
+| `a84842a` | `9dd034c` | desk fill: CLAUDE.md, and the live shots of every card touched |
+| `6d9c96b` | `a213d3d` | desk fill: the report (docs/desk/FILL_COMPUTE_REPORT.md) |
+| `c4f8e18` | `df11ce5` | Codex R-02: an RSI study's session is eligible only where both RSIs are defined |
+| `c3740df` | `eb183d4` | Codex R-03: each study input judged on its own calendar and tolerance before stale |
+| `3533882` | `d037e77` | Codex R-01, R-04, R-07, R-08 (changes): the regime table measured from when each regime was known |
+| `8e0c070` | `d3e9b5e` | Codex R-08 (RSI visits): a window not complete yet and a missing close each have their own status |
+| `c198e1d` | `fbe48b8` | Codex R-05, R-06: published changes apart from upcoming prints, each release bound to its own month |
+| `a9fde2d` | `4bf8acf` | desk fill: live shots after the Codex fixes, and CLAUDE.md |
+| `9d6de74` | `0b5ef9f` | desk fill: the report, with the Codex findings table |
+| `35c0095` | `69410af` | Codex R-03 (round 2): freshness from each input's latest validated observation; a stale study never fires |
+| `d496891` | `b780415` | Codex R-09: the VIX's sessions due are every XNYS session of the governed months |
+| `4679e16` | `dafc958` | desk fill: the report for Codex rounds 2 and 3, and CLAUDE.md |
+| — | `777ccfe` | desk fill: rebase follow-through, desk/fill-etf's correlation list reads the VIX as ^VIX |
+| — | this commit | the compare shots on the rebased tree, and this section |
+
+**Conflicted files, and how each was resolved** (both sides' intent kept):
+- **`web/src/screens/desk/event-study/EventStudyPage.test.tsx`**: both branches fixed the same `revokeObjectURL`
+  timer leak. Main's version is kept, and my `788ff57` is dropped. It did not conflict textually (both fixes would
+  have stacked), so it was dropped from the rebase's todo list.
+- **`web/src/screens/desk/notes/scope.ts`** and **`docs/desk/DESK_FRAME3_SPEC.md` §1.0.1** (items 1–4, 9, 10, R-01):
+  - The Live list has main's entries (sector leadership on Technicals; the Macro correlations; the Sectors line)
+    and mine (RSI, MACD, seasonality; the VIX band and gap; what each regime has meant; the changes by effective
+    month).
+  - "Designed, not yet served" is main's list without the entries this branch made live (the VIX gap, the RSI
+    signals, what each regime has meant).
+  - The two copies are word for word, which BuildNotesPage.test holds.
+- **`docs/desk/DESK_FRAME3_SPEC.md` §1.0** (items 1, 2): main's ETF rows (sector bars, stock–bond,
+  correlations, Sectors, the matrix) and my RSI row and Ledger wording.
+- **`docs/desk/BUILD_NOTES.md`** (items 1, 2, 4, 9, 10): the "What's live" paragraph is the union of both. "Not
+  yet served" and "What I'd build next" are main's, without the RSI signals.
+- **`web/src/fixtures/desk/PROVENANCE.md`** (most commits): merged row by row against each commit's base. The
+  `technicals.json` row, changed on both sides, carries main's sectors note and my RSI, MACD and seasonality notes.
+- **`web/src/fixtures/desk/technicals.json`** (items 1, 2, 9, 10, R-08): main's file (its live `sectors` block)
+  with my fields added (`rsi*`, the allowlist's RSI rows, `macd`, `seasonality`, the RSI visits' statuses).
+- **`web/src/fixtures/desk/study.json`** (R-03 round 2): main's file (its catalog-only `series`) plus
+  `stale_inputs`.
+- **`web/src/fixtures/desk/pipeline.json`** (item 11): main's file (its ETF groups), with the ^GSPC and ^VIX rows'
+  `feeds` recomputed from the merged `tab_readers`.
+- **`web/e2e/desk.spec.ts`** (items 1, 9, 10): the Technicals test now expects only the vol card awaiting; main's
+  sector bars and my RSI, MACD and seasonality cards are served, and the title says so.
+- **`web/src/screens/desk/technicals/TechnicalsPage.test.tsx`** (item 1): main's two sector tests kept; its old
+  "RSI card is unavailable" test replaced by my RSI card test.
+- **`web/src/screens/desk/technicals/TechnicalsPage.tsx`** (item 10): the format import takes both
+  `leadershipGaps` (main) and `monthYear` (mine).
+- **`api/desk_envelope.py`** (item 4): main's `MATRIX_REASON` kept, and my removal of `REGIME_STATS_REASON` kept.
+- **`web/src/test/desk-variants.ts`** (item 4): my removal of `servedRegime` kept, with main's comment on
+  `servedTechnicals`.
+- **`src/market_data/asset_history.py`** (item 7): main now stores every registry series whose store is
+  `asset_prices`, so it stores ^VIX once item 7 declares it. My `DESK_DAILY` list became redundant and was dropped.
+  The docstring is main's, with ^VIX added to its list.
+- **`api/desk_pipeline.py`** (items 7, 11): main's Macro and Sectors readers and `LEADERSHIP_SERIES`, plus my ^VIX
+  on Overview and my Regime readers (^GSPC, ^VIX).
+- **`tests/test_desk_v2_pipeline.py`** (item 11): main's `UNREAD_ETFS` assertion plus my Regime-feeds assertion.
+- **`docs/desk/screens/compare/02-technicals*.png`, `10-data-pipeline*.png`** (binary): main's were kept during
+  the rebase. Shots 01, 02, 03, 04, 05, 07 and 10 are retaken on the rebased tree in this commit.
+
+**Found by the rebased tests, fixed in `777ccfe`:**
+- desk/fill-etf's correlation list names the VIX as ^VIX: its quantity, the pipeline's `CORRELATION_SERIES`
+  (the ^VIX row feeds Macro), the spec's rows, main's tests, `macro.json`'s VIX row (−0.75 to Sep 23, served on
+  main's fixture store with this branch's ^VIX rows added) and MacroPage.test.
+- The ETF items share one store, which now holds ^VIX, so each block names only its own series' providers.
+- `tests/desk_vix.py` adds main's `volume` column before writing ^VIX to an older store.
+
 ## Codex review: DO NOT PUSH on `6d9c96b`, eight findings fixed; round 2, R-03 and R-09
 
 Round 2 found R-01, R-02 and R-04 to R-08 fixed. Two findings were still blocking:
@@ -296,8 +380,14 @@ Streamlit.
 ### Final gates at the head
 
 Codex round 3 (on `d496891`): R-03 and R-09 fixed, PUSH OK. At the owner's word, the queued gates at `d496891` were
-cancelled before they took the lock, and the branch was rebased onto origin/main, where desk/fill-etf is merged. The
-full gates run once on the rebased head (§ Rebase onto main).
+cancelled before they took the lock, and the branch was rebased onto origin/main, where desk/fill-etf is merged
+(§ Rebase onto main). The gates run once at the head this section is committed in:
+- tsc, vitest (`--maxWorkers=2 --minWorkers=1`) and build;
+- the full pytest and the full Desk e2e, under `/tmp/mrr-full-gates.lock`.
+
+Their results are in the handoff for this head. Before the follow-through, the rebased tree's Desk and related
+suites ran: 897 passed, with 8 failures. The 2 are the known `test_asset_history` failures; the other 6 were fixed
+in `777ccfe`, whose affected suites then passed (308). Vitest passed at 1562.
 
 ### Final gates after round 1
 
