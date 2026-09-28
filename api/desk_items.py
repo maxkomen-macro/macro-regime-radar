@@ -299,7 +299,9 @@ def technicals_from_level(raw: Any, *, spec: Any = None, ranges: dict[str, int] 
 def usability_fields(al: Any, px: Any, iso: list[str], i: int, ranges: dict[str, int], bench: Any) -> dict:
     """desk/usability item 2's figures for any symbol, each null when a slot it
     reads has no close: `drawdown` from the high of the last 252 slots (the
-    earliest session on a tie); `realized_vol`, the shared
+    earliest session on a tie), `complete` only when all 252 hold a valid close
+    (Codex R-01: a shorter or broken history is partial, and `window.n` says
+    how many it read); `realized_vol`, the shared
     `src.analytics.technicals.realized_vol` (21 daily log returns, none
     missing) as a fraction; and, given `bench` (the stored S&P 500), `rs`: the
     close divided by the benchmark's on each session, its 50-session average,
@@ -329,7 +331,9 @@ def usability_fields(al: Any, px: Any, iso: list[str], i: int, ranges: dict[str,
 
     lo = i - HIGH_WINDOW + 1
     hi_k = lo + int(np.nanargmax(px[lo:i + 1]))
-    drawdown = {"value": float(px[i] / px[hi_k] - 1), "peak": {"date": iso[hi_k], "close": float(px[hi_k])}, "window": window(HIGH_WINDOW)}
+    dd_window = window(HIGH_WINDOW)
+    drawdown = {"value": float(px[i] / px[hi_k] - 1), "peak": {"date": iso[hi_k], "close": float(px[hi_k])}, "window": dd_window,
+                "complete": dd_window["n"] >= HIGH_WINDOW}
 
     w = technicals.REALIZED_WINDOW
     rv = technicals.realized_vol(al).to_numpy(dtype=float)

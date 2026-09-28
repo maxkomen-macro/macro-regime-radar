@@ -691,6 +691,9 @@ function RiskCard({ t, state, scored }: { t: TechnicalsResponse | undefined; sta
   const asOf = t?.date ?? "";
   const dd = ready ? t.drawdown : null;
   const rv = ready ? t.realized_vol : null;
+  // Codex R-01: a year is 252 valid closes; with fewer the figure is partial history, and says how many it read.
+  const partial = !!dd && dd.complete !== true;
+  const ddN = dd?.window && fin(dd.window.n) ? dd.window.n : null;
   const unserved = useUnserved();
   const labels = ["From 1-year high", "21-day realized vol", ...(scored ? [] : ["1-year return"])];
   if (unserved) return <UnservedCard headingId="te-risk-title" className="te-risk" title="Risk · drawdown and volatility" sub="how far from its high, and how much it moves" labels={labels} cols={3} block={unserved} />;
@@ -704,11 +707,15 @@ function RiskCard({ t, state, scored }: { t: TechnicalsResponse | undefined; sta
       <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
         <Stat
-          label="From 1-year high"
+          label={partial ? "From high" : "From 1-year high"}
           awaiting={aw || (ready && !fin(dd?.value))}
           value={ready && fin(dd?.value) ? pct(dd.value) : undefined}
           tone={ready && fin(dd?.value) && dd.value < 0 ? "down" : undefined}
-          sub={ready && dd?.peak && fin(dd.peak.close) ? `high ${grouped(dd.peak.close, dd.peak.close < 1000 ? 2 : 0)} on ${dayInYear(dd.peak.date, asOf)}` : undefined}
+          sub={
+            ready && dd?.peak && fin(dd.peak.close)
+              ? [partial ? `partial history: ${ddN ?? "fewer than 252"} of 252 sessions` : null, `high ${grouped(dd.peak.close, dd.peak.close < 1000 ? 2 : 0)} on ${dayInYear(dd.peak.date, asOf)}`].filter(Boolean).join(" · ")
+              : undefined
+          }
         />
         <Stat label="21-day realized vol" awaiting={aw || (ready && !fin(rv?.value))} value={ready && fin(rv?.value) ? pctPlain(rv.value, 1) : undefined} sub={ready && fin(rv?.value) ? "annualized" : undefined} />
         {scored ? null : (

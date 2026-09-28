@@ -2382,3 +2382,12 @@ question pushes one.
   - The Ledger's filter chips and the Pipeline's search appear with the rows
     they act on.
   - The walkthrough has no Back on its first step and no Next on its last.
+
+### 14.14 Codex round 1 (on `535c9c1`)
+
+- **R-01 · the one-year drawdown needs a year.** `/technicals`' `drawdown`
+  carries `complete`, true only when all 252 sessions of the year hold a
+  valid close; `window.n` says how many did. An incomplete one is labelled
+  "From high" with "partial history: <n> of 252 sessions", never "From
+  1-year high" (the stored S&P's missing 2026-09-22 close makes it 251 of 252
+  on the audit's store).

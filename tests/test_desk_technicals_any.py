@@ -96,7 +96,7 @@ def test_drawdown_realized_vol_and_relative_strength_follow_their_definitions():
     last = px[-252:]
     assert math.isclose(t["drawdown"]["value"], px[-1] / last.max() - 1)
     assert t["drawdown"]["peak"]["date"] == days[len(px) - 252 + int(np.argmax(last))].strftime("%Y-%m-%d")
-    assert t["drawdown"]["window"]["n"] == 252
+    assert t["drawdown"]["window"]["n"] == 252 and t["drawdown"]["complete"] is True
     rets = np.diff(np.log(px[-22:]))
     assert math.isclose(t["realized_vol"]["value"], float(np.std(rets, ddof=1) * math.sqrt(252)))
     assert t["realized_vol"]["window"] == {"start": days[-22].strftime("%Y-%m-%d"), "end": "2026-09-18", "n": 21}
@@ -111,6 +111,23 @@ def test_drawdown_realized_vol_and_relative_strength_follow_their_definitions():
     assert math.isfinite(t["rsi"]) and t["rsi_date"] == "2026-09-18"
     assert t["macd"] is not None and t["macd"]["params"] == {"fast": 12, "slow": 26, "signal": 9}
     assert t["seasonality"] is not None and len(t["seasonality"]["rows"]) == 12
+
+
+def test_a_drawdown_on_less_than_a_year_of_valid_closes_is_partial_and_says_how_many():
+    """Codex R-01: the one-year drawdown needs 252 valid session closes; a stock listed 120 sessions ago, or a
+    year with one close missing, serves `complete: false` and the count, never a complete-looking figure."""
+    days = _sessions("2026-03-26", "2026-09-18")
+    young = pd.Series(np.linspace(10.0, 12.0, len(days)), index=days)
+    t = desk_items.technicals_from_level(young, spec=PRICE_SPEC, ranges={"6m": 6, "1y": 12})
+    assert t["drawdown"]["window"]["n"] == len(days) < 252
+    assert t["drawdown"]["complete"] is False
+    year = _sessions("2025-06-02", "2026-09-18")
+    gapped = pd.Series(np.linspace(20.0, 30.0, len(year)), index=year).drop(year[-100])
+    t = desk_items.technicals_from_level(gapped, spec=PRICE_SPEC, ranges={"6m": 6, "1y": 12})
+    assert (t["drawdown"]["window"]["n"], t["drawdown"]["complete"]) == (251, False)
+    full = pd.Series(np.linspace(20.0, 30.0, len(year)), index=year)
+    t = desk_items.technicals_from_level(full, spec=PRICE_SPEC, ranges={"6m": 6, "1y": 12})
+    assert (t["drawdown"]["window"]["n"], t["drawdown"]["complete"]) == (252, True)
 
 
 def test_the_sp500s_own_answer_is_unchanged_by_the_new_figures(tmp_path):

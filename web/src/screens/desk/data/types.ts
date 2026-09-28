@@ -336,7 +336,8 @@ export interface TechnicalsResponse extends Envelope {
   name?: string;
   scored?: boolean;
   /** From the high of the last 252 sessions (a fraction, ≤ 0). */
-  drawdown?: { value: number | null; peak: { date: string; close: number | null } | null; window?: Window } | null;
+  /** Codex R-01: `complete` only when all 252 sessions of the year hold a valid close; `window.n` says how many did. */
+  drawdown?: { value: number | null; peak: { date: string; close: number | null } | null; window?: Window; complete: boolean | null } | null;
   /** The annualized standard deviation of 21 daily log returns (a fraction). */
   realized_vol?: { value: number | null; window?: Window; annualization?: number } | null;
   /** Against the stored S&P 500; null for the S&P itself. */

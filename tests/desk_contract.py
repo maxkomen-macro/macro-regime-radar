@@ -357,7 +357,8 @@ TECHNICALS = obj(
     seasonality=null(SEASONALITY),
     # A stock's two years of daily bars carry 6m and 1y; the stored S&P and ETFs 3y too.
     series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": F(Arr(POINT), opt=True)}),
-    drawdown=obj(value=NUM, peak=obj(date=DATE, close=NUM), window=SPAN),
+    # Codex R-01: `complete` only when all 252 sessions of the year hold a valid close; else the window's n says how many.
+    drawdown=obj(value=NUM, peak=obj(date=DATE, close=NUM), window=SPAN, complete=BOOL),
     realized_vol=obj(value=null(NUM), window=SPAN, annualization=Const(252)),
     rs=null(obj(benchmark=Const("^GSPC"), date=DATE, value=NUM, ma50=null(NUM), vs_ma50=null(NUM), chg_3m=null(NUM),
                 chg_3m_dates=null(DATES),

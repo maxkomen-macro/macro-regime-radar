@@ -12,6 +12,7 @@ import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import ledger from "../../../fixtures/desk/ledger.json";
 import technicals from "../../../fixtures/desk/technicals.json";
+import technicalsNVDA from "../../../fixtures/desk/technicals-NVDA.json";
 import type { LedgerRow } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
@@ -167,8 +168,10 @@ describe("Technicals tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Risk · drawdown and volatility/ });
     // The fixture's S&P has no Sep 22 close (the audit's §2.1): the realized vol needs 22 unbroken closes, so it says why.
-    await waitFor(() => expect(card).toHaveTextContent("From 1-year high−1.2%"));
-    expect(card).toHaveTextContent("high 7,799 on Aug 13");
+    // Codex R-01: the missing Sep 22 close leaves 251 of the year's 252 sessions: partial history, said with its count.
+    await waitFor(() => expect(card).toHaveTextContent("From high−1.2%"));
+    expect(card).toHaveTextContent("partial history: 251 of 252 sessions · high 7,799 on Aug 13");
+    expect(card).not.toHaveTextContent("From 1-year high");
     expect(card).toHaveTextContent("Realized vol needs the last 22 closes; one is missing.");
     // The S&P's 1-year return is on its Signals card.
     expect(card).not.toHaveTextContent("1-year return");
@@ -497,6 +500,17 @@ describe("Technicals for any stock (§14.2)", () => {
     );
   }
 
+  it("Codex R-01: a stock with under a year of closes shows its drawdown as partial history with the session count", async () => {
+    // Codex's repro: listed 120 sessions ago, so its "1-year high" is the high of 120 closes.
+    const young = { ...technicalsNVDA, drawdown: { ...technicalsNVDA.drawdown, window: { ...technicalsNVDA.drawdown.window, n: 120 }, complete: false } };
+    stubDesk({ "/api/desk/technicals": () => young });
+    renderAt("/desk/technicals?symbol=NVDA");
+    const risk = await screen.findByRole("region", { name: /^Risk · drawdown and volatility/ });
+    await waitFor(() => expect(risk).toHaveTextContent("From high−4.1%"));
+    expect(risk).toHaveTextContent("partial history: 120 of 252 sessions · high 235.20 on May 14");
+    expect(risk).not.toHaveTextContent("From 1-year high");
+  });
+
   it("a stock shows its price, averages and crosses not scored, its momentum and risk, and its strength against the S&P", async () => {
     const { calls } = stubDesk();
     renderAt("/desk/technicals?symbol=nvda");
@@ -515,6 +529,9 @@ describe("Technicals for any stock (§14.2)", () => {
     const risk = screen.getByRole("region", { name: /^Risk · drawdown and volatility/ });
     expect(risk).toHaveTextContent("21-day realized vol44.0%");
     expect(risk).toHaveTextContent("1-year return+23.1%");
+    // A full year of closes: the drawdown is the 1-year high's (Codex R-01).
+    expect(risk).toHaveTextContent("From 1-year high−4.1%");
+    expect(risk).not.toHaveTextContent("partial history");
     const rs = screen.getByRole("region", { name: /^Relative strength vs the S&P 500/ });
     expect(rs).toHaveTextContent("3-month change+8.3%");
     // The S&P-only cards are not drawn; one line says where the signals are scored.

@@ -379,7 +379,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     symbol: "s",
     name: "s",
     scored: "b",
-    drawdown: o({ value: "n", peak: o({ date: "s!", close: "n" }, { nul: true }), window: techSpan }, { nul: true }),
+    drawdown: o({ value: "n", peak: o({ date: "s!", close: "n" }, { nul: true }), window: techSpan, complete: "b" }, { nul: true }),
     realized_vol: o({ value: "n", window: techSpan, annualization: "n" }, { nul: true }),
     rs: o(
       {
