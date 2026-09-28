@@ -283,6 +283,17 @@
 .pr-positioning .dk-stats {
   margin-top: 8px;
 }
+/* "(illustrative)" under a numeric column's name, in lowercase sans, so the headers keep the columns' width. */
+.pr-th-note {
+  display: block;
+  font-family: var(--dk-sans);
+  text-transform: none;
+  letter-spacing: 0;
+}
+/* A long company name (the preset's "Constellation Energy") wraps under its ticker before the table scrolls. */
+.pr-positioning .pr-table tbody th {
+  white-space: normal;
+}
 .pr-positioning .pr-table-wrap {
   margin-top: 12px;
 }
