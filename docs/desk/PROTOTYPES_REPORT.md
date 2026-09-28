@@ -1,35 +1,36 @@
 # PROTOTYPES_REPORT.md — desk/prototypes
 
 Branch `desk/prototypes` (worktree `mrr-proto`), cut from main `4394e59`,
-**rebased onto origin/main `83a9f46` (desk/books merged) on 2026-09-28**. One
+**rebased onto origin/main `83a9f46` (desk/books merged) on 2026-09-28, then
+onto `2c62d40` (desk/matrix merged) the same day**. One
 commit per item, then the Codex fixes, the Build Notes section, the three
 commits that followed the rebase, and this report. **Nothing is pushed.**
-The shas below are the rebased ones; the pre-rebase shas are in the rebase
-section at the end.
+The shas below are the second rebase's; the earlier shas are in the two
+rebase sections.
 
 | # | Commit | What |
 |---|---|---|
-| 1 | `cbb982a` | The PROTOTYPE state (spec §1.0.3), `PrototypeFootnote` / `PrototypeCard`, and the three tests |
-| 2 | `a3e4936` | Technicals "What protection costs right now" |
-| 3 | `ef251ed` | Basket & Hedge "Hedge with options" |
-| 4 | `0a41e0d` | Basket & Hedge "Positioning" |
-| 5 | `53e865e` | Basket & Hedge "Event study on this basket" |
-| 6 | `061cea3` | Data Pipeline "Sync to Snowflake" |
-| 7 | `1669d86` | Build Notes "Prototypes, and how I would build them" |
-| 8 | `cff82f2` | The prototype page checks wait for a loaded machine; `markers.ts` imports tidied |
-| 9 | `d673f3f` | This report's first version, its shots, the CLAUDE.md note |
-| R-01 | `d715c36` | Positioning says what its figures cover (Codex) |
-| R-02 | `397a10c` | Hedge with options prices each structure only inside its domain (Codex) |
-| R-03 | `8a95386` | The protection prototype stands only in a not-yet-served vol block (Codex) |
-| 10 | `5fe3b73` | Build Notes "How this was built" |
-| 11 | `144b1e3` | Its wording, to what the gates were |
-| 12 | `dbfcdfa` | **After the rebase:** Hedge with options reads step 3's served `/basket/hedge` answer, in desk/books' options slot |
-| 13 | `5e9a559` | **After the rebase:** Data Pipeline's subtitle, Build Notes' two sentences, Positioning's "(illustrative)" headers |
-| 14 | `09f9b36` | **After the rebase:** those headers keep Positioning's table inside its card |
-| 15 | `3ae4a22` | The report's rebase section, the live shots |
-| 16 | `0bcb5d4` | **Before review:** Positioning and the event study drawn for the AI Infrastructure 10 preset; one line for any other basket |
-| 17 | `09d2111` | **Before review:** Data Pipeline's subtitle ends "No live number is re-derived in the browser." |
-| R-04 | this commit | The preset matcher takes exactly the preset's symbol–weight mapping, no symbol twice (Codex) |
+| 1 | `a3481b3` | The PROTOTYPE state (spec §1.0.3), `PrototypeFootnote` / `PrototypeCard`, and the three tests |
+| 2 | `3d55c56` | Technicals "What protection costs right now" |
+| 3 | `114b6e0` | Basket & Hedge "Hedge with options" |
+| 4 | `f94cb23` | Basket & Hedge "Positioning" |
+| 5 | `8159553` | Basket & Hedge "Event study on this basket" |
+| 6 | `69fb338` | Data Pipeline "Sync to Snowflake" |
+| 7 | `6c77321` | Build Notes "Prototypes, and how I would build them" |
+| 8 | `1f02e5c` | The prototype page checks wait for a loaded machine; `markers.ts` imports tidied |
+| 9 | `a97088f` | This report's first version, its shots, the CLAUDE.md note |
+| R-01 | `1e482b9` | Positioning says what its figures cover (Codex) |
+| R-02 | `bc37560` | Hedge with options prices each structure only inside its domain (Codex) |
+| R-03 | `6ed1c50` | The protection prototype stands only in a not-yet-served vol block (Codex) |
+| 10 | `7a46403` | Build Notes "How this was built" |
+| 11 | `158a285` | Its wording, to what the gates were |
+| 12 | `32c3723` | **After the rebase:** Hedge with options reads step 3's served `/basket/hedge` answer, in desk/books' options slot |
+| 13 | `b04533b` | **After the rebase:** Data Pipeline's subtitle, Build Notes' two sentences, Positioning's "(illustrative)" headers |
+| 14 | `aa907b9` | **After the rebase:** those headers keep Positioning's table inside its card |
+| 15 | `767150f` | The report's rebase section, the live shots |
+| 16 | `1e5ccc1` | **Before review:** Positioning and the event study drawn for the AI Infrastructure 10 preset; one line for any other basket |
+| 17 | `1af129c` | **Before review:** Data Pipeline's subtitle ends "No live number is re-derived in the browser." |
+| R-04 | `96155d1` | The preset matcher takes exactly the preset's symbol–weight mapping, no symbol twice (Codex) |
 
 ## What a PROTOTYPE card is (spec §1.0.3)
 
@@ -464,6 +465,24 @@ the rebase onto desk/books).
 | R-01 Positioning's summaries hid what they cover; a name without data counted as not crowded; CRWV 0% / MSFT 100% printed NaN | The weighted figures say what they cover (weight and names); a name without data reads "no data" and is in no count; a figure without a positive covered weight is "—" with the reason | CRWV 50% / MSFT 50%, MSFT 100%, CRWV 0% / MSFT 100% (`positioning.test.ts`, `BasketHedgePage.test.tsx`) | `fffb83d` |
 | R-02 "Hedge with options" priced any hedge ratio: at 0.10 the spread's 85% strike moved to −50% of the ETF and the rows printed NaN | Each structure is priced only inside its domain (a hedge ratio from 0.25 to 4 for the ETF and basket routes, strikes from 50% to 100% of spot, a positive vol, R² in (0, 1], finite results); outside it the row prints its reason and no number, and the route's line names no strike outside the domain | hedge_ratio 0.10 (`options.test.ts`, `OptionsHedgeCard.test.tsx`), and 0.25, NaN, R² 0, a zero vol | `e553dfa` |
 | R-03 The protection card's switch fell back to the illustrative figures when `/technicals` was awaiting or failed | The PROTOTYPE stands only when a ready answer serves the vol block awaiting as not yet served; an awaiting or failed route, or an answer without the block, keeps the LIVE card's awaiting or unavailable state | `/technicals` served awaiting, `/technicals` failed 503, a ready answer without the vol block (`TechnicalsPage.test.tsx`) | the R-03 commit (the head) |
+
+## The second rebase, onto origin/main `2c62d40` (desk/matrix merged)
+
+`git fetch origin && git rebase origin/main`, 2026-09-28. desk/matrix and
+this branch both changed `CLAUDE.md`, `docs/desk/BUILD_NOTES.md`,
+`docs/desk/DESK_FRAME3_SPEC.md`, `web/e2e/desk.spec.ts` and
+`web/src/fixtures/desk/PROVENANCE.md`; twenty of the twenty-one commits
+applied without a conflict.
+
+| Replayed commit | Conflicted file | Resolution |
+|---|---|---|
+| 13, the owner's wording | `docs/desk/BUILD_NOTES.md` | Both. desk/matrix removed the "12-asset correlation matrix" bullet from "Designed and drawn, not yet served" (the matrix is live); this commit reworded the options bullet's last sentence to "Where a number isn't computed yet, the card says so or is a marked prototype." The list keeps the rewording and has no matrix bullet. |
+
+Checked after the rebase: no prototype text calls the matrix unbuilt (the
+spec, Build Notes and CLAUDE.md name it live), and the prototype marker
+test runs on Macro, which now draws the matrix card. A backup of the
+pre-rebase tip is on the local branch `backup/desk-prototypes-pre-matrix-rebase`
+(`3fb1547`). Sha map, first rebase → second: `cbb982a`→`a3481b3`, `a3e4936`→`3d55c56`, `ef251ed`→`114b6e0`, `0a41e0d`→`f94cb23`, `53e865e`→`8159553`, `061cea3`→`69fb338`, `1669d86`→`6c77321`, `cff82f2`→`1f02e5c`, `d673f3f`→`a97088f`, `d715c36`→`1e482b9`, `397a10c`→`bc37560`, `8a95386`→`6ed1c50`, `5fe3b73`→`7a46403`, `144b1e3`→`158a285`, `dbfcdfa`→`32c3723`, `5e9a559`→`b04533b`, `09f9b36`→`aa907b9`, `3ae4a22`→`767150f`, `0bcb5d4`→`1e5ccc1`, `09d2111`→`1af129c`, `3fb1547`→`96155d1`.
 
 ## Codex R-04 (blocking, on the preset matcher)
 
