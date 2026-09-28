@@ -181,20 +181,23 @@ A basket is a list of US-listed tickers with weights, a method and a
 notional, kept in your browser. Nothing about it is stored on the server;
 the API prices it on request from two years of EODHD's daily bars
 (split- and dividend-adjusted, completed sessions only, fetched once per
-ticker per trading day).
+ticker per trading day). Every series is placed on the NYSE session
+calendar, so a missing session is a missing return, not a two-day move
+counted as one; a bar without an adjusted close is left out and said, and
+its raw close is not used.
 
 | Step | Where | Rule |
 |---|---|---|
-| Start | `src/desk/basket.py` `common_start` | Base 100 on the first session every name has a close. The page says whose first close it is (CoreWeave's, March 2025, for the AI Infrastructure 10), or that every history starts there. A later session one name is missing is dropped from the index and counted, not filled in. |
+| Start | `src/desk/basket.py` `price_basket` | Base 100 on the first XNYS session every name has a close, the session the basket is bought at. The page says why it is there: a later first close (CoreWeave's, March 2025, for the AI Infrastructure 10), the start of every history, or the session after a name's missing close. A later session one name is missing is dropped from the index and counted, not filled in. |
 | Buy-and-hold | `price_basket` | The default. Weights become share counts at the start's closes and stay fixed, so a name that runs becomes a bigger part of the basket. |
 | Monthly rebalance | `rebalance_rows` | The same at the start, then at the close of each month's last session the counts reset so every name is back at its target weight. |
 | Contribution | `price_basket` | Each name's share count times its price change, per holding period, over the notional. The names add up to the index's return exactly. |
 | Concentration | `price_basket` | At the last close: the top three weights, the effective number of names (1 over the sum of squared weights), and the average pairwise correlation of the names' daily returns over the last year. |
-| Liquidity | `price_basket` | Days to trade each name's target dollars at 20% of its 20-day average dollar volume (EODHD's unadjusted close times volume). The basket's figure is its slowest name. |
+| Liquidity | `price_basket` | Days to trade each name's target dollars at 20% of its average dollar volume over the trailing 20 XNYS sessions (EODHD's unadjusted close times volume), and only when every one of the 20 has a volume. The basket's figure is its slowest name, and is not shown, with the reason, when any name has no 20-session average. |
 | Technicals | `src/desk/technicals.py` | The same function that draws the S&P on Technicals: 50- and 200-day averages, trend, crosses, the one-year return, plus RSI(14) by Wilder's rule, drawdown from the running peak, and 21-day realized volatility (sample sd of daily log returns, annualized with √252). |
 | Against QQQ and SPY | `regression`, `relative_series` | Beta and correlation of daily returns over the last 252 and the last 60 sessions both traded; a window with fewer returns shows a dash and says how many there are. The relative lines are basket over benchmark, 100 at the chart's first session, each with its 50-day average. |
 | ETF hedge | `hedge_rows` | SMH, SOXX, QQQ, XLK, IGV, XLU, SPY and IWM, each fitted to the basket by least squares on daily returns. R² over a year ranks them; the hedge ratio is the beta (dollars of ETF to short per dollar of basket); what's left is the volatility of the basket minus beta times the ETF. With a least-squares beta that is the basket's volatility times √(1 − R²). |
-| Stress | `stress` | Linear in the one-year betas: if QQQ or SPY falls 10%, the basket moves its beta times that; the short moves the ETF's own beta times that. No convexity, no costs, stated on the card. |
+| Stress | `stress` | Linear in betas fitted on one shared window: the last year (or 60 sessions) up to the basket's last close on which the basket, the top ETF and the benchmark all trade. If QQQ or SPY falls 10%, the basket moves its beta times that; the short moves the ETF's own beta times that. No convexity, no costs, stated on the card with the window. |
 
 The options hedge sits in its own slot at the end of the page, labeled
 as not served until the option arithmetic is.
