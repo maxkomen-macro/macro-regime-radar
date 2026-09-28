@@ -2482,3 +2482,9 @@ question pushes one.
   Desk hook (`data/api.ts` `current`) reads its data as undefined while the
   query is in error, so the failed card keeps its labels only; a Retry that
   answers brings the numbers back.
+- **A close the browser does not keep** (final round). With the New
+  position form closed (the default since §14.4), a close whose write failed
+  (storage off or full) was reported only inside that hidden form, so Close
+  position appeared to do nothing. The Monitored card prints the failure
+  itself, amber, `role="status"` ("This browser's storage is full, so nothing
+  was saved."), and the position stays open; the guard's e2e covers it.

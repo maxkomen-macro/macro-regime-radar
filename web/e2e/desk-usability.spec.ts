@@ -550,6 +550,15 @@ test.describe("desk usability", () => {
     await close.getByRole("button", { name: "Expired at horizon" }).click();
     await expect(close.getByRole("button", { name: "Close position" })).toBeEnabled();
     bad.push(...(await guardProblems(page, "/desk/position-monitor Close… (a type picked)")));
+    // A close this browser cannot keep (storage full) says so on the Monitored card (Codex merge review).
+    await page.evaluate(() => {
+      Storage.prototype.setItem = () => {
+        throw new DOMException("quota", "QuotaExceededError");
+      };
+    });
+    await close.getByRole("button", { name: "Close position" }).click();
+    await expect(mon.getByTestId("pm-close-note")).toHaveText("This browser's storage is full, so nothing was saved.");
+    bad.push(...(await guardProblems(page, "/desk/position-monitor Close… (not kept)")));
     expect(bad).toEqual([]);
     // The whitelist is the gate's Save only, and it is on the form, waiting for the gate.
     await open(page, "/desk/position-monitor?new=1");

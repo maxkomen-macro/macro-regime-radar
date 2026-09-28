@@ -173,7 +173,7 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
 
 const IDLE: QueryLike = { isError: false, error: null };
 
-function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, loading = false, reads = IDLE }: { views: PositionView[]; unreadable?: number; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void; loading?: boolean; reads?: QueryLike }) {
+function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, loading = false, reads = IDLE, note = null }: { views: PositionView[]; unreadable?: number; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void; loading?: boolean; reads?: QueryLike; note?: string | null }) {
   const uid = useId();
   // The deployed share is a sum of sizes, printed only when every row has one (P-11) and every kept
   // position could be read: an unreadable one may be open, so no total is claimed (Codex R-16).
@@ -190,6 +190,11 @@ function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, l
         </h2>
         <p className="pm-mon-sub">how far each is from being wrong · live</p>
         <LoadingLine busy={live && loading} />
+        {note ? (
+          <p className="pm-close-note" role="status" data-testid="pm-close-note">
+            {note}
+          </p>
+        ) : null}
         {views.length ? (
           <ul className="dk-mon-list pm-list">
             {views.map((r) => (
@@ -376,6 +381,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   // The answer to a save, with its tone: a refusal is a caution (amber), a save is plain (P-3).
   const [saveNote, setSaveNoteState] = useState<{ text: string; tone: "saved" | "refused" } | null>(null);
+  const [closeNote, setCloseNote] = useState<string | null>(null);
   const setSaveNote = (text: string, tone: "saved" | "refused" = "refused") => setSaveNoteState(text ? { text, tone } : null);
   const statusRef = useRef<HTMLParagraphElement | null>(null);
   const openId = search.get("open");
@@ -525,8 +531,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const views = sortByRoom(store.positions.filter(isOpen).map((p) => viewOf(p, levels, now)));
   const closeOne = (id: string, type: CloseType, premortemRight: boolean | null) => {
     const r = change((current) => withClose(current, id, type, premortemRight, new Date()));
-    const failed = saveWords(r);
-    if (failed) setSaveNote(failed);
+    // Codex merge review: a close the browser did not keep says so on the Monitored card itself, where the
+    // Close… form is; the page's own note sits in the New position form, closed by default (§14.4).
+    setCloseNote(saveWords(r));
   };
   const onImport = (text: string) => {
     let out: ReturnType<typeof importPositions> = null;
@@ -551,7 +558,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   const monitor = (
     <>
-      <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} />
+      <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} note={closeNote} />
       <Closed store={store} />
       <StoreCard store={store} onImport={onImport} />
     </>
@@ -564,7 +571,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
         </div>
         <div className="pm-saved">
           <div className="pm-saved-main">
-            <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} />
+            <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} note={closeNote} />
           </div>
           <div className="pm-right">
             <Closed store={store} />

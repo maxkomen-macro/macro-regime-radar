@@ -319,6 +319,12 @@
   font-size: 12.5px;
   color: var(--dk-t3);
 }
+/* A close the browser did not keep (storage off or full), on the Monitored card: amber, as a refusal. */
+.pm-close-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--dk-amber);
+}
 /* Export / Import JSON of the store (§1.8) and the records it cannot read (§9). */
 .pm-store {
   padding: 10px 17px 12px;

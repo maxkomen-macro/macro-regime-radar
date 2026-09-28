@@ -343,6 +343,27 @@ describe("Position Monitor tab", () => {
     expect(ndx.closes).toEqual([{ type: "expired", ts: expect.any(String), premortem_right: true }]);
   });
 
+  it("a close the browser does not keep says so on the Monitored card, with the form closed (Codex merge review)", async () => {
+    seed(RECORDS);
+    renderTab("/desk/position-monitor?open=ndx-vs-spx");
+    const mon = await screen.findByRole("region", { name: /Monitored/ });
+    fireEvent.click(await within(mon).findByRole("button", { name: "Close…" }));
+    const close = within(mon).getByRole("group", { name: "Close as" });
+    fireEvent.click(within(close).getByRole("button", { name: "Expired at horizon" }));
+    const full = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    try {
+      fireEvent.click(within(close).getByRole("button", { name: "Close position" }));
+      await waitFor(() => expect(within(mon).getByTestId("pm-close-note")).toHaveTextContent("This browser's storage is full, so nothing was saved."));
+      // Nothing was closed: the position is still monitored, and the New position form stays closed.
+      expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toContain("ndx-vs-spx");
+      expect(document.querySelector('.pm[data-form="closed"]')).not.toBeNull();
+    } finally {
+      full.mockRestore();
+    }
+  });
+
   it("a record the store cannot read is listed with its reason and kept through a save (§9: never dropped)", async () => {
     const bad = { ...RECORDS[0], id: "odd-one", variant: "It will work." };
     seed([bad, RECORDS[0]]);
