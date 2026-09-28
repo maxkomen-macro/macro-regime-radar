@@ -4,7 +4,8 @@
  * month ago, whether bonds still hedge stocks (SPY against TLT, the 60-day
  * correlation over a year), credit (the high-yield spread against three
  * years), and what moves with the S&P (each served asset's 60-day
- * correlation with SPY; the 12-asset matrix under Advanced, not yet served). A 2×2, no action button. Every number is
+ * correlation with SPY), and under them every pair of twelve assets (the matrix, desk/matrix). A 2×2 and one
+ * full-width card, no action button. Every number is
  * served; every sentence and every call about it (the stock–bond words and
  * whether bonds hedge, the credit words, the reads) is the API's. Each block,
  * and each value inside it, keeps its label and says "Awaiting refresh" when
@@ -12,7 +13,7 @@
  */
 
 import { unavailableOf, useMacro } from "../data/api";
-import type { CorrelationRow, MacroResponse, Read } from "../data/types";
+import type { CorrelationRow, MacroResponse, MatrixBlock, Read } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { dayLong, dayShort, endDay, monthYear, num, ordinal } from "../kit/format";
@@ -408,10 +409,6 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
   const quiet = state === "loading";
   const unserved = useBlockUnserved(m, "correlations");
   const rows = Array.isArray(m?.correlations) ? m.correlations : [];
-  const mx = m?.matrix;
-  // The matrix under Advanced is its own block (§12.8): served awaiting, its control says "not yet served".
-  const matrixOff = useBlockUnserved(m, "matrix");
-  const name = (i: number) => mx?.labels?.[i] ?? mx?.assets[i] ?? "";
   // §1.0.2: the block, or the whole answer, served awaiting.
   if (unserved) return <UnservedCard headingId="mc-corr" className="mc-card" title="What moves with the S&P" sub="60-day correlation · each asset against the index" labels={[]} block={unserved} advanced />;
   return (
@@ -460,39 +457,107 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
       )}
       <DroppedNote n={droppedOf(m, "correlations")} one="asset" />
       <div className="dk-card-foot">
-        <Unserved block={matrixOff}>
-          {/* §6: the matrix block opens here once served; awaiting on Monday, so the control is disabled (§1.4). */}
-          <AdvancedPanel enabled={!!mx} adv={adv} items="full 12-asset matrix · rolling windows · by regime" missing={mx ? "Rolling windows and the matrix by regime are not served yet." : "The matrix is not served yet."}>
-            {mx && Array.isArray(mx.values) && mx.values.length && Array.isArray(mx.assets) ? (
-              <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label={fin(mx.window) ? `The ${mx.window}-day correlation matrix, every pair` : "The correlation matrix, every pair"}>
-                <table className="mc-matrix">
-                  <caption className="dk-stat-label">{fin(mx.window) ? `${mx.window}-day correlation, every pair` : "Correlation, every pair"}</caption>
-                  <thead>
-                    <tr>
-                      <td />
-                      {mx.assets.map((a, i) => (
-                        <th key={a} scope="col">
-                          {name(i)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mx.assets.map((a, i) => (
-                      <tr key={a}>
-                        <th scope="row">{name(i)}</th>
-                        {mx.values[i]?.map((v, j) => (
-                          <td key={j}>{i === j ? "·" : fin(v) ? num(v, 2) : "—"}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : null}
-          </AdvancedPanel>
-        </Unserved>
+        {/* desk/matrix: the full matrix is its own card below; rolling windows and the matrix by regime are not served. */}
+        <AdvancedPanel adv={adv} items="rolling windows · by regime" missing="Rolling windows and the correlations by regime are not served yet." />
       </div>
+    </section>
+  );
+}
+
+/**
+ * A cell's tint on the Desk's palette (§1.3): green for a negative
+ * correlation (moves against), amber for a positive one (moves with), the
+ * alpha rising with |r| from 0.06 at zero to 0.5 at ±1, as the "What moves"
+ * bars read; gray on the diagonal. Nothing for a cell without a value.
+ */
+export function matrixTint(r: number | null, diagonal = false): string | undefined {
+  if (!fin(r)) return undefined;
+  if (diagonal) return "rgba(139, 146, 158, 0.14)";
+  const a = (0.06 + 0.44 * Math.min(1, Math.abs(r))).toFixed(3);
+  if (r === 0) return `rgba(139, 146, 158, ${a})`;
+  return r < 0 ? `rgba(38, 220, 160, ${a})` : `rgba(232, 180, 71, ${a})`;
+}
+
+/** "60 daily returns · Jun 30 to Sep 23, 2026 · the same window for every pair". */
+export function matrixStamp(mx: MatrixBlock): string {
+  const w = mx.window;
+  if (!w?.start || !w.end) return "";
+  return [`${fin(w.n) ? w.n : 60} daily returns · ${dayShort(w.start)} to ${dayLong(w.end)}`, "the same window for every pair", ...(mx.providers?.length ? [mx.providers.join("/")] : [])].join(" · ");
+}
+
+function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
+  const quiet = state === "loading";
+  const unserved = useBlockUnserved(m, "matrix");
+  const mx = m?.matrix;
+  const title = "Correlation matrix";
+  const sub = "60-day correlation of daily returns · every pair of 12 assets";
+  if (unserved) return <UnservedCard headingId="mc-mx" className="mc-card mc-mx-card" title={title} sub={sub} labels={[]} block={unserved} />;
+  const grid = mx && Array.isArray(mx.values) && mx.values.length === mx.assets.length ? mx : null;
+  const noData = new Map((grid?.no_data ?? []).map((n) => [n.symbol, n.reason ?? ""]));
+  const name = (i: number) => grid?.labels?.[i] ?? "";
+  const end = grid?.window?.end;
+  return (
+    <section className="dk-card mc-card mc-mx-card" aria-labelledby="mc-mx" aria-busy={quiet}>
+      <CardHead id="mc-mx" title={title} sub={sub} />
+      {grid ? (
+        <>
+          {/* matrix-lead-v1: the served sentence, every number in it a served cell. */}
+          {grid.lead?.text ? <p className="mc-lead">{grid.lead.text}</p> : null}
+          <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label="The 60-day correlation matrix, every pair">
+            <table className="mc-matrix">
+              <caption className="dk-asof">{matrixStamp(grid)}</caption>
+              <thead>
+                <tr>
+                  <td />
+                  {grid.assets.map((a, j) => (
+                    <th key={a} scope="col" title={name(j) || undefined} data-nodata={noData.has(a) || undefined}>
+                      {a}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {grid.assets.map((a, i) => (
+                  <tr key={a}>
+                    <th scope="row" data-nodata={noData.has(a) || undefined}>
+                      <span className="mc-mx-sym">{a}</span>
+                      <span className="mc-mx-name">{noData.has(a) ? "no data" : name(i)}</span>
+                    </th>
+                    {grid.assets.map((b, j) => {
+                      const v = grid.values[i]?.[j] ?? null;
+                      const why = noData.get(a) ?? noData.get(b);
+                      const tip = fin(v) ? `${a} and ${b}: ${corrText(v)}${end ? `, 60 daily returns to ${dayShort(end)}` : ""}` : `${a} and ${b}: no data${why ? `, ${why}` : ""}`;
+                      return (
+                        <td key={b} title={tip} data-diag={i === j || undefined} data-nodata={!fin(v) || undefined} style={{ background: matrixTint(v, i === j) }}>
+                          {fin(v) ? (i === j ? num(v, 2) : corrText(v)) : "no data"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mc-mx-legend" aria-hidden="true">
+            <span>−1 moves against</span>
+            {[-1, -0.5, 0, 0.5, 1].map((r) => (
+              <span key={r} className="mc-mx-swatch" style={{ background: matrixTint(r) }} />
+            ))}
+            <span>+1 moves with</span>
+          </div>
+          {noData.size ? (
+            <ul className="mc-mx-nodata">
+              {[...noData].map(([sym, why]) => (
+                <li key={sym}>
+                  <span className="mc-mx-sym">{sym}</span> no data{why ? ` · ${why}` : ""}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </>
+      ) : quiet ? null : (
+        <Awaiting>the matrix</Awaiting>
+      )}
     </section>
   );
 }
@@ -521,6 +586,7 @@ export default function MacroPage({ page }: { page: DeskPage }) {
           <Credit m={m} state={state} />
           <Correlations m={m} state={state} />
         </div>
+        <Matrix m={m} state={state} />
       </Unserved>
     </div>
   );

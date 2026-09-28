@@ -48,6 +48,15 @@ Rules (the spec names each):
   it, VIX (^VIX, the CBOE close in asset_prices since desk/fill-compute, daily
   log changes of the level), each on its own
   newest session both series hold a value.
+- The 12-asset matrix (§12.8 `matrix`, desk/matrix): the same 60-date Pearson
+  correlation (`corr_at`) of every pair of SPY, QQQ, IWM, SMH, XLE, TLT, IEF,
+  HYG, LQD, GLD, UUP and ^VIX, all ending at one session `t`, the newest on
+  which every stored asset has a close. An asset not stored, or without 60
+  complete daily returns (or with no variation) to `t`, is "no data": its row
+  and column are null with its reason, never filled. The lead
+  (`matrix-lead-v1`) states whether Treasuries are hedging equities (SPY
+  against TLT below zero) and the highest and lowest pairs, from the served
+  cells only.
 
 Stdlib at import; numpy, pandas and the engine are imported at the point of
 use. The connection is closed in a `finally` (verifier V-54).
@@ -494,6 +503,115 @@ def correlations(store: Store) -> list[dict]:
     return rows
 
 
+# ── The 12-asset matrix (§12.8 `matrix`, desk/matrix) ──────────────────────
+
+MATRIX_ASSETS: tuple[tuple[str, str], ...] = (
+    ("spy", "S&P 500"), ("qqq", "Nasdaq 100"), ("iwm", "Small caps"), ("smh", "Semiconductors"),
+    ("xle", "Energy"), ("tlt", "20+ year Treasuries"), ("ief", "7–10 year Treasuries"),
+    ("hyg", "High-yield bonds"), ("lqd", "Investment-grade bonds"), ("gld", "Gold"), ("uup", "Dollar"), ("vix", "VIX"),
+)
+LEAD_RULE = "matrix-lead-v1"
+
+
+def common_close(store: Store, keys: list[str]) -> int | None:
+    """The newest session on which every one of `keys` holds a value."""
+    import numpy as np
+
+    if not keys:
+        return None
+    ok = np.logical_and.reduce([np.isfinite(store.px[k]) for k in keys])
+    idx = np.flatnonzero(ok)
+    return int(idx[-1]) if len(idx) else None
+
+
+def why_no_window(store: Store, key: str, x, t: int) -> str | None:
+    """Why one asset has no 60-date window to t, or None when it has one."""
+    import numpy as np
+
+    lo = t - CORR_WINDOW + 1
+    if lo < 0:
+        return f"fewer than {CORR_WINDOW} daily returns in the window to {store.iso[t]}"
+    bad = np.flatnonzero(~np.isfinite(x[lo:t + 1]))
+    if len(bad):
+        i = lo + int(bad[0])
+        gap = store.gap_reason(key, i) or store.gap_reason(key, i - 1)
+        return f"fewer than {CORR_WINDOW} complete daily returns in the window to {store.iso[t]}: {gap}"
+    w = x[lo:t + 1]
+    if float(((w - w.mean()) ** 2).sum()) == 0:
+        return f"no variation in the window to {store.iso[t]}"
+    return None
+
+
+def signed(x: float) -> str:
+    """+0.44, −0.28, 0.00: the card's own format (MacroPage `corrText`)."""
+    s = f"{abs(x):.2f}"
+    return "0.00" if s == "0.00" else ("+" if x > 0 else "−") + s
+
+
+def matrix_lead(symbols: list[str], values: list[list[float | None]]) -> dict:
+    """matrix-lead-v1: whether Treasuries are hedging equities (SPY against TLT
+    below zero: they are; at or above zero: they are not), then the highest and
+    the lowest pair among the off-diagonal cells served. Null parts are left
+    out; the sentence is null when no pair is served."""
+    idx = {s: i for i, s in enumerate(symbols)}
+    pairs = [(values[i][j], i, j) for i in range(len(symbols)) for j in range(i + 1, len(symbols)) if values[i][j] is not None]
+    hedge = values[idx["SPY"]][idx["TLT"]]
+    if not pairs:
+        return {"text": None, "rule": LEAD_RULE, "hedging": None, "spy_tlt": None, "highest": None, "lowest": None}
+    hi = max(pairs, key=lambda p: p[0])
+    lo = min(pairs, key=lambda p: p[0])
+    def pair(p):
+        return {"a": symbols[p[1]], "b": symbols[p[2]], "corr": p[0]}
+
+    if len(pairs) == 1:
+        pairs_text = f"the one pair served is {symbols[hi[1]]} and {symbols[hi[2]]} at {signed(hi[0])}"
+    else:
+        pairs_text = (f"the highest pair is {symbols[hi[1]]} and {symbols[hi[2]]} at {signed(hi[0])}"
+                      f" and the lowest {symbols[lo[1]]} and {symbols[lo[2]]} at {signed(lo[0])}")
+    if hedge is None:
+        text = pairs_text[0].upper() + pairs_text[1:] + "."
+    else:
+        text = f"Treasuries are {'hedging' if hedge < 0 else 'not hedging'} equities (SPY and TLT at {signed(hedge)}); {pairs_text}."
+    return {"text": text, "rule": LEAD_RULE, "hedging": None if hedge is None else hedge < 0, "spy_tlt": hedge,
+            "highest": pair(hi), "lowest": pair(lo)}
+
+
+def matrix(store: Store) -> dict:
+    """The /macro matrix block: every pair of the twelve assets over the 60
+    daily returns to the newest session every stored asset closes on."""
+    from src.desk import series as registry
+
+    keys = [k for k, _ in MATRIX_ASSETS]
+    symbols = [registry.get(k).series_id for k in keys]
+    stored = [k for k in keys if store.has(k)]
+    if not stored:
+        raise awaiting_refresh(symbols)
+    t = common_close(store, stored)
+    if t is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    rets = {k: daily_returns(store, k) for k in stored}
+    reasons: dict[str, str | None] = {}
+    for k, sym in zip(keys, symbols):
+        reasons[k] = why_no_window(store, k, rets[k], t) if k in rets else awaiting_refresh([sym]).reason
+    ok = [k for k in keys if reasons[k] is None]
+    values: list[list[float | None]] = []
+    for a in keys:
+        row: list[float | None] = []
+        for b in keys:
+            row.append(corr_at(rets[a], rets[b], t) if a in ok and b in ok else None)
+        values.append(row)
+    return {
+        "assets": symbols, "labels": [name for _, name in MATRIX_ASSETS],
+        "no_data": [{"symbol": sym, "reason": reasons[k]} for k, sym in zip(keys, symbols) if reasons[k] is not None],
+        "values": values,
+        "window": {"start": store.iso[max(t - CORR_WINDOW + 1, 0)], "end": store.iso[t], "n": CORR_WINDOW},
+        "lead": matrix_lead(symbols, values),
+        "quantity": "adjusted close (^VIX: index level)", "transform": "daily log return (^VIX: daily log change)",
+        "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
+        "providers": provider_words(store.providers_of(stored)),
+    }
+
+
 # ── The item ────────────────────────────────────────────────────────────────
 
 SECTOR_KEYS = ("xlb", "xlc", "xle", "xlf", "xli", "xlk", "xlp", "xlre", "xlu", "xlv", "xly")
@@ -507,9 +625,10 @@ def desk_etf(ctx: dict) -> dict:
     cutoff = es.resolve_as_of(None, es.DB_PATH)
     conn = _connect()
     try:
-        store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm", *(k for k, _ in CORR_ASSETS), VIX[0]], cutoff)
+        store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm", *(k for k, _ in CORR_ASSETS), VIX[0], "smh"], cutoff)
     finally:
         conn.close()
     return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store)),
             "stock_bond": part("stock_bond", lambda: stock_bond(store)),
-            "correlations": part("correlations", lambda: correlations(store))}
+            "correlations": part("correlations", lambda: correlations(store)),
+            "matrix": part("matrix", lambda: matrix(store))}

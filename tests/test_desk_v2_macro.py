@@ -39,7 +39,8 @@ PUBLISHED = ROOT / "data" / "macro_radar.db"
 AUDIT_SHA = "9a8b857968b8de22"  # FRAME3_DATA_AUDIT.md's copy of the store
 client = TestClient(app)
 AWAITING_REFRESH = "Awaiting refresh: this could not be computed from the current data."
-CORRELATIONS = "the 12-asset matrix's assets and method are not specified yet."
+MATRIX_AWAITING = ("Awaiting refresh: the full refresh stores SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP, ^VIX;"
+                   " this database predates it.")
 # desk/fill-etf: the hermetic store holds no asset_prices, so the stock–bond block awaits the ETF refresh
 STOCK_BOND_AWAITING = "Awaiting refresh: the full refresh stores SPY, TLT; this database predates it."
 TENOR_KEYS = ("3m", "2y", "5y", "10y", "30y")
@@ -93,7 +94,8 @@ def test_macro_shape(hermetic):
     body = get_macro()
     assert body["status"] == "ready"
     d = body["data"]
-    assert d["matrix"] == {"status": "awaiting", "data": None, "unavailable": {"reason": CORRELATIONS, "until": None}}
+    # desk/matrix: served from the ETF item, awaiting the refresh on a store without the twelve
+    assert d["matrix"] == {"status": "awaiting", "data": None, "unavailable": {"reason": MATRIX_AWAITING, "until": None}}
     # desk/fill-etf: no SPY in the hermetic store, so the correlations await the ETF refresh
     assert d["correlations"]["unavailable"]["reason"] == "Awaiting refresh: the full refresh stores SPY; this database predates it."
     assert d["stock_bond"] == {"status": "awaiting", "data": None, "unavailable": {"reason": STOCK_BOND_AWAITING, "until": None}}

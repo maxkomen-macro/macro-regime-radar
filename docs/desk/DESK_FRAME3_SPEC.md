@@ -55,7 +55,7 @@ Neither A nor B changes §12 without writing the change into this file first.
 | Macro: HY and IG levels, HY 3-year range and percentile, HY last 12 months | LIVE (the 3-year figures null, with the reason, while three-year coverage is incomplete) | v3 §12, v4 B-07 |
 | Macro: stock–bond correlation (SPY against TLT, 60 daily log returns) | LIVE (desk/fill-etf, §12.8) | — |
 | Macro: "What moves with the S&P" (TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ and VIX against SPY) | LIVE (desk/fill-etf, §12.8) | — |
-| Macro: the 12-asset matrix | UNAVAILABLE | the 12-asset matrix's assets and method are not specified yet |
+| Macro: the 12-asset correlation matrix (SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP, ^VIX; every pair, 60 daily returns to the last session all hold a close) | LIVE (desk/matrix, §12.8 `matrix`) | — |
 | Sectors: leadership (LEADING, LAGGING, PATTERN, the eleven bars) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
@@ -77,7 +77,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month.
 - Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.
-- Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, and what moves with the S&P.
+- Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
@@ -90,7 +90,6 @@ Build Notes prints these two lists as their own section, word for word.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
-- The 12-asset correlation matrix.
 - Positions kept on a server, and DV01.
 - Option structures for a basket's hedge.
 
@@ -610,7 +609,8 @@ took effect".
 
 ## 6. Macro & Correlations  (`screens/05-macro-correlations.png`, 1060px)
 
-No action button. Badge `● Live · FRED · <date>`. 2×2.
+No action button. Badge `● Live · FRED · <date>`. 2×2, and the correlation
+matrix as one full-width card under it (desk/matrix).
 
 **Yield curve** (`today against a month ago`). Stats: 10-YEAR (`today.10y`, "<10y_chg_bp> bp on the month") · 2s10s (`curve.2s10s_bp` bp,
 "<steepening|flattening|unchanged> · <2s10s_chg_bp> bp") · FRONT END
@@ -654,9 +654,25 @@ positive one), the signed value to two decimals, and its `symbol` (hover:
 `quantity`, `transform`). A row served null prints "not available · <reason>",
 or "Awaiting refresh" when its reason begins so. Stamp: "60 daily returns to
 <the rows' common date>", then each row dated otherwise ("<symbol> to <date>"),
-then "each against SPY". No meaning word is served. The 12-asset matrix under
-Advanced is `matrix` (awaiting, "the 12-asset matrix's assets and method are
-not specified yet."): `Advanced ▸` disabled.
+then "each against SPY". No meaning word is served. `Advanced ▸` (rolling
+windows · by regime) is disabled: neither is served. The full matrix is its
+own card (below).
+
+**Correlation matrix** (`60-day correlation of daily returns · every pair of
+12 assets`, full width): LIVE (desk/matrix), from `/macro` `matrix` (§12.8).
+The served `lead.text` first (one sentence, rule `matrix-lead-v1`), then a
+12×12 grid in `assets` order: column heads the symbols (hover: the `labels`
+name), row heads the symbol and its name, each cell `values[i][j]` signed to
+two decimals (the diagonal unsigned, gray), tinted green for a negative
+correlation and amber for a positive one, the alpha rising with |r| (0.06 at
+zero to 0.5 at ±1; gray at exactly zero); hover names the pair, the value and
+the window's end. An asset in `no_data` prints "no data" in every cell of
+its row and column, untinted, "no data" under its name, and its reason in a
+list under the grid; no cell is filled or estimated. A legend of five
+swatches (−1, −0.5, 0, +0.5, +1) runs "−1 moves against" to "+1 moves with".
+Stamp: "60 daily returns · <window.start> to <window.end> · the same window
+for every pair · <providers>". Served awaiting: the card keeps its title and
+prints the reason (§1.0.2).
 
 ---
 
@@ -1500,7 +1516,13 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `correlations.data[].date`, `window` | date, `{start, end, n}` | required, nullable (when the asset is not stored) | — | XNYS | N |
 | `correlations.data[].symbol`, `quantity`, `transform` | string | required | — | — | A: the registry's series id; "adjusted close" (VIX "index level (^VIX)"); "daily log return" (VIX "daily log change") |
 | `correlations.data[].reason` | string | required, nullable | — | — | N: non-null exactly when `corr` is null: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", or "fewer than 60 complete daily return pairs in the window to <date>" |
-| `matrix` | block envelope | required | — | — | awaiting: "the 12-asset matrix's assets and method are not specified yet." |
+| `matrix` | block envelope | required | — | — | N the 12-asset matrix (desk/matrix); awaiting with "Awaiting refresh: the full refresh stores <the twelve>; this database predates it." while none of the twelve is stored |
+| `matrix.data.assets`, `labels` | string[12] | required | — | — | A: SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP, ^VIX (the registry's series ids, in this order); their names |
+| `matrix.data.window`, `date` | `{start, end, n}`, date | required | sessions | XNYS | N: `end` (= `date`) is the newest session on which every stored asset of the twelve has a close; the 60 XNYS return dates ending there, the same window for every pair |
+| `matrix.data.values` | number[12][12] | required, cells nullable | correlation | `date` · daily | N: Pearson's r of the two assets' daily log returns (^VIX: daily log changes of the level) over `window`, every return complete (no forward fill), computed by the same `corr_at` as `correlations`; the diagonal 1.0; null exactly in the row and column of an asset in `no_data` |
+| `matrix.data.no_data[]` | `{symbol, reason}` | required | — | — | N: the assets without a window, in `assets` order: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", "fewer than 60 complete daily returns in the window to <date>: <the first gap's reason>", or "no variation in the window to <date>" |
+| `matrix.data.lead` | `{text, rule, hedging, spy_tlt, highest, lowest}` | required | — | — | N, rule `matrix-lead-v1`: `hedging` is `spy_tlt` < 0 (the SPY–TLT cell), null without it; `highest` and `lowest` the off-diagonal pairs with the largest and smallest r served, `{a, b, corr}`; `text` "Treasuries are [not ]hedging equities (SPY and TLT at <r>); the highest pair is <a> and <b> at <r> and the lowest <a> and <b> at <r>." (the hedge clause left out without the SPY–TLT cell; "The one pair served is …" with one pair; null with none), every number a served cell to two decimals |
+| `matrix.data.quantity`, `transform`, `unit`, `freq`, `source`, `providers` | string, string, `"correlation"`, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
 
 ### 12.9 `GET /pipeline` and `GET /pipeline/ddl`
 
@@ -1639,11 +1661,11 @@ log(P_ETF(t) / P_ETF(t−60)) − log(P_SPY(t) / P_SPY(t−60)) on adjusted clos
 breadth serves its comparison date; missing history is "not available",
 never "below".
 
-**Correlations — `stock_bond` and `correlations` served since desk/fill-etf
-(§12.8); `matrix` `status: deferred`** (`/macro` `stock_bond`,
+**Correlations — `stock_bond` and `correlations` served since desk/fill-etf,
+`matrix` since desk/matrix (§12.8)** (`/macro` `stock_bond`,
 `correlations`, `matrix`). `stock_bond: {today, year_ago, flipped, series:
 [{date, corr}]}`, `correlations: [{asset, symbol, quantity, transform,
-corr}]`, `matrix: {assets, labels, window, values}`. Each asset declares
+corr}]`, `matrix: {assets, labels, no_data, values, window, lead}`. Each asset declares
 `symbol`, `quantity` and `transform`; Pearson over the same trailing 60 XNYS
 return dates, 60 complete pairs, no forward fill (v2 §12).
 
@@ -1787,7 +1809,9 @@ differences (§12.8); `vol_change_pts`, `regime_from`, `regime_to` and
 authorize any conditional-improvement judgment. Added by desk/fill-etf
 (2026-09-27): the 24 ETF series in `asset_prices`; sector leadership and
 its pattern rule, and breadth of the 11 sector ETFs (§12.14); the
-stock–bond correlation and what moves with the S&P (§12.8).
+stock–bond correlation and what moves with the S&P (§12.8). Added by
+desk/matrix (2026-09-28): the 12-asset correlation matrix and its lead rule
+`matrix-lead-v1` (§12.8).
 
 **Not allowed for Monday** (the blocks are unavailable): RSI (added after
 Monday, below); confidence

@@ -452,13 +452,114 @@ def test_without_vix_stored_the_list_leaves_it_out(tmp_path, monkeypatch):
     assert [r["symbol"] for r in rows] == CORR_ORDER[:-1]
 
 
-def test_the_macro_route_serves_the_correlations_and_keeps_the_matrix_awaiting(tmp_path, install_worker, monkeypatch):
+def test_the_macro_route_serves_the_correlations_and_the_matrix(tmp_path, install_worker, monkeypatch):
     _serve(install_worker, monkeypatch, _db(tmp_path), items=MACRO_ITEMS)
     m = dc.check_response("/macro", client.get("/api/desk/macro"))
     assert m["data"]["correlations"]["status"] == "ready" and len(m["data"]["correlations"]["data"]) == 9
-    assert m["data"]["matrix"]["unavailable"]["reason"] == "the 12-asset matrix's assets and method are not specified yet."
-    for sym in CORR_ORDER:
-        assert "Macro" in pipe.feeds_of(sym), sym
+    mx = m["data"]["matrix"]
+    assert mx["status"] == "ready" and mx["data"]["assets"] == MATRIX_ORDER
+    assert desk_v2_macro.macro_payload()["matrix"] == mx
+    for sym in [*CORR_ORDER, *MATRIX_ORDER]:
+        assert "Macro" in pipe.feeds_of(sym) and sym not in pipe.NO_LIVE_READER, sym
+    from src.desk import series as registry
+
+    assert list(pipe.MATRIX_SERIES) == MATRIX_ORDER == [registry.get(k).series_id for k, _ in etf.MATRIX_ASSETS]
+
+
+# ── desk/matrix: the 12-asset correlation matrix (§12.8 matrix) ─────────────
+
+MATRIX_ORDER = ["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]
+
+
+def _hand_store(returns: dict[str, list[float]], days: list[str]):
+    """A Store over `days` holding a close for every session of each asset, the
+    closes compounded from the given daily log returns (the first close 100)."""
+    import numpy as np
+
+    st = etf.Store.__new__(etf.Store)
+    st.iso, st.first, st.provider_by, st.missing, st._np = days, {}, {}, [], np
+    st.px = {}
+    for k, r in returns.items():
+        st.px[k] = 100.0 * np.exp(np.concatenate([[0.0], np.cumsum(r)]))
+        st.first[k] = days[0]
+    return st
+
+
+def test_a_hand_checked_three_asset_matrix(monkeypatch):
+    """SPY, TLT and GLD only, 61 closes (60 daily returns), the other nine not
+    stored. By hand, in hundredths: SPY's returns repeat +1, −1 (mean 0); TLT's
+    are −2 × SPY's; GLD's repeat +1, +1, +1, −1 (mean 0.5, deviations 0.5, 0.5,
+    0.5, −1.5). Per block of four: Σ SPY·GLD deviations = 1·0.5 − 1·0.5 + 1·0.5
+    + 1·1.5 = 2, Σ SPY² = 4, Σ GLD² = 3·0.25 + 2.25 = 3, so r(SPY, GLD) =
+    2 / √(4·3) = 1/√3 = 0.5774; r(SPY, TLT) = −1; r(TLT, GLD) = −1/√3."""
+    days = store.sessions()[-61:]
+    spy = [0.01, -0.01] * 30
+    st = _hand_store({"spy": spy, "tlt": [-2 * x for x in spy], "gld": [0.01, 0.01, 0.01, -0.01] * 15}, days)
+    d = etf.matrix(st)
+    i = {s: n for n, s in enumerate(d["assets"])}
+    v = d["values"]
+    third = 1 / math.sqrt(3)
+    assert v[i["SPY"]][i["GLD"]] == pytest.approx(third, abs=1e-9) == v[i["GLD"]][i["SPY"]]
+    assert v[i["SPY"]][i["TLT"]] == pytest.approx(-1.0, abs=1e-9)
+    assert v[i["TLT"]][i["GLD"]] == pytest.approx(-third, abs=1e-9)
+    assert [v[i[x]][i[x]] for x in ("SPY", "TLT", "GLD")] == pytest.approx([1.0, 1.0, 1.0])
+    # the nine not stored: their rows and columns null, each with its reason, never filled
+    absent = [x for x in MATRIX_ORDER if x not in ("SPY", "TLT", "GLD")]
+    assert [n["symbol"] for n in d["no_data"]] == absent
+    for x in absent:
+        assert all(c is None for c in v[i[x]]) and all(row[i[x]] is None for row in v), x
+    assert d["no_data"][0]["reason"] == "Awaiting refresh: the full refresh stores QQQ; this database predates it."
+    assert d["window"] == {"start": days[1], "end": days[-1], "n": 60} and d["date"] == days[-1]
+    lead = d["lead"]
+    assert (lead["hedging"], lead["spy_tlt"]) == (True, pytest.approx(-1.0))
+    assert (lead["highest"]["a"], lead["highest"]["b"], lead["lowest"]["a"], lead["lowest"]["b"]) == ("SPY", "GLD", "SPY", "TLT")
+    assert lead["text"] == ("Treasuries are hedging equities (SPY and TLT at −1.00); "
+                            "the highest pair is SPY and GLD at +0.58 and the lowest SPY and TLT at −1.00.")
+
+
+def test_the_matrix_is_every_pair_over_60_daily_returns_to_the_last_common_close(tmp_path, monkeypatch):
+    """On the synthetic store: every cell is the pair's own 60-date Pearson r,
+    all ending on the newest session every asset closes on; the synthetic VIX
+    sits at its floor through the window, so it is no data (no variation)."""
+    path = _db(tmp_path)
+    c, days = store.closes(path), store.sessions()
+    c["^VIX"] = {d: v for d, v in _vix(path).items() if d in set(days)}
+    t = max(set.intersection(*(set(c[s]) for s in MATRIX_ORDER)))
+    i = days.index(t)
+    d = _item(monkeypatch, path)["matrix"]["data"]
+    assert d["assets"] == MATRIX_ORDER and d["window"] == {"start": days[i - 59], "end": t, "n": 60}
+    assert d["no_data"] == [{"symbol": "^VIX", "reason": f"no variation in the window to {t}"}]
+    for a, sa in enumerate(MATRIX_ORDER):
+        for b, sb in enumerate(MATRIX_ORDER):
+            want = None if "^VIX" in (sa, sb) else _corr(c, days, sa, sb, i)
+            got = d["values"][a][b]
+            assert (got is None) == (want is None) and (want is None or got == pytest.approx(want, abs=1e-12)), (sa, sb)
+    assert d["providers"] == ["test", "Yahoo"] and d["source"] == "asset_prices"  # the synthetic ^VIX is provider "test"
+
+
+def test_an_asset_with_a_gap_in_the_window_is_no_data_with_the_gap_named(tmp_path, monkeypatch):
+    """No forward fill: GLD without one close inside the window has no row or
+    column; the rest of the grid stands on the same window."""
+    days = store.sessions()
+    t = max(store.closes(_db(tmp_path, "probe.db"))["SPY"])
+    gap = days[days.index(t) - 3]
+    d = _item(monkeypatch, _db(tmp_path, drop={"GLD": (gap,)}))["matrix"]["data"]
+    g = d["assets"].index("GLD")
+    reason = {n["symbol"]: n["reason"] for n in d["no_data"]}["GLD"]
+    assert reason == f"fewer than 60 complete daily returns in the window to {t}: no close stored for {gap}"
+    assert all(x is None for x in d["values"][g]) and d["values"][0][1] is not None and d["date"] == t
+
+
+def test_the_matrix_lead_leaves_out_what_is_not_served():
+    """Without TLT the sentence says nothing about hedging; with one pair it names that pair once; with none it is null."""
+    syms = ["SPY", "TLT", "GLD"]
+    only = [[1.0, None, 0.25], [None, None, None], [0.25, None, 1.0]]
+    assert etf.matrix_lead(syms, only)["text"] == "The one pair served is SPY and GLD at +0.25."
+    none = [[None] * 3 for _ in syms]
+    assert etf.matrix_lead(syms, none)["text"] is None
+    flat = [[1.0, 0.0, 0.1], [0.0, 1.0, -0.2], [0.1, -0.2, 1.0]]
+    lead = etf.matrix_lead(syms, flat)
+    assert lead["hedging"] is False and lead["text"].startswith("Treasuries are not hedging equities (SPY and TLT at 0.00);")
 
 
 # ── Codex R-01: no definitive ranking when a sector's return is unavailable ──

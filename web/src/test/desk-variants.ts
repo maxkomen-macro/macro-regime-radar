@@ -3,7 +3,6 @@
  * study with a basis-point target, so every page that prints a target move
  * can be checked in a unit that is not a percent.
  */
-import deferredMacro from "../fixtures/desk/deferred-macro.json" with { type: "json" };
 import macro from "../fixtures/desk/macro.json" with { type: "json" };
 import sectors from "../fixtures/desk/sectors.json" with { type: "json" };
 import study from "../fixtures/desk/study.json" with { type: "json" };
@@ -70,11 +69,11 @@ export function bpEvents(): Record<string, unknown> {
 
 // ── Deferred blocks served (§12.13): Monday serves them awaiting; these render the cards built for them. ──
 
-/** /macro with every block served: stock–bond and the correlations as the fixture serves them (desk/fill-etf, the
- * API's answer), and the matrix from its deferred shape (the mockup's values, a test input only). */
+/** /macro with every block served: stock–bond, the correlations (desk/fill-etf) and the matrix (desk/matrix) as the
+ * fixture serves them (the API's answer on the fixture store). */
 export function servedMacro(): Record<string, unknown> {
-  const m = macro as { stock_bond: { data: unknown }; correlations: { data: unknown } };
-  return { ...macro, stock_bond: m.stock_bond.data, correlations: m.correlations.data, matrix: deferredMacro.matrix };
+  const m = macro as { stock_bond: { data: unknown }; correlations: { data: unknown }; matrix: { data: unknown } };
+  return { ...macro, stock_bond: m.stock_bond.data, correlations: m.correlations.data, matrix: m.matrix.data };
 }
 
 /** /technicals with its vol block served (the /vol deferred shape); its sectors block is served in the fixture (§12.14). */

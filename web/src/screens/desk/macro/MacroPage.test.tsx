@@ -1,17 +1,19 @@
 /**
  * Macro & Correlations (DESK_FRAME3_SPEC §6) against the §12.6 fixture: the
  * curve today and a month ago, the stock–bond correlation, credit against
- * three years, the served correlations with their symbols, the matrix under
- * Advanced, and Awaiting refresh with the labels kept when /macro fails.
+ * three years, the served correlations with their symbols, the 12-asset
+ * matrix (desk/matrix: its lead, window, colors and no-data rows, and a
+ * hand-checked 3-asset grid), and Awaiting refresh with the labels kept when
+ * /macro fails.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { servedMacro } from "../../../test/desk-variants";
-import { bpText, corrText, coverTicks } from "./MacroPage";
+import { bpText, corrText, coverTicks, matrixStamp, matrixTint } from "./MacroPage";
 import { placeLabel } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import macroFixture from "../../../fixtures/desk/macro.json";
@@ -127,7 +129,7 @@ describe("Macro tab", () => {
     expect(within(card).getByRole("img", { name: "High-yield spread at the 16th percentile of three years, tight" })).toBeInTheDocument();
     expect(within(card).getByRole("img", { name: /High-yield spread over the last year; peak 3\.5% on Mar 30/ })).toBeInTheDocument();
   });
-  it("what moves with the S&P: nine rows as served, each with the symbol it declares, dated; the matrix under Advanced", async () => {
+  it("what moves with the S&P: nine rows as served, each with the symbol it declares, dated; its Advanced not yet served", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What moves with the S&P/ });
     const list = await within(card).findByRole("list", { name: "Correlation with the S&P" });
@@ -149,25 +151,25 @@ describe("Macro tab", () => {
     // The rows' own dates: since desk/fill-compute the VIX is the CBOE close (^VIX), dated like the ETFs.
     expect(card).toHaveTextContent("60 daily returns to Sep 23 · each against SPY");
     expect(card).not.toHaveTextContent("VIXCLS");
-    fireEvent.click(within(card).getByTestId("dk-advanced"));
-    expect(within(card).getByRole("table")).toHaveTextContent("60-day correlation, every pair");
-    expect(within(card).getAllByRole("row")).toHaveLength(13);
-    // The matrix prints numbers; it sets no threshold of its own to color them.
-    expect(within(card).getByRole("table").querySelectorAll("td[data-tone]")).toHaveLength(0);
+    // desk/matrix: the full matrix is its own card; rolling windows and by regime are not served.
+    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
+    expect(card).toHaveTextContent("Advanced ▸ not yet served");
+    expect(within(card).queryByRole("table")).toBeNull();
   });
   it("names each card by its title and subtitle", async () => {
     renderTab();
-    for (const name of ["Yield curve today against a month ago", "Do bonds still hedge stocks? 60-day correlation of daily returns, one year", "Credit high-yield spread over Treasuries", "What moves with the S&P 60-day correlation · each asset against the index"])
+    for (const name of ["Yield curve today against a month ago", "Do bonds still hedge stocks? 60-day correlation of daily returns, one year", "Credit high-yield spread over Treasuries", "What moves with the S&P 60-day correlation · each asset against the index", "Correlation matrix 60-day correlation of daily returns · every pair of 12 assets"])
       expect(await screen.findByRole("region", { name })).toBeInTheDocument();
   });
   it("each absent block keeps its labels and says Awaiting refresh", async () => {
-    stubDesk({ "/api/desk/macro": () => without("curve", "stock_bond", "credit", "correlations") });
+    stubDesk({ "/api/desk/macro": () => without("curve", "stock_bond", "credit", "correlations", "matrix") });
     renderTab();
     const curve = await screen.findByRole("region", { name: /Yield curve/ });
     await waitFor(() => expect(curve).toHaveTextContent(/10-year\s*Awaiting refresh/));
     expect(screen.getByRole("region", { name: /Do bonds still hedge/ })).toHaveTextContent(/Today\s*Awaiting refresh/);
     expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent(/HY spread\s*Awaiting refresh/);
     expect(screen.getByRole("region", { name: /What moves with the S&P/ })).toHaveTextContent("Awaiting refresh · the correlations");
+    expect(screen.getByRole("region", { name: /^Correlation matrix/ })).toHaveTextContent("Awaiting refresh · the matrix");
   });
   it("TODAY takes no color of its own (§12.13 serves no hedging call); 2s10s is colored by the month's change", async () => {
     renderTab();
@@ -248,14 +250,14 @@ describe("Macro tab", () => {
     expect(curve).toHaveTextContent(/Front end\s*Awaiting refresh/);
     expect(curve).not.toHaveTextContent("bull steepener");
   });
-  it("the matrix is a named, focusable region with the assets' names", async () => {
+  it("the matrix is a named, focusable region with the assets' symbols and names", async () => {
     renderTab();
-    const card = await screen.findByRole("region", { name: /What moves with the S&P/ });
-    await within(card).findByRole("list");
-    fireEvent.click(within(card).getByTestId("dk-advanced"));
-    const wrap = within(card).getByRole("region", { name: "The 60-day correlation matrix, every pair" });
+    const card = await screen.findByRole("region", { name: /^Correlation matrix/ });
+    const wrap = await within(card).findByRole("region", { name: "The 60-day correlation matrix, every pair" });
     expect(wrap).toHaveAttribute("tabindex", "0");
-    expect(within(wrap).getAllByRole("columnheader").map((h) => h.textContent).slice(0, 3)).toEqual(["S&P 500", "Nasdaq 100", "10-year Treasury (price)"]);
+    expect(within(wrap).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]);
+    expect(within(wrap).getAllByRole("rowheader").map((h) => h.textContent).slice(0, 3)).toEqual(["SPYS&P 500", "QQQNasdaq 100", "IWMSmall caps"]);
+    expect(within(wrap).getByRole("columnheader", { name: "TLT" })).toHaveAttribute("title", "20+ year Treasuries");
   });
   it("chart band labels and the peak label keep the colors passed to them (M-5)", async () => {
     renderTab();
@@ -269,7 +271,7 @@ describe("Macro tab", () => {
     stubDesk({ "/api/desk/macro": () => new Promise(() => {}) });
     renderTab();
     const cards = await screen.findAllByRole("region");
-    await waitFor(() => expect(cards.filter((c) => c.getAttribute("aria-busy") === "true")).toHaveLength(4));
+    await waitFor(() => expect(cards.filter((c) => c.getAttribute("aria-busy") === "true")).toHaveLength(5));
     expect(document.querySelector(".mc")?.textContent).not.toContain("Awaiting refresh");
   });
   it("a failed /macro keeps every stat label and prints no number", async () => {
@@ -356,8 +358,8 @@ describe("a route served awaiting (§12.0, §1.0.2)", () => {
 
 describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () => {
   const off = (reason: string) => ({ status: "awaiting", data: null, unavailable: { reason, until: null } });
-  it("as the fixture serves /macro: the correlations stand, the matrix's Advanced says not yet served; the curve, stock–bond and credit stand", async () => {
-    // /macro as the fixture serves it (desk/fill-etf item 5): stock–bond and the correlations served, the matrix awaiting.
+  it("as the fixture serves /macro: the correlations and the matrix stand, the correlations' Advanced says not yet served; the curve, stock–bond and credit stand", async () => {
+    // /macro as the fixture serves it (desk/matrix): stock–bond, the correlations and the matrix served.
     stubDesk();
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89"));
@@ -367,6 +369,7 @@ describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () =>
     expect(screen.getByRole("region", { name: /^Do bonds still hedge stocks/ })).toHaveTextContent("+0.44");
     expect(screen.getByRole("region", { name: /^Yield curve/ })).toHaveTextContent("4.96%");
     expect(screen.getByRole("region", { name: /^Credit/ })).toHaveTextContent("2.73%");
+    expect(screen.getByRole("region", { name: /^Correlation matrix/ })).toHaveTextContent("Treasuries are not hedging equities (SPY and TLT at +0.44)");
   });
   it("stock–bond served awaiting a refresh prints its reason and badges Awaiting refresh (§1.7)", async () => {
     const why = "Awaiting refresh: the full refresh stores TLT; this database predates it.";
@@ -377,12 +380,102 @@ describe("blocks served awaiting inside a ready answer (§12.8, §1.0.2)", () =>
     expect(within(card).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
     for (const l of ["Today", "A year ago", "Flipped"]) expect(card).toHaveTextContent(l);
   });
-  it("the matrix alone served awaiting disables its Advanced with not yet served; the six rows stand", async () => {
-    stubDesk({ "/api/desk/macro": () => ({ ...macro, matrix: off("not ingested.") }) });
+  it("the matrix alone served awaiting prints its reason and badges Awaiting refresh; the correlations stand", async () => {
+    const why = "Awaiting refresh: the full refresh stores SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP, ^VIX; this database predates it.";
+    stubDesk({ "/api/desk/macro": () => ({ ...macro, matrix: off(why) }) });
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89"));
-    const card = screen.getByRole("region", { name: /^What moves with the S&P/ });
-    expect(within(card).getByTestId("dk-advanced")).toBeDisabled();
-    expect(card).toHaveTextContent("Advanced ▸ not yet served");
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Correlation matrix/ })).toHaveTextContent(why));
+    const card = screen.getByRole("region", { name: /^Correlation matrix/ });
+    expect(within(card).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
+    expect(within(card).queryByRole("table")).toBeNull();
+    expect(screen.getByRole("region", { name: /^What moves with the S&P/ })).toHaveTextContent("+0.89");
+  });
+});
+
+// ── desk/matrix: the 12-asset correlation matrix ───────────────────────────
+
+type Matrix = { assets: string[]; labels: string[]; values: (number | null)[][]; no_data: { symbol: string; reason: string }[]; window: { start: string; end: string; n: number }; lead: { text: string | null } };
+const servedMatrix = () => (macroFixture as unknown as { matrix: { data: Matrix } }).matrix.data;
+const cellsOf = (card: HTMLElement) => [...card.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")]);
+
+describe("the correlation matrix (desk/matrix, §12.8 matrix)", () => {
+  it("prints the served lead, the window and end date, and every cell as served, colored negative to positive", async () => {
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Correlation matrix/ });
+    const mx = servedMatrix();
+    await waitFor(() => expect(card).toHaveTextContent(mx.lead.text as string));
+    expect(mx.lead.text).toBe("Treasuries are not hedging equities (SPY and TLT at +0.44); the highest pair is IEF and LQD at +0.96 and the lowest SPY and ^VIX at −0.75.");
+    expect(card).toHaveTextContent("60 daily returns · Jun 30 to Sep 23, 2026 · the same window for every pair");
+    const cells = cellsOf(card);
+    expect(cells).toHaveLength(12);
+    cells.forEach((row, i) =>
+      row.forEach((td, j) => {
+        const v = mx.values[i][j] as number;
+        // No invented number: each cell is its served value at two decimals, the diagonal unsigned.
+        expect(td.textContent).toBe(i === j ? v.toFixed(2) : corrText(v));
+        expect(td.getAttribute("style")).toContain(i === j ? "rgba(139, 146, 158" : v < 0 ? "rgba(38, 220, 160" : "rgba(232, 180, 71");
+      }),
+    );
+    // hover: the pair, its value and the window's end
+    expect(cells[0][5]).toHaveAttribute("title", "SPY and TLT: +0.44, 60 daily returns to Sep 23");
+  });
+  it("an asset without the history is no data in its row and column, with its reason; nothing is filled", async () => {
+    const mx = servedMatrix();
+    const k = mx.assets.indexOf("^VIX");
+    const why = "fewer than 60 complete daily returns in the window to 2026-09-23: no close stored for 2026-09-18";
+    const values = mx.values.map((row, i) => row.map((v, j) => (i === k || j === k ? null : v)));
+    const m = servedMacro() as Record<string, unknown>;
+    stubDesk({ "/api/desk/macro": () => ({ ...m, matrix: { ...mx, values, no_data: [{ symbol: "^VIX", reason: why }] } }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Correlation matrix/ });
+    await waitFor(() => expect(card).toHaveTextContent(`^VIX no data · ${why}`));
+    const cells = cellsOf(card);
+    for (let i = 0; i < 12; i++) {
+      expect(cells[k][i].textContent).toBe("no data");
+      expect(cells[i][k].textContent).toBe("no data");
+      expect(cells[i][k].getAttribute("style")).toBeNull();
+    }
+    expect(cells[0][k]).toHaveAttribute("title", `SPY and ^VIX: no data, ${why}`);
+    expect(within(card).getByRole("rowheader", { name: /\^VIX/ })).toHaveTextContent("^VIXno data");
+  });
+  it("a hand-checked 3-asset grid: SPY, TLT and GLD", async () => {
+    // By hand (tests/test_desk_etf.py::test_a_hand_checked_three_asset_matrix): r(SPY, TLT) = −1,
+    // r(SPY, GLD) = 1/√3 = 0.5774, r(TLT, GLD) = −1/√3.
+    const third = 1 / Math.sqrt(3);
+    const matrix = {
+      assets: ["SPY", "TLT", "GLD"],
+      labels: ["S&P 500", "20+ year Treasuries", "Gold"],
+      no_data: [],
+      values: [
+        [1, -1, third],
+        [-1, 1, -third],
+        [third, -third, 1],
+      ],
+      window: { start: "2026-06-25", end: "2026-09-18", n: 60 },
+      lead: { text: "Treasuries are hedging equities (SPY and TLT at −1.00); the highest pair is SPY and GLD at +0.58 and the lowest SPY and TLT at −1.00." },
+      providers: ["Yahoo"],
+    };
+    const m = servedMacro() as Record<string, unknown>;
+    stubDesk({ "/api/desk/macro": () => ({ ...m, matrix }) });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Correlation matrix/ });
+    await waitFor(() => expect(card).toHaveTextContent("Treasuries are hedging equities (SPY and TLT at −1.00)"));
+    expect(cellsOf(card).map((r) => r.map((td) => td.textContent))).toEqual([
+      ["1.00", "−1.00", "+0.58"],
+      ["−1.00", "1.00", "−0.58"],
+      ["+0.58", "−0.58", "1.00"],
+    ]);
+    expect(cellsOf(card)[0][1].getAttribute("style")).toContain("rgba(38, 220, 160, 0.5)");
+    expect(cellsOf(card)[0][2].getAttribute("style")).toContain(`rgba(232, 180, 71, ${Number((0.06 + 0.44 * third).toFixed(3))})`);
+    expect(card).toHaveTextContent("60 daily returns · Jun 25 to Sep 18, 2026 · the same window for every pair · Yahoo");
+  });
+  it("the tint uses the palette's green, amber and gray only, stronger with |r|", () => {
+    expect(matrixTint(-1)).toBe("rgba(38, 220, 160, 0.500)");
+    expect(matrixTint(1)).toBe("rgba(232, 180, 71, 0.500)");
+    expect(matrixTint(0)).toBe("rgba(139, 146, 158, 0.060)");
+    expect(matrixTint(1, true)).toBe("rgba(139, 146, 158, 0.14)");
+    expect(matrixTint(null)).toBeUndefined();
+    expect(matrixStamp({ assets: [], values: [], window: null })).toBe("");
+    expect(DESK_ACCENTS.green).toBe("#26dca0");
   });
 });

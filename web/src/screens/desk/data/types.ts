@@ -675,6 +675,35 @@ export interface CorrelationRow {
   reason?: string | null;
 }
 
+/** One pair the matrix lead names. */
+export interface MatrixPair {
+  a: string;
+  b: string;
+  corr: number;
+}
+
+/**
+ * §12.8 `matrix` (desk/matrix): `values[i][j]` is Pearson's r of assets i and j
+ * over the 60 daily returns of `window`, null for an asset in `no_data` (with
+ * its reason). `lead` is the served sentence (rule matrix-lead-v1) and the
+ * numbers it states.
+ */
+export interface MatrixBlock {
+  assets: string[];
+  labels?: string[];
+  no_data?: { symbol: string; reason: string | null }[];
+  values: (number | null)[][];
+  window?: Window | null;
+  lead?: { text: string | null; rule?: string; hedging?: boolean | null; spy_tlt?: number | null; highest?: MatrixPair | null; lowest?: MatrixPair | null } | null;
+  quantity?: string;
+  transform?: string;
+  unit?: string;
+  date?: string;
+  freq?: string;
+  source?: string;
+  providers?: string[];
+}
+
 export interface MacroResponse extends Envelope {
   curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null; freq?: string; source?: string };
   /** §12.8 (desk/fill-etf): SPY's daily log returns against TLT's, 60 return dates, every pair complete. */
@@ -714,8 +743,8 @@ export interface MacroResponse extends Envelope {
   };
   /** §12.8 (desk/fill-etf): each asset against SPY over 60 daily returns to its own `date`, declaring its symbol, quantity and transform. */
   correlations?: CorrelationRow[];
-  /** `labels` is PROPOSED (§12.13): the assets' names, in `assets` order. */
-  matrix?: { assets: string[]; labels?: string[]; window: number | null; values: (number | null)[][] };
+  /** §12.8 (desk/matrix): every pair of the twelve assets over one 60-date window. */
+  matrix?: MatrixBlock;
   /** §12.0: the cards' served reads (none on Monday). */
   reads?: { curve?: Read; front_end?: Read; stock_bond?: Read; credit?: Read; correlations?: Read };
 }

@@ -139,7 +139,7 @@ def main(argv: list[str] | None = None) -> int:
         # item 2: sector leadership, /sectors whole and /technicals' sectors block as served
         write("sectors.json", get(client, "/sectors"))
         splice("technicals.json", {"sectors": client.get("/api/desk/technicals").json()["data"]["sectors"]})
-        # items 4 and 5: /macro's ETF blocks as served (stock_bond, correlations, and matrix, still awaiting)
+        # items 4 and 5 and desk/matrix: /macro's ETF blocks as served (stock_bond, correlations, matrix)
         macro = client.get("/api/desk/macro").json()["data"]
         splice("macro.json", {k: macro[k] for k in ("stock_bond", "correlations", "matrix")})
     finally:
