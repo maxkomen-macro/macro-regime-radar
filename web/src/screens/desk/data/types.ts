@@ -939,6 +939,8 @@ export interface BasketPriceResponse extends Envelope {
   missing_sessions?: string[];
   rebalances: number | null;
   total_return: number | null;
+  /** Closes the answer left out, by symbol, with why (Codex R-07: a bar without an adjusted close is never priced). */
+  excluded?: { symbol: string; n: number | null; reason?: string }[];
   legs?: BasketLegPriced[];
   concentration?: { top3_share: number | null; top3: string[]; effective_n: number | null; avg_pairwise_corr: number | null; corr_window: Window | null };
   /** `basket_days` and `binding` are null, with `reason`, when any name in `missing` has no ADV (Codex R-04). */
@@ -998,6 +1000,7 @@ export interface BasketHedgeResponse extends Envelope {
   prices_as_of?: string;
   start?: string;
   ranked_by?: "r2_1y" | "r2_60d";
+  excluded?: { symbol: string; n: number | null; reason?: string }[];
   etfs?: HedgeEtf[];
   top: string | null;
   stress?: StressRow[];

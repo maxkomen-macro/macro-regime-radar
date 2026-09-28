@@ -239,3 +239,10 @@ export function basketLead(
   if (!p || !p.start || !fin(p.total_return)) return `${head}.`;
   return `${head}: ${upDown(p.total_return).toLowerCase()} since ${dayLong(p.start)}, the first session every name has a price (${startWhy(p)}).`;
 }
+
+/** Closes left out of an answer (Codex R-07), in words: "Left out: SPLT, 1 session (no adjusted close from the provider)." */
+export function excludedWords(ex: readonly { symbol: string; n: number | null; reason?: string }[] | undefined): string | null {
+  const rows = (ex ?? []).filter((e) => fin(e.n) && (e.n as number) > 0);
+  if (!rows.length) return null;
+  return `Left out: ${rows.map((e) => `${e.symbol}, ${e.n} ${e.n === 1 ? "session" : "sessions"}${e.reason ? ` (${e.reason})` : ""}`).join("; ")}.`;
+}

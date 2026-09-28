@@ -14,7 +14,7 @@ import { useId, type ReactNode } from "react";
 import type { BasketHedgeResponse, HedgeEtf } from "../data/types";
 import { num, pct, pctPlain } from "../kit/format";
 import { AdvancedPanel, Awaiting, NotServedBadge, Stat, StatRow, Unserved, UnservedLine, cx, useAdvanced } from "../kit/ui";
-import { hedgeLead, stressLead, usd } from "./trades";
+import { excludedWords, hedgeLead, stressLead, usd } from "./trades";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -92,6 +92,7 @@ function RankCard({ h, state }: { h: BasketHedgeResponse | undefined; state: Sta
       {state === "ready" && rows.length ? (
         <p className="bh-foot-note">
           Hedge ratio: dollars of the ETF to short per dollar of basket (beta). Vol left: the basket's annualized volatility after the short; vol cut: how much of it goes.
+          {excludedWords(h?.excluded) ? ` ${excludedWords(h?.excluded)}` : ""}
         </p>
       ) : null}
     </HedgeCard>

@@ -199,6 +199,9 @@ def _eodhd_candles(inst: Instrument, range_key: str) -> tuple[list[dict], str]:
                     # EODHD's own close, unadjusted: with the day's volume, the dollars traded that
                     # day (Basket & Hedge's liquidity). Not part of the served candle shape.
                     "close_raw": close,
+                    # Whether EODHD served an adjusted close for the bar; without one the bar's prices are
+                    # its raw ones (Codex R-07: the basket never reads such a bar). Not served either.
+                    "adjusted": adj is not None and adj > 0,
                 }
             )
         return bars, INTERVAL_LABEL[spec["period"]]

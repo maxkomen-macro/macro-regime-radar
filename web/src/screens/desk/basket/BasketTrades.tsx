@@ -18,7 +18,7 @@ import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import { Awaiting, Signed, Stat, StatRow } from "../kit/ui";
-import { byContribution, compareLead, concentrationLead, contributionLead, dayChange, daysText, indexLead, liquidityLead, methodSentence, momentumLead, rsLead, startSentence, usd, vsAverage } from "./trades";
+import { excludedWords, byContribution, compareLead, concentrationLead, contributionLead, dayChange, daysText, indexLead, liquidityLead, methodSentence, momentumLead, rsLead, startSentence, usd, vsAverage } from "./trades";
 
 export type BasketRange = "6m" | "1y";
 export const BASKET_RANGES: readonly BasketRange[] = ["6m", "1y"];
@@ -67,7 +67,7 @@ function IndexCard({ p, state, range, setRange }: { p: BasketPriceResponse | und
       ) : state === "loading" ? null : (
         <Awaiting />
       )}
-      {ready && p ? <p className="bh-foot-note">{[startSentence(p), methodSentence(p.method)].filter(Boolean).join(" ")}</p> : null}
+      {ready && p ? <p className="bh-foot-note">{[startSentence(p), methodSentence(p.method), excludedWords(p.excluded)].filter(Boolean).join(" ")}</p> : null}
     </TradeCard>
   );
 }

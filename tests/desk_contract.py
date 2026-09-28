@@ -423,6 +423,7 @@ BASKET_PRICE = obj(
     prices_as_of=DATE, history_from=DATE, start=DATE, start_kind=E("first_close", "history", "gap"),
     start_binding=Arr(STR, min=1), start_is_first_close=BOOL, start_gap_session=null(DATE),
     end=DATE, sessions=INT, missing_sessions=Arr(DATE), rebalances=INT, total_return=NUM,
+    excluded=Arr(obj(symbol=STR, n=INT, reason=STR)),
     legs=Arr(obj(symbol=STR, target_weight=FRAC, weight_now=FRAC, first_close=DATE, price_end=NUM, **{"return": NUM},
                  contribution=NUM, dollars=NUM, adv_usd=null(NUM), adv_window=SPAN, adv_missing=INT,
                  days_to_trade=null(NUM)), min=1),
@@ -452,7 +453,7 @@ LOOSE_SPAN = obj(start=null(DATE), end=null(DATE), n=INT)
 HEDGE_ETF = E("SMH", "SOXX", "QQQ", "XLK", "IGV", "XLU", "SPY", "IWM")
 BASKET_HEDGE = obj(
     method=E("hold", "monthly"), notional=NUM, provider=STR, source=STR, freq=Const("daily"),
-    prices_as_of=DATE, start=DATE, ranked_by=E("r2_1y", "r2_60d"),
+    prices_as_of=DATE, start=DATE, ranked_by=E("r2_1y", "r2_60d"), excluded=Arr(obj(symbol=STR, n=INT, reason=STR)),
     etfs=Arr(obj(
         symbol=HEDGE_ETF, label=STR, rank=INT, basis=null(E("1y", "60d")),
         r2_1y=null(FRAC), r2_60d=null(FRAC), beta_1y=null(NUM), beta_60d=null(NUM),

@@ -100,22 +100,43 @@ def parse_params(params: list[tuple[str, str]]) -> tuple[list[tuple[str, float]]
     return legs, method, notional
 
 
-def history_of(bars_answer: Mapping[str, Any]) -> Any:
+UNADJUSTED = "no adjusted close from the provider"
+
+
+def history_of(bars_answer: Mapping[str, Any], symbol: str = "") -> Any:
     """An engine History from market.daily_bars' answer: the adjusted closes,
-    and each session's dollar volume (EODHD's unadjusted close × volume)."""
+    and each session's dollar volume (EODHD's unadjusted close × volume). A bar
+    the provider served without an adjusted close is left out, never priced
+    from its raw close (Codex R-07); how many is on the History as
+    `unadjusted` for the answer to disclose. A symbol with no adjusted close at
+    all is refused."""
     from src.desk import basket as bk
 
     dates, close, dv = [], [], []
+    left_out = 0
     for b in bars_answer["bars"]:
         c = b.get("close")
         if not isinstance(c, (int, float)) or not math.isfinite(c) or c <= 0:
+            continue
+        if b.get("adjusted") is not True:
+            left_out += 1
             continue
         dates.append(b["ts"][:10])
         close.append(float(c))
         raw, vol = b.get("close_raw"), b.get("volume")
         ok = all(isinstance(x, (int, float)) and math.isfinite(x) and x > 0 for x in (raw, vol))
         dv.append(float(raw) * float(vol) if ok else None)
-    return bk.History(tuple(dates), tuple(close), tuple(dv))
+    if not dates and left_out:
+        raise env.Refused(502, "provider", f"{symbol}: EODHD served no adjusted closes; a basket reads adjusted closes only.")
+    h = bk.History(tuple(dates), tuple(close), tuple(dv))
+    object.__setattr__(h, "unadjusted", left_out)
+    return h
+
+
+def excluded(histories: Mapping[str, Any], symbols: list[str]) -> list[dict]:
+    """The closes left out of the answer, by symbol, with why (Codex R-07)."""
+    return [{"symbol": s, "n": int(getattr(histories[s], "unadjusted", 0)), "reason": UNADJUSTED}
+            for s in symbols if getattr(histories[s], "unadjusted", 0)]
 
 
 def fetch(symbols: list[str]) -> dict[str, Any]:
@@ -126,7 +147,7 @@ def fetch(symbols: list[str]) -> dict[str, Any]:
     from api.providers.errors import EmptyResult, ProviderError, UnknownSymbol
 
     def one(sym: str) -> Any:
-        return history_of(market.daily_bars(sym))
+        return history_of(market.daily_bars(sym), sym)
 
     out: dict[str, Any] = {}
     with ThreadPoolExecutor(max_workers=FETCH_WORKERS, thread_name_prefix="mrr-basket") as pool:
@@ -222,6 +243,7 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         "legs": [{k: l[k] for k in ("symbol", "target_weight", "weight_now", "first_close", "price_end", "return",
                                     "contribution", "dollars", "adv_usd", "adv_window", "adv_missing", "days_to_trade")}
                  for l in priced["legs"]],
+        "excluded": excluded(histories, [s for s, _ in legs] + [sym for sym, _ in BENCHMARKS.values() if sym not in {s for s, _ in legs}]),
         "concentration": priced["concentration"],
         "liquidity": priced["liquidity"],
         "index": t,
@@ -260,6 +282,7 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         "prices_as_of": priced["end"],
         "start": priced["start"],
         "ranked_by": "r2_1y" if any(r["r2_1y"] is not None for r in rows) else "r2_60d",
+        "excluded": excluded(histories, [s for s, _ in legs] + [s for s in HEDGE_ETFS if s not in {x for x, _ in legs}]),
         "etfs": rows,
         "top": top["symbol"] if top else None,
         "stress": bk.stress(level, shocks, top["symbol"] if top else None, etf_levels[top["symbol"]] if top else None,

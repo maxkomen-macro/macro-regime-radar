@@ -60,7 +60,7 @@ def _bars(sym: str) -> dict:
     if sym not in UNIVERSE:
         raise UnknownSymbol("eodhd", f"No listing found for '{sym}' on EODHD.")
     first, px = UNIVERSE[sym]
-    return {"bars": [{"ts": f"{d}T00:00:00Z", "close": float(c), "close_raw": float(c) * 1.01, "volume": 2e6}
+    return {"bars": [{"ts": f"{d}T00:00:00Z", "close": float(c), "close_raw": float(c) * 1.01, "volume": 2e6, "adjusted": True}
                      for d, c in zip(SESSIONS[first:], px[first:])]}
 
 
@@ -246,3 +246,54 @@ def test_a_young_basket_is_ranked_on_sixty_days_and_says_so(served):
 def test_the_hedge_refuses_as_the_price_does(served):
     r = hedge(legs="NVDA:60")
     assert r.status_code == 422 and dc.check_response("/basket/hedge", r)["error"]["code"] == "unsupported"
+
+
+# ── Codex R-07: adjusted closes only ────────────────────────────────────────
+
+def test_codex_r07_a_bar_without_an_adjusted_close_is_left_out_and_disclosed(tmp_path, monkeypatch, install_worker):
+    """Codex's repro over the mocked EODHD upstream: a two-for-one split, the pre-split bar with a raw close of 100
+    and no adjusted_close, then raw and adjusted closes of 50. The basket read the raw 100 and lost 50%; the bar
+    is now left out, the answer says so, and no split appears as a loss."""
+    import httpx
+
+    from api.providers import cache as cache_mod
+    from api.providers import eodhd as eod
+    from api.providers import entitlements
+
+    f = tmp_path / "tiny.db"
+    with sqlite3.connect(f) as c:
+        c.execute("CREATE TABLE t (x)")
+    monkeypatch.setattr(db, "DB_PATH", f)
+    w = install_worker(worker_mod.AnalyticsWorker(items=[], poll_s=0.05, preload=False))
+    w.start(serving=True)
+    assert w.wait_published(timeout=30)
+    days = SESSIONS[-3:]
+
+    def upstream(request: httpx.Request) -> httpx.Response:
+        sym = request.url.path.rsplit("/", 1)[-1].split(".")[0]
+        if sym == "SPLT":
+            rows = [{"date": days[0], "close": 100.0, "volume": 1e6},
+                    {"date": days[1], "close": 50.0, "adjusted_close": 50.0, "volume": 2e6},
+                    {"date": days[2], "close": 50.0, "adjusted_close": 50.0, "volume": 2e6}]
+        else:
+            rows = [{"date": d, "close": 10.0, "adjusted_close": 10.0, "volume": 1e6} for d in days]
+        return httpx.Response(200, json=rows, request=request)
+
+    monkeypatch.setattr(eod, "_bucket", cache_mod.TokenBucket(rate=10_000, burst=100_000))
+    market.set_client_for_tests(eod.EodhdClient("tok", timeout=1.0, max_retries=0, transport=httpx.MockTransport(upstream)))
+    entitlements.reset_for_tests()
+    monkeypatch.setattr(market, "_utcnow", lambda: __import__("datetime").datetime.fromisoformat(f"{days[-1]}T21:00:00+00:00"))
+    try:
+        body = client.get("/api/desk/basket/price", params={"legs": "SPLT:100"}).json()
+    finally:
+        market.set_client_for_tests(None)
+        entitlements.reset_for_tests()
+    d = body["data"]
+    assert body["status"] == "ready" and d["start"] == days[1] and d["total_return"] == pytest.approx(0.0)
+    assert d["excluded"] == [{"symbol": "SPLT", "n": 1, "reason": "no adjusted close from the provider"}]
+
+
+def test_a_symbol_with_no_adjusted_close_at_all_is_refused():
+    with pytest.raises(env.Refused) as ei:
+        desk_basket.history_of({"bars": [{"ts": "2026-09-24T00:00:00Z", "close": 10.0, "adjusted": False}]}, "RAW")
+    assert ei.value.status == 502 and "no adjusted closes" in ei.value.message

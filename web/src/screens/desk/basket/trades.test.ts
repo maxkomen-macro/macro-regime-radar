@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import type { BasketHedgeResponse, BasketPriceResponse } from "../data/types";
-import { hedgeLead, pnlWords, stressLead, compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
+import { excludedWords, hedgeLead, pnlWords, stressLead, compareLead, concentrationLead, contributionLead, daysText, indexLead, listWords, liquidityLead, momentumLead, rsLead, startSentence, startWhy, trendPhrase, upDown, usd } from "./trades";
 
 const ANSWERS = (basketPrice as unknown as { answers: Record<string, BasketPriceResponse> }).answers;
 const SAMPLE = ANSWERS["NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000"];
@@ -77,5 +77,11 @@ describe("Basket & Hedge's lead sentences", () => {
     const young = { ...h, etfs: h.etfs!.map((e, i) => (i === 0 ? { ...e, basis: "60d" as const, r2_1y: null } : e)) };
     expect(hedgeLead(young)).toMatch(/^SMH fits the basket best \(R² 0\.77 over 60 sessions\)/);
     expect(hedgeLead({ ...h, top: null })).toBeNull();
+  });
+
+  it("Codex R-07: closes left out for want of an adjusted close are said, by symbol", () => {
+    expect(excludedWords([{ symbol: "SPLT", n: 1, reason: "no adjusted close from the provider" }])).toBe("Left out: SPLT, 1 session (no adjusted close from the provider).");
+    expect(excludedWords([])).toBeNull();
+    expect(excludedWords(undefined)).toBeNull();
   });
 });
