@@ -79,7 +79,7 @@ describe("Overview tab", () => {
     expect(since.textContent).toContain("data refreshed 05:07 UTC");
     const regime = screen.getByRole("region", { name: "Regime" });
     // §2: the K−2 row governing today (a September session reads the July row, Goldilocks as stored).
-    expect(regime).toHaveTextContent("Live · Jul row");
+    expect(regime).toHaveTextContent("Live · July data");
     expect(regime).toHaveTextContent("Goldilocks");
     // §1.3's exception (v2 D-36): the regime carries its color, Goldilocks green.
     expect(regime.querySelector(".ov-tile-value")).toHaveAttribute("data-tone", "green");
@@ -186,17 +186,18 @@ describe("Overview tab", () => {
     expect(await screen.findByText("No positions are monitored in this browser.")).toBeInTheDocument();
   });
 
-  it("with no /overview every tile keeps its label and says Awaiting refresh, no number", async () => {
+  it("with no /overview every tile keeps its label and says Couldn't load · Retry, no number (§14.12)", async () => {
     stubDesk({ "/api/desk/overview": deskError(503, "generation warming") });
     renderOverview();
     const regime = await screen.findByRole("region", { name: "Regime" });
-    await waitFor(() => expect(regime).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(regime).toHaveTextContent("Couldn't load · Retry"));
     for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) {
       const tile = screen.getByRole("region", { name });
-      expect(tile).toHaveTextContent("Awaiting refresh");
+      expect(tile).toHaveTextContent("Couldn't load · Retry");
+      expect(tile).not.toHaveTextContent("Awaiting refresh");
       expect((tile.textContent ?? "").replace(name, "")).not.toMatch(/\d/);
     }
-    expect(screen.getByTestId("ov-since")).toHaveTextContent("Awaiting refresh");
+    expect(screen.getByTestId("ov-since")).toHaveTextContent("Couldn't load · Retry");
     expect(screen.queryByText("Overheating")).toBeNull();
   });
 });
@@ -236,5 +237,22 @@ describe("the VIX's gap to realized (desk/fill-compute)", () => {
     expect(gapWords(vol)).toBe("2.2 pts below 21-day realized (16.4)");
     expect(gapWords({ ...vol, gap: { ...vol.gap, date: "2026-09-21", gap_pts: 4.4 } })).toBe("4.4 pts above 21-day realized (16.4) on Sep 21");
     expect(gapWords({ ...vol, gap: null })).toBe("No session has both the VIX and 21 S&P returns stored.");
+  });
+});
+
+describe("Start here (§14.7)", () => {
+  it("four numbered links, Overview → Basket & Hedge → Technicals → Event Study, one short phrase each", async () => {
+    stubDesk();
+    renderWithProviders(
+      <Routes>
+        <Route path="/desk/:page?" element={<DeskShell />} />
+      </Routes>,
+      { route: "/desk/overview" },
+    );
+    const strip = await screen.findByRole("navigation", { name: "Start here" });
+    const links = within(strip).getAllByRole("link");
+    expect(links.map((a) => a.textContent)).toEqual(["1 Overview · read the market", "2 Basket & Hedge · build the exposure", "3 Technicals · check the trend", "4 Event Study · test the idea"]);
+    expect(links.map((a) => a.getAttribute("href"))).toEqual(["/desk/overview", "/desk/basket-hedge", "/desk/technicals", "/desk/event-study"]);
+    expect(links[0]).toHaveAttribute("aria-current", "page");
   });
 });

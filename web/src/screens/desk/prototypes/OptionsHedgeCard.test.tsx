@@ -31,7 +31,8 @@ describe("Hedge with options: the inputs row is the served answer's", () => {
     expect(card()).toHaveTextContent(/Notional\s*Awaiting refresh/);
     expect(card()).toHaveTextContent("Nothing is priced until the basket's inputs arrive.");
     expect(within(card()).queryAllByRole("table")).toHaveLength(0);
-    expect(within(card()).getByTestId("dk-advanced")).toBeDisabled();
+    // desk/usability §14.13: no Advanced while there is nothing to open (absent, never disabled).
+    expect(within(card()).queryByTestId("dk-advanced")).toBeNull();
     expect(card().querySelector("[data-prototype-foot]")).not.toBeNull();
   });
 

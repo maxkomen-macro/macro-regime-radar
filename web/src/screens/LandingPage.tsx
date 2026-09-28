@@ -372,6 +372,29 @@ export default function LandingPage() {
               >
                 Open the terminal →
               </Link>
+              {/* desk/usability §14.8: the analyst workspace, a peer of the terminal. */}
+              <Link
+                to="/desk/overview"
+                data-testid="landing-desk"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  minHeight: 44,
+                  border: "1px solid var(--line)",
+                  borderRadius: "var(--r-md)",
+                  padding: "10px 20px",
+                  fontFamily: "var(--font-ui)",
+                  fontSize: "var(--fs-body)",
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  textDecoration: "none",
+                  transition: "background var(--dur-fast) var(--ease-out)",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = "var(--link-a10)")}
+                onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+              >
+                Analyst Desk →
+              </Link>
               <Link
                 to="/app/methodology"
                 style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)", minHeight: 44, display: "inline-flex", alignItems: "center" }}

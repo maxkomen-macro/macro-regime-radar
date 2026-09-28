@@ -180,9 +180,10 @@ def test_ops_and_fixes():
     assert ops["spx"] == ["up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30"]
     assert ops["dxy"] == ["down2s"]
     assert ops.get("us2y") is None
+    # desk/usability §14.3: every well-formed question is answered, so a fix is offered whenever it changes one.
     assert catalog.fixes_for(catalog.BY_SLUG["spx-5d-2sigma"]) == ["widen_window"]
-    assert catalog.fixes_for(catalog.BY_SLUG["gold-2sigma-spx-weak"]) == []
-    assert catalog.fixes_for(catalog.BY_SLUG["spx-20d-2sigma"]) == []
+    assert catalog.fixes_for(catalog.BY_SLUG["gold-2sigma-spx-weak"]) == ["widen_window", "drop_condition"]
+    assert catalog.fixes_for(catalog.BY_SLUG["spx-20d-2sigma"]) == ["widen_window"]
     assert catalog.fixes_for(catalog.BY_SLUG["golden-cross"]) == []
 
 

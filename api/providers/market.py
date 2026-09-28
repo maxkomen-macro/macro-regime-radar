@@ -160,7 +160,8 @@ RANGES: dict[str, dict[str, Any]] = {
     "6M": {"kind": "eod", "period": "d", "lookback_days": 183, "yf": ("6mo", "1d")},
     "1Y": {"kind": "eod", "period": "d", "lookback_days": 366, "yf": ("1y", "1d")},
     # desk/books: two years of daily bars, so a 200-day average has history across a one-year
-    # chart (Basket & Hedge). Completed sessions only, cached per ticker per New York session.
+    # chart (Basket & Hedge), and desk/usability's Technicals for any US stock (the 1-year return,
+    # RSI). Completed sessions only, cached per ticker per New York session.
     "2Y": {"kind": "eod", "period": "d", "lookback_days": 731, "yf": ("2y", "1d")},
     "5Y": {"kind": "eod", "period": "w", "lookback_days": 1830, "yf": ("5y", "1wk")},
     "MAX": {"kind": "eod", "period": "m", "lookback_days": None, "yf": ("max", "1mo")},
@@ -392,15 +393,28 @@ def _series(inst: Instrument, range_key: str, bars: list[dict], interval: str, p
 _TYPE_WORDS = {"Common Stock": "Equity", "ETF": "ETF", "FUND": "Fund", "Index": "Index", "Currency": "FX", "Crypto": "Crypto"}
 
 
-def search(q: str, limit: int = 10) -> dict:
+# The Desk's instrument search (desk/usability): priceable US listings only.
+US_TYPES = ("Equity", "ETF")
+SCOPES = ("all", "us")
+
+
+def search(q: str, limit: int = 10, scope: str = "all") -> dict:
+    """Listings matching `q`, US and primary listings first. `scope="us"`
+    (the Desk's instrument search) asks EODHD for US listings only and keeps
+    equities and ETFs, primary listings first: every hit is priceable from
+    US daily history."""
+    if scope not in SCOPES:
+        raise ValueError(f"unknown search scope {scope!r}")
     query = q.strip()
     key = query.lower()
+    us = scope == "us"
 
     def compute() -> dict:
         primary_err: ProviderError | None = None
         if entitlements.is_blocked("search") is None:
             try:
-                rows = _with_slot(lambda: client().search(query, limit=max(limit, 10)))
+                # A US-only search asks for more rows than it keeps: funds, bonds and the like are dropped below.
+                rows = _with_slot(lambda: client().search(query, limit=max(limit * 2, 20), exchange="US") if us else client().search(query, limit=max(limit, 10)))
                 entitlements.record_live("search", True, 200, "ok")
                 hits = []
                 for r in rows:
@@ -423,6 +437,8 @@ def search(q: str, limit: int = 10) -> dict:
                             "primary": bool(r.get("isPrimary", True)),
                         }
                     )
+                if us:
+                    hits = [h for h in hits if h["exchange"] == "US" and h["type"] in US_TYPES]
                 # Desk relevance: US listings and primary listings first.
                 hits.sort(key=lambda h: (h["exchange"] != "US", not h["primary"]))
                 return {"provider": eod.PROVIDER, "fallback_used": False, "fallback_reason": None, "fetched_at": _now_iso(), "hits": hits[:limit]}
@@ -436,7 +452,7 @@ def search(q: str, limit: int = 10) -> dict:
         assert primary_err is not None
         raise primary_err
 
-    return _search_cache.get(f"{key}:{limit}", compute)
+    return _search_cache.get(f"{key}:{limit}" + (":us" if us else ""), compute)
 
 
 def _identity(inst: Instrument) -> dict:

@@ -571,3 +571,37 @@ def test_the_assistant_ceiling_applies_to_questions_not_the_status_read(monkeypa
         release.set()
         t.join(10)
     assert codes == [200]
+
+
+def test_a_technicals_symbol_waits_with_the_provider_calls_however_its_key_is_spelled():
+    """Codex R-06: the route reads decoded parameters, so `?%73ymbol=NVDA` asks EODHD exactly as
+    `?symbol=NVDA` does; the middleware classifies on the same decoded parameters, so both wait for the
+    provider ceiling. The S&P's own answer (no symbol) is a lookup and does not."""
+    async def inner(scope, receive, send):
+        await send({"type": "http.response.start", "status": 200, "headers": []})
+        await send({"type": "http.response.body", "body": b"{}"})
+
+    mw = security.SecurityMiddleware(inner, provider_slots=1, per_client_per_min=1000, per_client_burst=1000, global_per_min=1000)
+    sent: list[dict] = []
+
+    async def send(msg):
+        sent.append(msg)
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    def ask(qs: bytes) -> int:
+        sent.clear()
+        scope = {"type": "http", "path": "/api/desk/technicals", "method": "GET", "headers": [], "client": ("1.2.3.4", 1), "query_string": qs}
+        asyncio.run(mw(scope, receive, send))
+        return sent[0]["status"]
+
+    spellings = (b"symbol=NVDA", b"%73ymbol=NVDA", b"%73%79%6D%62%6F%6C=NVDA", b"range=1y&%73ymbol=NVDA")
+    assert mw.provider.acquire(blocking=False)  # the provider ceiling is full
+    try:
+        assert [ask(qs) for qs in spellings] == [429] * len(spellings)
+        assert ask(b"") == 200 and ask(b"range=3y") == 200
+    finally:
+        mw.provider.release()
+    assert [ask(qs) for qs in spellings] == [200] * len(spellings)
+

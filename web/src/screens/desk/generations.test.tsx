@@ -1,8 +1,9 @@
 /**
- * §1.1 and §12.0's consistency rule (Codex R-22): the page footer names the
- * one generation the page's answers share; answers from two generations make
- * the page badge read "mixed generations · refreshing", and the page's Desk
- * answers are asked again once.
+ * §1.1 and §12.0's consistency rule (Codex R-22): the page knows the one
+ * generation its answers share (on <main>, data-generations; desk/usability
+ * §14.13 took the "Generation gen-…" footer off the screen); answers from two
+ * generations make the page badge read "mixed generations · refreshing", and
+ * the page's Desk answers are asked again once.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
@@ -16,6 +17,8 @@ import { FIXTURE_META } from "../../fixtures/desk";
 import { awaitingEnvelope } from "./data/envelope";
 import { renderWithProviders } from "../../test/utils";
 import { stubDesk } from "../../test/desk";
+
+const gens = () => document.querySelector("main")?.getAttribute("data-generations") ?? null;
 
 function renderTab(route: string) {
   return renderWithProviders(
@@ -35,10 +38,12 @@ afterEach(() => {
 });
 
 describe("the page's generations (§1.1, Codex R-22)", () => {
-  it("the footer names the one generation every answer on the page shares", async () => {
+  it("the page knows the one generation every answer on it shares, and prints no generation id", async () => {
     renderTab("/desk/signal-ledger");
-    await waitFor(() => expect(screen.getByTestId("dk-gen")).toHaveTextContent(/^Generation gen-fixture-2026-09-24$/));
+    await waitFor(() => expect(gens()).toBe("gen-fixture-2026-09-24"));
     expect(screen.queryByTestId("dk-gen-mixed")).toBeNull();
+    expect(screen.queryByTestId("dk-gen")).toBeNull();
+    expect(document.body).not.toHaveTextContent("gen-fixture");
   });
 
   it("S-32: the Client view's footer says only the snapshot's date, no generation id", async () => {
@@ -71,7 +76,7 @@ describe("the page's generations (§1.1, Codex R-22)", () => {
     const refused = { status: "error", generation_id: "gen-error", as_of: null, engine_version: "unknown", data: null, unavailable: null, error: { code: "unsupported", message: "No study in the catalog asks that." } };
     stubDesk({ "/api/desk/ledger": () => ({ status: 422, body: refused }) });
     renderTab("/desk/signal-ledger");
-    await waitFor(() => expect(screen.getByTestId("dk-gen")).toHaveTextContent("gen-error"));
+    await waitFor(() => expect(gens()).toContain("gen-error"));
     expect(screen.getByTestId("dk-gen-mixed")).toBeInTheDocument();
   });
 
@@ -85,14 +90,14 @@ describe("the page's generations (§1.1, Codex R-22)", () => {
   it("an awaiting answer names its generation too", async () => {
     stubDesk({ "/api/desk/ledger": () => awaitingEnvelope({ reason: "generation warming", until: null }, { ...FIXTURE_META, generation_id: "gen-awaiting" }) });
     renderTab("/desk/signal-ledger");
-    await waitFor(() => expect(screen.getByTestId("dk-gen")).toHaveTextContent("gen-awaiting"));
+    await waitFor(() => expect(gens()).toContain("gen-awaiting"));
   });
 
-  it("answers from two generations: the badge says so, the footer names both, and the page asks again once", async () => {
+  it("answers from two generations: the badge says so, the page knows both, and asks again once", async () => {
     const { calls } = stubDesk({ "/api/desk/ledger": () => ({ ...ledger, generation_id: "gen-next" }) });
     renderTab("/desk/signal-ledger");
     await waitFor(() => expect(screen.getByTestId("dk-gen-mixed")).toHaveTextContent("mixed generations · refreshing"));
-    expect(screen.getByTestId("dk-gen")).toHaveTextContent(/^Generations gen-fixture-2026-09-24 · gen-next$/);
+    expect(gens()).toBe("gen-fixture-2026-09-24 gen-next");
     const asked = () => calls.filter((c) => c.startsWith("GET /api/desk/ledger")).length;
     await waitFor(() => expect(asked()).toBe(2));
     // The same disagreement after the refetch is not asked about again.
@@ -104,7 +109,7 @@ describe("the page's generations (§1.1, Codex R-22)", () => {
     let n = 0;
     stubDesk({ "/api/desk/overview": () => ({ ...overview, generation_id: n++ === 0 ? "gen-old" : FIXTURE_META.generation_id }) });
     renderTab("/desk/overview");
-    await waitFor(() => expect(screen.getByTestId("dk-gen")).toHaveTextContent(/^Generation gen-fixture-2026-09-24$/));
+    await waitFor(() => expect(gens()).toBe("gen-fixture-2026-09-24"));
     expect(screen.queryByTestId("dk-gen-mixed")).toBeNull();
     expect(n).toBe(2);
   });

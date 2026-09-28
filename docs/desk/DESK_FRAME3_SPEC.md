@@ -51,9 +51,11 @@ drawn finished with illustrative values and a footnote saying so.
 | Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
 | Technicals: seasonality card | LIVE (desk/fill-compute) | each calendar month's average return and share of years up over every stored ^GSPC close, `src/analytics/technicals.monthly_seasonality` (the shared, symbol-agnostic copy) (§12.7 `seasonality`) |
+| Technicals: Risk card | LIVE (desk/usability, §14.2) | the drawdown from the one-year high and 21-day realized volatility (the shared `realized_vol`), on the stored ^GSPC closes (§12.7 `drawdown`, `realized_vol`) |
+| Technicals for any US stock or ETF (`?symbol=`) | LIVE (desk/usability, §14.2) | the same shared figures (averages, RSI, MACD, seasonality, the Risk card) on a stored ETF's closes or two years of EODHD daily candles, with its strength against the S&P |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
-| Event Study: any other combination of slots | refused, 422 `unsupported` | v3 §2 |
-| Event Study: confidence 80% / 95% | UNAVAILABLE; intervals are the engine's 90% | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
+| Event Study: any other combination of slots | LIVE (desk/usability, §14.3): computed on request, the same verdict rules | — |
+| Event Study: confidence 80% / 95% | not shown (desk/usability, §14.3); intervals are the engine's 90%, said in words | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
 | Event Study: the line without the condition (`without_condition`) | UNAVAILABLE | conditional-versus-unconditional comparison is not defined (v4 B-11, C-01) |
 | Regime: current label, history strip, recession score, next prints | LIVE | — |
 | Regime: "What each regime has meant" table, and the S&P over the month each change took effect | LIVE (desk/fill-compute) | every stored row measured from when it was known (Codex R-01): each label with the S&P and the VIX of the month it governed, two months after its stamp, the return sample and VIX coverage served apart from the label count (§12.6 `stats`, `changes`) |
@@ -83,8 +85,8 @@ Build Notes prints these two lists as their own section, word for word.
 
 **Live**
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
-- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month.
-- Event Study: every catalog study whose inputs are stored, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
+- Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month; the drawdown from the one-year high and 21-day realized volatility; the same figures for any US stock or ETF, with its strength against the S&P.
+- Event Study: every catalog study whose inputs are stored, and any other question its six slots ask, computed on request, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
@@ -107,7 +109,7 @@ Build Notes prints these two lists as their own section, word for word.
 A card whose block is unavailable keeps its title, subtitle and stat labels.
 Its body prints one sentence: the served `unavailable.reason`, and, when
 served, "Until: <`unavailable.until`>". No number, no chart, no gauge. Its
-`Advanced ▸` control is disabled and says "not yet served". Its badge reads
+`Advanced ▸` control is not shown (§14.13; it was disabled, "not yet served"). Its badge reads
 `○ Not yet served` (`○ Awaiting refresh` when the reason begins "Awaiting
 refresh", §1.7). A block that is unavailable by §1.0 but has no served
 envelope prints the reason in §1.0's table (the confidence chips).
@@ -165,11 +167,14 @@ is not served; its numbers are illustrative, and it says so in one place.
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
 - Header of the sidebar: `← MACRO REGIME RADAR` (mono, 10px, links to the Radar root),
   then `Desk` (serif 26px) over `ANALYST WORKSPACE` (mono 9.5px, letter-spaced).
-- Three groups, mono 9.5px uppercase labels:
-  - **SURVEY**: Overview, Technicals, Regime, Macro & Correlations, Sectors
-  - **ACT**: Event Study, Signal Ledger, Position Monitor
-  - **TOOLS**: Basket & Hedge, Data Pipeline, Build Notes
-- Active item: background #1b2027, white text. Others #c9cdd3.
+- Groups, mono 9.5px uppercase labels (desk/usability §14.5 regroups them by
+  what an analyst is doing):
+  - **MARKET**: Overview, Technicals, Sectors, Macro, Regime
+  - **RESEARCH**: Event Study, Signal Ledger
+  - **TRADE**: Basket & Hedge, Position Monitor
+  - then a small **ABOUT THIS BUILD** line: Data Pipeline · Build Notes
+- Active item: background #1b2027, white text, and a 3px green bar at its left
+  (green means "current", §1.3). Others #c9cdd3.
 - Bottom of the sidebar, two stacked cards (border #262b33, radius 10px):
   - **TODAY**: the regime (serif 18px, in its regime color, §1.3) with
     `regime · <Mon> row` beneath (the K−2 row governing today, §5; e.g.
@@ -178,8 +183,9 @@ is not served; its numbers are illustrative, and it says so in one place.
     York's today); then `Data ● <state>` from `/overview` `data_status`.
   - **HOUSE DISCIPLINE ▸**: `Gate ● on`. Click opens the gate text (§9).
 - Page header, every tab: breadcrumb `Radar › Desk › <Tab>` (mono 11.5px, gray)
-  left; right side the Desk / Client segmented toggle on the tabs in §11's
-  allowlist, and at most one action button (listed per tab).
+  left; then the stock search (§14.1); right side the Desk / Client segmented
+  toggle on the tabs in §11's allowlist, and at most one action button
+  (listed per tab).
 - The page footer shows the one `generation_id` the page's responses share
   (the Client view prints `Snapshot · <as_of>` instead, §11). If two
   responses on a page carry different ids, the page badge reads "mixed
@@ -221,9 +227,10 @@ bars blue, baseline bars gray. Positive bars extend right, negative left.
    exists (§12.0, v2 §15). Amber-bordered when its `tone` is `warning`. No
    read is served on Monday; the box is omitted.
 5. Footer: `Advanced ▸` (blue link) + gray list of what expands, and/or an
-   action link `→`. An Advanced control is enabled only when the endpoint it
-   opens exists in §12; otherwise it is disabled and says "not yet served"
-   (v2 D-34). Footer text promises no counts or history ranges.
+   action link `→`. An Advanced control is shown only when the endpoint it
+   opens exists in §12; otherwise it is not shown (§14.13; it was disabled
+   with "not yet served", v2 D-34). Footer text promises no counts or history
+   ranges.
 
 ### 1.5 Verdicts (never "established", never "significant")
 
@@ -271,7 +278,11 @@ refresh" (§1.7). The `MOCKUP · values illustrative` amber badge is NOT built;
 a PROTOTYPE card (§1.0.3) carries no badge and ends with its footnote.
 
 ### 1.7 Empty, busy and awaiting states
-- `computing` (202): the card stays quiet and busy while the client polls.
+- `computing` (202): the card stays busy while the client polls, and says
+  "Loading live data…" under its title (desk/usability §14.10).
+- A card whose request is pending says "Loading live data…" under its title
+  (§14.10); the line goes when the answer, a failure or an awaiting block
+  arrives.
 - A list whose rows the response boundary could not read says so ("1 row could
   not be read."; event, series, month, sector … as fits), and nothing is
   counted or called empty from the rows that are left (Codex round 2, R-16).
@@ -344,6 +355,12 @@ is kept, no total and no empty state is drawn from the readable records alone
 ## 2. Overview  (`screens/01-overview.png`, 960px)
 
 Action button: **Walkthrough** (the first-visit walkthrough, from frame-2).
+
+**Start here** (desk/usability §14.7; full width, box style, above the
+since-last-close line): `START HERE` mono label, then four numbered links, `1
+Overview · read the market → 2 Basket & Hedge · build the exposure → 3
+Technicals · check the trend → 4 Event Study · test the idea`; the Overview
+step is marked current.
 
 **Since-last-close line** (full width, box style): `SINCE LAST CLOSE` mono
 label, then, separated by `·`: each new fire with `(new)` in green; each
@@ -475,6 +492,14 @@ Foot: "<fewest n>–<most n> years a month · a month counts once it is
 complete" and the source line. A null `seasonality` keeps the labels and says
 "Awaiting refresh". No read is served, so none is printed.
 
+**Risk · drawdown and volatility** (desk/usability, §14.2), from
+`/technicals` `drawdown` and `realized_vol`: FROM 1-YEAR HIGH (sub-line the
+high and its day) · 21-DAY REALIZED VOL (annualized), and on a stock's page
+1-YEAR RETURN (the S&P's is on its Signals card). A figure served null says
+why in one line (realized volatility needs the last 22 closes). On a stock's
+page (`?symbol=`) the RSI, MACD and seasonality cards read that stock's own
+figures from the same shared functions, and name it.
+
 ---
 
 ## 4. Event Study  (`screens/03-event-study.png`, 1080px)
@@ -504,6 +529,10 @@ study (§12.3), given the other slots, is disabled; a cross or an RSI
 crossing requires shock = S&P, target = S&P, while = none and no window. Series labels, roles and ops
 come from `/study` `series[]`. Buttons **Run** (primary) and **Save**. A
 request the server refuses (422 `unsupported`) prints the served message.
+*Amended by desk/usability §14.3:* no option is disabled; the shock slot lists
+the series that can be a shock and the target slot those that can be a
+target; a change the engine cannot ask moves the dependent slots and says so;
+an unavailable chip is not shown.
 
 **Answer card** (left, ~62%), all for `selected_horizon` (the OVER THE NEXT
 slot). Headline (serif 17px): the served `headline`. Pills `○ Not firing today
@@ -522,8 +551,8 @@ reason "conditional-versus-unconditional comparison is not defined").
 
 **Rail** (right, ~38%), top to bottom:
 1. VERDICT box (amber border for Suggestive): `VERDICT · <label>` / the served
-   `headline` / `why` / `Price it →`, disabled with "not yet served" while
-   Basket & Hedge is unavailable.
+   `headline` / `why`. (`Price it →` is not drawn while Basket & Hedge prices
+   nothing, §14.3.)
 2. BY REGIME · A MONTH LATER: REGIME / N / UP / MEDIAN, four regimes at
    h = 20; a regime with n < 10 prints its count and "too few cases to say"
    (v2 §9.2). Beneath: "Unlabeled: <unlabeled_n> events whose K−2 month has
@@ -532,8 +561,8 @@ reason "conditional-versus-unconditional comparison is not defined").
 3. LAST FIVE EVENTS · <target label> A MONTH LATER: event date · regime ·
    `value_20`.
 4. RANGE vs NORMAL: four rows horizon · interval (§1.9) · that horizon's pill.
-   Confidence chips 80% / 90% / 95% render disabled with "not yet served";
-   90% is the served level (`verdict_confidence`).
+   The level is said in words, "90% interval" (`verdict_confidence`); there is
+   no confidence control (§14.3).
 5. `Advanced ▸ all <matched_n> events · resampling detail · entry rules ·
    provenance` · `Export →` (the CSV of §12.4). Provenance line (mono 10px):
    `Engine as of <as_of> · <method> <draws> · entry <rule> · cooldown <n |
@@ -605,7 +634,7 @@ ticks and `today` at the right; key ■ Goldilocks ■ Overheating ■ Stagflati
 ■ Recession Risk; note "labels as stored; revisions are not replayed."
 (`history_note`). Box "How it's decided: two signs — growth rising or
 falling, inflation rising or falling. Four combinations, four regimes. No
-model, no fitting." Footer `Advanced ▸` disabled, "not yet served".
+model, no fitting." No `Advanced ▸` while it is not served (§14.13).
 
 **Recession score** (`logistic model, five monthly inputs lagged three
 months`). Big score (`recession.score` × 100 %), then the band word ("Low.",
@@ -617,8 +646,8 @@ its `probability_month`; "—" when null) · PEAK SINCE 2015 (`peak.score`,
 `peak.probability_month`). Box "What it is: a fitted model — five monthly
 indicators against NBER recession dates, trained <training.start> to
 <training.end>; historical scores are in-sample. It is the only fitted thing
-on the site, and it is labeled as one wherever it appears." Footer
-`Advanced ▸` disabled, "not yet served".
+on the site, and it is labeled as one wherever it appears." No
+`Advanced ▸` while it is not served (§14.13).
 
 **What each regime has meant** (desk/fill-compute; Codex R-01, R-04, R-07), from
 `/regime` `stats`. Measured from when each regime was known: a row stamped M
@@ -666,8 +695,9 @@ waiting on the other), "the <Mon YYYY> print (<printed_mom>% m/m) flipped
 <axis> to <printed_direction>." Every flip starts from the label it reads
 from: a test holds it for all four regimes. LAST FIVE REGIME CHANGES · S&P OVER THE
 MONTH EACH TOOK EFFECT (desk/fill-compute; Codex R-01, R-08), from `/regime`
-`changes`: each row "<effective_month, Mon YYYY> · <from> → <to> · <stamp
-month> row · <spx_1m>" (the S&P's simple return over the month the change
+`changes`: each row "<effective_month, Mon YYYY> · <from> → <to> · from
+<stamp month, Mon> data · <spx_1m>" (desk/usability §14.13: not "<Mon> row",
+the table's word; the S&P's simple return over the month the change
 took effect, the stamp plus the lag); a null return says its status's own
 words: "month not over" (`pending`, the window not complete yet) or "a
 month-end close is missing" (`missing`, a historical close not stored). The
@@ -847,11 +877,15 @@ baseline over its own sample." + `a month = 20 sessions · engine as of
 
 No Desk/Client toggle (desk-only). Two columns. Positions live in this
 browser (§1.8): there is no server position store and nothing is posted
-(v2 D-21, v3 §16).
+(v2 D-21, v3 §16). *Amended by desk/usability §14.4:* the page opens on the
+saved positions (title "Position Monitor"); the Promote form and the gate below
+are behind the header's **+ New position** (`?new=1`) and open at once when
+something is carried in.
 
 **Promote to position** (left). Subtitle names what was carried in (a study
 from Event Study, a basket from Basket & Hedge) or "any study can be carried
-in". Fields: INSTRUMENT (text) · DIRECTION (Long / Short) · SIZE · % NAV
+in". Fields: INSTRUMENT (the stock search, §14.1: what is typed stays, a
+pick fills the ticker) · DIRECTION (Long / Short) · SIZE · % NAV
 (number, optional) · HORIZON 5 / 10 / 20 / 60 trading days.
 
 **Discipline gate** — "three short answers, then Save turns on" with progress
@@ -959,7 +993,8 @@ refuse (Codex R-10). A ticker is checked against the price endpoint
 (`/api/market/candles/{SYM}?range=2Y`): one it does not list is not added,
 in its words; when the check cannot be made the name is added and the note
 says so; a check answered after another basket was opened adds nothing
-(Codex R-12). desk/usability's InstrumentSearch replaces this input. `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
+(Codex R-12). The field is the Desk's stock search (§14.1, desk/usability): a pick adds its ticker the same
+way, and Enter with no suggestion adds the typed ticker. `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
 open basket the same way, as unsaved work, and the address forgets it. A
 browser with no basket store starts with **AI Infrastructure 10**: NVDA AVGO
 AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each, buy-and-hold, $1,000,000
@@ -1166,7 +1201,8 @@ still runs on the Client view (S-32).
 **Routes.** JSON, GET only, under `/api/desk/`: `/overview`, `/study`,
 `/study/catalog`, `/study/events`, `/ledger`, `/regime`, `/technicals`,
 `/macro`, `/pipeline`, since desk/fill-etf `/sectors` (§12.14), and Basket
-& Hedge's `/basket/price` and `/basket/hedge` (§12.15, §12.16, desk/books).
+& Hedge's `/basket/price` and `/basket/hedge` (§12.15, §12.16, desk/books), and the stock search's `/instruments` (§12.17,
+desk/usability).
 Two text exceptions: `/study/events` with `Accept: text/csv` (§12.4) and
 `/pipeline/ddl` (`text/plain; charset=utf-8`). The deferred resources of
 §12.13 (`/vol`, `/positions`, `/basket/:id`, `/hedge`) are GET-only stubs
@@ -1317,7 +1353,12 @@ Parameters: `preset=<slug>`, or the six slots `shock`, `window` (5 | 20 |
 `cross_above` | `cross_below` | `rsi_above_70` | `rsi_below_30`), `while` (`none` | `spx_below_50` | `regime:<Goldilocks |
 Overheating | Stagflation | Recession Risk>`), `target`, `horizon` (5 | 10 |
 20 | 60, default 20). A request must normalize to one catalog study (§12.3);
-`horizon` then selects that study's results. There is no `confidence`
+`horizon` then selects that study's results. *desk/usability §14.3:* the six
+slots may also ask any other well-formed question (a cross only on the S&P
+500 itself, refused otherwise with `CROSS_RULE`'s sentence); it is computed
+on request and served in the same shape, its `slug` the engine's
+(`gold-w60-z2.0-up-none-spx`), its `label`, `short` and `client.headline`
+written from the registry's labels. There is no `confidence`
 parameter. `while` defaults to `none`; `window` is required for
 `up2s`/`down2s` and refused for a cross or an RSI crossing; `preset` also accepts an engine slug
 that parses to a catalog study's query. `horizon` also rides with a preset,
@@ -1391,7 +1432,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `last_events[].regime` | regime label | required | — | the K−2 row of the event's month | P (regime at K−2, already in the run): a retained event always carries its K−2 label; events whose K−2 month has no stored regimes row are counted in `unlabeled_n` and not listed. |
 | `last_events[].value_20` | number | required, nullable (incomplete) | `target_unit` | — | P |
 | `without_condition` | block envelope | required | — | — | awaiting, reason "conditional-versus-unconditional comparison is not defined" (v4 B-11, C-01); the shape once defined is §12.13 |
-| `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule` |
+| `provenance.entry_rule` | string | required | — | — | E `provenance.entry_rule`, served with one rewording (desk/usability §14.3): a deferred target's "so entry is never the event's own session" reads "so entry is a later session than the event's own" (the Desk's language list; the native payload is unchanged) |
 | `provenance.cooldown` | integer | required, nullable (null for a cross; 14 for an RSI crossing) | sessions | — | E `cooldown_sessions` |
 | `provenance.seed` | integer | required | — | — | E |
 | `provenance.engine_version` | string | required | — | — | A |
@@ -1400,7 +1441,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `series` | array | required | — | — | E registry (`series.with_role`), limited to the series some catalog study reads: its shock, its target, or the S&P of `spx_below_50` (Codex R-03, desk/fill-etf; the legacy `/api/desk/event-study` keeps every role). The page's Shock and Target slots offer these only |
 | `series[].key`, `label` | string | required | — | — | E |
 | `series[].roles` | array of `shock` \| `target` \| `condition` | required | — | — | E registry `roles` |
-| `series[].ops` | array of `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A: the moves the catalog allows for that series as shock |
+| `series[].ops` | array of `up2s` \| `down2s` \| `cross_above` \| `cross_below` | required | — | — | A (desk/usability §14.3): `up2s` and `down2s` for every series that can be a shock, and the two crosses for `spx`; `series[]` lists only the series whose history this generation stores (the `desk_assets` item's status) |
 | `series[].unit` | `log_return` \| `log_change` \| `bp` | required | — | — | E |
 | `client` | `{horizon, headline, summary}` | required, nullable | — | h = 20 | A: template (below) |
 | `client.horizon` | `20` | required | sessions | — | A (B-01) |
@@ -1408,7 +1449,7 @@ message naming `horizon`. The default horizon is never applied to such a row.
 | `empty_state` | `{horizon, sentence, fixes[]}` | required, nullable (non-null iff `horizons[selected].n < 10`) | — | `selected_horizon` | A: template (below) |
 | `empty_state.horizon` | 5 \| 10 \| 20 \| 60 | required | sessions | — | A: `selected_horizon` |
 | `empty_state.sentence` | string | required | — | — | A: template (below) |
-| `empty_state.fixes[]` | `widen_window` \| `drop_condition` | required (may be empty) | — | — | A: offered only when the result is a catalog study |
+| `empty_state.fixes[]` | `widen_window` \| `drop_condition` | required (may be empty) | — | — | A: `widen_window` when a wider window exists, `drop_condition` when there is a condition (desk/usability §14.3: every such question is answered) |
 | `inputs_hash` | string | required | — | — | E `provenance.inputs_hash`, native (B-09) |
 | `served_from_cache` | boolean | required | — | — | A |
 | `elapsed_ms` | number | required | ms | — | A |
@@ -1491,7 +1532,9 @@ position store."; `/basket/:id`, `/basket/price`, `/hedge`: "basket pricing
 and option structures not yet defined in the engine."
 
 The Event Study's slots enable an option only when some available catalog
-row agrees with it and with the other slots' values. WTI (`wti`) and the
+row agrees with it and with the other slots' values. *Withdrawn by
+desk/usability §14.3:* every option is enabled; the server answers any
+well-formed question. WTI (`wti`) and the
 dollar index (`dxy`) are tier 2; the three studies that read them are
 available only when a generation stores their coverage.
 
@@ -1611,7 +1654,16 @@ cells; booleans `true` / `false`.
 
 ### 12.7 `GET /technicals`
 
-Every field describes the registry series `spx` (^GSPC).
+Every field describes the registry series `spx` (^GSPC), unless the request
+names another instrument with `symbol` (desk/usability, §14.2): then every
+field describes that instrument, `scored` is false, `series` carries `6m` and
+`1y` (two years of daily bars; a stored ETF carries `3y` too),
+`move_20d_sigma` and `move_20d_date` are null and `signals_allowlist` is
+empty. The one parameter is `symbol`; any other, a repeated one, or a
+symbol that is not a US-listed equity or ETF is refused 422 `unsupported`; a
+provider failure is an error envelope with the provider layer's status and
+`kind` as its `code` (`unknown_symbol` 404, `unavailable` 502, `missing_token`
+503, …) and its public sentence as the message.
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
@@ -1644,7 +1696,12 @@ Every field describes the registry series `spx` (^GSPC).
 | `seasonality.freq`, `.source` | `"monthly"`, `"asset_prices ^GSPC"` | required | — | — | A |
 | `macd.series` | array of `{date, macd, signal, hist}` | required | index points | daily | N chart series: one point per session of `series.6m` (the XNYS sessions after `date` − 6 calendar months, through `date`); each value null where undefined |
 | `series.6m`, `.1y`, `.3y` | array of `{date, close, ma50, ma200}` | required | index points | daily | N chart series (v3 §13): the XNYS sessions after `date` − 6, 12 and 36 calendar months, through `date`; a missing close is a point with `close: null`; `ma50`/`ma200` nullable per point |
-| `signals_allowlist` | `["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]` | required | — | — | A (v2 §13; the RSI rows since desk/fill-compute). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
+| `signals_allowlist` | `["golden-cross","death-cross","rsi-above-70","rsi-below-30","spx-20d-2sigma","spx-5d-2sigma"]`, `[]` for any other instrument (desk/usability) | required | — | — | A (v2 §13; the RSI rows since desk/fill-compute). Not served, the Signals list reads "Awaiting refresh"; served empty, it is an empty panel (Codex round 3, R-26) |
+| `symbol`, `name` | string | required | — | — | A: `"^GSPC"`, `"S&P 500"` by default; the stored name table (§12.17), else EODHD's search index, else the symbol |
+| `scored` | boolean | required | — | — | A: true only for the S&P 500 (the engine scores its signals) |
+| `drawdown` | `{value, peak: {date, close}, window}` | required | fraction ≤ 0 | the last 252 session slots | N: close / the window's highest close − 1, the earliest session on a tie |
+| `realized_vol` | `{value, window, annualization: 252}` | required (`value` nullable) | fraction | the last 22 closes | N: the shared `src/analytics/technicals.realized_vol` (the sample standard deviation of 21 daily log returns × √252) as a fraction; null when a close in the window is missing |
+| `rs` | `{benchmark: "^GSPC", date, value, ma50, vs_ma50, chg_3m, chg_3m_dates, series}` | required, nullable (null for the S&P 500) | ratio | sessions where both closed | N: close / the stored S&P 500's close; its 50-session mean; `chg_3m` over 63 sessions; `series` per range, rebased to 100 at the range's first point |
 | `vol` | block envelope | required | — | — | awaiting: "needs stored SPY option snapshots and a versioned skew method." |
 | `sectors` | block envelope | required | — | — | N sector leadership (§12.14, desk/fill-etf): the `/sectors` fields without `breadth`, from the same worker item, so the two agree; awaiting with the route's reason while the store lacks the ETFs |
 
@@ -1929,6 +1986,21 @@ R-01). The one-year R² ranks them (the 60-day one when no ETF has a year:
 
 ---
 
+### 12.17 `GET /instruments` (desk/usability)
+
+The instruments this store prices from its own daily closes: the list the
+Desk's stock search (§14.1) offers when the upstream search does not answer.
+A worker item (`desk_instruments`), rebuilt with every generation. No
+parameters; any is refused 422 `unsupported`.
+
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `instruments` | array | required (may be empty) | — | — | S: the named instruments with `interval = '1d'` rows in `asset_prices`, in the adapter's order (the S&P 500, then the allocation ETFs); a store without the table lists none |
+| `instruments[].symbol`, `name` | string | required | — | — | A: the adapter's name table (`api/desk_items.INSTRUMENT_NAMES`), pinned to every stored daily ETF |
+| `instruments[].kind` | `"etf"` \| `"index"` | required | — | — | A |
+| `instruments[].first`, `last` | date | required | — | daily · `asset_prices` | S: the first and last stored session on or before the generation's as-of |
+| `instruments[].source` | `"asset_prices"` | required | — | — | A |
+
 ## 13. Build order, engine scope and acceptance
 
 ### 13.1 Session B's order
@@ -2024,3 +2096,399 @@ the PNG; verifier; commit. Acceptance: every tab renders from fixtures;
 every number on screen traces to a §12 field (outside a PROTOTYPE card, §1.0.3); no color outside §1.3; no
 "established" or "significant"; typecheck, unit, build and the Desk browser
 tests green.
+
+---
+
+## 14. Usability (desk/usability, 2026-09-27)
+
+The owner's brief: an analyst walks the Desk cold with no confusion, and
+every stock is one search away. One rule for the whole Desk: no control on
+screen does nothing; every visible option works or is not shown. Where this
+section and an earlier one disagree, this section wins; the earlier text is
+amended in place where it is short, and the report
+(`docs/desk/USABILITY_REPORT.md`) lists every amendment.
+
+### 14.1 The stock search
+
+- **Where.** In the header of every Desk page, between the breadcrumb and the
+  toggle; on a phone it takes its own row under the breadcrumb. Also the
+  Position Monitor's INSTRUMENT field (§9), and Basket & Hedge's ticker field
+  (§10, after the rebase onto desk/books). The component is `InstrumentSearch`
+  (`web/src/screens/desk/kit/InstrumentSearch.tsx`), the main dashboard's
+  `SymbolSearch` reused, not a copy.
+- **What it asks.** `GET /api/market/search?q=<text>&limit=10&scope=us`: the
+  dashboard's endpoint, EODHD's search index. `scope=us` asks EODHD for US
+  listings and keeps equities and ETFs, primary listings first; the client
+  keeps the same filter, so an API that predates the scope cannot show
+  another listing.
+- **How it behaves.** Suggestions on the first keystroke (after the
+  dashboard's 250 ms settle), each the ticker and the name; ↑ / ↓ move,
+  Enter or a click picks; Escape closes the list (and, in the header, clears
+  the box). In the header a pick opens Technicals for that stock
+  (`/desk/technicals?symbol=<ticker>`; the S&P 500 itself opens the page's
+  default). In the Position Monitor the field keeps what is typed and a pick
+  fills the ticker. In Basket & Hedge a pick adds that ticker to the open
+  basket (checked against the price endpoint, as a typed one is); Enter with
+  no suggestion on screen adds what is typed, so a stale suggestion is never
+  added (Codex R-04).
+- **When the search does not answer.** The list offers the instruments this
+  store prices from its own closes (`GET /api/desk/instruments`, §12.17),
+  matched on the ticker, then on a word of the name, under the line "Search
+  did not answer · series this store prices". The stored list is asked for
+  only once something has been typed.
+
+### 14.2 Technicals for any stock
+
+- **Address.** `/desk/technicals?symbol=<ticker>`; no symbol, or a spelling of
+  the S&P 500 (`^GSPC`, `SPX`), is the page's default. `&range=6m|3y` keeps the
+  chart's range (1Y by default, and only a range the answer serves has a chip).
+- **One function.** `api/desk_items.technicals_from_level` computes every figure
+  for the S&P 500 (the `desk_technicals` item), for each stored ETF (the
+  `desk_instruments` item, from `asset_prices`) and for any other US-listed
+  stock or ETF: two years of daily candles from the dashboard's candles
+  endpoint's provider path (`/api/market/candles/{sym}?range=2Y`, EODHD, added
+  here; branch desk/books adds the same range), computed on request (arbitrary
+  symbols cannot be precomputed; the provider cache holds the candles) and
+  bounded by the provider ceiling. Relative strength reads the stored S&P 500
+  of the request's generation.
+- **Cards.** For the S&P 500: §3's cards, the RSI card live. For any other
+  symbol: the price card (its title the ticker and name; a cross is shown and
+  labelled "Not scored: the engine scores crosses of the S&P 500 only."; no
+  cross in the served history says so), MOMENTUM · RSI (the S&P's figures plus
+  the 1-year return) and RELATIVE STRENGTH VS THE S&P 500 (against its 50-day,
+  3-month change, as of; the line and its 50-day average). The S&P-only cards
+  (Signals, Sector leadership, What protection costs) are not drawn; one line
+  reads "Signals are scored on the S&P 500 → view".
+- **Actions.** The header's action is **Open as position →**
+  (`/desk/position-monitor?new=1&instrument=<ticker>`, "S&P 500" on the
+  default page; the Position Monitor fills an empty instrument field from it).
+  Beside the title, **Add to basket →** (`/desk/basket-hedge?add=<ticker>`;
+  "Add SPY to basket →" on the S&P 500, the index's ETF): the basket page adds
+  the ticker to the open basket at 0%, unsaved, or starts a basket when none is
+  kept (branch desk/books replaces the basket page and keeps the address).
+
+### 14.3 Event Study: any question, on request
+
+- **Measured.** The engine computes an arbitrary six-slot question in 0.1 to
+  0.4 s on the audit's store (six combinations timed on 2026-09-27: gold 60-day
+  → S&P 0.26 s, VIX in Overheating → gold 0.13 s, 10-year 5-day down while the
+  S&P is weak → 10-year 0.37 s, …). So every option is enabled and the answer
+  comes on request.
+- **Where it runs.** `/study` and `/study/events` (no new route): a catalog
+  study is its worker item, as before; any other well-formed question runs the
+  engine's traced run through `api/desk.py`'s existing pool, single-flight
+  cache and study ceiling (`DESK_STUDY_PATHS`), leased to the request's pinned
+  generation, cached by (generation, cutoff, canonical query). Past
+  `COMPUTE_TIMEOUT_S` it answers 202 `computing` (the client polls); a full
+  queue is 429 `busy`. The projection, the v1 verdict rule, the templates and
+  the memo are the catalog study's.
+- **The slots.** Shock lists the stored series that can be a shock, target
+  those that can be a target, every option enabled. A cross is the S&P 500's
+  own 50- and 200-day averages: choosing one sets shock and target to the S&P,
+  while to none and window to none; choosing a window, another shock or
+  target, or a condition while a cross is asked makes the move a 2σ rise. The
+  change is said under the slots.
+- **Removed controls.** The 80% / 90% / 95% chips (the level is "90%
+  interval", in words), `Price it →`, a disabled chip (an unavailable study is
+  not shown; one line names each hidden chip and its reason), and Export JSON
+  of the saved questions while none is saved.
+- **Fixtures.** `web/src/fixtures/desk/studies/` carries three such questions
+  answered by the real route on the audit's store (PROVENANCE.md).
+
+### 14.4 Position Monitor: the saved positions first
+
+- **Default view** (`/desk/position-monitor`): the title "Position Monitor"
+  and its line ("Your positions, and how far each is from being wrong."); the
+  MONITORED rows take the wide column, CLOSED · LAST 90D and the store's Export
+  / Import beside them. No form and no gate on this view. An empty monitor
+  says "No open positions in this browser." with a **+ New position** link; the
+  store's Export JSON is shown only when something is kept.
+- **The form** opens from the header's **+ New position** (`?new=1`), or at
+  once when something is carried in (`from`, the six slots, `basket`,
+  `instrument`). Its title stays "Promote to position"; the line under it ends
+  with **Back to the monitor**, which clears the carried parameters. While the
+  form is open the header's action gives way.
+- **The gate is unchanged**: the three answers, the WORDING check, Save off
+  until complete, the helper naming what is left, the rule of §9.
+
+### 14.5 Navigation in labelled groups
+
+The tree had no tab strip to replace: the Desk's only navigation was already
+the sidebar, grouped SURVEY · ACT · TOOLS. It is regrouped as the brief asks:
+MARKET (Overview · Technicals · Sectors · Macro · Regime), RESEARCH (Event
+Study · Signal Ledger), TRADE (Basket & Hedge · Position Monitor), then a small
+line "About this build: Data Pipeline · Build Notes" under a rule. Macro's nav
+label and breadcrumb read "Macro"; its page title stays "Macro &
+Correlations". The current page carries the active fill and a green bar; in
+the small line, the active fill. The breadcrumb `Radar › Desk › <Tab>` stays.
+On a phone the Menu button opens the same groups.
+
+### 14.6 One line under each title, one primary action
+
+Each page prints, under its title, one plain line saying what it is for (15
+words at most, `desk-sections.ts` `blurb`), and shows one control in the
+primary (light) style; every other button on the page is secondary.
+
+| Page | Line under the title | The one primary action |
+|---|---|---|
+| Overview | Where the market is, what fired, and what is closest to being wrong. | **Walkthrough** (header) |
+| Technicals | Trend, momentum and risk for the S&P 500 or any US stock. (a stock: "Trend, momentum and risk for NVDA; its crosses are shown, not scored.") | **Open as position →** (header) |
+| Sectors | Which sectors lead the S&P, and how broad the rally is. | **S&P 500 technicals →** (header) |
+| Macro & Correlations | Rates, credit spreads, and whether bonds still hedge stocks. | **Study a 10-year yield jump →** (header, the `10y-2sigma-20d` preset) |
+| Regime | Where the economy sits, and which data prints would change it. | **Study the S&P in <regime> →** (header: a 2σ S&P fall over 20 sessions in the current regime, §14.3; drawn once the regime is served) |
+| Event Study | Ask what markets did after a defined shock, and get a scored answer. | **Run** (in the page; the header's Act on this is secondary) |
+| Signal Ledger | Every scored signal on one page; click a row to study it. | **Ask your own question →** (header) |
+| Basket & Hedge | Build a basket, see how it trades against the Nasdaq and S&P, and hedge it. | **Send to Position Monitor →** (header; Save basket is secondary) |
+| Position Monitor | Your positions, and how far each is from being wrong. | **+ New position** (header), then **Save position** in the form |
+| Data Pipeline | Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser. (desk/prototypes' wording, kept by the owner at the rebase: the one line over fifteen words) | **Export current study → CSV** (in the page) |
+| Build Notes | What this Desk is, how it was checked, and what comes next. | **Take the walkthrough →** (header) |
+
+A PROTOTYPE card's own control (Data Pipeline's "Sync to Snowflake", which plays the
+illustrative sync, desk/prototypes) belongs to the card, not the page: it is not the
+page's primary action and the one-action check does not count it.
+
+### 14.7 Start here
+
+The Overview opens with a Start here strip (§2): four numbered links in the
+order the brief sets, Overview → Basket & Hedge → Technicals → Event Study,
+each with one short phrase (read the market, build the exposure, check the
+trend, test the idea). Green numbered circles; the arrows gray; on a phone
+the steps wrap and the page never scrolls sideways.
+
+### 14.8 The way in from the landing page
+
+The landing page (`/`, `web/src/screens/LandingPage.tsx`) carries **Analyst
+Desk →** beside **Open the terminal →**, the same size and weight, in the main
+site's colors (the landing page is not a Desk page), linking to
+`/desk/overview`.
+
+### 14.9 Deep links
+
+Every question and every stateful view is in the address, and the address
+opened cold reproduces the screen (the Desk / Client view, `?view=client`, and
+the walkthrough, `?tour=`, were already there):
+
+| Page | Address carries |
+|---|---|
+| Event Study | the question (`preset=` and `horizon=`, or the six slots), the open Advanced panel (`adv=1`), the saved-questions tab (`mode=saved`) |
+| Technicals | the instrument (`symbol=`), the chart's range (`range=6m\|3y`; 1Y is the default and is not written) |
+| Signal Ledger | the filter chip (`filter=firing\|reliable\|spx\|cross`) |
+| Data Pipeline | the search (`q=`) and the open group (`group=`); a cold `q=` opens its series' group |
+| Position Monitor | the form (`new=1`), a carried study (`from=`, the slots), basket (`basket=`) or instrument (`instrument=`), the open row (`open=`) |
+| Basket & Hedge | the open basket (`basket=`), a ticker to add (`add=`) |
+| Build Notes | the section (`#bn-…`) |
+
+A filter, a range and the Advanced panel replace the history entry; a new
+question pushes one.
+
+### 14.10 Cold start
+
+- **Keep-warm workflow.** `.github/workflows/keep-api-warm.yml`, named "Keep
+  the API warm": a GitHub Actions cron every ten minutes (`*/10 * * * *`, and
+  on demand) that asks `https://macro-economic-radar-api.onrender.com/health/live`,
+  up to three tries 10 s apart, 45 s each. No secret, `permissions: {}`,
+  nothing written; a failed ping fails only that run. GitHub runs scheduled
+  workflows on a best-effort basis, so the interval is at least ten minutes.
+- **Render plan.** docs/redesign/DEPLOY.md §3a (prices read 2026-09-21) calls
+  for the 1 CPU / 2 GB instance ($25/month) and rules out the free tier
+  because it spins down when idle; the running plan could not be read from
+  this machine (no Render dashboard access). On a paid instance the ping keeps
+  the process and its generation warm after a deploy and guards against a
+  downgrade to a sleeping tier; on a free instance it is what keeps it awake.
+- **Loading state.** Every Desk card whose request is pending prints "Loading
+  live data…" under its title (`kit/ui.tsx` `LoadingLine`, a polite status),
+  and the Overview's since-last-close line says the same, until the answer, a
+  failure or an awaiting block arrives. That includes the cards main added
+  before the rebase: Technicals' RSI, MACD and seasonality, Basket & Hedge's
+  step cards (the options slot excepted, which asks nothing), and the Position
+  Monitor's Monitored card while an automatic row's level is asked.
+
+
+### 14.11 Hover definitions
+
+- **One sentence per term.** `web/src/screens/desk/kit/glossary.ts` holds the
+  Desk's terms of art, each with the forms a page prints and one plain
+  sentence that states the Desk's own windows: σ (252 sessions), the
+  high-yield spread and OAS, investment grade, HY, 2s10s, steepening and
+  flattening, the front end, basis points, RSI (14), realized volatility (21
+  sessions, annualized), implied volatility and IV, skew, the VIX, drawdown
+  from the 1-year high, the 50- and 200-day averages, golden and death
+  crosses, relative strength, log returns, correlation, breadth, normal (the
+  baseline), overlap blocks, the 90% interval, K−2, NAV, DV01, beta, R² and
+  notional; since the rebase onto main, MACD (with its signal line and
+  histogram), seasonality, and Basket & Hedge's effective names, drawdown
+  from peak, days to trade and liquidity (20% of 20-session dollar volume,
+  ADV), the hedge ratio, concentration, and its table heads (beta, R²,
+  correlation). Relative
+  strength names its benchmark (the S&P 500 unless the card names another).
+- **Where.** Every stat label, card title and card subtitle (`kit/ui.tsx`
+  `Stat`, `Card`, `UnservedCard`, and the pages' own card heads, Basket &
+  Hedge's step cards and Technicals' MACD and seasonality cards included), the
+  Overview's tiles and its "vs normal", the Signal Ledger's row labels and
+  "Vs normal" column, the Regime table's "VIX avg", the correlation matrix's
+  caption. A printed string with a term is wrapped whole in one
+  `<abbr class="dk-term">` (dotted underline, `data-def`, `aria-describedby`
+  to a hidden list of the sentences), so the label keeps one text node. The
+  Event Study's Move slot explains σ with the same sentence. The Ledger's
+  bold row labels show their underline only while the row is hovered or
+  focused, so a column of signal names does not read as a column of links.
+- **Tooltip.** One per Desk (`kit/Term.tsx` `TermTip`, mounted by the shell):
+  on hover or focus of a term it shows the sentence under the term (above it
+  near the bottom of the window), fixed to the viewport so no card clips it;
+  a scroll moves it with its term, and it hides when the term leaves the
+  window, on Escape, or when the pointer or focus leaves the term. (Hiding on
+  every scroll lost the tip when a scroll landed just after the pointer
+  reached a term below the fold, as on the stock page's Risk card.)
+
+### 14.12 A card whose request failed
+
+- **Per card.** A card whose own request did not come back usable (no
+  answer, a 5xx, an answer that could not be read, a poll that ran out)
+  prints one line where it would print "Loading live data…": "Couldn't load
+  · Retry", amber, `role="status"`. Retry asks that request again (the line
+  reads "Loading live data…" meanwhile); the card keeps its title and stat
+  labels, with "—" and no number, and prints no "Awaiting refresh", since
+  nothing awaits a refresh. A refusal (4xx) prints the server's words,
+  "Couldn't load: <message>", with no Retry, which could not change it.
+- **The rest renders.** The scope is the request (`kit/ui.tsx`
+  `FailedScope`): Technicals' cards read `/technicals` and its Signals card
+  the Ledger too (`eitherFailed`), so a failed Ledger fails that card alone;
+  the Overview's since-last-close line, tiles and active signals read
+  `/overview` and its Monitored card this browser's store; the Position
+  Monitor's Monitored card reads its automatic rows' levels from
+  `/technicals` and `/macro`, so it loads and fails with them (with no
+  automatic row it asks nothing of its own); the Event Study's
+  answer and rail read `/study` and its event list `/study/events`. The page
+  title, header, search and sidebar never depend on a card's request.
+- **Basket & Hedge.** desk/books' steps keep their own failure lines, "This
+  basket could not be priced: <message> · Try again" and "The hedge could not
+  be computed: …", which already name the failure and ask again; while they
+  are asked, each step card prints "Loading live data…" (§14.10).
+- **Not a failure.** An answer served awaiting (§1.0.2) keeps its reason and
+  its "Not yet served" or "Awaiting refresh" badge; a question the Event
+  Study refuses (422 `unsupported`) keeps its served sentence; a Sectors body
+  that says the ETFs are not ingested is a fact about the store.
+- **Before.** A failed request printed "Awaiting refresh" under every label,
+  the words for data the store has not refreshed yet: an MD could not tell a
+  dropped connection from a stale store. Codex R-09's rule stands: an answer
+  that came back null is never a loading state; it is now a failure.
+
+### 14.13 No control that does nothing
+
+- **The rule.** Every visible option works or is not shown. The guard
+  (`web/e2e/desk-usability.spec.ts`, item 13) opens every Desk page (every
+  sidebar page, a stock's Technicals, the Event Study with Advanced open,
+  the Client view, the walkthrough's first and last steps), with an empty
+  browser store and with positions and baskets saved, and fails on:
+  - a visible disabled button, select, option, input or `aria-disabled`
+    control;
+  - an Advanced expander that opens onto nothing but a sentence about what is
+    missing;
+  - the strings "Generation g…", "<n> ms", "cached", "<Month> row" or
+    "not specified".
+- **Whitelisted, each with its reason.** A §1.0 block served unavailable
+  with its reason (`[data-unserved]`); a PROTOTYPE card with its footnote
+  (`[data-prototype]`, none on this branch); the Position Monitor's Save,
+  which waits for the discipline gate (item 4 keeps the gate as it is).
+- **What changed to pass it.**
+  - `Advanced ▸` is shown only when what it opens is served (kit `Advanced`,
+    `AdvancedPanel`); it was a disabled "Advanced ▸ not yet served".
+  - The page footer "Generation gen-…" is gone. The generation check (Codex
+    R-22) still runs, says "mixed generations · refreshing" when answers
+    disagree, and keeps the ids on `<main data-generations>`.
+  - The Event Study pill reads "● Live", without "0.3s, cached".
+  - A regime label's month reads "July data" (sidebar, Overview tile,
+    Regime badge), never "Jul row"; "since the July reading".
+  - The Overview's VIX tile says the gap to realized and a band word are not
+    on the tile yet, and links to Technicals, where the S&P's 21-day realized
+    volatility is served (§14.2). The old "realized-volatility method not
+    specified" predated that method.
+  - The basket editor shows Equal-weight, Normalize, the ticker field, the
+    total and Save only with a basket open, and Export only with a basket
+    saved. The hedge's three modes are labels, not disabled buttons.
+  - The Ledger's filter chips and the Pipeline's search appear with the rows
+    they act on.
+  - The walkthrough has no Back on its first step and no Next on its last.
+
+### 14.14 Codex round 1 (on `535c9c1`)
+
+- **R-01 · the one-year drawdown needs a year.** `/technicals`' `drawdown`
+  carries `complete`, true only when all 252 sessions of the year hold a
+  valid close; `window.n` says how many did. An incomplete one is labelled
+  "From high" with "partial history: <n> of 252 sessions", never "From
+  1-year high" (the stored S&P's missing 2026-09-22 close makes it 251 of 252
+  on the audit's store).
+- **R-02 · a stock's price has its decimals.** A stock's or ETF's price, its
+  averages and the drawdown's high print with two decimals, four below 1
+  (`kit/format.ts` `priceText`), and the chart's axis with the decimals its
+  step needs (`tickText`); a $0.40 stock reads "0.4000", never "0". The
+  S&P 500, an index, stays whole (§3).
+- **R-03 · only completed sessions.** A stock's provider bars are cut at the
+  last completed NYSE session as of the request (`api/calendar`
+  `last_completed_session`) before any technical is computed: today's bar
+  while the session is open and any bar dated in the future are dropped, and
+  `excluded_bars` (`{n, after}`, null when none) says so under the price
+  chart.
+- **R-04 · a suggestion belongs to its text.** The search's suggestions
+  count only while the box holds exactly the text they were searched for
+  (`SymbolSearch`, and so `InstrumentSearch`): while the debounce is
+  pending, the list says "Searching…", and neither Enter nor a click can
+  pick a row from the previous text. Codex's repro, AAPL's results then
+  "NVDA" and Enter within 250 ms, picks nothing until NVDA's own answer, then
+  NVDA.
+- **R-05 · the builder's series come with the catalog.** `/study/catalog`
+  serves `series`, the same list `/study` serves (the stored series with a
+  role, each with its moves), and the builder's Shock and "What happens to"
+  read it first, so a question that fails or is served unavailable keeps
+  both slots editable; the study's own list is the fallback.
+- **R-06 · the provider ceiling reads what the route reads.** The
+  middleware decides that a `/technicals` request names a symbol (and so
+  waits with the provider calls) on the decoded query parameters, as the
+  route does: `?%73ymbol=NVDA` is bounded exactly like `?symbol=NVDA`; the
+  S&P's own answer (no symbol) stays a stored-data lookup.
+- **R-07 · every Event Study mode is in the address.** Common questions, My
+  saved questions and Build your own are `mode=common|saved|build`; the page
+  reads the mode from the address alone (no second copy in state), writes it
+  on every change, and a new question carries the mode it was asked from in
+  the same address change. With no `mode`, a preset opens on Common
+  questions and six slots on Build your own; a cold load of any address
+  opens the tab it names.
+- **R-08 · one bad row costs one instrument.** The instruments item reads
+  and checks each instrument's `asset_prices` rows on its own (a canonical
+  YYYY-MM-DD calendar date, a finite positive close; round 2: an ISO week
+  date such as '2025-W01-1' is refused, and the conversion to a dated series
+  runs inside the same per-instrument isolation, so a date that still fails
+  there excludes its instrument too); a malformed row drops that instrument,
+  served in `/instruments`' `excluded` (`{symbol, reason}`), and every other
+  instrument, and its technicals, stands. Before, one text close or bad date
+  failed the whole item, and the search's fallback list with it.
+
+### 14.15 Codex merge review (on `4df5cfe1`, after the rebase onto `2c62d403`)
+
+- **Adjusted closes only.** A stock's technicals read only the bars EODHD
+  served with an adjusted close, as Basket & Hedge does (desk/books' R-07):
+  a bar without one carries its raw close and would mix unadjusted prices
+  into every return. `/technicals` serves `unadjusted_bars` (`{n}`, null when
+  none), printed under the price chart ("3 bars without an adjusted close
+  from the provider are not read."); a symbol with no adjusted close is 502
+  `provider`, in those words.
+- **Macro's five cards.** The item-12 e2e forces `/macro` to fail and counts
+  five failed cards: the 2×2 and desk/matrix's matrix card, which sits in the
+  page's failed scope.
+- **Close position.** The Position Monitor's Close… form shows "Close
+  position" only once a close type is picked, with "Pick how it closed to
+  close it." until then; before, the button was visible and disabled. The
+  guard's saved-positions e2e opens a position's Close… form, with and
+  without a type picked.
+- **A failed refetch after a good answer** (round 2). React Query keeps a
+  query's last good data when a later fetch fails, so a card printed the old
+  numbers, its chart and its Live badge beside "Couldn't load · Retry". Every
+  Desk hook (`data/api.ts` `current`) reads its data as undefined while the
+  query is in error, so the failed card keeps its labels only; a Retry that
+  answers brings the numbers back.
+- **A close the browser does not keep** (final round). With the New
+  position form closed (the default since §14.4), a close whose write failed
+  (storage off or full) was reported only inside that hidden form, so Close
+  position appeared to do nothing. The Monitored card prints the failure
+  itself, amber, `role="status"` ("This browser's storage is full, so nothing
+  was saved."), and the position stays open; the guard's e2e covers it.

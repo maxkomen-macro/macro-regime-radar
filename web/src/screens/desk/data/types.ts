@@ -138,6 +138,24 @@ export interface PipelineResponse extends Envelope {
   groups?: PipelineGroup[];
 }
 
+// ── §12.17 /instruments (desk/usability) ──────────────────────────────────
+
+/** An instrument this store prices from its own daily closes: the list the Desk's search falls back to. */
+export interface Instrument {
+  symbol: string;
+  name: string;
+  kind: "etf" | "index";
+  first: string;
+  last: string;
+  source: string;
+}
+
+export interface InstrumentsResponse extends Envelope {
+  instruments?: Instrument[];
+  /** Codex R-08: an instrument whose stored rows could not be read, and why; the rest stand. */
+  excluded?: { symbol: string; reason: string }[];
+}
+
 // ── §12.1 /overview ───────────────────────────────────────────────────────
 
 /** §12.1: what changed between the two XNYS sessions (B-05); only signals evaluated on `comparison_session` appear. */
@@ -307,7 +325,34 @@ export interface Seasonality {
 }
 
 /** §12.7: every field describes the registry series `spx` (^GSPC). */
+/** desk/usability §14.2: the relative-strength line against the S&P 500, rebased to 100 at a range's first point. */
+export interface RsPoint {
+  date: string;
+  rs: number | null;
+  rs_ma50: number | null;
+}
+
 export interface TechnicalsResponse extends Envelope {
+  /** desk/usability §14.2: the instrument ("^GSPC" for the S&P 500), its name, and whether its signals are scored. */
+  symbol?: string;
+  name?: string;
+  scored?: boolean;
+  /** From the high of the last 252 sessions (a fraction, ≤ 0). */
+  /** Codex R-01: `complete` only when all 252 sessions of the year hold a valid close; `window.n` says how many did. */
+  drawdown?: { value: number | null; peak: { date: string; close: number | null } | null; window?: Window; complete: boolean | null } | null;
+  /** The annualized standard deviation of 21 daily log returns (a fraction). */
+  realized_vol?: { value: number | null; window?: Window; annualization?: number } | null;
+  /** Against the stored S&P 500; null for the S&P itself. */
+  rs?: {
+    benchmark?: string;
+    date?: string;
+    value: number | null;
+    ma50: number | null;
+    vs_ma50: number | null;
+    chg_3m: number | null;
+    chg_3m_dates?: { from: string; to: string } | null;
+    series?: { "6m"?: RsPoint[]; "1y"?: RsPoint[]; "3y"?: RsPoint[] };
+  } | null;
   price: number | null;
   /** The session the price and the averages are dated to. */
   date?: string;
@@ -346,6 +391,9 @@ export interface TechnicalsResponse extends Envelope {
   } | null;
   /** The Ledger rows the Technicals signals list reads, in this order (v2 §13). */
   signals_allowlist?: string[];
+  /** Codex R-03: a stock's provider bars dated after the last completed session, dropped before any figure. */
+  excluded_bars?: { n: number; after: string } | null;
+  unadjusted_bars?: { n: number } | null;
   series?: { "6m"?: PricePoint[]; "1y"?: PricePoint[]; "3y"?: PricePoint[] };
   /** §12.7: block envelopes, awaiting on Monday (the unwrapped data, once ready, is the deferred shape of §12.13). */
   vol?: VolResponse;
@@ -492,6 +540,8 @@ export interface CatalogStudy {
 
 export interface StudyCatalogResponse extends Envelope {
   studies?: CatalogStudy[];
+  /** Codex R-05: the builder's series, the same list /study serves, independent of any one study. */
+  series?: { key: string; label: string; roles?: string[]; ops?: string[]; unit?: string }[];
 }
 
 /** A regime label; a listed event always carries one (§12.2, §12.4, S-06). */

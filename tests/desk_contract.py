@@ -180,6 +180,9 @@ OVERVIEW = obj(
     )),
 )
 
+# §12.2 `series`; Codex R-05: /study/catalog serves the same list, so the builder's slots never wait on a study.
+SERIES_ROW = obj(key=STR, label=STR, roles=Arr(E("shock", "target", "condition")), ops=Arr(MOVE), unit=TARGET_UNIT)
+
 # ── §12.2 GET /study ────────────────────────────────────────────────────────
 
 EXTREME = obj(value=NUM, event_date=DATE, entry_date=DATE)
@@ -212,7 +215,7 @@ STUDY = obj(
     without_condition=Deferred("conditional-versus-unconditional comparison is not defined"),
     provenance=obj(entry_rule=STR, cooldown=null(INT), seed=INT, engine_version=STR, series_start=MapOf(DATE)),
     warnings=Arr(STR),
-    series=Arr(obj(key=STR, label=STR, roles=Arr(E("shock", "target", "condition")), ops=Arr(MOVE), unit=TARGET_UNIT)),
+    series=Arr(SERIES_ROW),
     client=null(obj(horizon=Const(20), headline=STR, summary=STR)),
     empty_state=null(obj(horizon=HORIZON, sentence=STR, fixes=Arr(E("widen_window", "drop_condition")))),
     inputs_hash=STR, served_from_cache=BOOL, elapsed_ms=NUM,
@@ -225,7 +228,7 @@ CATALOG = obj(studies=Arr(obj(
     available=BOOL, unavailable=null(UNAVAILABLE),
     question=null(obj(shock=STR, window=null(WINDOW), move=MOVE, target=STR, **{"while": WHILE})),
     allowed_horizons=Arr(HORIZON, max=4),
-), min=15, max=15))
+), min=15, max=15), series=Arr(SERIES_ROW))
 
 # ── §12.4 GET /study/events ─────────────────────────────────────────────────
 
@@ -336,12 +339,16 @@ MACD = obj(date=DATE, macd=NUM, signal=NUM, hist=NUM, last_cross=null(obj(date=D
 # desk/fill-compute item 10: seasonality by calendar month, src/analytics/technicals.monthly_seasonality.
 SEASON_ROW = obj(month=INT, label=E("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"),
                  n=INT, avg=null(NUM), pct_up=null(FRAC), first_year=null(INT), last_year=null(INT))
-SEASONALITY = obj(rows=Arr(SEASON_ROW, min=12, max=12), window=MONTH_SPAN, freq=Const("monthly"),
-                  source=Const("asset_prices ^GSPC"))
+# desk/usability: any symbol's ("asset_prices <symbol>" or the provider's candles).
+SEASONALITY = obj(rows=Arr(SEASON_ROW, min=12, max=12), window=MONTH_SPAN, freq=Const("monthly"), source=STR)
+RS_POINT = obj(date=DATE, rs=null(NUM), rs_ma50=null(NUM))
+DATES = Obj({"from": DATE, "to": DATE})
 TECHNICALS = obj(
-    price=null(NUM), date=DATE, freq=Const("daily"), source=Const("asset_prices ^GSPC"),
-    chg_1d=null(NUM), chg_1d_dates=Obj({"from": DATE, "to": DATE}),
-    ret_1y=null(NUM), ret_1y_dates=Obj({"from": DATE, "to": DATE}),
+    # desk/usability §14.2: any US-listed stock or ETF; `scored` only for the S&P 500 itself.
+    symbol=STR, name=STR, scored=BOOL,
+    price=null(NUM), date=DATE, freq=Const("daily"), source=STR,
+    chg_1d=null(NUM), chg_1d_dates=DATES,
+    ret_1y=null(NUM), ret_1y_dates=DATES,
     ma50=null(NUM), ma200=null(NUM), ma50_window=SPAN, ma200_window=SPAN,
     vs_ma50=null(NUM), vs_ma200=null(NUM),
     trend=obj(state=TREND_STATE, state_since=null(DATE)),
@@ -351,8 +358,20 @@ TECHNICALS = obj(
     rsi_last_above_70=null(RSI_VISIT), rsi_last_below_30=null(RSI_VISIT),
     macd=null(MACD),
     seasonality=null(SEASONALITY),
-    series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": Arr(POINT)}),
-    signals_allowlist=Const(["golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"]),
+    # A stock's two years of daily bars carry 6m and 1y; the stored S&P and ETFs 3y too.
+    series=Obj({"6m": Arr(POINT), "1y": Arr(POINT), "3y": F(Arr(POINT), opt=True)}),
+    # Codex R-01: `complete` only when all 252 sessions of the year hold a valid close; else the window's n says how many.
+    drawdown=obj(value=NUM, peak=obj(date=DATE, close=NUM), window=SPAN, complete=BOOL),
+    realized_vol=obj(value=null(NUM), window=SPAN, annualization=Const(252)),
+    rs=null(obj(benchmark=Const("^GSPC"), date=DATE, value=NUM, ma50=null(NUM), vs_ma50=null(NUM), chg_3m=null(NUM),
+                chg_3m_dates=null(DATES),
+                series=Obj({"6m": Arr(RS_POINT), "1y": Arr(RS_POINT), "3y": F(Arr(RS_POINT), opt=True)}))),
+    # Codex R-03: a stock's provider bars dated after the last completed session, dropped before any figure.
+    excluded_bars=null(obj(n=INT, after=DATE)),
+    # A stock's provider bars without an adjusted close, left out (the merge review, as desk/books' R-07).
+    unadjusted_bars=null(obj(n=INT)),
+    # The S&P 500's six scored signals (desk/fill-compute); a stock's page lists none (desk/usability §14.2).
+    signals_allowlist=Arr(E("golden-cross", "death-cross", "rsi-above-70", "rsi-below-30", "spx-20d-2sigma", "spx-5d-2sigma"), max=6),
     vol=Deferred("needs stored SPY option snapshots and a versioned skew method."),
     sectors=Block(Obj(dict(LEADERSHIP))),
 )
@@ -480,9 +499,17 @@ BASKET_HEDGE = obj(
 )
 
 
+# ── §12.17 GET /instruments (desk/usability) ───────────────────────────────
+
+INSTRUMENTS = obj(instruments=Arr(obj(
+    symbol=STR, name=STR, kind=E("etf", "index"), first=DATE, last=DATE, source=Const("asset_prices"),
+)), excluded=Arr(obj(symbol=STR, reason=STR)))  # Codex R-08: an instrument whose stored rows could not be read, and why
+
+
 # ── The routes ──────────────────────────────────────────────────────────────
 
-# The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books).
+# The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books,
+# /instruments since desk/usability).
 ROUTES: dict[str, Obj] = {
     "/overview": OVERVIEW,
     "/study": STUDY,
@@ -496,6 +523,7 @@ ROUTES: dict[str, Obj] = {
     "/sectors": SECTORS,  # desk/fill-etf (§12.14)
     "/basket/price": BASKET_PRICE,  # desk/books
     "/basket/hedge": BASKET_HEDGE,  # desk/books
+    "/instruments": INSTRUMENTS,  # desk/usability (§12.17)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons

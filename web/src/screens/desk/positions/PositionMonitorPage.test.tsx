@@ -29,7 +29,8 @@ import { completeTechnicals } from "../../../test/desk-variants";
 
 const RECORDS = (sample as { positions: PositionRecord[] }).positions;
 
-function renderTab(route = "/desk/position-monitor") {
+/** desk/usability §14.4: the form is behind "+ New position" (`?new=1`); these tests exercise the form. */
+function renderTab(route = "/desk/position-monitor?new=1") {
   return renderWithProviders(
     <Routes>
       <Route path="/desk/:page?" element={<DeskShell />} />
@@ -328,14 +329,39 @@ describe("Position Monitor tab", () => {
     const mon = await screen.findByRole("region", { name: /Monitored/ });
     fireEvent.click(await within(mon).findByRole("button", { name: "Close…" }));
     const close = within(mon).getByRole("group", { name: "Close as" });
-    expect(within(close).getByRole("button", { name: "Close position" })).toBeDisabled();
+    // §14.13 (the merge review): no disabled Close position; it shows once a close type is picked.
+    expect(within(close).queryByRole("button", { name: "Close position" })).toBeNull();
+    expect(close).toHaveTextContent("Pick how it closed to close it.");
+    expect(close.querySelectorAll("button:disabled")).toHaveLength(0);
     fireEvent.click(within(close).getByRole("button", { name: "Expired at horizon" }));
+    expect(close).not.toHaveTextContent("Pick how it closed to close it.");
     fireEvent.click(within(close).getByRole("button", { name: "Yes" }));
     fireEvent.click(within(close).getByRole("button", { name: "Close position" }));
     await waitFor(() => expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "ai-infra-hedged"]));
     expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toHaveTextContent(/Expired at horizon\s*2\s*Pre-mortem was right\s*2 of 3/);
     const ndx = (stored() as PositionRecord[]).find((p) => p.id === "ndx-vs-spx")!;
     expect(ndx.closes).toEqual([{ type: "expired", ts: expect.any(String), premortem_right: true }]);
+  });
+
+  it("a close the browser does not keep says so on the Monitored card, with the form closed (Codex merge review)", async () => {
+    seed(RECORDS);
+    renderTab("/desk/position-monitor?open=ndx-vs-spx");
+    const mon = await screen.findByRole("region", { name: /Monitored/ });
+    fireEvent.click(await within(mon).findByRole("button", { name: "Close…" }));
+    const close = within(mon).getByRole("group", { name: "Close as" });
+    fireEvent.click(within(close).getByRole("button", { name: "Expired at horizon" }));
+    const full = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota", "QuotaExceededError");
+    });
+    try {
+      fireEvent.click(within(close).getByRole("button", { name: "Close position" }));
+      await waitFor(() => expect(within(mon).getByTestId("pm-close-note")).toHaveTextContent("This browser's storage is full, so nothing was saved."));
+      // Nothing was closed: the position is still monitored, and the New position form stays closed.
+      expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toContain("ndx-vs-spx");
+      expect(document.querySelector('.pm[data-form="closed"]')).not.toBeNull();
+    } finally {
+      full.mockRestore();
+    }
   });
 
   it("a record the store cannot read is listed with its reason and kept through a save (§9: never dropped)", async () => {
@@ -516,5 +542,86 @@ describe("Position Monitor tab", () => {
     expect(screen.getByLabelText(/Variant view/)).toHaveValue("");
     // The shock is named by the served series label, the registry's (§12.2).
     expect(screen.getByText(/Carried in from Event Study · Gold \(COMEX front month\) up 2σ or more over 20 days while S&P below its 50-day → S&P 500 over the next 1 month/)).toBeInTheDocument();
+  });
+});
+
+describe("opened from Technicals (§14.2)", () => {
+  it("`?instrument=` fills the empty instrument field and says where it came from; the gate is unchanged", async () => {
+    stubDesk();
+    renderTab("/desk/position-monitor?new=1&instrument=NVDA");
+    const field = await screen.findByRole("combobox", { name: "Instrument" });
+    await waitFor(() => expect(field).toHaveValue("NVDA"));
+    expect(screen.getByText(/Opened from Technicals · NVDA/)).toBeInTheDocument();
+    expect(screen.getByTestId("pm-save")).toBeDisabled();
+  });
+});
+
+describe("saved positions first (§14.4)", () => {
+  it("opens on the monitored rows, the closes and the store; the form and the gate wait behind + New position", async () => {
+    seed(RECORDS);
+    stubDesk();
+    renderTab("/desk/position-monitor");
+    expect(await screen.findByRole("heading", { level: 1, name: "Position Monitor" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("region", { name: /Monitored/ })).toHaveTextContent("2s10s"));
+    expect(screen.queryByRole("form", { name: "Promote to position" })).toBeNull();
+    expect(screen.queryByText(/Discipline gate/)).toBeNull();
+    expect(screen.getByRole("region", { name: "Closed in the last 90 days" })).toBeInTheDocument();
+  });
+
+  it("an empty monitor points at + New position, and shows no Export for nothing kept", async () => {
+    stubDesk();
+    renderTab("/desk/position-monitor");
+    const mon = await screen.findByRole("region", { name: /Monitored/ });
+    expect(within(mon).getByRole("link", { name: "+ New position" })).toHaveAttribute("href", "/desk/position-monitor?new=1");
+    expect(screen.queryByRole("button", { name: "Export JSON" })).toBeNull();
+  });
+
+  it("the form opens with ?new=1, and Back to the monitor closes it, carried parameters included", async () => {
+    stubDesk();
+    renderTab("/desk/position-monitor?new=1&instrument=NVDA");
+    expect(await screen.findByRole("form", { name: "Promote to position" })).toBeInTheDocument();
+    expect(screen.getByText(/Discipline gate/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back to the monitor" }));
+    await waitFor(() => expect(screen.queryByRole("form", { name: "Promote to position" })).toBeNull());
+  });
+});
+
+describe("the Monitored card's levels come from the API (desk/usability §14.10, §14.12)", () => {
+  const macro = () => JSON.parse(deskFixture("GET", "/api/desk/macro")!.body) as unknown;
+
+  it("says Loading live data… while the 2s10s level is asked; the answer replaces it", async () => {
+    seed(RECORDS);
+    let answer: (v: unknown) => void = () => {};
+    const held = new Promise((resolve) => (answer = resolve));
+    stubDesk({ "/api/desk/macro": () => held });
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await waitFor(() => expect(within(card).getByTestId("dk-loading")).toHaveTextContent("Loading live data…"));
+    answer(macro());
+    await waitFor(() => expect(within(card).queryByTestId("dk-loading")).toBeNull());
+    expect(within(card).queryByTestId("dk-failed")).toBeNull();
+  });
+
+  it("says Couldn't load · Retry when the level's request failed, and Retry asks again", async () => {
+    seed(RECORDS);
+    let fail = true;
+    const { calls } = stubDesk({ "/api/desk/macro": () => (fail ? { status: 503, body: { detail: "forced failure" } } : macro()) });
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await waitFor(() => expect(within(card).getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry"), { timeout: 4000 });
+    fail = false;
+    const before = calls.filter((c) => c.startsWith("GET /api/desk/macro")).length;
+    fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(within(card).queryByTestId("dk-failed")).toBeNull());
+    expect(calls.filter((c) => c.startsWith("GET /api/desk/macro")).length).toBeGreaterThan(before);
+  });
+
+  it("with no automatic position the card asks nothing of its own and says nothing about loading", async () => {
+    seed(RECORDS.filter((p) => p.monitoring === "manual"));
+    stubDesk({ "/api/desk/macro": () => new Promise(() => {}) });
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(within(card).queryByTestId("dk-loading")).toBeNull();
   });
 });

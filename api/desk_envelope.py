@@ -73,10 +73,12 @@ ENGINE_VERSION = resolve_engine_version(os.environ)
 ENVELOPED_ROUTES: tuple[str, ...] = (
     "/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
     "/sectors", "/basket/price", "/basket/hedge",
+    "/instruments",
     "/vol", "/positions", "/basket", "/hedge",
 )
-# The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), then Basket & Hedge's two (desk/books).
-LIVE_ROUTES = 12
+# The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), Basket & Hedge's two (desk/books), then
+# /instruments (desk/usability §12.17, the stock search's fallback).
+LIVE_ROUTES = 13
 
 # The only paths that carry block envelopes (§12.0, v4 B-08, C-01). Every
 # other object and array in a payload is an ordinary field.
@@ -160,6 +162,17 @@ class Awaiting(Exception):
         self.reason = reason
         self.until = until
         super().__init__(reason)
+
+
+class Computing(Exception):
+    """desk/usability §14.3: a study asked outside the catalog is still being
+    computed on request: 202 `computing` with Retry-After, and the client asks
+    the same URL again (§12.0). Like the first generation's, it names none."""
+
+
+class Busy(Exception):
+    """desk/usability §14.3: the on-demand study queue is full: 429 `busy` with
+    Retry-After, the message in words."""
 
 
 # ── Blocks ──────────────────────────────────────────────────────────────────
@@ -363,15 +376,24 @@ def map_exception(route: str, exc: BaseException, gen: Any = _UNPINNED) -> Reply
     # matched first, and only by its own class.
     if _is(exc, "api.provenance", "SchemaCheckFailed"):
         return error_reply(503, "schema_check", str(exc), gen=gen, retryable=True, provider="api")
-    if _is(exc, "api.worker", "Warming"):
-        # S-11: before the first generation, the answer is computing and names none.
+    if _is(exc, "api.worker", "Warming") or isinstance(exc, Computing):
+        # S-11: before the first generation, the answer is computing and names none; so is a study
+        # computed on request (desk/usability §14.3) until it is ready.
         return reply(202, envelope("computing"), {"Retry-After": str(RETRY_AFTER_S)})
     if isinstance(exc, Refused):
         return error_reply(exc.status, exc.code, exc.message, gen=gen)
+    if isinstance(exc, Busy):
+        return error_reply(429, "busy", str(exc) or "The study queue is full; retry in a moment.", gen=gen,
+                           headers={"Retry-After": str(RETRY_AFTER_S)})
     if isinstance(exc, Unsupported) or _is(exc, "src.desk.event_study", "StudyError"):
         return error_reply(422, "unsupported", str(exc), gen=gen)
     if _is(exc, "api.db", "DBUnavailable"):
         return error_reply(503, "db_unavailable", sanitized(exc), gen=gen)
+    # desk/usability item 2: a provider's typed error (Technicals on any stock reads EODHD) keeps its status
+    # and kind; the message is the provider layer's public sentence (no URL, no token).
+    if _is(exc, "api.providers.errors", "ProviderError"):
+        return error_reply(int(getattr(exc, "http_status", 502)), str(getattr(exc, "kind", "unavailable")),
+                           str(getattr(exc, "public", "") or "The data provider did not answer."), gen=gen)
     log.error("desk %s: unhandled %s", route, type(exc).__name__, exc_info=exc)
     return error_reply(500, "internal", INTERNAL_MESSAGE, gen=gen)
 

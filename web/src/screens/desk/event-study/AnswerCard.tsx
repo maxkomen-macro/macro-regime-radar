@@ -11,7 +11,7 @@
 import type { StudyHorizon, StudyResponse, TargetUnit } from "../data/types";
 import { dayLong, isFiniteNumber as fin, monthYear, pctPlain, year } from "../kit/format";
 import { useBox } from "../kit/LineChart";
-import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved } from "../kit/ui";
+import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved, LoadingLine } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
 import { isLog, isUnit, moveText, scaleOf, tickText, tipOf, whisker } from "../kit/units";
 
@@ -140,13 +140,6 @@ export function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: Targe
   );
 }
 
-/** "0.3s, cached" from the served timing (milliseconds under a tenth of a second). */
-export function servedWords(s: Pick<StudyResponse, "elapsed_ms" | "served_from_cache">): string {
-  const ms = s.elapsed_ms;
-  const t = !fin(ms) ? null : ms < 100 ? `${Math.max(0, Math.round(ms))} ms` : `${(ms / 1000).toFixed(1)}s`;
-  return [t, s.served_from_cache ? "cached" : null].filter(Boolean).join(", ");
-}
-
 /** The line on the same question without its condition (§4): the `without_condition` block, unavailable on
  * Monday (§1.0, C-01), so it prints its served reason; a block that did not arrive is Awaiting refresh. The
  * comparison's shape, once defined, is §12.13's. */
@@ -185,6 +178,7 @@ export default function AnswerCard({
     const p = fin(horizon) ? horizonPhrase(horizon) : null;
     return (
       <section className="dk-card es-answer" aria-label="The answer" aria-busy={!failed && !unserved}>
+        <LoadingLine busy={!failed && !unserved} />
         {unserved ? (
           <div className="es-pills">
             <NotServedBadge block={unserved} />
@@ -253,6 +247,7 @@ export default function AnswerCard({
   return (
     <section className="dk-card es-answer" aria-label="The answer" aria-busy={busy || undefined} data-busy={busy || undefined}>
       <h2 className="es-headline">{study.headline}</h2>
+      <LoadingLine busy={busy} />
       <div className="es-pills">
         {/* §4: nothing when the state is not served (a stale study with no evaluable session included); stale is never "firing today"; a firing study counts its days. */}
         {study.firing_now == null || study.stale == null ? null : study.stale ? (
@@ -264,8 +259,9 @@ export default function AnswerCard({
         ) : study.firing_now === false ? (
           <span className="es-pill">○ Not firing today{study.last_event ? ` · last ${dayLong(study.last_event)}` : ""}</span>
         ) : null}
+        {/* desk/usability §14.13: the engine's timing and cache words ("0.3s, cached") are not an MD's; the pill says live. */}
         <span className="es-pill" data-live>
-          {["● Live", servedWords(study)].filter(Boolean).join(" · ")}
+          ● Live
         </span>
       </div>
       <StatRow cols={4}>

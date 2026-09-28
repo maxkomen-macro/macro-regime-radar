@@ -51,14 +51,16 @@ describe("Desk v2 shell", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
-  it("the sidebar is the only navigation: three groups, eleven tabs, in the spec's order", async () => {
+  it("the sidebar is the only navigation: Market, Research, Trade, then the small About this build line, eleven tabs (§14.5)", async () => {
     renderDesk("/desk/overview");
     const side = await screen.findByRole("complementary", { name: "Sidebar" });
     const groups = within(side).getAllByRole("group");
-    expect(groups.map((g) => within(g).getByText(/^(Survey|Act|Tools)$/).textContent)).toEqual(["Survey", "Act", "Tools"]);
-    expect(within(groups[0]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Technicals", "Regime", "Macro & Correlations", "Sectors"]);
-    expect(within(groups[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Event Study", "Signal Ledger", "Position Monitor"]);
-    expect(within(groups[2]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Basket & Hedge", "Data Pipeline", "Build Notes"]);
+    expect(groups.map((g) => within(g).getByText(/^(Market|Research|Trade|About this build)$/).textContent)).toEqual(["Market", "Research", "Trade", "About this build"]);
+    expect(within(groups[0]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Technicals", "Sectors", "Macro", "Regime"]);
+    expect(within(groups[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Event Study", "Signal Ledger"]);
+    expect(within(groups[2]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Basket & Hedge", "Position Monitor"]);
+    expect(within(groups[3]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Data Pipeline", "Build Notes"]);
+    expect(groups[3]).toHaveTextContent("Data Pipeline · Build Notes");
     expect(DESK_GROUPS.flatMap((g) => g.pages)).toHaveLength(11);
     expect(within(side).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
     expect(within(side).getByRole("link", { name: /Macro Regime Radar/ })).toHaveAttribute("href", "/app/dashboard");
@@ -103,11 +105,17 @@ describe("Desk v2 shell", () => {
 
   it("each tab's header carries its own action, and Position Monitor has no toggle", async () => {
     const { unmount } = renderDesk("/desk/technicals");
-    expect(await screen.findByTestId("dk-act")).toHaveTextContent("Act on this → Position Monitor");
+    // §14.2: Technicals opens its instrument as a position, the S&P 500 by default.
+    expect(await screen.findByTestId("dk-act")).toHaveTextContent("Open as position →");
+    expect(screen.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?new=1&instrument=S%26P+500");
     unmount();
     renderDesk("/desk/position-monitor");
     await screen.findByRole("navigation", { name: "Breadcrumb" });
     expect(screen.queryByTestId("dk-view-toggle")).toBeNull();
+    // §14.4: the monitor's one action opens the form; once it is open, the action gives way.
+    expect(await screen.findByTestId("dk-act")).toHaveTextContent("+ New position");
+    fireEvent.click(screen.getByTestId("dk-act"));
+    await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/position-monitor?new=1"));
     expect(screen.queryByTestId("dk-act")).toBeNull();
   });
 
@@ -115,8 +123,8 @@ describe("Desk v2 shell", () => {
     renderDesk("/desk/overview");
     const today = await screen.findByTestId("dk-today");
     await waitFor(() => expect(today).toHaveTextContent("Goldilocks"));
-    // §1.1: "Goldilocks · Jul row", the K−2 row governing today (the audit's §2.2).
-    expect(today).toHaveTextContent("regime · Jul row");
+    // §1.1: the K−2 row governing today (the audit's §2.2), said as its month's data (§14.13).
+    expect(today).toHaveTextContent("regime · July data");
     // The fixture's session is Sep 23; "today" only when that is New York's today. Sep 22 is not
     // stored (the audit's §2.1), so the day's change is null and says Awaiting refresh.
     expect(today).toHaveTextContent(/S&P (today|Sep 23)\s*Awaiting refresh/);

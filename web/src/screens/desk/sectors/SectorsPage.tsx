@@ -18,9 +18,10 @@ import { dayShort, endDay, leadershipGaps, pct } from "../kit/format";
 import LineChart from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import RankBars, { relTone } from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import "./sectors.css";
+import { defineTerms } from "../kit/Term";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -29,8 +30,8 @@ function CardHead({ id, title, sub }: { id: string; title: string; sub: string }
   return (
     <div className="dk-card-head">
       <h2 className="dk-card-title" id={id}>
-        {title}
-        <span className="dk-card-sub"> {sub}</span>
+        {defineTerms(title)}
+        <span className="dk-card-sub"> {defineTerms(sub)}</span>
       </h2>
     </div>
   );
@@ -89,6 +90,7 @@ function Leadership({ s, state }: { s: SectorsResponse | undefined; state: State
         title="Sector leadership"
         sub={`${windowWord(s)} return relative to the S&P · ${gaps.missing.length ? `${gaps.ranked} of ${rows.length} with data` : "all eleven"}`}
       />
+      <LoadingLine busy={quiet} />
       {quiet ? null : (
         <StatRow cols={3}>
           <Stat label="Leading" awaiting={topV == null} value={top?.name} tone={topV != null ? relTone(topV) : undefined} sub={topV != null ? <span title={LOG_TIP}>{pct(topV)} vs the index{among}</span> : undefined} />
@@ -144,7 +146,7 @@ function Dots({ label, name, byEtf, order }: { label: ReactNode; name: string; b
   const cols = order.length ? order : map ? Object.keys(map).map((etf) => ({ etf, short: etf })) : [];
   return (
     <div className="sc-dots-wrap">
-      <p className="dk-stat-label">{label}</p>
+      <p className="dk-stat-label">{defineTerms(label)}</p>
       {map && cols.length ? (
         <ul className="sc-dots" aria-label={name}>
           {cols.map((o) => {
@@ -173,7 +175,7 @@ function RelChart({ label, name, points, bands, height, pad, ends = true }: { la
   if (vals.length < 2 || !last || !fin(last.rel))
     return (
       <div className="sc-rel">
-        <p className="dk-stat-label">{label}</p>
+        <p className="dk-stat-label">{defineTerms(label)}</p>
         <Awaiting />
       </div>
     );
@@ -181,7 +183,7 @@ function RelChart({ label, name, points, bands, height, pad, ends = true }: { la
   const lim = Math.max(0.05, Math.ceil((Math.max(...vals.map(Math.abs)) * 100) / 5) * 0.05);
   return (
     <div className="sc-rel">
-      <p className="dk-stat-label">{label}</p>
+      <p className="dk-stat-label">{defineTerms(label)}</p>
       <LineChart
         ariaLabel={`${name}: ${pct(last.rel)}${last.date ? ` on ${dayShort(last.date)}` : ""}`}
         height={height}
@@ -250,6 +252,7 @@ function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State })
   return (
     <section className="dk-card sc-card" aria-labelledby="sc-breadth" aria-busy={quiet}>
       <CardHead id="sc-breadth" title="Breadth" sub={`is the rally wide or narrow? · of ${total} sectors`} />
+      <LoadingLine busy={quiet} />
       {quiet ? null : (
         <StatRow cols={3}>
           {/* §12.14: each count says what it is counted over, and when; no month-ago count and no words are served. */}
@@ -325,10 +328,12 @@ export default function SectorsPage({ page }: { page: DeskPage }) {
       {/* §1.6: the badge dates what the page covers, the served comparison session, never the generation's day. */}
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : s?.date ? <LiveBadge boxed parts={[sourceWords(s), dayShort(s.date)]} /> : null} />
       <Unserved block={unserved}>
-        <div className="sc-grid">
-          <Leadership s={s} state={state} />
-          <Breadth s={s} state={state} />
-        </div>
+        <FailedScope q={q}>
+          <div className="sc-grid">
+            <Leadership s={s} state={state} />
+            <Breadth s={s} state={state} />
+          </div>
+        </FailedScope>
       </Unserved>
     </div>
   );

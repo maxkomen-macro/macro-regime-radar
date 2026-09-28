@@ -13,9 +13,16 @@
  * A card stays quiet while its first answer is on its way, and keeps its
  * labels with "Awaiting refresh" when its endpoint fails or its block is
  * missing (§1.7).
+ *
+ * desk/usability §14.2: `?symbol=XYZ` shows any US-listed stock or ETF on the
+ * same shared figures (price and averages, RSI, MACD, seasonality), with its
+ * drawdown and realized volatility, and its strength against the S&P 500; its
+ * crosses are shown, never scored, and the S&P-only cards (the scored
+ * signals, the options, the sector bars) stay on the S&P's page, which one
+ * line links to. The range is the address's (`range=`).
  */
 
-import { useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { unavailableOf, useLedger, useTechnicals } from "../data/api";
 import type { Unavailable } from "../data/envelope";
 import { droppedOf } from "../data/schema";
@@ -23,16 +30,19 @@ import type { LedgerResponse, LedgerRow, SectorsResponse, TechnicalsResponse, Vo
 import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { capitalize, dayLong, dayShort, grouped, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
+import { useDeskView, withParam } from "../desk-view";
+import { capitalize, dayLong, dayShort, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, priceText, signed, tickText, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import Gauge from "../kit/Gauge";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import RankBars from "../kit/RankBars";
-import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord, LoadingLine, FailedScope, eitherFailed } from "../kit/ui";
 import { ProtectionCard } from "../prototypes/ProtectionCard";
+import { SPX_SYMBOLS, symbolOf } from "./symbol";
 import "./technicals.css";
+import { defineTerms } from "../kit/Term";
 
 type CardState = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -76,6 +86,7 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
         </h2>
         <p className="te-vol-sub">S&amp;P 500 options, read from the SPY chain at last close.</p>
       </div>
+      <LoadingLine busy={state === "loading"} />
       {state !== "ready" || !vol ? (
         <>
           {[...VOL_LABELS, "SKEW · WHERE IT SITS"].map((l, i) => (
@@ -125,7 +136,7 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
             )}
           </div>
           <div className="te-vol-sec te-vol-gauge">
-            <div className="dk-stat-label">SKEW · WHERE IT SITS</div>
+            <div className="dk-stat-label">{defineTerms("SKEW · WHERE IT SITS")}</div>
             {/* §12.13 serves the percentile without band edges (the bands are specified when the card is built). */}
             {pctile != null ? <p className="te-vol-meaning">{`${ordinal(pctile)} percentile of two years`}</p> : <Awaiting />}
           </div>
@@ -145,7 +156,8 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
 
 /** §12.7: every field of /technicals describes the S&P (`spx`); an answer naming another instrument is not the S&P's. */
 export function isSpx(t: TechnicalsResponse | undefined): boolean {
-  const inst = (t as { instrument?: unknown } | undefined)?.instrument;
+  // desk/usability §14.2: the answer names its symbol (a stock's page is never the S&P's).
+  const inst = (t as { instrument?: unknown } | undefined)?.instrument ?? t?.symbol;
   return inst == null || inst === "spx" || inst === "^GSPC";
 }
 
@@ -165,6 +177,21 @@ export function volIsPrototype(t: TechnicalsResponse | undefined, routeOff: Unav
 // ── Price and its two trend lines ─────────────────────────────────────────
 
 type Range = "6m" | "1y" | "3y";
+const RANGES: readonly Range[] = ["6m", "1y", "3y"];
+
+/** §14.2: the chart ranges the answer serves (a stock's two years of bars carry 6M and 1Y). */
+export function servedRanges(t: TechnicalsResponse | undefined): Range[] {
+  const s = t?.series;
+  return RANGES.filter((r) => Array.isArray(s?.[r]));
+}
+
+/** The address's range when the answer serves it, else 1Y (§3's default), else the longest served. */
+export function rangeOf(asked: string | null, served: readonly Range[]): Range {
+  const want = (asked ?? "").toLowerCase() as Range;
+  if (served.includes(want)) return want;
+  if (!served.length || served.includes("1y")) return "1y";
+  return served[served.length - 1];
+}
 
 /** The month ticks the charts read live in the kit (desk/books: Basket & Hedge draws the same price chart);
  * the MACD chart (desk/fill-compute) reads them too. */
@@ -182,38 +209,67 @@ export function aboveBelow(frac: number): string {
   return frac >= 0 ? `price is ${n}% above` : `price is ${n}% below`;
 }
 
-function PriceCard({ t, state, cross }: { t: TechnicalsResponse | undefined; state: CardState; cross: LedgerRow | undefined }) {
-  const [range, setRange] = useState<Range>("1y");
+function PriceCard({ t, state, cross, range, onRange, scored }: { t: TechnicalsResponse | undefined; state: CardState; cross: LedgerRow | undefined; range: Range; onRange: (r: Range) => void; scored: boolean }) {
+  const served = servedRanges(t);
+  const chips = served.length ? served : RANGES;
+  const name = scored ? "S&P 500" : (t?.symbol ?? "");
+  const title = scored ? "S&P 500" : [t?.symbol, t?.name && t.name !== t.symbol ? t.name : null].filter(Boolean).join(" · ");
   // §12.7: a missing close is a point with close null; the line breaks there, never bridging the slot (Codex R-25).
   const pts = (t?.series?.[range] ?? []).filter((p) => typeof p?.date === "string");
   const ready = state === "ready" && !!t;
   const unserved = useUnserved();
-  if (unserved) return <UnservedCard headingId="te-price-title" className="te-price" title="S&P 500" sub="price and its two trend lines" labels={["Price", "50-day average", "200-day average"]} block={unserved} />;
+  if (unserved) return <UnservedCard headingId="te-price-title" className="te-price" title={title || "S&P 500"} sub="price and its two trend lines" labels={["Price", "50-day average", "200-day average"]} block={unserved} />;
   return (
     <section className="dk-card te-price" aria-labelledby="te-price-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-price-title">
-          S&amp;P 500<span className="dk-card-sub"> price and its two trend lines</span>
+          {title || (scored ? "S&P 500" : "Price")}
+          <span className="dk-card-sub"> price and its two trend lines</span>
         </h2>
-        <RangeChips className="te-range" ranges={["6m", "1y", "3y"] as const} value={range} onChange={setRange} />
+        <RangeChips className="te-range" ranges={chips} value={range} onChange={onRange} />
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
-        <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? grouped(t.price) : undefined} sub={ready && fin(t.chg_1d) && t.chg_1d_dates ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.chg_1d_dates.to)}</Signed> : undefined} />
-        <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? grouped(t.ma50) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
-        <Stat label="200-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma200))} value={ready && fin(t.ma200) ? grouped(t.ma200) : undefined} tone="gray" sub={ready && fin(t.vs_ma200) ? aboveBelow(t.vs_ma200) : undefined} />
+        <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? priceText(t.price, scored) : undefined} sub={ready && fin(t.chg_1d) && t.chg_1d_dates ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.chg_1d_dates.to)}</Signed> : undefined} />
+        <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? priceText(t.ma50, scored) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
+        <Stat label="200-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma200))} value={ready && fin(t.ma200) ? priceText(t.ma200, scored) : undefined} tone="gray" sub={ready && fin(t.vs_ma200) ? aboveBelow(t.vs_ma200) : undefined} />
       </StatRow>
       {ready && drawable(pts) ? (
         <TrendChart
-          ariaLabel={`S&P 500 with its 50-day and 200-day averages, ${range.toUpperCase()}`}
-          mainLabel="S&P 500"
+          ariaLabel={`${name || "The price"} with its 50-day and 200-day averages, ${range.toUpperCase()}`}
+          mainLabel={name || "Price"}
           points={pts}
           crosses={t.cross ? [t.cross] : []}
           ticks={range === "3y" ? 4 : 3}
+          tickText={tickText}
         />
       ) : state === "loading" ? null : (
         <Awaiting />
       )}
-      {ready && t.cross && cross ? (
+      {/* Codex R-03: bars the provider dated after the last completed session are not read, and the card says so. */}
+      {ready && t.excluded_bars && t.excluded_bars.n > 0 ? (
+        <p className="te-note-line" data-testid="te-excluded-bars">
+          {t.excluded_bars.n === 1 ? "1 bar" : `${t.excluded_bars.n} bars`} dated after {dayLong(t.excluded_bars.after)}, the last completed session, {t.excluded_bars.n === 1 ? "is" : "are"} not read.
+        </p>
+      ) : null}
+      {/* The merge review: a bar served without an adjusted close is not read (desk/books reads adjusted closes only). */}
+      {ready && t.unadjusted_bars && t.unadjusted_bars.n > 0 ? (
+        <p className="te-note-line" data-testid="te-unadjusted-bars">
+          {t.unadjusted_bars.n === 1 ? "1 bar" : `${t.unadjusted_bars.n} bars`} without an adjusted close from the provider {t.unadjusted_bars.n === 1 ? "is" : "are"} not read.
+        </p>
+      ) : null}
+      {/* §14.2: a stock's crosses are shown and labelled not scored; the engine scores the S&P 500's. */}
+      {ready && !scored && t.cross ? (
+        <div className="te-callout" data-unscored="">
+          <b>
+            {dayLong(t.cross.date)} — the 50-day crossed {t.cross.kind === "golden" ? "above" : "below"} the 200-day.
+          </b>{" "}
+          Not scored: the engine scores crosses of the S&amp;P 500 only.
+        </div>
+      ) : ready && !scored && !t.cross ? (
+        <p className="te-nocross">No 50-day and 200-day cross in the history served.</p>
+      ) : null}
+      {ready && scored && t.cross && cross ? (
         <div className="te-callout" data-verdict={cross.verdict}>
           <b>
             <span className="dk-dot" aria-hidden="true" /> {dayLong(t.cross.date)} — the 50-day crossed {t.cross.kind === "golden" ? "above" : "below"} the 200-day.
@@ -257,6 +313,7 @@ function SignalsCard({ t, tState, ledger, lState }: { t: TechnicalsResponse | un
           Signals<span className="dk-card-sub"> what fired, and what usually follows</span>
         </h2>
       </div>
+      <LoadingLine busy={tState === "loading" || lState === "loading"} />
       <StatRow cols={3}>
         {/* §3: 1-YEAR RETURN dated by `ret_1y_dates`; TREND the served state since `state_since`; LAST 20 DAYS in σ. */}
         <Stat label="1-year return" awaiting={aw || (ready && !fin(t.ret_1y))} value={ready && fin(t.ret_1y) ? pct(t.ret_1y) : undefined} tone={ready && fin(t.ret_1y) ? (t.ret_1y >= 0 ? "up" : "down") : undefined} sub={ready && t.ret_1y_dates && dayLong(t.ret_1y_dates.from) ? `since ${dayLong(t.ret_1y_dates.from)}` : undefined} />
@@ -345,9 +402,10 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
     <section className="dk-card te-sectors" aria-labelledby="te-sect-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-sect-title">
-          Sector leadership · {s && fin(s.window_months) ? `${s.window_months}-month` : "3-month"} relative strength vs S&amp;P
+          {defineTerms(`Sector leadership · ${s && fin(s.window_months) ? `${s.window_months}-month` : "3-month"} relative strength vs S&P`)}
         </h2>
       </div>
+      <LoadingLine busy={state === "loading"} />
       {state === "ready" && endsLine(rows) ? <p className="te-sect-read">{endsLine(rows, gaps.among)}</p> : null}
       {state === "ready" && rows.length ? (
         <>
@@ -373,7 +431,7 @@ function SectorCard({ s, state }: { s: SectorsResponse | undefined; state: CardS
       )}
       <DroppedNote n={droppedOf(s, "leadership")} one="sector" />
       <div className="te-foot">
-        {/* All eleven come from the sectors block once served; until then the control is disabled (§1.4). */}
+        {/* All eleven come from the sectors block once served; until then the control is not shown (§1.4, §14.13). */}
         <AdvancedPanel enabled={rows.length > 0} adv={adv} items="all 11 · rotation over time · by regime" missing="Rotation over time and leadership by regime are not served yet.">
           {rows.length ? <RankBars label="All eleven sector ETFs against the S&P" rows={served.map(toRow)} lo={lo} hi={hi} /> : null}
         </AdvancedPanel>
@@ -402,21 +460,25 @@ export function rsiDirection(now: number | null | undefined, prev: number | null
   return now > prev ? "rising" : now < prev ? "falling" : "flat";
 }
 
-/** A zone's last session: its day, and the S&P's simple return over the next 20 sessions once they have passed;
+/** "the S&P" on the S&P's page (§3's words), a stock's ticker on its own ("is NVDA stretched"). */
+const theOf = (short: string) => (short === "S&P" ? "the S&P" : short);
+
+/** A zone's last session: its day, and the instrument's simple return over the next 20 sessions once they have passed
+ * (the S&P's on its own page; desk/usability: a stock's on its);
  * Codex R-08: a window not complete yet and a close not stored each say their own reason. */
-export function visitSub(v: TechnicalsResponse["rsi_last_above_70"]) {
+export function visitSub(v: TechnicalsResponse["rsi_last_above_70"], short = "S&P") {
   if (!v) return undefined;
   if (fin(v.after_20d) && (v.after_20d_status ?? "complete") === "complete")
     return (
       <>
-        S&amp;P <Signed value={v.after_20d}>{pct(v.after_20d)}</Signed> 20 sessions later
+        {short} <Signed value={v.after_20d}>{pct(v.after_20d)}</Signed> 20 sessions later
       </>
     );
   if (v.after_20d_status === "missing") return `the close 20 sessions later${dayShort(v.after_20d_to) ? ` (${dayShort(v.after_20d_to)})` : ""} is not stored`;
   return "20 sessions have not passed yet";
 }
 
-function RsiCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+function RsiCard({ t, state, short = "S&P" }: { t: TechnicalsResponse | undefined; state: CardState; short?: string }) {
   const adv = useAdvanced();
   const ready = state === "ready" && !!t;
   const aw = state === "awaiting";
@@ -425,20 +487,21 @@ function RsiCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardS
   const words = r != null ? [zone, rsiDirection(t?.rsi, t?.rsi_prev)].filter(Boolean).join(", ") : "";
   const day = (v: TechnicalsResponse["rsi_last_above_70"]) => (ready && v?.date ? dayInYear(v.date, t.as_of) : "");
   const unserved = useUnserved();
-  if (unserved) return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub="is the S&P stretched, either way?" labels={["Now", "Last above 70", "Last below 30"]} block={unserved} advanced />;
+  if (unserved) return <UnservedCard headingId="te-rsi-title" className="te-rsi" title="Momentum · RSI" sub={`is ${theOf(short)} stretched, either way?`} labels={["Now", "Last above 70", "Last below 30"]} block={unserved} advanced />;
   return (
     <section className="dk-card te-rsi" aria-labelledby="te-rsi-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-rsi-title">
-          Momentum · RSI<span className="dk-card-sub"> is the S&amp;P stretched, either way?</span>
+          {defineTerms("Momentum · RSI")}<span className="dk-card-sub"> is {theOf(short)} stretched, either way?</span>
         </h2>
         {/* §1.6: the RSI is dated by its own session, which a gap in the closes can hold before the price's. */}
         {r != null && dayShort(t?.rsi_date) ? <LiveBadge parts={[dayShort(t?.rsi_date)]} /> : null}
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
         <Stat label="Now" awaiting={aw || (ready && r == null)} value={r != null ? num(r) : undefined} sub={words || undefined} />
-        <Stat label="Last above 70" size="date" tone="amber" awaiting={aw || (ready && !day(t.rsi_last_above_70))} value={day(t?.rsi_last_above_70) || undefined} sub={ready ? visitSub(t.rsi_last_above_70) : undefined} />
-        <Stat label="Last below 30" size="date" tone="green" awaiting={aw || (ready && !day(t.rsi_last_below_30))} value={day(t?.rsi_last_below_30) || undefined} sub={ready ? visitSub(t.rsi_last_below_30) : undefined} />
+        <Stat label="Last above 70" size="date" tone="amber" awaiting={aw || (ready && !day(t.rsi_last_above_70))} value={day(t?.rsi_last_above_70) || undefined} sub={ready ? visitSub(t.rsi_last_above_70, short) : undefined} />
+        <Stat label="Last below 30" size="date" tone="green" awaiting={aw || (ready && !day(t.rsi_last_below_30))} value={day(t?.rsi_last_below_30) || undefined} sub={ready ? visitSub(t.rsi_last_below_30, short) : undefined} />
       </StatRow>
       <div className="te-rsi-gauge">
         {r != null ? (
@@ -483,7 +546,7 @@ export function macdCrossWords(kind: string | undefined): string | null {
 /** One decimal, signed ("+8.1", "−10.4"): the MACD's three values are index points either side of zero. */
 const pts1 = (x: number) => signed(x, 1);
 
-function MacdCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+function MacdCard({ t, state, short = "S&P" }: { t: TechnicalsResponse | undefined; state: CardState; short?: string }) {
   const ready = state === "ready" && !!t;
   const aw = state === "awaiting";
   const m = ready ? (t.macd ?? null) : null;
@@ -495,16 +558,17 @@ function MacdCard({ t, state }: { t: TechnicalsResponse | undefined; state: Card
   const crossI = lc ? pts.findIndex((p) => p.date === lc.date) : -1;
   const day = (iso: string | undefined) => (ready && iso ? dayInYear(iso, t.as_of) : "");
   const unserved = useUnserved();
-  if (unserved) return <UnservedCard headingId="te-macd-title" className="te-macd" title="Momentum · MACD" sub="12, 26, 9 on the S&P's closes" labels={["MACD", "Signal", "Histogram", "Last crossover"]} block={unserved} />;
+  if (unserved) return <UnservedCard headingId="te-macd-title" className="te-macd" title="Momentum · MACD" sub={`12, 26, 9 on ${theOf(short)}'s closes`} labels={["MACD", "Signal", "Histogram", "Last crossover"]} block={unserved} />;
   return (
     <section className="dk-card te-macd" aria-labelledby="te-macd-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-macd-title">
-          Momentum · MACD<span className="dk-card-sub"> 12, 26, 9 on the S&amp;P&apos;s closes</span>
+          {defineTerms("Momentum · MACD")}<span className="dk-card-sub"> 12, 26, 9 on {theOf(short)}&apos;s closes</span>
         </h2>
         {/* §1.6: the MACD is dated by its own session, which a gap in the closes can hold before the price's. */}
         {m && dayShort(m.date) ? <LiveBadge parts={[dayShort(m.date)]} /> : null}
       </div>
+      <LoadingLine busy={state === "loading"} />
       <StatRow cols={4}>
         <Stat label="MACD" awaiting={aw || (ready && !fin(m?.macd))} value={m && fin(m.macd) ? pts1(m.macd) : undefined} tone="blue" />
         <Stat label="Signal" awaiting={aw || (ready && !fin(m?.signal))} value={m && fin(m.signal) ? pts1(m.signal) : undefined} tone="gray" />
@@ -558,7 +622,7 @@ export function yearsLine(rows: readonly { n: number | null }[]): string | null 
 
 const SEASON_LABELS = ["Average", "Up", "Years"];
 
-function SeasonalityCard({ t, state }: { t: TechnicalsResponse | undefined; state: CardState }) {
+function SeasonalityCard({ t, state, name = "S&P 500" }: { t: TechnicalsResponse | undefined; state: CardState; name?: string }) {
   const ready = state === "ready" && !!t;
   const s = ready ? (t.seasonality ?? null) : null;
   const rows = Array.isArray(s?.rows) ? s.rows : [];
@@ -566,14 +630,15 @@ function SeasonalityCard({ t, state }: { t: TechnicalsResponse | undefined; stat
   const big = Math.max(0, ...rows.map((r) => (fin(r.avg) ? Math.abs(r.avg) : 0)));
   const w = s?.window;
   const unserved = useUnserved();
-  if (unserved) return <UnservedCard headingId="te-season-title" className="te-season" title="Seasonality · S&P 500 by calendar month" labels={SEASON_LABELS} cols={3} block={unserved} />;
+  if (unserved) return <UnservedCard headingId="te-season-title" className="te-season" title={`Seasonality · ${name} by calendar month`} labels={SEASON_LABELS} cols={3} block={unserved} />;
   return (
     <section className="dk-card te-season" aria-labelledby="te-season-title" aria-busy={state === "loading"}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="te-season-title">
-          Seasonality · S&amp;P 500 by calendar month
+          {defineTerms(`Seasonality · ${name} by calendar month`)}
         </h2>
       </div>
+      <LoadingLine busy={state === "loading"} />
       {s && rows.length ? (
         <>
           {w && monthOf(w.start) && monthOf(w.end) ? (
@@ -630,42 +695,190 @@ function SeasonalityCard({ t, state }: { t: TechnicalsResponse | undefined; stat
   );
 }
 
+/** §14.2: the drawdown from the one-year high, 21-day realized volatility (the shared `realized_vol`, as a
+ * fraction), and for a stock its one-year return (the S&P's is on its Signals card). Every figure is the
+ * served one; a figure served null says why (§1.7). Main's RSI card carries the RSI. */
+function RiskCard({ t, state, scored }: { t: TechnicalsResponse | undefined; state: CardState; scored: boolean }) {
+  const ready = state === "ready" && !!t;
+  const aw = state === "awaiting";
+  const asOf = t?.date ?? "";
+  const dd = ready ? t.drawdown : null;
+  const rv = ready ? t.realized_vol : null;
+  // Codex R-01: a year is 252 valid closes; with fewer the figure is partial history, and says how many it read.
+  const partial = !!dd && dd.complete !== true;
+  const ddN = dd?.window && fin(dd.window.n) ? dd.window.n : null;
+  const unserved = useUnserved();
+  const labels = ["From 1-year high", "21-day realized vol", ...(scored ? [] : ["1-year return"])];
+  if (unserved) return <UnservedCard headingId="te-risk-title" className="te-risk" title="Risk · drawdown and volatility" sub="how far from its high, and how much it moves" labels={labels} cols={3} block={unserved} />;
+  return (
+    <section className="dk-card te-risk" aria-labelledby="te-risk-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-risk-title">
+          Risk · drawdown and volatility<span className="dk-card-sub"> how far from its high, and how much it moves</span>
+        </h2>
+      </div>
+      <LoadingLine busy={state === "loading"} />
+      <StatRow cols={3}>
+        <Stat
+          label={partial ? "From high" : "From 1-year high"}
+          awaiting={aw || (ready && !fin(dd?.value))}
+          value={ready && fin(dd?.value) ? pct(dd.value) : undefined}
+          tone={ready && fin(dd?.value) && dd.value < 0 ? "down" : undefined}
+          sub={
+            ready && dd?.peak && fin(dd.peak.close)
+              ? [partial ? `partial history: ${ddN ?? "fewer than 252"} of 252 sessions` : null, `high ${priceText(dd.peak.close, scored)} on ${dayInYear(dd.peak.date, asOf)}`].filter(Boolean).join(" · ")
+              : undefined
+          }
+        />
+        <Stat label="21-day realized vol" awaiting={aw || (ready && !fin(rv?.value))} value={ready && fin(rv?.value) ? pctPlain(rv.value, 1) : undefined} sub={ready && fin(rv?.value) ? "annualized" : undefined} />
+        {scored ? null : (
+          <Stat label="1-year return" awaiting={aw || (ready && !fin(t.ret_1y))} value={ready && fin(t.ret_1y) ? pct(t.ret_1y) : undefined} tone={ready && fin(t.ret_1y) ? (t.ret_1y >= 0 ? "up" : "down") : undefined} sub={ready && t.ret_1y_dates && dayLong(t.ret_1y_dates.from) ? `since ${dayLong(t.ret_1y_dates.from)}` : undefined} />
+        )}
+      </StatRow>
+      {ready && !fin(rv?.value) ? <p className="te-note-line">Realized vol needs the last 22 closes; one is missing.</p> : null}
+    </section>
+  );
+}
+
+// ── Relative strength vs the S&P 500 ─────────────────────────────────────
+
+function RelativeCard({ t, state, range }: { t: TechnicalsResponse | undefined; state: CardState; range: Range }) {
+  const ready = state === "ready" && !!t;
+  const aw = state === "awaiting";
+  const rs = ready ? t.rs : null;
+  const pts = (rs?.series?.[range] ?? []).filter((p) => typeof p?.date === "string");
+  const all = pts.flatMap((p) => [p.rs, p.rs_ma50]).filter(fin);
+  const ticks = all.length ? extentTicks(Math.min(...all), Math.max(...all), 3) : [0, 1];
+  const unserved = useUnserved();
+  if (unserved) return <UnservedCard headingId="te-rs-title" className="te-rs" title="Relative strength vs the S&P 500" labels={["Against its 50-day", "3-month change", "As of"]} block={unserved} />;
+  return (
+    <section className="dk-card te-rs" aria-labelledby="te-rs-title" aria-busy={state === "loading"}>
+      <div className="dk-card-head">
+        <h2 className="dk-card-title" id="te-rs-title">
+          {defineTerms("Relative strength vs the S&P 500")}<span className="dk-card-sub"> its price divided by the index, rebased to 100</span>
+        </h2>
+      </div>
+      <LoadingLine busy={state === "loading"} />
+      <StatRow cols={3}>
+        <Stat label="Against its 50-day" awaiting={aw || (ready && !fin(rs?.vs_ma50))} value={ready && fin(rs?.vs_ma50) ? pct(rs.vs_ma50) : undefined} tone={ready && fin(rs?.vs_ma50) ? (rs.vs_ma50 >= 0 ? "up" : "down") : undefined} sub={ready && fin(rs?.vs_ma50) ? (rs.vs_ma50 >= 0 ? "leading the S&P" : "lagging the S&P") : undefined} />
+        <Stat label="3-month change" awaiting={aw || (ready && !fin(rs?.chg_3m))} value={ready && fin(rs?.chg_3m) ? pct(rs.chg_3m) : undefined} tone={ready && fin(rs?.chg_3m) ? (rs.chg_3m >= 0 ? "up" : "down") : undefined} sub={ready && rs?.chg_3m_dates ? `since ${dayLong(rs.chg_3m_dates.from)}` : undefined} />
+        <Stat label="As of" size="date" awaiting={aw || (ready && !rs?.date)} value={ready && rs?.date ? dayLong(rs.date) : undefined} sub={ready && rs?.date ? "last session both closed" : undefined} />
+      </StatRow>
+      {ready && pts.filter((p) => fin(p.rs)).length > 1 ? (
+        <LineChart
+          ariaLabel={`${t.symbol ?? "The stock"} against the S&P 500, rebased to 100, with its 50-day average, ${range.toUpperCase()}`}
+          height={170}
+          n={pts.length}
+          yDomain={[ticks[0], ticks[ticks.length - 1]]}
+          yTicks={ticks.map((v) => ({ v, text: num(v, 0) }))}
+          xTicks={monthTicks(pts.map((p) => p.date))}
+          series={[
+            { key: "rs_ma50", values: pts.map((p) => (fin(p.rs_ma50) ? p.rs_ma50 : null)), color: DESK_ACCENTS.green, dash: "4 4", width: 2, label: "50-day" },
+            { key: "rs", values: pts.map((p) => (fin(p.rs) ? p.rs : null)), color: DESK_ACCENTS.blue, width: 2.5, label: "vs S&P" },
+          ]}
+          endDot="rs"
+          pad={{ l: 40, r: 64, t: 10, b: 26 }}
+        />
+      ) : state === "loading" ? null : (
+        <Awaiting />
+      )}
+      {ready && rs && !fin(rs.ma50) ? <p className="te-note-line">The 50-day average needs 50 sessions where both closed; one is missing.</p> : null}
+    </section>
+  );
+}
+
 export default function TechnicalsPage({ page }: { page: DeskPage }) {
-  const tq = useTechnicals();
+  const [search, setSearch] = useSearchParams();
+  const { pathTo } = useDeskView();
+  const symbol = symbolOf(search);
+  const scored = symbol === null;
+  const tq = useTechnicals({ symbol });
   const lq = useLedger();
   const t = tq.data;
+  const range = rangeOf(search.get("range"), servedRanges(t));
+  const onRange = (r: Range) =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        if (r === "1y") q.delete("range");
+        else q.set("range", r);
+        return q;
+      },
+      { replace: true },
+    );
   // §3, §12.7: the vol column and the sector bars are `/technicals` blocks, served awaiting on Monday.
   const routeOff = unavailableOf(tq.error);
   const volOff = routeOff ?? t?._blocks?.vol ?? null;
   const sectorsOff = routeOff ?? t?._blocks?.sectors ?? null;
-  const cross = t?.cross ? bySlug(lq.data, t.cross.kind === "death" ? "death-cross" : "golden-cross") : undefined;
+  const cross = scored && t?.cross ? bySlug(lq.data, t.cross.kind === "death" ? "death-cross" : "golden-cross") : undefined;
+  // §14.6: one plain line under the title, 15 words at most; the stock's name is on its price card.
+  const shown = scored ? page : { ...page, blurb: `Trend, momentum and risk for ${symbol}; its crosses are shown, not scored.` };
+  const short = symbol ?? "S&P";
   return (
-    <div className="te">
+    <div className="te" data-symbol={symbol ?? "^GSPC"}>
       {/* §3: `● Live · <date>` from `/technicals` `date`. */}
-      <PageTitle page={page} badge={unavailableOf(tq.error) ? <NotServedBadge boxed block={unavailableOf(tq.error)} /> : t ? <LiveBadge boxed parts={[dayShort(t.date) || null]} /> : null} />
-      <div className="te-grid">
-        {/* §1.0.3: the PROTOTYPE stands in the vol column until the vol block is served; a served block's card keeps
-            its labels and prints its reason when awaiting (§1.0.2). */}
-        {volIsPrototype(t, routeOff, tq.isError) ? (
-          <ProtectionCard />
-        ) : (
-          <Unserved block={volOff}>
-            <VolCard vol={t?.vol} state={stateOf(tq, !!t?.vol)} />
+      <PageTitle page={shown} badge={unavailableOf(tq.error) ? <NotServedBadge boxed block={unavailableOf(tq.error)} /> : t ? <LiveBadge boxed parts={[dayShort(t.date) || null]} /> : null} />
+      {/* §14.2: the second action (the header's is Open as position). The index itself is not a basket leg: its ETF is. */}
+      <p className="te-actions">
+        <Link className="dk-link" to={withParam(pathTo("basket-hedge"), "add", symbol ?? "SPY")} data-testid="te-add-basket">
+          {symbol ? "Add to basket →" : "Add SPY to basket →"}
+        </Link>
+      </p>
+      {/* §14.12: every card reads /technicals; the Signals card reads the Ledger too, and fails with either. */}
+      {scored ? (
+        <FailedScope q={tq}>
+        <div className="te-grid">
+          {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
+          {/* §1.0.3 (desk/prototypes): the PROTOTYPE stands in the vol column until the vol block is served; a
+              served block's card keeps its labels and prints its reason when awaiting (§1.0.2). */}
+          {volIsPrototype(t, routeOff, tq.isError) ? (
+            <ProtectionCard />
+          ) : (
+            <Unserved block={volOff}>
+              <VolCard vol={t?.vol} state={stateOf(tq, !!t?.vol)} />
+            </Unserved>
+          )}
+          <Unserved block={unavailableOf(tq.error)}>
+            <PriceCard t={t} state={stateOf(tq)} cross={cross} range={range} onRange={onRange} scored />
+            <FailedScope q={eitherFailed(tq, lq)}>
+              <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />
+            </FailedScope>
           </Unserved>
-        )}
-        <Unserved block={unavailableOf(tq.error)}>
-          <PriceCard t={t} state={stateOf(tq)} cross={cross} />
-          <SignalsCard t={t} tState={stateOf(tq)} ledger={lq.data} lState={stateOf(lq, Array.isArray(lq.data?.signals))} />
-        </Unserved>
-        <Unserved block={sectorsOff}>
-          <SectorCard s={t?.sectors} state={stateOf(tq, Array.isArray(t?.sectors?.leadership))} />
-        </Unserved>
-        <Unserved block={unavailableOf(tq.error)}>
-          <RsiCard t={t} state={stateOf(tq)} />
-          <MacdCard t={t} state={stateOf(tq)} />
-          <SeasonalityCard t={t} state={stateOf(tq)} />
-        </Unserved>
-      </div>
+          <Unserved block={sectorsOff}>
+            <SectorCard s={t?.sectors} state={stateOf(tq, Array.isArray(t?.sectors?.leadership))} />
+          </Unserved>
+          <Unserved block={unavailableOf(tq.error)}>
+            <RsiCard t={t} state={stateOf(tq)} />
+            <MacdCard t={t} state={stateOf(tq)} />
+            <SeasonalityCard t={t} state={stateOf(tq)} />
+            <RiskCard t={t} state={stateOf(tq)} scored />
+          </Unserved>
+        </div>
+        </FailedScope>
+      ) : (
+        <>
+          <p className="te-scored-line">
+            Signals are scored on the S&amp;P 500 <Link to={pathTo("technicals")}>→ view</Link>
+          </p>
+          <FailedScope q={tq}>
+          <div className="te-grid te-grid-stock">
+            <Unserved block={unavailableOf(tq.error)}>
+              <PriceCard t={t} state={stateOf(tq)} cross={undefined} range={range} onRange={onRange} scored={false} />
+              <RsiCard t={t} state={stateOf(tq)} short={short} />
+              <RiskCard t={t} state={stateOf(tq)} scored={false} />
+              <RelativeCard t={t} state={stateOf(tq)} range={range} />
+              <MacdCard t={t} state={stateOf(tq)} short={short} />
+              <SeasonalityCard t={t} state={stateOf(tq)} name={symbol ?? "S&P 500"} />
+            </Unserved>
+          </div>
+          </FailedScope>
+        </>
+      )}
     </div>
   );
+}
+
+/** Technicals for a symbol (§14.2), the view kept; the S&P 500 is the page's default. */
+export function technicalsFor(pathTo: (slug: string) => string, symbol: string | null): string {
+  return symbol && !SPX_SYMBOLS.includes(symbol.toUpperCase()) ? withParam(pathTo("technicals"), "symbol", symbol.toUpperCase()) : pathTo("technicals");
 }

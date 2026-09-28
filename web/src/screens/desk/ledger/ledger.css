@@ -168,3 +168,12 @@
     align-items: stretch;
   }
 }
+
+/* desk/usability item 11: a row label's terms (σ, 2s10s, RSI) show their dotted underline only while the row is read. */
+.lg-table tbody th .dk-term {
+  text-decoration-color: transparent;
+}
+.lg-table tbody tr:hover th .dk-term,
+.lg-table tbody tr:focus-visible th .dk-term {
+  text-decoration-color: var(--dk-t4);
+}

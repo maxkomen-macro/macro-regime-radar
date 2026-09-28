@@ -7,7 +7,7 @@
  */
 
 import { useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { unavailableOf, useLedger } from "../data/api";
 import { droppedOf } from "../data/schema";
 import type { LedgerRow } from "../data/types";
@@ -16,11 +16,13 @@ import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { dayLong, dayShort, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
-import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill, LoadingLine, FailedScope } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
+import { defineTerms } from "../kit/Term";
 
 export type Filter = "all" | "firing" | "reliable" | "spx" | "cross";
+const FILTER_IDS: readonly Filter[] = ["all", "firing", "reliable", "spx", "cross"];
 
 /** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
 export const isAvailable = (r: LedgerRow) => r.available !== false;
@@ -82,7 +84,7 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
   if (!isAvailable(r))
     return (
       <tr data-unavailable>
-        <th scope="row">{titleOf(r)}</th>
+        <th scope="row">{defineTerms(titleOf(r))}</th>
         <td colSpan={7} className="lg-unavailable">
           {r.unavailable?.reason ?? "not yet served"}
         </td>
@@ -96,7 +98,7 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
   };
   return (
     <tr data-firing={firingToday(r) || undefined} tabIndex={0} onClick={() => onOpen(r.slug)} onKeyDown={key} aria-label={`${titleOf(r)}: open in Event Study`}>
-      <th scope="row">{titleOf(r)}</th>
+      <th scope="row">{defineTerms(titleOf(r))}</th>
       <td className="lg-mono">{typeof r.last_fired === "string" && dayLong(r.last_fired) ? dayLong(r.last_fired) : "—"}</td>
       <td className="lg-mono">{fin(r.n) ? r.n : "—"}</td>
       <td className="lg-mono">{fin(r.up_pct) ? pctPlain(r.up_pct) : "—"}</td>
@@ -140,7 +142,19 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
   const unserved = unavailableOf(q.error);
   const [scrollRef, scrolls] = useOverflows<HTMLDivElement>();
-  const [filter, setFilter] = useState<Filter>("all");
+  // desk/usability §14.9: the filter lives in the address (`?filter=`), so a link opens the same rows.
+  const [search, setSearch] = useSearchParams();
+  const filter: Filter = (FILTER_IDS as readonly string[]).includes(search.get("filter") ?? "") ? (search.get("filter") as Filter) : "all";
+  const setFilter = (f: Filter) =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        if (f === "all") q.delete("filter");
+        else q.set("filter", f);
+        return q;
+      },
+      { replace: true },
+    );
   const l = q.data;
   const rows = Array.isArray(l?.signals) ? l.signals : [];
   // Codex R-16: rows the boundary could not read are said, and no count is read from the rest.
@@ -171,6 +185,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
     <div className="lg">
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : l && dayShort(l.as_of) ? <LiveBadge boxed parts={[`engine as of ${dayShort(l.as_of)}`]} /> : null} />
       <Unserved block={unserved}>
+        <FailedScope q={q}>
         <div className="lg-stats" aria-busy={state === "loading"}>
           <Stat
             label="Signals scored"
@@ -184,13 +199,17 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
           <Stat label="No edge" awaiting={state === "awaiting" || (ready && !verdictsCounted)} value={verdictsCounted ? String(noEdge.length) : undefined} />
         </div>
         <section className="dk-card lg-card" aria-label="Every scored signal" aria-busy={state === "loading"}>
-          <div className="lg-chips" role="group" aria-label="Filter">
-            {chips.map((c) => (
-              <button key={c.id} type="button" className="dk-chip" aria-pressed={filter === c.id} disabled={!ready} onClick={() => setFilter(c.id)}>
-                {c.label}
-              </button>
-            ))}
-          </div>
+          <LoadingLine busy={state === "loading"} />
+          {/* §14.13: the filters appear with the rows they filter. */}
+          {ready ? (
+            <div className="lg-chips" role="group" aria-label="Filter">
+              {chips.map((c) => (
+                <button key={c.id} type="button" className="dk-chip" aria-pressed={filter === c.id} onClick={() => setFilter(c.id)}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
           {ready ? (
             // The table keeps its columns at every width; narrower than that, it scrolls inside this region (L-1, L-11).
             <div className="lg-scroll" ref={scrollRef} tabIndex={scrolls ? 0 : undefined} role="region" aria-label="The signals table">
@@ -213,7 +232,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                   <th scope="col">Times</th>
                   <th scope="col">Up a month later</th>
                   <th scope="col">Median</th>
-                  <th scope="col">Vs normal</th>
+                  <th scope="col">{defineTerms("Vs normal")}</th>
                   <th scope="col">Verdict</th>
                   <th scope="col">Now</th>
                 </tr>
@@ -249,6 +268,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
             </p>
           </div>
         </section>
+        </FailedScope>
       </Unserved>
     </div>
   );

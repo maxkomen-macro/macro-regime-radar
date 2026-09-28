@@ -144,7 +144,7 @@ describe("Regime tab", () => {
     );
     // §1.3's exception (v2 D-36) and §5: the label in its regime's color.
     expect(card.querySelector(".rg-big")).toHaveAttribute("data-tone", "green");
-    expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the July row/);
+    expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the July reading/);
     expect(card.querySelector(".rg-latest")?.textContent).toBe("Latest print: Aug 2026");
     const strip = within(card).getByRole("img", { name: /Regime by month from Aug 2021 to Aug 2026/ });
     const segs = [...strip.querySelectorAll("span")];
@@ -247,11 +247,11 @@ describe("Regime tab", () => {
     // The API's answer on the audit's store (Q9): August's month after is September, not over yet.
     // Codex R-01: each change dated by the month it took effect (its stamp two months before), with the S&P over that month.
     expect(within(card).getAllByRole("listitem").map((li) => li.textContent)).toEqual([
-      "Oct 2026Goldilocks → Overheating · Aug rowmonth not over",
-      "Sep 2026Overheating → Goldilocks · Jul rowmonth not over",
-      "Mar 2026Stagflation → Overheating · Jan row−5.1%",
-      "Nov 2025Overheating → Stagflation · Sep row+0.1%",
-      "Aug 2025Stagflation → Overheating · Jun row+1.9%",
+      "Oct 2026Goldilocks → Overheating · from Aug datamonth not over",
+      "Sep 2026Overheating → Goldilocks · from Jul datamonth not over",
+      "Mar 2026Stagflation → Overheating · from Jan data−5.1%",
+      "Nov 2025Overheating → Stagflation · from Sep data+0.1%",
+      "Aug 2025Stagflation → Overheating · from Jun data+1.9%",
     ]);
     expect(card).toHaveTextContent("Last five of 123 regime changes · S&P over the month each took effect");
   });
@@ -343,11 +343,12 @@ describe("Regime tab", () => {
     stubDesk({ "/api/desk/regime": deskError(503, "warming") });
     renderTab();
     const card = await screen.findByRole("region", { name: /Where we are/ });
-    await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
+    await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
     expect(card).toHaveTextContent("Growth");
     expect(card).not.toHaveTextContent("Overheating");
     expect(screen.getByRole("region", { name: /Recession score/ })).not.toHaveTextContent("12%");
-    expect(screen.getByRole("region", { name: /What would change it/ })).toHaveTextContent(/Next CPI\s*Awaiting refresh/);
+    expect(screen.getByRole("region", { name: /What would change it/ })).toHaveTextContent(/Next CPI\s*—/);
+    expect(screen.getByRole("main")).not.toHaveTextContent("Awaiting refresh");
     expect(screen.getByRole("region", { name: /What each regime has meant/ })).toHaveTextContent(/Regime\s*Months/);
   });
 });
@@ -363,7 +364,7 @@ describe("blocks served awaiting inside a ready answer (§12.6, §1.0.2)", () =>
     for (const l of ["Regime", "Months", "S&P median", "S&P mean", "Up", "VIX avg"]) expect(meant).toHaveTextContent(new RegExp(l.replace("&", "&"), "i"));
     expect(within(meant).getAllByText(reason)).toHaveLength(1);
     expect(within(meant).getByTestId("dk-live")).toHaveTextContent("Awaiting refresh");
-    expect(within(meant).getByTestId("dk-advanced")).toBeDisabled();
+    expect(within(meant).queryByTestId("dk-advanced")).toBeNull();
     const change = screen.getByRole("region", { name: /^What would change it/ });
     expect(change).toHaveTextContent("Oct 14");
     expect(within(change).getAllByText(reason)).toHaveLength(1);

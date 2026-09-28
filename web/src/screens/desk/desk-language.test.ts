@@ -48,7 +48,7 @@ const BOARD_FILES = ["/src/screens/desk/pipeline/PipelinePage.tsx", "/src/fixtur
 // Read through Vite's import.meta.glob (raw, eager), as hook-coverage does, so
 // the scan needs no Node types and sees exactly the files the build sees.
 const SOURCES = import.meta.glob<string>(["/src/**/desk/**/*.{ts,tsx,md}"], { query: "?raw", import: "default", eager: true });
-const FIXTURES = import.meta.glob<unknown>("/src/fixtures/desk/*.json", { import: "default", eager: true });
+const FIXTURES = import.meta.glob<unknown>("/src/fixtures/desk/**/*.json", { import: "default", eager: true });
 const NOTES = import.meta.glob<string>("../../../../docs/desk/BUILD_NOTES.md", { query: "?raw", import: "default", eager: true });
 /** The notes' figures (docs/desk/screens/*.svg), whose words the page shows as drawn. */
 const FIGURES = import.meta.glob<string>("../../../../docs/desk/screens/*.svg", { query: "?raw", import: "default", eager: true });

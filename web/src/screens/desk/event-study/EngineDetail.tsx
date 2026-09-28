@@ -11,7 +11,7 @@ import { useStudyEvents } from "../data/api";
 import type { StudyHorizon, StudyResponse } from "../data/types";
 import { dayLong, grouped, isFiniteNumber as fin, pctPlain, verdictRuleWords } from "../kit/format";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
-import { Awaiting, DroppedNote, VerdictWord } from "../kit/ui";
+import { Awaiting, DroppedNote, VerdictWord, FailedScope, LoadingLine } from "../kit/ui";
 import { apiParams, type Ask } from "./question";
 import { moveText, tipOf } from "../kit/units";
 
@@ -31,6 +31,8 @@ export default function EngineDetail({ id, study, ask }: { id: string; study: St
       <div className="es-adv-grid">
         <div>
           <p className="dk-stat-label es-rail-h">{fin(study.matched_n) ? `All ${study.matched_n} events` : "All events"}</p>
+          <FailedScope q={events}>
+          <LoadingLine busy={!list && !events.isError && !events.data} />
           {list ? (
             <table className="es-table es-wide">
               <thead>
@@ -61,6 +63,7 @@ export default function EngineDetail({ id, study, ask }: { id: string; study: St
           ) : events.isError || events.data ? (
             <Awaiting>the event list did not answer</Awaiting>
           ) : null}
+          </FailedScope>
           {/* Codex R-16: "All N events" is the study's count; rows the boundary could not read are said. */}
           <DroppedNote n={droppedOf(events.data, "events")} one="event" />
         </div>

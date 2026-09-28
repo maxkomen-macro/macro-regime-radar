@@ -7,6 +7,10 @@
  * →` on Basket & Hedge. Data Pipeline's header carries its refresh badge in
  * the toggle's place (its PNG). Below 900px a Menu button opens the sidebar,
  * which stays the only navigation.
+ *
+ * desk/usability item 1: between the breadcrumb and the toggle, the stock
+ * search (InstrumentSearch) on every page; a pick opens Technicals for that
+ * stock, the S&P 500 itself on the page's default.
  */
 
 import type { ReactNode } from "react";
@@ -18,6 +22,25 @@ import { TOUR_BUTTON_ID, TOUR_STRIP_ID } from "./tour/TourStrip";
 import { parseTour, tourHref } from "./tour/tour";
 import { askFromSearch, askParams } from "./event-study/question";
 import { useMixedGenerations } from "./data/generations";
+import { useRegime } from "./data/api";
+import { InstrumentSearch } from "./kit/InstrumentSearch";
+import { symbolOf } from "./technicals/symbol";
+
+/** Technicals for a picked stock (item 2: `?symbol=`); the S&P 500 is the page's default, so it takes none. */
+export function technicalsHref(pathTo: (slug: string) => string, symbol: string): string {
+  const sym = symbol.trim().toUpperCase();
+  return sym === "^GSPC" || sym === "GSPC" || sym === "SPX" || !sym ? pathTo("technicals") : withParam(pathTo("technicals"), "symbol", sym);
+}
+
+/** The header's stock search: a pick opens Technicals for it. */
+function HeaderSearch({ pathTo }: { pathTo: (slug: string) => string }) {
+  const navigate = useNavigate();
+  return (
+    <div className="dk-top-search" role="search" aria-label="Stocks">
+      <InstrumentSearch dense ariaLabel="Search a stock" onSelect={(hit) => navigate(technicalsHref(pathTo, hit.symbol))} />
+    </div>
+  );
+}
 
 export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { view: DeskView; onChange: (v: DeskView) => void; labels?: [string, string] }) {
   return (
@@ -32,6 +55,28 @@ export function ViewToggle({ view, onChange, labels = ["Desk", "Client"] }: { vi
   );
 }
 
+/** §14.6: the one action of a page whose purpose points elsewhere; nothing is drawn until it can work. */
+function PageLink({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => string }) {
+  const regime = useRegime({ enabled: page.slug === "regime" });
+  const label = regime.data?.current?.label;
+  let to: string | null = null;
+  let text = "";
+  if (page.slug === "sectors") [to, text] = [pathTo("technicals"), "S&P 500 technicals →"];
+  else if (page.slug === "macro") [to, text] = [withParam(pathTo("event-study"), "preset", "10y-2sigma-20d"), "Study a 10-year yield jump →"];
+  else if (page.slug === "signal-ledger") [to, text] = [pathTo("event-study"), "Ask your own question →"];
+  else if (page.slug === "build-notes") [to, text] = [tourHref(1), "Take the walkthrough →"];
+  else if (page.slug === "regime" && typeof label === "string" && label) {
+    const q = new URLSearchParams({ shock: "spx", window: "20", move: "down2s", while: `regime:${label}`, target: "spx", horizon: "20" });
+    [to, text] = [`${pathTo("event-study")}${pathTo("event-study").includes("?") ? "&" : "?"}${q.toString()}`, `Study the S&P in ${label} →`];
+  }
+  if (!to) return null;
+  return (
+    <Link className="dk-btn" data-kind="light" to={to} data-testid="dk-act">
+      {text}
+    </Link>
+  );
+}
+
 function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => string }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -41,16 +86,37 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
   const monitor = page.slug === "event-study" ? askParams(askFromSearch(location.search)).reduce((href, [k, v]) => withParam(href, k === "preset" ? "from" : k, v), pathTo("position-monitor")) : pathTo("position-monitor");
   if (page.action === "walkthrough")
     return (
-      <button type="button" id={TOUR_BUTTON_ID} className="dk-btn" aria-controls={touring ? TOUR_STRIP_ID : undefined} onClick={() => navigate(tourHref(1))} data-testid="dk-walkthrough">
+      <button type="button" id={TOUR_BUTTON_ID} className="dk-btn" data-kind="light" aria-controls={touring ? TOUR_STRIP_ID : undefined} onClick={() => navigate(tourHref(1))} data-testid="dk-walkthrough">
         Walkthrough
       </button>
     );
+  // desk/usability §14.4: the Position Monitor opens on the saved positions; its action opens the form.
+  if (page.slug === "position-monitor") {
+    const q = new URLSearchParams(location.search);
+    const open = q.get("new") === "1" || ["from", "basket", "instrument", "shock"].some((k) => q.get(k));
+    return open ? null : (
+      <Link className="dk-btn" data-kind="light" to={withParam(pathTo("position-monitor"), "new", "1")} data-testid="dk-act">
+        + New position
+      </Link>
+    );
+  }
+  // desk/usability §14.2: Technicals opens the instrument on screen as a position (the S&P 500 by default).
+  if (page.slug === "technicals") {
+    const sym = symbolOf(location.search);
+    return (
+      <Link className="dk-btn" data-kind="light" to={withParam(withParam(pathTo("position-monitor"), "new", "1"), "instrument", sym ?? "S&P 500")} data-testid="dk-act">
+        Open as position →
+      </Link>
+    );
+  }
   if (page.action === "act")
     return (
-      <Link className="dk-btn" data-kind="light" to={monitor} data-testid="dk-act">
+      // §14.6: on Event Study the obvious primary action is Run, in the page; this one is secondary.
+      <Link className="dk-btn" data-kind={page.slug === "event-study" ? undefined : "light"} to={monitor} data-testid="dk-act">
         Act on this → Position Monitor
       </Link>
     );
+  if (page.action === "link") return <PageLink page={page} pathTo={pathTo} />;
   // §10: a basket kept in this browser is the subject sent; the page writes the open one in the address.
   const basket = new URLSearchParams(location.search).get("basket");
   if (page.action === "send")
@@ -98,6 +164,7 @@ export default function DeskTopBar({
           <span aria-current="page">{page.label}</span>
         </nav>
       </div>
+      <HeaderSearch pathTo={pathTo} />
       <div className="dk-top-r">
         {right ?? (page.toggle === false ? null : <ViewToggle view={view} onChange={onChangeView} />)}
         {/* In the client view the tab's own action gives way to the one-pager (§11, the PNG). */}

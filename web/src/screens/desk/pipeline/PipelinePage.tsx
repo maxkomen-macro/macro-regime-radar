@@ -18,7 +18,7 @@ import { droppedOf } from "../data/schema";
 import type { PipelineGroup } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { Awaiting, DroppedNote, droppedWords, Unserved } from "../kit/ui";
+import { Awaiting, DroppedNote, droppedWords, Unserved, LoadingLine, FailedScope } from "../kit/ui";
 import { dayLong, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
@@ -220,8 +220,25 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
   const p = q.data;
   const groups = useMemo(() => (Array.isArray(p?.groups) ? p.groups : []), [p]);
   const [search, setSearch] = useSearchParams();
-  const [text, setText] = useState("");
+  // desk/usability §14.9: the search lives in the address (`?q=`), so a link opens the same series.
+  const text = search.get("q") ?? "";
   const [hit, setHit] = useState<{ group: string; id: string } | null>(null);
+  // Opened cold on `?q=`, the search is found once the groups arrive, and its group opens.
+  useEffect(() => {
+    if (!text.trim() || !groups.length) return;
+    const found = findSeries(groups, text);
+    setHit(found);
+    if (found && search.get("group") !== slugOf(found.group))
+      setSearch(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("group", slugOf(found.group));
+          return next;
+        },
+        { replace: true },
+      );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups]);
   const opened = search.get("group");
   // A group the boundary could not read has no count of its own, so then no total is claimed (Codex R-16).
   const lostGroups = droppedOf(p, "groups");
@@ -240,18 +257,18 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
       { replace: true },
     );
   const onSearch = (v: string) => {
-    setText(v);
     const found = findSeries(groups, v);
     setHit(found);
-    if (found)
-      setSearch(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("group", slugOf(found.group));
-          return next;
-        },
-        { replace: true },
-      );
+    setSearch(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (v) next.set("q", v);
+        else next.delete("q");
+        if (found) next.set("group", slugOf(found.group));
+        return next;
+      },
+      { replace: true },
+    );
   };
   // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
   const unserved = unavailableOf(q.error);
@@ -280,6 +297,7 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
           </ol>
         </section>
         <div className="pl-grid">
+          <FailedScope q={q}>
           <section className="dk-card pl-inventory" aria-labelledby="pl-inv-title" aria-busy={!p && !q.isError}>
             <div className="pl-card-head">
               <h2 className="dk-card-title" id="pl-inv-title">
@@ -287,8 +305,10 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
               </h2>
               {/* §11: "generated from the registry and its consumers, counts derived". */}
               <p className="pl-head-sub">{total ? `${total} series · grouped · generated from the registry` : "grouped · generated from the registry"}</p>
-              <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} disabled={!groups.length} />
+              {/* §14.13: the search appears with the series it searches. */}
+              {groups.length ? <input className="pl-search" type="search" aria-label="Find a series" placeholder="Find a series… (VIX, DGS10, gold)" value={text} onChange={(e) => onSearch(e.target.value)} /> : null}
             </div>
+            <LoadingLine busy={!p && !q.isError} />
             {text.trim() && !hit ? (
               <p className="pl-miss" role="status">
                 {/* Codex R-16: a series the boundary could not read may be the one asked for. */}
@@ -307,6 +327,7 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
             <DroppedNote n={lostGroups} one="group" />
             <p className="pl-mono-note">Click a group to expand · search jumps to a series and opens its group · new series land in a group automatically</p>
           </section>
+          </FailedScope>
           <Bridge />
         </div>
         {/* §11, §1.0.3: the sync the bridge card's schema is for, as a PROTOTYPE; the DDL and the CSV above are real. */}

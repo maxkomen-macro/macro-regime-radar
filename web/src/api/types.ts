@@ -935,4 +935,4 @@ export interface BootstrapStatus {
   db_size: number | null;
 }
 
-export type CandleRange = "1D" | "5D" | "1M" | "6M" | "1Y" | "5Y" | "MAX";
+export type CandleRange = "1D" | "5D" | "1M" | "6M" | "1Y" | "2Y" | "5Y" | "MAX";

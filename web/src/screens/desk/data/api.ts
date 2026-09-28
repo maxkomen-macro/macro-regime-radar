@@ -31,9 +31,11 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketHedgeResponse, BasketPriceResponse, DeskErrorBody, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketHedgeResponse, BasketPriceResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
-const BASE: string = import.meta.env.VITE_API_BASE ?? "";
+// `import.meta.env` is Vite's; the e2e specs load this module in Node through the kit (kit/ui reads DeskApiError
+// here since desk/usability §14.12), where it is undefined, so the read is guarded.
+const BASE: string = import.meta.env?.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
 /** §12.2: the moves that ask no window (a cross, an RSI crossing). */
 const NO_WINDOW: readonly string[] = ["cross_above", "cross_below", "rsi_above_70", "rsi_below_30"];
@@ -231,34 +233,53 @@ export async function deskGet<T>(path: string, params?: Params, opts: { signal?:
  * server served with a 2xx, an answer that arrived unreadable, one not served yet, or a poll that ran out. */
 export const retry = (count: number, err: unknown) => count < 1 && (!(err instanceof DeskApiError) || ((err.status === 0 || err.status >= 500) && !err.unreadable && !err.awaiting));
 
+/**
+ * desk/usability §14.12 (Codex merge review): a refetch that fails after a good answer leaves React Query's
+ * previous data in place, so a card would print the old numbers, its chart and a Live badge beside "Couldn't
+ * load · Retry". The Desk shows nothing from a request whose latest answer failed: while the query is in error
+ * its data reads undefined, and the next good answer (a Retry, a refetch) brings the numbers back.
+ */
+export function current<R extends { isError: boolean; data: unknown }>(q: R): R {
+  return q.isError && q.data !== undefined ? { ...q, data: undefined } : q;
+}
+
 function useDesk<T>(path: string, params?: Params, opts: { enabled?: boolean } = {}) {
-  return useQuery<T, DeskApiError>({
-    queryKey: ["desk-v2", path, params ?? null],
-    queryFn: ({ signal: s }) => deskGet<T>(path, params, { signal: s }),
-    staleTime: 60_000,
-    retry,
-    enabled: opts.enabled ?? true,
-  });
+  return current(
+    useQuery<T, DeskApiError>({
+      queryKey: ["desk-v2", path, params ?? null],
+      queryFn: ({ signal: s }) => deskGet<T>(path, params, { signal: s }),
+      staleTime: 60_000,
+      retry,
+      enabled: opts.enabled ?? true,
+    }),
+  );
 }
 
 export const useOverview = () => useDesk<OverviewResponse>("/overview");
 export const useLedger = () => useDesk<LedgerResponse>("/ledger");
-export const useTechnicals = (opts: { enabled?: boolean } = {}) => useDesk<TechnicalsResponse>("/technicals", undefined, opts);
+/** §12.7 for the S&P 500; with a symbol, §14.2's technicals for that US stock or ETF (desk/usability). */
+export const useTechnicals = (opts: { enabled?: boolean; symbol?: string | null } = {}) =>
+  useDesk<TechnicalsResponse>("/technicals", opts.symbol ? { symbol: opts.symbol } : undefined, { enabled: opts.enabled });
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
-export const useRegime = () => useDesk<RegimeResponse>("/regime");
+export const useRegime = (opts: { enabled?: boolean } = {}) => useDesk<RegimeResponse>("/regime", undefined, opts);
 export const useMacro = (opts: { enabled?: boolean } = {}) => useDesk<MacroResponse>("/macro", undefined, opts);
 
 /** §12.2: one study; the previous answer stays on screen while the next is asked. */
 export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {
-  return useQuery<StudyResponse, DeskApiError>({
-    queryKey: ["desk-v2", "/study", params],
-    queryFn: ({ signal: s }) => deskGet<StudyResponse>("/study", params, { signal: s }),
-    staleTime: 60_000,
-    retry,
-    placeholderData: keepPreviousData,
-    enabled: opts.enabled ?? true,
-  });
+  return current(
+    useQuery<StudyResponse, DeskApiError>({
+      queryKey: ["desk-v2", "/study", params],
+      queryFn: ({ signal: s }) => deskGet<StudyResponse>("/study", params, { signal: s }),
+      staleTime: 60_000,
+      retry,
+      placeholderData: keepPreviousData,
+      enabled: opts.enabled ?? true,
+    }),
+  );
 }
+
+/** §12.17: the instruments this store prices from its own closes (the Desk search's fallback). */
+export const useInstruments = (opts: { enabled?: boolean } = {}) => useDesk<InstrumentsResponse>("/instruments", undefined, opts);
 
 /** §12.11: the series inventory, grouped, from the pipeline config. */
 export const usePipeline = () => useDesk<PipelineResponse>("/pipeline");
@@ -272,22 +293,26 @@ export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("
 /** §12.15: a basket kept in this browser, priced by the API from EODHD's daily bars. `legs` is
  * `TICKER:weight,…` in percent (the saved weights' digits); asked only for a saved basket. */
 export function useBasketPrice(params: { legs: string; method: string; notional: string } | null) {
-  return useQuery<BasketPriceResponse, DeskApiError>({
-    queryKey: ["desk-v2", "/basket/price", params],
-    queryFn: ({ signal: s }) => deskGet<BasketPriceResponse>("/basket/price", params ?? undefined, { signal: s }),
-    staleTime: 5 * 60_000,
-    retry,
-    enabled: !!params,
-  });
+  return current(
+    useQuery<BasketPriceResponse, DeskApiError>({
+      queryKey: ["desk-v2", "/basket/price", params],
+      queryFn: ({ signal: s }) => deskGet<BasketPriceResponse>("/basket/price", params ?? undefined, { signal: s }),
+      staleTime: 5 * 60_000,
+      retry,
+      enabled: !!params,
+    }),
+  );
 }
 
 /** §12.16: the ETF hedge for the same saved basket, ranked by fit, and the linear stress test. */
 export function useBasketHedge(params: { legs: string; method: string; notional: string } | null) {
-  return useQuery<BasketHedgeResponse, DeskApiError>({
-    queryKey: ["desk-v2", "/basket/hedge", params],
-    queryFn: ({ signal: s }) => deskGet<BasketHedgeResponse>("/basket/hedge", params ?? undefined, { signal: s }),
-    staleTime: 5 * 60_000,
-    retry,
-    enabled: !!params,
-  });
+  return current(
+    useQuery<BasketHedgeResponse, DeskApiError>({
+      queryKey: ["desk-v2", "/basket/hedge", params],
+      queryFn: ({ signal: s }) => deskGet<BasketHedgeResponse>("/basket/hedge", params ?? undefined, { signal: s }),
+      staleTime: 5 * 60_000,
+      retry,
+      enabled: !!params,
+    }),
+  );
 }

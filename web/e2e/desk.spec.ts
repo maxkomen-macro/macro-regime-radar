@@ -6,7 +6,8 @@
  * §1.3 color; no banned word renders; every card that reads live data
  * carries its badge; every Tab stop has a name and a ring; nothing animates
  * under reduced motion; a phone gets the sidebar from a Menu button with no
- * sideways scroll; a failed endpoint leaves labels and "Awaiting refresh".
+ * sideways scroll; a failed endpoint leaves labels and "Couldn't load · Retry"
+ * (desk/usability §14.12).
  *
  * Run against a dev server: E2E_BASE_URL=http://127.0.0.1:5193 npx playwright test e2e/desk.spec.ts
  */
@@ -65,7 +66,7 @@ async function open(page: Page, route: string, over?: Parameters<typeof routeDes
 test.describe("desk v2", () => {
   test.use({ viewport: { width: 1440, height: 960 } });
 
-  test("the sidebar is the only navigation: three groups, eleven tabs, no tab strip", async ({ page }) => {
+  test("the sidebar is the only navigation: labelled groups, eleven tabs, no tab strip (§14.5)", async ({ page }) => {
     await open(page, "/desk/overview");
     const side = page.getByRole("complementary", { name: "Sidebar" });
     await expect(side).toBeVisible();
@@ -134,10 +135,11 @@ test.describe("desk v2", () => {
     }
   });
 
-  // Codex R-09: a completed 200 whose body is null is Awaiting refresh on every tab, never a loading state.
+  // Codex R-09: a completed 200 whose body is null is never a loading state; since desk/usability §14.12 it is a
+  // request that could not be loaded, said once per card with Retry.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
     { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
-    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover", "Years"] },
+    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover", "Years", "From 1-year high"] },
     { slug: "event-study", path: "/api/desk/study", labels: ["Events", "Up a month later", "Median at a month", "Worst · best"] },
     { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
@@ -146,10 +148,11 @@ test.describe("desk v2", () => {
     { slug: "data-pipeline", path: "/api/desk/pipeline", labels: ["Series inventory"] },
   ];
   for (const t of NULL_ANSWERS)
-    test(`${t.slug}: a 200 answered null keeps its labels and says Awaiting refresh`, async ({ page }) => {
+    test(`${t.slug}: a 200 answered null keeps its labels and says Couldn't load · Retry`, async ({ page }) => {
       await open(page, `/desk/${t.slug}`, { [t.path]: { status: 200, body: null } });
       const main = page.getByRole("main");
-      await expect(main.getByText(/Awaiting refresh/).first()).toBeVisible();
+      await expect(main.getByTestId("dk-failed").first()).toHaveText("Couldn't load · Retry");
+      await expect(main).not.toContainText("Awaiting refresh");
       for (const l of t.labels) await expect(main, l).toContainText(l);
       await settle(page, 700);
       // Nothing waits on an answer that has come: no part of the tab stays busy.
@@ -167,7 +170,8 @@ test.describe("desk v2", () => {
       for (const l of ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"]) await expect(main).toContainText(l);
       await expect(main).not.toContainText("Awaiting refresh");
       await expect(page.getByTestId("dk-live").first()).toHaveText("Not yet served");
-      await expect(main.getByTestId("dk-advanced").first()).toBeDisabled();
+      // §14.13: an Advanced that would open nothing is not shown.
+      await expect(main.getByTestId("dk-advanced")).toHaveCount(0);
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
@@ -198,7 +202,7 @@ test.describe("desk v2", () => {
     const study = payloadOf(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!);
     for (const question of [{}, { ...(study.question as object), while: 5 }]) {
       await open(page, "/desk/event-study", { "/api/desk/study": { status: 200, body: { ...study, question } } });
-      await expect(page.getByRole("region", { name: "The answer" })).toContainText("Awaiting refresh");
+      await expect(page.getByRole("region", { name: "The answer" })).toContainText("Couldn't load · Retry");
       await expect(page.getByText(/rendering error/)).toHaveCount(0);
       await open(page, "/desk/position-monitor?from=gold-2sigma-spx-weak", { "/api/desk/study": { status: 200, body: { ...study, question } } });
       await expect(page.getByText(/is awaiting refresh; the gate is the same for every position/)).toBeVisible();
@@ -255,7 +259,7 @@ test.describe("desk v2", () => {
     await seedPositions(page, [ndx, spx, { ...curve, entry_value: 55, original_room: 40 }]);
     await open(page, "/desk/overview");
     // §2: the K−2 row governing today (a September session reads the July row).
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Jul row");
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · July data");
     // The audit's values (§2.2, §2.1): the July row is Goldilocks; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Goldilocks");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
@@ -280,9 +284,9 @@ test.describe("desk v2", () => {
     expect(await auditPalette(page)).toEqual([]);
   });
 
-  test("overview: a failed /overview keeps every label and says Awaiting refresh", async ({ page }) => {
+  test("overview: a failed /overview keeps every label and says Couldn't load · Retry on each tile (§14.12)", async ({ page }) => {
     await open(page, "/desk/overview", { "/api/desk/overview": { status: 503, body: { error: "generation warming" } } });
-    for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name })).toContainText("Awaiting refresh");
+    for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name }).getByTestId("dk-failed")).toHaveText("Couldn't load · Retry");
     await expect(page.getByText("Goldilocks")).toHaveCount(0);
     await expect(page.getByTestId("dk-live")).toHaveCount(0);
   });
@@ -349,16 +353,18 @@ test.describe("desk v2", () => {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
 
-  test("event study: the catalog drives the chips and the slots; a question outside it is refused with the served message (§4, §12.2, §12.3)", async ({ page }) => {
+  test("event study: the catalog drives the chips; every slot option works; a cross on anything but the S&P is refused with the served message (§4, §12.2, §14.3)", async ({ page }) => {
     await open(page, "/desk/event-study");
     const chips = page.getByRole("group", { name: "Common questions" });
     await expect(chips.getByRole("button", { name: "S&P golden cross" })).toBeEnabled();
-    await expect(chips.getByRole("button", { name: "Dollar −2σ, 20 days" })).toBeDisabled();
+    // §14.3: a study this store cannot answer is not shown; one line says why.
+    await expect(chips.getByRole("button", { name: "Dollar −2σ, 20 days" })).toHaveCount(0);
+    await expect(chips).toContainText("Not shown: Dollar −2σ, 20 days");
     await expect(page.getByLabel("Shock")).toHaveValue("gold");
-    await expect.poll(() => page.getByLabel("Window").locator("option:not([disabled])").evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value))).toEqual(["20"]);
-    await open(page, "/desk/event-study?shock=gold&window=60&move=up2s&while=none&target=spx&horizon=20");
+    await expect.poll(() => page.locator("select option[disabled]").count()).toBe(0);
+    await open(page, "/desk/event-study?shock=gold&move=cross_above&while=none&target=spx&horizon=20");
     // §12.0: the refusal names what is not supported.
-    await expect(page.getByRole("region", { name: "The answer" })).toContainText("No study in the catalog asks shock gold, window 60, move up2s, while none, target spx, horizon 20.");
+    await expect(page.getByRole("region", { name: "The answer" })).toContainText("A cross is the S&P 500's own 50- and 200-day averages crossing");
     expect(await auditPalette(page)).toEqual([]);
   });
 
@@ -379,7 +385,7 @@ test.describe("desk v2", () => {
     expect(await bannedWordsOnPage(page)).toEqual([]);
   });
 
-  test("event study: Export downloads the events as CSV; the confidence chips are disabled and ask nothing (§4, §12.2)", async ({ page }) => {
+  test("event study: Export downloads the events as CSV; there is no confidence control, and nothing asks with one (§4, §12.2, §14.3)", async ({ page }) => {
     const calls = await routeDesk(page);
     await page.goto("/desk/event-study", { waitUntil: "domcontentloaded" });
     await settle(page, 500);
@@ -390,11 +396,9 @@ test.describe("desk v2", () => {
     // §12.4's columns: the event, its entry, its regime, then exit, value and completeness per horizon.
     expect(text.split("\n")[0]).toBe("event_date,entry_date,regime,exit_5,value_5,complete_5,exit_10,value_10,complete_10,exit_20,value_20,complete_20,exit_60,value_60,complete_60");
     expect(text.trim().split("\n")).toHaveLength(19);
-    const chips = page.getByRole("group", { name: "Confidence" });
-    await expect(chips.getByRole("button", { name: "80%" })).toBeDisabled();
-    await expect(chips.getByRole("button", { name: "90%" })).toHaveAttribute("aria-pressed", "true");
-    await expect(chips).toContainText("not yet served");
-    await expect(page.getByRole("complementary", { name: "Verdict and detail" })).toContainText("Confidence levels other than 90%: interval projection at other quantiles is new plumbing.");
+    // §14.3: the engine's one level, in words; no confidence control.
+    await expect(page.getByRole("group", { name: "Confidence" })).toHaveCount(0);
+    await expect(page.getByTestId("es-conf")).toHaveText("90% interval");
     expect(calls.some((c) => c.includes("confidence"))).toBe(false);
     await expect(page).not.toHaveURL(/confidence/);
     // "Act on this" carries the question to the Position Monitor.
@@ -447,13 +451,13 @@ test.describe("desk v2", () => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/regime");
-      await expect(page.locator("body")).toContainText("Live · Jul row");
+      await expect(page.locator("body")).toContainText("Live · July data");
       const where = page.getByRole("region", { name: /Where we are/ });
       await expect(where.locator(".rg-latest")).toHaveText("Latest print: Aug 2026");
       const rec = page.getByRole("region", { name: /Recession score/ });
       await expect(rec.locator(".rg-rec-for")).toHaveText("score for Aug\u00a02026 · inputs through May\u00a02026");
       await expect(rec).toContainText("High risk · above 40%");
-      if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · Jul row");
+      if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · July data");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
@@ -571,7 +575,8 @@ test.describe("desk v2", () => {
     page.on("request", (r) => {
       if (r.url().includes("/api/desk/positions")) asked.push(`${r.method()} ${r.url()}`);
     });
-    await open(page, "/desk/position-monitor");
+    // §14.4: the form is behind "+ New position" (`?new=1`).
+    await open(page, "/desk/position-monitor?new=1");
     await page.getByLabel("Instrument", { exact: true }).fill("TLT");
     await page.getByLabel(/Variant view/).fill("The market thinks rates stay high, I think they fall, because growth is slowing.");
     await page.getByLabel(/Pre-mortem/).fill("It lost money because inflation surprised up.");
@@ -683,7 +688,7 @@ test.describe("desk v2", () => {
 
   test("SPY gets no index numbers; the S&P 500 does (Codex R-08)", async ({ page }) => {
     // A session whose 50 closes are all stored; the fixture's Sep 23 reads the average null (Codex R-24).
-    await open(page, "/desk/position-monitor", { "/api/desk/technicals": { status: 200, body: completeTechnicals() } });
+    await open(page, "/desk/position-monitor?new=1", { "/api/desk/technicals": { status: 200, body: completeTechnicals() } });
     await page.getByLabel("Instrument", { exact: true }).fill("S&P 500");
     await expect(page.getByRole("button", { name: "closes below its 50-day (7,625)" })).toBeVisible();
     await page.getByLabel("Instrument", { exact: true }).fill("SPY");
@@ -745,7 +750,7 @@ test.describe("desk v2", () => {
     // The hand-off: Position Monitor reads the basket, a manual subject (§9).
     await page.getByTestId("dk-act").click();
     await expect(page).toHaveURL(/\/desk\/position-monitor\?basket=local-1$/);
-    await expect(page.getByRole("textbox", { name: "Instrument" })).toHaveValue("AI infrastructure basket");
+    await expect(page.getByRole("combobox", { name: "Instrument", exact: true })).toHaveValue("AI infrastructure basket");
     // A phone gets both cards, one under the other, and never scrolls sideways.
     for (const width of [1440, 1200, 1101, 390]) {
       await page.setViewportSize({ width, height: 900 });

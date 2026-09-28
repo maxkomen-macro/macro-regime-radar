@@ -1,0 +1,260 @@
+{
+  "base": "http://127.0.0.1:5297",
+  "started": "2026-09-28T06:20:38.708Z",
+  "shots": [
+    {
+      "file": "01-landing.png",
+      "route": "/",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/regime/latest",
+        "200 /api/regime/history?limit=24",
+        "200 /api/signals/latest"
+      ]
+    },
+    {
+      "file": "02-overview.png",
+      "route": "/desk/overview",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview"
+      ]
+    },
+    {
+      "file": "03-technicals-sp500.png",
+      "route": "/desk/technicals",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/ledger",
+        "200 /api/desk/overview",
+        "200 /api/desk/ledger",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview"
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
+    },
+    {
+      "file": "04-technicals-nvda.png",
+      "route": "/desk/technicals?symbol=NVDA",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 2
+      },
+      "answers": [
+        "200 /api/desk/ledger",
+        "200 /api/desk/technicals",
+        "200 /api/desk/ledger",
+        "200 /api/desk/technicals",
+        "200 /api/desk/technicals?symbol=NVDA",
+        "200 /api/desk/overview"
+      ],
+      "retaken": "2026-09-28T06:21:26.484Z"
+    },
+    {
+      "file": "05-sectors.png",
+      "route": "/desk/sectors",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/sectors",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/sectors",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview"
+      ]
+    },
+    {
+      "file": "06-macro-with-matrix.png",
+      "route": "/desk/macro",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/macro",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/technicals",
+        "200 /api/desk/macro",
+        "200 /api/desk/overview"
+      ]
+    },
+    {
+      "file": "07-regime.png",
+      "route": "/desk/regime",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/regime",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/regime",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview"
+      ]
+    },
+    {
+      "file": "08-event-study-build-your-own.png",
+      "route": "/desk/event-study?shock=vix&window=20&move=up2s&while=regime%3AOverheating&target=gold&horizon=20&mode=build",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/study/catalog",
+        "200 /api/desk/overview",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/study/catalog",
+        "200 /api/desk/study?shock=vix&window=20&move=up2s&while=regime%3AOverheating&target=gold&horizon=20"
+      ]
+    },
+    {
+      "file": "09-signal-ledger.png",
+      "route": "/desk/signal-ledger",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/ledger",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/ledger",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview"
+      ]
+    },
+    {
+      "file": "10-basket-hedge-preset.png",
+      "route": "/desk/basket-hedge",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000",
+        "200 /api/desk/basket/hedge?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000"
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
+    },
+    {
+      "file": "11-position-monitor.png",
+      "route": "/desk/position-monitor",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/macro",
+        "200 /api/desk/overview",
+        "200 /api/desk/technicals",
+        "200 /api/desk/macro",
+        "200 /api/desk/overview"
+      ]
+    },
+    {
+      "file": "11b-position-monitor-saved-positions.png",
+      "route": "/desk/position-monitor",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/macro",
+        "200 /api/desk/overview",
+        "200 /api/desk/technicals",
+        "200 /api/desk/macro",
+        "200 /api/desk/overview"
+      ]
+    },
+    {
+      "file": "12-data-pipeline.png",
+      "route": "/desk/data-pipeline",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/pipeline",
+        "200 /api/desk/technicals",
+        "200 /api/desk/pipeline",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview"
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
+    },
+    {
+      "file": "13-build-notes.png",
+      "route": "/desk/build-notes",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview"
+      ],
+      "retaken": "2026-09-28T07:40:09.008Z",
+      "head": "eda8e4c2"
+    },
+    {
+      "file": "14-desk-search-N.png",
+      "route": "/desk/overview",
+      "counts": {
+        "loading": 0,
+        "failed": 0,
+        "awaiting": 0
+      },
+      "answers": [
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/technicals",
+        "200 /api/desk/overview",
+        "200 /api/desk/instruments",
+        "200 /api/market/search?q=N&limit=10&scope=us"
+      ]
+    }
+  ],
+  "finished": "2026-09-28T06:21:06.669Z"
+}

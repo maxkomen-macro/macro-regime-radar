@@ -1,0 +1,34 @@
+# Keep the API warm (desk/usability item 10, DESK_FRAME3_SPEC §14.10): every ten minutes,
+# ask the deployed API's liveness route, so the first visitor after a quiet
+# spell does not wait for a cold process. Read-only: it touches no secret, no
+# database and no repository content, and a failed ping only fails this run.
+name: Keep the API warm
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: keep-api-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ask the API's health route
+        env:
+          API_URL: https://macro-economic-radar-api.onrender.com
+        run: |
+          for i in 1 2 3; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 45 "$API_URL/health/live" || echo 000)
+            echo "attempt $i: /health/live answered $code"
+            if [ "$code" = "200" ]; then exit 0; fi
+            sleep 10
+          done
+          echo "The API did not answer 200 in three tries."
+          exit 1

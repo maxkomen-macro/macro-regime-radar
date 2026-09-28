@@ -221,6 +221,10 @@ const question = o(
 );
 
 const pricePoint = o({ date: "s!", close: "n", ma50: "n", ma200: "n" });
+// desk/usability §14.2: the relative-strength line, rebased to 100 at each range's first point.
+const rsPoint = o({ date: "s!", rs: "n", rs_ma50: "n" });
+// desk/usability §14.2: the drawdown's and the realized volatility's windows (books' `span` below is the basket's, nullable).
+const techSpan = o({ start: "s!", end: "s!", n: "n" });
 const relPoint = o({ date: "s!", rel: "n" });
 const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" });
 const BANDS = ["low", "elevated", "high_risk"] as const;
@@ -328,6 +332,13 @@ const benchmark = o({
 });
 
 export const SCHEMAS: Readonly<Record<string, Obj>> = {
+  // §12.17 (desk/usability): the stored instruments; a row without its symbol and name is dropped.
+  "/instruments": o({
+    ...envelope,
+    instruments: l(o({ symbol: "s!", name: "s!", kind: e(["etf", "index"]), first: "s?", last: "s?", source: "s" })),
+    // Codex R-08: an instrument whose stored rows could not be read, and why; the rest stand.
+    excluded: l(o({ symbol: "s!", reason: "s!" })),
+  }),
   "/overview": o({
     ...envelope,
     since_last_close: o({
@@ -366,6 +377,25 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/ledger": o({ ...envelope, verdict_rule: "s", horizon: "n", comparison_session: "s?", prev_session: "s?", scored_n: "n", unavailable_n: "n", signals: l(ledgerRow) }),
   "/technicals": o({
     ...envelope,
+    // desk/usability §14.2: which instrument, and whether its signals are scored (the S&P 500 only).
+    symbol: "s",
+    name: "s",
+    scored: "b",
+    drawdown: o({ value: "n", peak: o({ date: "s!", close: "n" }, { nul: true }), window: techSpan, complete: "b" }, { nul: true }),
+    realized_vol: o({ value: "n", window: techSpan, annualization: "n" }, { nul: true }),
+    rs: o(
+      {
+        benchmark: "s",
+        date: "s",
+        value: "n",
+        ma50: "n",
+        vs_ma50: "n",
+        chg_3m: "n",
+        chg_3m_dates: o({ from: "s!", to: "s!" }, { nul: true }),
+        series: o({ "6m": l(rsPoint), "1y": l(rsPoint), "3y": l(rsPoint) }),
+      },
+      { nul: true },
+    ),
     price: "n",
     // §12.7: the session the price and the averages are dated to.
     date: "s",
@@ -407,6 +437,10 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     // §12.7: the twelve calendar months; a month without its name claims nothing.
     seasonality: o({ rows: l(seasonRow, { req: true }), window: o({ start: "s!", end: "s!", n: "n!" }), freq: "s", source: "s" }, { nul: true }),
     signals_allowlist: l("s!"),
+    // Codex R-03: a stock's bars dated after the last completed session, dropped before any figure.
+    excluded_bars: o({ n: "n!", after: "s!" }, { nul: true }),
+    // A stock's bars served without an adjusted close, left out (the merge review).
+    unadjusted_bars: o({ n: "n!" }, { nul: true }),
     // A cross without its kind and day claims nothing (Codex G1-9).
     cross: o({ kind: e(["golden", "death"], { req: true }), date: "s!" }, { nul: true }),
     series: o({ "6m": l(pricePoint), "1y": l(pricePoint), "3y": l(pricePoint) }),
@@ -624,6 +658,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         allowed_horizons: l("n!"),
       }),
     ),
+    // Codex R-05: the builder's series, served with the catalog (the same list /study serves).
+    series: l(o({ key: "s!", label: "s!", roles: l("s!"), ops: l("s!"), unit: "s" })),
   }),
   // §12.4: every retained event, newest first, with each horizon's exit, value and completeness.
   "/study/events": o({

@@ -1,33 +1,37 @@
 /**
  * The Event Study rail (DESK_FRAME3_SPEC §4), top to bottom: the verdict box
  * (amber-bordered for Suggestive) with the verdict's label, the served
- * headline and why, and `Price it →` (disabled, not yet served, while Basket & Hedge is unavailable); the answer by regime a month later (§4's fixed label: §12.2
+ * headline and why; the answer by regime a month later (§4's fixed label: §12.2
  * serves `by_regime` and `last_events` at 20 sessions; a regime under ten
  * events prints its count and "too few cases to say"); the last five events; the range against a normal stretch at
- * the engine's 90% (the 80% and 95% chips disabled, "not yet served"); and the
- * footer: Advanced and Export.
+ * the engine's 90%; and the footer: Advanced and Export. desk/usability §14.3:
+ * no control does nothing, so the disabled `Price it →` and the 80% / 95%
+ * confidence chips are gone; the interval's level is said in words.
  */
 
 import type { StudyResponse } from "../data/types";
 import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
-import { Advanced, Awaiting, DroppedNote, Signed, UnservedLine, useUnserved, VerdictWord } from "../kit/ui";
+import { Advanced, Awaiting, DroppedNote, Signed, UnservedLine, useUnserved, VerdictWord, useLoadFailed } from "../kit/ui";
 import { droppedOf } from "../data/schema";
-import { CONFIDENCES, targetLabel } from "./question";
+import { targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
+import { defineTerms } from "../kit/Term";
 
 /** The rail with no answer: its section labels, and why there is nothing under them (§1.7). A served
  * study, Too few included, is scored (v4 B-02) and gets the whole rail. */
 export function RailPlaceholder() {
   // §1.0.2: a study served awaiting keeps the rail's four labels and prints its reason once, after them.
   const unserved = useUnserved();
+  // §14.12: after a failed request nothing is awaiting a refresh; the rail's line says Couldn't load once.
+  const failed = useLoadFailed();
   const why = "Awaiting refresh";
   if (unserved)
     return (
       <>
         {["Verdict", "By regime · a month later", "Last five events", "Range vs normal"].map((l) => (
           <div key={l} className="es-rail-empty">
-            <p className="dk-stat-label">{l}</p>
+            <p className="dk-stat-label">{defineTerms(l)}</p>
           </div>
         ))}
         <UnservedLine block={unserved} />
@@ -44,8 +48,14 @@ export function RailPlaceholder() {
         </>,
       ].map((l, i) => (
         <div key={i} className="es-rail-empty">
-          <p className="dk-stat-label">{l}</p>
-          <p className="dk-await">{why}</p>
+          <p className="dk-stat-label">{defineTerms(l)}</p>
+          {failed ? (
+            <p className="dk-stat-await" aria-hidden="true">
+              —
+            </p>
+          ) : (
+            <p className="dk-await">{why}</p>
+          )}
         </div>
       ))}
     </>
@@ -58,8 +68,6 @@ export const REGIME_FLOOR = 10;
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, string> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
 
-/** §1.0: why the 80% and 95% chips are not served (they have no envelope of their own, §1.0.2). */
-export const CONFIDENCE_UNAVAILABLE = "Confidence levels other than 90%: interval projection at other quantiles is new plumbing.";
 
 /** A horizon's interval on Δ, native in, in the target's display unit (§1.9): "−1.6 to +4.1 pts", "−10 to +40 bp". */
 export function rangeWords(lo: number | null, hi: number | null, unit: TargetUnit | undefined): string {
@@ -103,14 +111,7 @@ export default function StudyRail({
         {/* §4: VERDICT · <label> / the served headline / why / Price it. The served `why` carries the interval's
             numbers (§12.2), so a log study's sentence carries the §1.9 tooltip. */}
         <p>
-          {study.headline ? <b>{study.headline}</b> : null} <span title={tip}>{study.why}</span>{" "}
-          {/* §4: disabled with "not yet served" while Basket & Hedge is unavailable (§10). */}
-          <span className="es-price-off">
-            <button type="button" className="dk-link" disabled>
-              Price it →
-            </button>{" "}
-            <span>not yet served</span>
-          </span>
+          {study.headline ? <b>{study.headline}</b> : null} <span title={tip}>{study.why}</span>
         </p>
       </div>
 
@@ -192,19 +193,11 @@ export default function StudyRail({
         <p className="dk-stat-label">
           Range <span className="dk-lc">vs</span> normal
         </p>
-        {/* §4: the chips render disabled, "not yet served"; the engine's 90% (`verdict_confidence`) is the level shown. */}
-        <div className="es-conf" role="group" aria-label="Confidence">
-          <span className="es-conf-word">confidence</span>
-          {CONFIDENCES.map((c) => (
-            <button key={c} type="button" disabled aria-pressed={fin(study.verdict_confidence) && Math.abs(study.verdict_confidence - c) < 1e-9}>
-              {Math.round(c * 100)}%
-            </button>
-          ))}
-          <span className="es-conf-off">not yet served</span>
-        </div>
+        {/* §14.3: the engine's one level, said in words (`verdict_confidence`); there is no control for another. */}
+        <p className="es-conf-word" data-testid="es-conf">
+          {fin(study.verdict_confidence) ? `${Math.round(study.verdict_confidence * 100)}% interval` : "the engine's interval"}
+        </p>
       </div>
-      {/* §1.0.2: the chips have no served envelope, so the rail prints §1.0's reason for them. */}
-      <p className="es-conf-why dk-unserved-inline">{CONFIDENCE_UNAVAILABLE}</p>
       {horizons ? (
         <ul className="es-ranges">
           {horizons.map((h) => (

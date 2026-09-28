@@ -21,6 +21,20 @@
   gap: 19px;
   align-items: stretch;
 }
+/* desk/usability §14.4: the saved positions first; the monitored rows take the width. */
+.pm-saved {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 385px;
+  gap: 19px;
+  align-items: start;
+  margin-top: 4px;
+}
+.pm-saved-main {
+  min-width: 0;
+}
+.pm-close-form {
+  margin-left: 4px;
+}
 .pm-left {
   display: flex;
   flex-direction: column;
@@ -58,6 +72,19 @@
 }
 .pm-fields .dk-select select {
   height: 36px;
+}
+/* The instrument field is the Desk's stock search (desk/usability item 1), sized as its neighbours. */
+.pm-isearch input {
+  min-height: 36px !important;
+  font-family: var(--dk-sans) !important;
+  font-size: 14px !important;
+}
+/* Its suggestions are wider than the narrow field, so each shows its name and listing (the live check found
+   them cut to the field's width); inline styles pin the list to the field's edges, hence !important. */
+.pm-isearch [role="listbox"] {
+  right: auto !important;
+  min-width: 100%;
+  width: min(440px, calc(100vw - 32px));
 }
 .pm-gate {
   flex: 1;
@@ -288,6 +315,16 @@
   gap: 14px;
   margin-top: 10px;
 }
+.pm-close-hint {
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+/* A close the browser did not keep (storage off or full), on the Monitored card: amber, as a refusal. */
+.pm-close-note {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--dk-amber);
+}
 /* Export / Import JSON of the store (§1.8) and the records it cannot read (§9). */
 .pm-store {
   padding: 10px 17px 12px;
@@ -334,6 +371,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .pm-row3 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1100px) {
+  .pm-saved {
     grid-template-columns: minmax(0, 1fr);
   }
 }

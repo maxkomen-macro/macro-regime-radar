@@ -161,6 +161,58 @@ def _compute(gen, q: es.Query, cutoff: str) -> dict:
         conn.close()
 
 
+def _compute_traced(gen, q: es.Query, cutoff: str) -> dict:
+    """desk/usability §14.3: the same lease on the job's generation, running the
+    engine's traced run, which the Desk v2 projection reads (the native payload,
+    its full event table and its signal trace), shaped as a catalog study's
+    worker item (api/desk_items.desk_study): the engine's NotStored and
+    StudyError are refusal values."""
+    from api.desk_items import pre1970_counts
+
+    conn = dbpath.open_generation(gen)
+    if conn is None:
+        raise GenerationExpired()
+    try:
+        try:
+            native, table, trace = es.run_on_traced(conn, q, generation=gen.key, as_of=cutoff)
+        except es.NotStored as exc:
+            return {"ok": False, "kind": "not_stored", "reason": str(exc), "series": exc.series}
+        except es.StudyError as exc:
+            return {"ok": False, "kind": "study_error", "reason": str(exc), "series": None}
+        pre1970 = pre1970_counts(conn, native, trace, cutoff)
+    finally:
+        conn.close()
+    return {"ok": True, "native": native, "events": table, "trace": trace, "pre1970": pre1970}
+
+
+def traced_result(q: es.Query, gen) -> dict | None:
+    """desk/usability §14.3: a question outside the catalog, computed on request
+    for the Desk v2 routes, pinned to the request's generation `gen`, through
+    this module's pool, cache and ceiling (a repeat is a lookup). The item, or
+    None while it is still computing past COMPUTE_TIMEOUT_S; QueueFull when
+    CACHE_MAX computations are outstanding; an expired generation re-submits
+    under the current one and answers None, like study_result."""
+    q = es.validate(q)
+    key, fut = _submit(gen, q, job=_compute_traced, kind="traced")
+    try:
+        return fut.result(timeout=COMPUTE_TIMEOUT_S)
+    except FutureTimeout:
+        stats["computing"] += 1
+        return None
+    except GenerationExpired:
+        stats["expired"] += 1
+        with _lock:
+            _cache.pop(key, None)
+        cur = _worker().generation()
+        if cur is not None and cur is not gen and getattr(cur, "id", None) != getattr(gen, "id", None):
+            _submit(cur, q, job=_compute_traced, kind="traced")
+        return None
+    except BaseException:
+        with _lock:
+            _cache.pop(key, None)
+        raise
+
+
 def study_result(q: es.Query) -> dict | None:
     """The study's payload, or None while it is still computing."""
     q = es.validate(q)
@@ -194,7 +246,7 @@ def study_result(q: es.Query) -> dict | None:
         raise
 
 
-def _submit(gen, q: es.Query) -> tuple[tuple, Future]:
+def _submit(gen, q: es.Query, *, job: Callable = None, kind: str = "native") -> tuple[tuple, Future]:
     """The study's job, cached by what determines its answer (and so its
     inputs_hash, which only exists once it is computed): the generation's
     identity (its id, and the file key it was staged from), its effective
@@ -203,7 +255,8 @@ def _submit(gen, q: es.Query) -> tuple[tuple, Future]:
     York midnight differ only in the cutoff, and keyed on the file alone they
     shared entries; finished entries of any other generation expire here."""
     cutoff = _cutoff(gen)
-    key = (getattr(gen, "id", None), gen.key, cutoff, es.cache_key(q))
+    # desk/usability: the traced run (the Desk v2 routes') is cached apart from the native one.
+    key = (getattr(gen, "id", None), gen.key, cutoff, es.cache_key(q)) + (() if kind == "native" else (kind,))
     with _lock:
         fut = _cache.get(key)
         if fut is None:
@@ -213,7 +266,7 @@ def _submit(gen, q: es.Query) -> tuple[tuple, Future]:
             if outstanding >= CACHE_MAX:
                 stats["busy"] += 1
                 raise QueueFull()
-            fut = _pool.submit(_compute, gen, q, cutoff)
+            fut = _pool.submit(job or _compute, gen, q, cutoff)
             _cache[key] = fut
             stats["computed"] += 1
             done_keys = [k for k, f in _cache.items() if f.done()]

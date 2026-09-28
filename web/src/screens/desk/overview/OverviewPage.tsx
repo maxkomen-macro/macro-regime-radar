@@ -20,7 +20,7 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
-import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine, FailedLine, FailedScope, useLoadFailed } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import { REGIME_TONE } from "../kit/palette";
@@ -29,6 +29,7 @@ import { isOpen } from "../positions/store";
 import { useLevels, usePositionStore } from "../positions/usePositionStore";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
 import "./overview.css";
+import { Term, defineTerms } from "../kit/Term";
 
 /** The since-last-close items (§2), in the spec's order. A vol change that
  * rounds to 0.0 reads "unchanged". */
@@ -54,6 +55,7 @@ export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?
 }
 
 function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefined; failed: boolean; unserved: Unavailable | null }) {
+  const loadFailed = useLoadFailed();
   return (
     <div className="ov-since" data-testid="ov-since" aria-busy={!data && !failed && !unserved}>
       {/* §12.1 (B-05): the two sessions compared, named by their served dates (§1.10). */}
@@ -75,6 +77,14 @@ function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefine
             {it.tag ? <span data-tone="up"> {it.tag}</span> : null}
           </span>
         ))
+      ) : loadFailed ? (
+        // §14.12: the request failed; the line says so, with Retry.
+        <FailedLine inline className="ov-since-item" />
+      ) : !data && !failed ? (
+        // §14.10: a pending answer says so.
+        <span className="ov-since-item dk-loading" role="status" data-testid="dk-loading">
+          Loading live data…
+        </span>
       ) : failed ? (
         <span className="ov-since-item" style={{ color: "var(--dk-t3)" }}>
           Awaiting refresh
@@ -117,9 +127,10 @@ function Tile({ label, state, badge, value, tone, sub, unserved }: { label: stri
   return (
     <section className="ov-tile" aria-label={label} aria-busy={state === "loading" && !unserved} data-unserved={unserved ? "" : undefined}>
       <div className="ov-tile-head">
-        <span className="ov-tile-label">{label}</span>
+        <span className="ov-tile-label">{defineTerms(label)}</span>
         {unserved ? <NotServedBadge block={unserved} /> : state === "ready" ? badge : null}
       </div>
+      <LoadingLine busy={state === "loading" && !unserved} />
       {unserved ? (
         // §1.0.2: the tile keeps its label, prints the served reason, and no number.
         <UnservedLine block={unserved} className="ov-tile-unserved" />
@@ -227,7 +238,7 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
           {/* The row's own excess over its own baseline (§1.9), never a universal normal month. */}
           {ok(row.vs_normal) && vsNormalText(row.vs_normal, row.target_unit ?? undefined) ? (
             <>
-              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> vs normal)
+              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["baseline"]}>vs normal</Term>)
             </>
           ) : null}
         </>
@@ -253,6 +264,7 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
         </h2>
       </div>
       <div className="dk-card-body" aria-busy={!data && !failed}>
+        <LoadingLine busy={!data && !failed} />
         {rows ? (
           rows.length ? (
             <ul className="ov-signals">
@@ -313,12 +325,45 @@ function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
         {rows.length ? <p className="ov-mon-note">{MONITORED_NOTE}</p> : null}
         {rows.length ? <DroppedNote n={store.unreadable.length} one="kept position" /> : null}
         <div className="ov-mon-act">
-          <Link className="dk-btn" data-kind="light" to={pathTo("position-monitor")}>
+          {/* §14.6: the page's one primary action is the header's; this one is secondary. */}
+          <Link className="dk-btn" to={pathTo("position-monitor")}>
             Act on this → Position Monitor
           </Link>
         </div>
       </div>
     </section>
+  );
+}
+
+/** desk/usability §14.7: the order to walk the Desk in, one short phrase a step. */
+export const START_HERE: readonly { slug: string; label: string; phrase: string }[] = [
+  { slug: "overview", label: "Overview", phrase: "read the market" },
+  { slug: "basket-hedge", label: "Basket & Hedge", phrase: "build the exposure" },
+  { slug: "technicals", label: "Technicals", phrase: "check the trend" },
+  { slug: "event-study", label: "Event Study", phrase: "test the idea" },
+];
+
+/** §14.7: "Start here", four numbered links in the order to walk the Desk. */
+function StartHere({ pathTo }: { pathTo: (slug: string) => string }) {
+  return (
+    <nav className="ov-start" aria-label="Start here" data-testid="ov-start">
+      <span className="ov-start-label">Start here</span>
+      <ol>
+        {START_HERE.map((s, i) => (
+          <li key={s.slug}>
+            <Link to={pathTo(s.slug)} aria-current={s.slug === "overview" ? "page" : undefined}>
+              <b className="ov-start-n">{i + 1}</b> {s.label}
+              <span className="ov-start-phrase"> · {s.phrase}</span>
+            </Link>
+            {i < START_HERE.length - 1 ? (
+              <span className="ov-start-arrow" aria-hidden="true">
+                →
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
@@ -332,11 +377,17 @@ export default function OverviewPage({ page }: { page: DeskPage }) {
   return (
     <div className="ov">
       <PageTitle page={page} />
+      <StartHere pathTo={pathTo} />
       <Unserved block={unserved}>
-        <SinceLine data={data?.since_last_close} failed={failed || (!!data && !data.since_last_close)} unserved={unserved ?? data?._blocks?.since_last_close ?? null} />
-        <Tiles data={data} failed={failed} />
+        {/* §14.12: the line, the tiles and the active signals read /overview; the monitored rows read this browser's store. */}
+        <FailedScope q={q}>
+          <SinceLine data={data?.since_last_close} failed={failed || (!!data && !data.since_last_close)} unserved={unserved ?? data?._blocks?.since_last_close ?? null} />
+          <Tiles data={data} failed={failed} />
+        </FailedScope>
         <div className="ov-grid">
-          <ActiveSignals data={data} failed={failed} pathTo={pathTo} />
+          <FailedScope q={q}>
+            <ActiveSignals data={data} failed={failed} pathTo={pathTo} />
+          </FailedScope>
           <Monitored pathTo={pathTo} />
         </div>
       </Unserved>

@@ -17,8 +17,9 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
-import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved } from "../kit/ui";
+import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import "./regime.css";
+import { defineTerms } from "../kit/Term";
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, "green" | "amber" | "red" | "gray"> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
@@ -127,10 +128,11 @@ function Card({ id, title, sub, children, footer, busy }: { id: string; title: s
     <section className="dk-card rg-card" aria-labelledby={id} aria-busy={busy}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id={id}>
-          {title}
-          <span className="dk-card-sub"> {sub}</span>
+          {defineTerms(title)}
+          <span className="dk-card-sub"> {defineTerms(sub)}</span>
         </h2>
       </div>
+      <LoadingLine busy={busy} />
       <div className="dk-card-body">{children}</div>
       <div className="dk-card-foot">{footer}</div>
     </section>
@@ -212,7 +214,7 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
         <StatRow cols={3}>
           <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, 3-mo slope" />
           <Stat label="Inflation" value={i ? capitalize(i) : undefined} awaiting={!i} tone={trendTone("inflation", i)} sub="CPI, 3-mo slope" />
-          <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} row` : undefined} />
+          <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} reading` : undefined} />
         </StatRow>
       ) : (
         <AwaitingStats labels={["Growth", "Inflation", "In this regime"]} quiet={quiet} />
@@ -360,7 +362,7 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
             <tr>
               {MEANT_LABELS.map((l) => (
                 <th key={l} scope="col">
-                  {l}
+                  {defineTerms(l)}
                 </th>
               ))}
             </tr>
@@ -577,7 +579,7 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
                   <span className="rg-month">{`${monthShort(c.effective_month)} ${year(c.effective_month)}`}</span>
                   <span>
                     {c.from} → {c.to}
-                    {c.stamp_month && monthYear(c.stamp_month) ? <span className="rg-stamp"> · {monthShort(c.stamp_month)} row</span> : null}
+                    {c.stamp_month && monthYear(c.stamp_month) ? <span className="rg-stamp"> · from {monthShort(c.stamp_month)} data</span> : null}
                   </span>
                   <ChangeReturn c={c} />
                 </li>
@@ -607,12 +609,14 @@ export default function RegimePage({ page }: { page: DeskPage }) {
     <div className="rg">
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : r ? <LiveBadge boxed parts={[print, dayShort(r.as_of)]} /> : null} />
       <Unserved block={unserved}>
-        <div className="rg-grid">
-          <WhereWeAre r={r} state={state} />
-          <Recession r={r} state={state} />
-          <Meant r={r} state={state} />
-          <WouldChange r={r} state={state} />
-        </div>
+        <FailedScope q={q}>
+          <div className="rg-grid">
+            <WhereWeAre r={r} state={state} />
+            <Recession r={r} state={state} />
+            <Meant r={r} state={state} />
+            <WouldChange r={r} state={state} />
+          </div>
+        </FailedScope>
       </Unserved>
     </div>
   );

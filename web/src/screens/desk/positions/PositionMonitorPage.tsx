@@ -18,6 +18,12 @@
  * row opens to its gate text and Close…, and `?open=<id>` opens one from a
  * link. Under them, the closes of the last 90 days, Export / Import JSON of
  * the store, and any record the store cannot read, kept and listed.
+ *
+ * desk/usability §14.4: the saved positions come first. The page opens on
+ * the monitored rows (wide), the closes and the store; the Promote form and
+ * the gate are behind "+ New position" (`?new=1`), and open at once when
+ * something is carried in (a study, a basket, an instrument from
+ * Technicals). The gate itself is unchanged.
  */
 
 import { useEffect, useId, useMemo, useRef, useState, type ChangeEvent } from "react";
@@ -25,7 +31,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useStudy, useTechnicals } from "../data/api";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { useDeskView } from "../desk-view";
+import { useDeskView, withParam } from "../desk-view";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { apiParams, askFromSearch, questionWords, searchFor, slotsOf, targetLabel, type Ask } from "../event-study/question";
 import { readSaved } from "../basket/weights";
@@ -36,7 +42,8 @@ import { closed90d, exportPositions, importPositions, isOpen, newPositionId, why
 import { saveWords, useLevels, usePositionStore } from "./usePositionStore";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
 import "./positions.css";
-import { DroppedNote, droppedWords } from "../kit/ui";
+import { DroppedNote, FailedScope, LoadingLine, droppedWords, type QueryLike } from "../kit/ui";
+import { InstrumentSearch } from "../kit/InstrumentSearch";
 
 const HORIZONS = [5, 10, 20, 60];
 
@@ -104,9 +111,14 @@ function CloseForm({ onClose, onCancel }: { onClose: (type: CloseType, premortem
         ))}
       </div>
       <p className="pm-close-actions">
-        <button type="button" className="dk-btn" data-kind={type ? "light" : undefined} disabled={!type} onClick={() => type && onClose(type, judged)}>
-          Close position
-        </button>
+        {/* §14.13: no control that does nothing. Close position shows once a close type is picked, never disabled. */}
+        {type ? (
+          <button type="button" className="dk-btn" data-kind="light" onClick={() => onClose(type, judged)}>
+            Close position
+          </button>
+        ) : (
+          <span className="pm-close-hint">Pick how it closed to close it.</span>
+        )}
         <button type="button" className="dk-link" onClick={onCancel}>
           Cancel
         </button>
@@ -159,46 +171,64 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
   );
 }
 
-function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose }: { views: PositionView[]; unreadable?: number; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void }) {
+const IDLE: QueryLike = { isError: false, error: null };
+
+function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, loading = false, reads = IDLE, note = null }: { views: PositionView[]; unreadable?: number; openId: string | null; onToggle: (id: string) => void; pathTo: (slug: string) => string; onClose: (id: string, type: CloseType, premortemRight: boolean | null) => void; loading?: boolean; reads?: QueryLike; note?: string | null }) {
   const uid = useId();
   // The deployed share is a sum of sizes, printed only when every row has one (P-11) and every kept
   // position could be read: an unreadable one may be open, so no total is claimed (Codex R-16).
   const sized = views.every((r) => typeof r.size_nav === "number" && Number.isFinite(r.size_nav));
   const deployed = sized && !unreadable ? views.reduce((a, r) => a + (r.size_nav as number), 0) : null;
+  // §14.10, §14.12: an automatic row's level is the API's; while it is asked the card says so, and when the
+  // request failed it says Couldn't load · Retry (a row would read "now not served" either way).
+  const live = views.some((r) => r.monitoring === "automatic");
   return (
-    <section className="dk-card pm-mon" aria-labelledby="pm-mon-title">
-      <h2 className="dk-card-title" id="pm-mon-title">
-        Monitored
-      </h2>
-      <p className="pm-mon-sub">how far each is from being wrong · live</p>
-      {views.length ? (
-        <ul className="dk-mon-list pm-list">
-          {views.map((r) => (
-            <MonitoredRow key={r.id} row={r} open={openId === r.id} onClick={() => onToggle(r.id)} controls={`${uid}-${r.id}`}>
-              <Expanded v={r} pathTo={pathTo} onClose={(type, judged) => onClose(r.id, type, judged)} />
-            </MonitoredRow>
-          ))}
-        </ul>
-      ) : unreadable ? (
-        <p className="dk-await">{`No readable open position; ${droppedWords(unreadable, "kept position").replace(/\.$/, "")}.`}</p>
-      ) : (
-        <p className="dk-await">No open positions in this browser.</p>
-      )}
-      {views.length ? (
-        <p className="pm-note">
-          Sorted by room left · room = distance to the level as a share of the room at entry, same scale for every trade · size as % of NAV ·{" "}
-          {deployed != null ? `${Math.round(deployed * 1000) / 10}% deployed, ` : ""}
-          {unreadable ? (
-            <>{`${views.length} readable position${views.length === 1 ? "" : "s"}`} · click a row for the gate text</>
-          ) : (
-            <>
-              {views.length} position{views.length === 1 ? "" : "s"} · click a row for the gate text
-            </>
-          )}
-        </p>
-      ) : null}
-      {views.length ? <DroppedNote n={unreadable} one="kept position" /> : null}
-    </section>
+    <FailedScope q={live ? reads : IDLE}>
+      <section className="dk-card pm-mon" aria-labelledby="pm-mon-title">
+        <h2 className="dk-card-title" id="pm-mon-title">
+          Monitored
+        </h2>
+        <p className="pm-mon-sub">how far each is from being wrong · live</p>
+        <LoadingLine busy={live && loading} />
+        {note ? (
+          <p className="pm-close-note" role="status" data-testid="pm-close-note">
+            {note}
+          </p>
+        ) : null}
+        {views.length ? (
+          <ul className="dk-mon-list pm-list">
+            {views.map((r) => (
+              <MonitoredRow key={r.id} row={r} open={openId === r.id} onClick={() => onToggle(r.id)} controls={`${uid}-${r.id}`}>
+                <Expanded v={r} pathTo={pathTo} onClose={(type, judged) => onClose(r.id, type, judged)} />
+              </MonitoredRow>
+            ))}
+          </ul>
+        ) : unreadable ? (
+          <p className="dk-await">{`No readable open position; ${droppedWords(unreadable, "kept position").replace(/\.$/, "")}.`}</p>
+        ) : (
+          <p className="dk-await">
+            No open positions in this browser.{" "}
+            <Link className="dk-link" to={withParam(pathTo("position-monitor"), "new", "1")}>
+              + New position
+            </Link>
+          </p>
+        )}
+        {views.length ? (
+          <p className="pm-note">
+            Sorted by room left · room = distance to the level as a share of the room at entry, same scale for every trade · size as % of NAV ·{" "}
+            {deployed != null ? `${Math.round(deployed * 1000) / 10}% deployed, ` : ""}
+            {unreadable ? (
+              <>{`${views.length} readable position${views.length === 1 ? "" : "s"}`} · click a row for the gate text</>
+            ) : (
+              <>
+                {views.length} position{views.length === 1 ? "" : "s"} · click a row for the gate text
+              </>
+            )}
+          </p>
+        ) : null}
+        {views.length ? <DroppedNote n={unreadable} one="kept position" /> : null}
+      </section>
+    </FailedScope>
   );
 }
 
@@ -249,9 +279,12 @@ function StoreCard({ store, onImport }: { store: PositionStore; onImport: (text:
     <section className="dk-card pm-store" aria-label="Positions kept in this browser">
       <p className="pm-io">
         <span className="pm-io-words">Kept in this browser only.</span>
-        <button type="button" className="dk-link" onClick={download} disabled={!count}>
-          Export JSON
-        </button>
+        {/* §14.4: nothing kept, nothing to export: the control is not shown. */}
+        {count ? (
+          <button type="button" className="dk-link" onClick={download}>
+            Export JSON
+          </button>
+        ) : null}
         <button type="button" className="dk-link" onClick={() => fileRef.current?.click()}>
           Import JSON
         </button>
@@ -348,6 +381,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const [draft, setDraft] = useState<Draft>(EMPTY);
   // The answer to a save, with its tone: a refusal is a caution (amber), a save is plain (P-3).
   const [saveNote, setSaveNoteState] = useState<{ text: string; tone: "saved" | "refused" } | null>(null);
+  const [closeNote, setCloseNote] = useState<string | null>(null);
   const setSaveNote = (text: string, tone: "saved" | "refused" = "refused") => setSaveNoteState(text ? { text, tone } : null);
   const statusRef = useRef<HTMLParagraphElement | null>(null);
   const openId = search.get("open");
@@ -363,6 +397,25 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     const target = targetLabel(carried);
     setDraft((d) => (d.instrument ? d : { ...d, instrument: typeof target === "string" ? target : "", horizon: HORIZONS.includes(carried.question.horizon) ? carried.question.horizon : d.horizon }));
   }, [carried]);
+
+  // desk/usability §14.2: Technicals' "Open as position" names the instrument (`?instrument=`); it fills an empty field.
+  const instrumentAsked = search.get("instrument");
+  // §14.4: the form opens from "+ New position" (`?new=1`) or when something is carried in.
+  const formOpen = search.get("new") === "1" || !!carriedAsk || !!basketId || !!(instrumentAsked && instrumentAsked.trim());
+  const closeForm = () =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        for (const k of ["new", "from", "horizon", "basket", "instrument", "shock", "window", "move", "while", "target"]) q.delete(k);
+        return q;
+      },
+      { replace: false },
+    );
+  useEffect(() => {
+    if (!instrumentAsked || !instrumentAsked.trim() || carriedAsk || sent) return;
+    setDraft((d) => (d.instrument ? d : { ...d, instrument: instrumentAsked.trim() }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [instrumentAsked]);
 
   useEffect(() => {
     if (!sent || carriedAsk) return;
@@ -478,8 +531,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const views = sortByRoom(store.positions.filter(isOpen).map((p) => viewOf(p, levels, now)));
   const closeOne = (id: string, type: CloseType, premortemRight: boolean | null) => {
     const r = change((current) => withClose(current, id, type, premortemRight, new Date()));
-    const failed = saveWords(r);
-    if (failed) setSaveNote(failed);
+    // Codex merge review: a close the browser did not keep says so on the Monitored card itself, where the
+    // Close… form is; the page's own note sits in the New position form, closed by default (§14.4).
+    setCloseNote(saveWords(r));
   };
   const onImport = (text: string) => {
     let out: ReturnType<typeof importPositions> = null;
@@ -498,15 +552,47 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
         ? `The basket sent from Basket & Hedge (${basketId}) is not saved in this browser; the gate is the same for every position.`
         : carriedFailed
           ? `The study carried in from Event Study (${from ?? "the question in the address"}) is awaiting refresh; the gate is the same for every position.`
-          : "Any study can be carried in from Event Study; the gate is the same for every position.";
+          : instrumentAsked && instrumentAsked.trim()
+            ? `Opened from Technicals · ${instrumentAsked.trim()} · the gate is the same for every position.`
+            : "Any study can be carried in from Event Study; the gate is the same for every position.";
+
+  const monitor = (
+    <>
+      <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} note={closeNote} />
+      <Closed store={store} />
+      <StoreCard store={store} onImport={onImport} />
+    </>
+  );
+  if (!formOpen)
+    return (
+      <div className="pm" data-form="closed">
+        <div className="pm-head">
+          <PageTitle page={page} title="Position Monitor" />
+        </div>
+        <div className="pm-saved">
+          <div className="pm-saved-main">
+            <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} loading={levels.loading} reads={levels.reads} note={closeNote} />
+          </div>
+          <div className="pm-right">
+            <Closed store={store} />
+            <StoreCard store={store} onImport={onImport} />
+          </div>
+        </div>
+      </div>
+    );
 
   return (
-    <div className="pm">
+    <div className="pm" data-form="open">
       <div className="pm-grid">
         <div className="pm-left">
           <div className="pm-head">
             <PageTitle page={{ ...page, blurb: "" }} title="Promote to position" />
-            <p className="pm-sub">{sub}</p>
+            <p className="pm-sub">
+              {sub}{" "}
+              <button type="button" className="dk-link pm-close-form" onClick={closeForm}>
+                Back to the monitor
+              </button>
+            </p>
           </div>
           <form
             className="dk-card pm-fields"
@@ -520,7 +606,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
               <label htmlFor={`${uid}-inst`} className="dk-stat-label">
                 Instrument
               </label>
-              <input id={`${uid}-inst`} className="pm-input" value={draft.instrument} onChange={(e) => set("instrument", e.target.value)} autoComplete="off" />
+              {/* desk/usability item 1: the Desk's stock search; what is typed stays, a pick fills the ticker. */}
+              <InstrumentSearch inputId={`${uid}-inst`} className="pm-isearch" value={draft.instrument} onTextChange={(t) => set("instrument", t)} onSelect={(hit) => set("instrument", hit.symbol)} placeholder="Ticker or name" dense />
             </div>
             <div className="pm-field">
               <label htmlFor={`${uid}-dir`} className="dk-stat-label">
@@ -638,11 +725,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
             </div>
           </section>
         </div>
-        <div className="pm-right">
-          <Monitored views={views} unreadable={store.unreadable.length} openId={openId} onToggle={toggle} pathTo={pathTo} onClose={closeOne} />
-          <Closed store={store} />
-          <StoreCard store={store} onImport={onImport} />
-        </div>
+        <div className="pm-right">{monitor}</div>
       </div>
     </div>
   );

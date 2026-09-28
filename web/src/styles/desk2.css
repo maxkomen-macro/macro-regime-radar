@@ -165,6 +165,42 @@
   background: var(--dk-active);
   border-color: var(--dk-box);
   color: #fff;
+  /* desk/usability §14.5: the current page is marked, green meaning "current" (§1.3). */
+  box-shadow: inset 3px 0 0 var(--dk-green);
+}
+/* §14.5: the small "About this build" line under the three groups. */
+.dk-nav .dk-nav-small {
+  margin-top: 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--dk-border);
+}
+.dk-nav .dk-nav-small .dk-nav-group {
+  margin-top: 0;
+  font-size: 10.5px;
+}
+.dk-nav-small-links {
+  font-size: 12px;
+  color: var(--dk-t4);
+  line-height: 20px;
+  white-space: nowrap;
+}
+.dk-nav .dk-nav-small-links a {
+  display: inline;
+  height: auto;
+  padding: 1px 2px;
+  font-size: 12px;
+  color: var(--dk-t3);
+  border-radius: 4px;
+}
+.dk-nav .dk-nav-small-links a:hover {
+  color: var(--dk-t1);
+}
+.dk-nav .dk-nav-small-links a[aria-current="page"] {
+  box-shadow: none;
+  color: #fff;
+  text-decoration: underline;
+  text-decoration-color: var(--dk-green);
+  text-underline-offset: 3px;
 }
 .dk-side-foot {
   margin-top: auto;
@@ -349,6 +385,39 @@
 .dk-btn:hover {
   border-color: var(--dk-t4);
 }
+/* desk/usability item 1: the stock search in the header of every page. It is
+   the main dashboard's SymbolSearch; its colors come from the dashboard's
+   custom properties, set here to §1.3 tokens so the list stays in the palette. */
+.dk-top-search {
+  flex: 1 1 260px;
+  max-width: 420px;
+  min-width: 0;
+}
+.dk-isearch {
+  --void: var(--dk-card-2);
+  --field: var(--dk-card-2);
+  --line: var(--dk-box);
+  --line-hair: var(--dk-border);
+  --line-white-14: var(--dk-box);
+  --surface: var(--dk-card);
+  --surface-raised: var(--dk-active);
+  --link: var(--dk-blue);
+  --mint: var(--dk-green);
+  --text: var(--dk-t1);
+  --text-2: var(--dk-t2);
+  --text-3: var(--dk-t3);
+  --text-4: var(--dk-t4);
+  --text-muted: var(--dk-t3);
+  --r-sm: 7px;
+  --font-ui: var(--dk-sans);
+  --font-mono: var(--dk-mono);
+}
+.dk-isearch input::placeholder {
+  color: var(--dk-t4);
+}
+.dk-isearch [role="listbox"] {
+  z-index: 60;
+}
 /* The client view keeps the sidebar (the only navigation) but not the desk's
    internals: the TODAY and HOUSE DISCIPLINE cards (the PNG: "internals hidden"). */
 .dk[data-client] .dk-side-foot {
@@ -382,11 +451,24 @@
   padding: 17px var(--dk-pad) 23px;
   min-width: 0;
 }
+/* desk/usability §14.6: the page's one-line purpose sits under its title; the badge stays at the right. */
 .dk-title {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "title badge" "sub badge";
+  column-gap: 14px;
+  row-gap: 2px;
   align-items: baseline;
-  gap: 14px;
   min-height: 36px;
+}
+.dk-title h1 {
+  grid-area: title;
+}
+.dk-title .dk-title-sub {
+  grid-area: sub;
+}
+.dk-title .dk-title-badge {
+  grid-area: badge;
 }
 .dk-title h1 {
   font-family: var(--dk-serif);
@@ -406,6 +488,19 @@
   margin-left: auto;
   align-self: center;
   flex: none;
+}
+
+/* desk/usability §14.10: a pending card says so under its title. */
+.dk-loading {
+  font-size: 12.5px;
+  color: var(--dk-t3);
+  margin: 4px 0 6px;
+}
+/* §14.12: the card's own request failed; the rest of the page renders. */
+.dk-failed {
+  font-size: 12.5px;
+  color: var(--dk-amber);
+  margin: 4px 0 6px;
 }
 
 /* ── Card skeleton (§1.4) ─────────────────────────────────────────────── */
@@ -545,6 +640,37 @@
   color: var(--dk-t4);
   white-space: nowrap;
 }
+/* desk/usability item 11 (§14.11): a term of art carries its one-sentence definition on hover or focus. */
+.dk-term {
+  text-decoration: underline dotted var(--dk-t4);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: help;
+}
+.dk-term-tip {
+  position: fixed;
+  z-index: 60;
+  padding: 8px 10px;
+  border: 1px solid var(--dk-border);
+  border-radius: 4px;
+  background: var(--dk-box);
+  box-shadow: 0 12px 40px rgba(12, 14, 17, 0.7);
+  color: var(--dk-t1);
+  font: 400 12.5px/1.45 var(--dk-sans);
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: normal;
+  pointer-events: none;
+}
+.dk-term-tip[data-above] {
+  transform: translateY(-100%);
+}
+.dk-term-tip p {
+  margin: 0;
+}
+.dk-term-tip p + p {
+  margin-top: 6px;
+}
 .dk-stat-value {
   font-family: var(--dk-serif);
   font-weight: 700;
@@ -676,6 +802,18 @@
   }
   .dk-top {
     padding: 0 14px;
+    /* The search takes its own row under the breadcrumb. */
+    height: auto;
+    min-height: var(--dk-top-h);
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+  .dk-top-search {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
   }
   .dk-crumb {
     overflow: hidden;
@@ -685,14 +823,16 @@
     padding: 14px 14px 23px;
   }
   .dk-title {
-    flex-wrap: wrap;
-    gap: 6px 14px;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "title" "sub" "badge";
+    row-gap: 6px;
   }
   .dk-title h1 {
     white-space: normal;
   }
   .dk-title-badge {
     margin-left: 0;
+    justify-self: start;
   }
   .dk-house-pop {
     left: 12px;

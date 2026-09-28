@@ -26,7 +26,7 @@ import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
 import { WINDOWS, apiParams, askFromSearch, presetHorizon, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
-import { DroppedNote, Unserved } from "../kit/ui";
+import { DroppedNote, Unserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import "./study.css";
 
@@ -82,8 +82,24 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
   const [unreadable] = useState(() => unreadableSaved().length);
   const [draft, setDraft] = useState<Question | null>("question" in ask ? ask.question : null);
   const [dirty, setDirty] = useState(false);
-  const [mode, setMode] = useState<Mode>("preset" in ask ? "common" : "build");
-  const [adv, setAdv] = useState(false);
+  // desk/usability §14.9: the open Advanced panel and the mode live in the address too. Codex R-07: every mode
+  // (Common questions, My saved questions, Build your own) is `mode=` in the address and the page reads it from
+  // there alone, so a cold load opens the tab the link was on; with no `mode`, a preset is Common, six slots Build.
+  const asked = search.get("mode");
+  const mode: Mode = asked === "saved" || asked === "build" || asked === "common" ? asked : "preset" in ask ? "common" : "build";
+  const setParam = (k: string, v: string | null) =>
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        if (v === null) q.delete(k);
+        else q.set(k, v);
+        return q;
+      },
+      { replace: true },
+    );
+  const setMode = (m: Mode) => setParam("mode", m);
+  const adv = search.get("adv") === "1";
+  const setAdv = (f: (open: boolean) => boolean) => setParam("adv", f(adv) ? "1" : null);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState("");
   const advId = useId();
@@ -114,22 +130,27 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servedKey]);
 
-  const seriesList = Array.isArray(study?.series) ? study.series : null;
+  // Codex R-05: the builder's series come with the catalog, independent of the study asked, so a question that
+  // fails or is not served keeps Shock and "What happens to" editable; the study's own list is the fallback.
+  const catalogSeries = Array.isArray(cq.data?.series) ? cq.data.series : null;
+  const seriesList = catalogSeries ?? (Array.isArray(study?.series) ? study.series : null);
   const label = (k: string) => seriesList?.find((s) => s.key === k)?.label ?? k;
-  const go = (next: Ask) => {
-    const nextSearch = searchFor(next, search);
-    if (nextSearch === search.toString()) return void q.refetch();
-    setSearch(new URLSearchParams(nextSearch), { replace: false });
+  // A new question carries the mode it is asked from, in the same address change (never a second write).
+  const go = (next: Ask, nextMode: Mode = mode) => {
+    const p = new URLSearchParams(searchFor(next, search));
+    p.set("mode", nextMode);
+    if (p.toString() === search.toString()) return void q.refetch();
+    setSearch(p, { replace: false });
   };
 
   const onPreset = (slug: string) => {
-    setMode("common");
     if ("preset" in ask && ask.preset === slug) {
+      setMode("common");
       setDirty(false);
       if (study?.question) setDraft(slotsOf(study.question));
       return;
     }
-    go({ preset: slug });
+    go({ preset: slug }, "common");
   };
   const onRun = () => {
     if (!draft) return;
@@ -146,7 +167,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     writeSaved(next);
     setMode("saved");
   };
-  const onPickSaved = (s: SavedQuestion) => go({ question: s.question });
+  const onPickSaved = (s: SavedQuestion) => go({ question: s.question }, "saved");
   const onFix = (fix: string) => {
     const base = study?.question ?? draft;
     const next = base ? applyFix(base, fix) : null;
@@ -195,14 +216,14 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         draft={draft}
         catalog={catalog}
         gateSlots={!catalogLost}
-        seriesLost={droppedOf(study, "series")}
+        seriesLost={catalogSeries ? droppedOf(cq.data, "series") : droppedOf(study, "series")}
         onDraft={(d) => {
           setDraft(d);
           setDirty(true);
           setMode("build");
         }}
         series={seriesList}
-        seriesFailed={!!study && !seriesList}
+        seriesFailed={!seriesList && (!!study || !!cq.data || cq.isError)}
         onRun={onRun}
         onSave={onSave}
         running={q.isFetching}
@@ -220,9 +241,12 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
       ) : null}
       {/* §12.0: a study served awaiting (an input not stored) keeps the labels and prints its reason (§1.0.2). */}
       <Unserved block={unavailableOf(q.error)}>
+        {/* §14.12: a question the server refuses prints its words; any other failure says Couldn't load, with Retry. */}
+        <FailedScope q={refusal ? { isError: false, error: null } : q}>
         <div className="es-grid" data-busy={placeholder || undefined}>
           <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon ?? undefined} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
+            <LoadingLine busy={(!study && !q.isError) || placeholder} />
             {study ? (
               <StudyRail
                 study={study}
@@ -239,6 +263,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
             ) : null}
           </aside>
         </div>
+        </FailedScope>
       </Unserved>
       {exportNote ? (
         <p className="es-note" role="status">

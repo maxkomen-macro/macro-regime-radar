@@ -195,6 +195,31 @@ describe("Basket & Hedge tab", () => {
     expect(basketCard()).not.toHaveTextContent("unsaved changes");
   });
 
+  it("while the price and the hedge are asked, each of their cards says Loading live data… (desk/usability §14.10)", async () => {
+    seed();
+    let price: (v: unknown) => void = () => {};
+    let hedge: (v: unknown) => void = () => {};
+    const heldPrice = new Promise((resolve) => (price = resolve));
+    const heldHedge = new Promise((resolve) => (hedge = resolve));
+    stubDesk({ "/api/desk/basket/price": () => heldPrice, "/api/desk/basket/hedge": () => heldHedge });
+    renderTab();
+    await loaded();
+    const trades = await screen.findByRole("region", { name: /^How the basket trades/ });
+    const hedgeStep = screen.getByRole("region", { name: /^Hedge it/ });
+    await waitFor(() => expect(within(trades).getAllByTestId("dk-loading")).toHaveLength(7));
+    // Stress and ETF hedge wait; the options slot is §1.0's reason, never loading.
+    expect(within(hedgeStep).getAllByTestId("dk-loading")).toHaveLength(2);
+    expect(within(screen.getByRole("region", { name: /^Hedge with options/ })).queryByTestId("dk-loading")).toBeNull();
+    const legsKey = "NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000";
+    price((basketPrice as { answers: Record<string, unknown> }).answers[legsKey]);
+    hedge((basketHedge as { answers: Record<string, unknown> }).answers[legsKey]);
+    await waitFor(() => expect(screen.queryAllByTestId("dk-loading")).toEqual([]));
+    // Answered, not failed: the steps carry their answers' dates and no failure line.
+    expect(trades).not.toHaveTextContent("could not be priced");
+    expect(hedgeStep).not.toHaveTextContent("could not be computed");
+    expect(within(trades).getByRole("region", { name: /^Contribution to return/ })).not.toHaveTextContent("Awaiting refresh");
+  });
+
   it("asks nothing for a basket whose weights are not at 100%, and says what prices it", async () => {
     seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l, i) => (i === 0 ? { ...l, weight: 20 } : l)) }]);
     const { calls } = stubDesk();
@@ -316,11 +341,13 @@ describe("Basket & Hedge tab", () => {
     renderTab();
     const b = basketCard();
     expect(b).toHaveTextContent("No basket is saved in this browser yet: start one with + New basket, or import a file.");
-    // No basket, no chart title, and no total to hold against 100 (no amber dash).
+    // No basket, no chart title, no total to hold against 100, and (§14.13) no control with nothing to act on.
     expect(b).not.toHaveTextContent("bet working");
-    expect(b.querySelector(".bh-total b")).not.toHaveAttribute("data-off");
+    expect(b.querySelector(".bh-total")).toBeNull();
     expect(within(b).queryByLabelText("Basket")).toBeNull();
-    expect(within(b).getByLabelText("Add a ticker")).toBeDisabled();
+    expect(within(b).queryByLabelText("Add a ticker")).toBeNull();
+    for (const name of ["Equal-weight", "Normalize to 100%", "Save basket", "Export saved baskets (JSON)"]) expect(within(b).queryByRole("button", { name })).toBeNull();
+    expect(within(b).getByRole("button", { name: "Import JSON" })).toBeEnabled();
     fireEvent.click(within(b).getByRole("button", { name: "+ New basket" }));
     fireEvent.click(within(b).getByRole("button", { name: "Create" }));
     expect(b).toHaveTextContent("Name the basket first.");
@@ -398,6 +425,54 @@ describe("Basket & Hedge tab", () => {
     expect(b).toHaveTextContent("unsaved changes");
     expect(calls).toContain("GET /api/market/candles/ORCL?range=2Y");
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1"));
+  });
+
+  // desk/usability: the ticker field is the Desk's stock search (InstrumentSearch).
+  const searchHit = (symbol: string, name: string, exchange = "US") => ({ symbol, name, exchange, type: "Equity", sector: null, primary: true });
+  const searchAnswer = (hits: unknown[]) => ({ provider: "eodhd", fallback_used: false, fallback_reason: null, fetched_at: "2026-09-27T12:00:00Z", hits });
+  const listed = () => ({ status: 200, body: { bars: [{ ts: "2026-09-23T00:00:00Z" }] } });
+
+  it("the ticker field suggests from the first keystroke, US-listed names only; a pick adds that ticker, checked (desk/usability)", async () => {
+    seed();
+    const { calls } = stubDesk({
+      "/api/market/search": () => searchAnswer([searchHit("ORC.TO", "Orca Energy", "TO"), searchHit("ORCL", "Oracle Corporation")]),
+      "/api/market/candles/ORCL": listed,
+    });
+    renderTab();
+    const b = await loaded();
+    const box = within(b).getByRole("combobox", { name: "Add a ticker" });
+    fireEvent.change(box, { target: { value: "O" } });
+    const list = await within(b).findByRole("listbox");
+    await waitFor(() => expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringMatching(/ORCL.*Oracle Corporation/)]));
+    expect(calls.some((c) => c.startsWith("GET /api/market/search?q=O&limit=10&scope=us"))).toBe(true);
+    fireEvent.mouseDown(within(list).getByText("ORCL"));
+    await waitFor(() => expect(within(b).getByLabelText("Weight of ORCL, percent")).toHaveValue("12.5"));
+    expect(calls).toContain("GET /api/market/candles/ORCL?range=2Y");
+    expect(b).toHaveTextContent("ORCL added;");
+    expect(box).toHaveValue("");
+  });
+
+  it("Codex R-04 in the basket: Enter inside the debounce adds what is typed, never the previous text's suggestion", async () => {
+    seed();
+    const answers: Record<string, unknown[]> = { OR: [searchHit("ORCL", "Oracle Corporation")], MSFT: [searchHit("MSFT", "Microsoft Corporation")] };
+    const { calls } = stubDesk({
+      "/api/market/search": (u) => searchAnswer(answers[u.searchParams.get("q") ?? ""] ?? []),
+      "/api/market/candles/ORCL": listed,
+      "/api/market/candles/MSFT": listed,
+    });
+    renderTab();
+    const b = await loaded();
+    const box = within(b).getByRole("combobox", { name: "Add a ticker" });
+    fireEvent.change(box, { target: { value: "OR" } });
+    await within(b).findByRole("option", { name: /ORCL/ });
+    fireEvent.change(box, { target: { value: "MSFT" } });
+    expect(within(b).queryByRole("option", { name: /ORCL/ })).toBeNull();
+    // Enter at once: the search leaves it to the form (the browser's implicit submission), which adds the typed text.
+    expect(fireEvent.keyDown(box, { key: "Enter" })).toBe(true);
+    fireEvent.submit(box.closest("form")!);
+    await waitFor(() => expect(within(b).getByLabelText("Weight of MSFT, percent")).toBeInTheDocument());
+    expect(within(b).queryByLabelText("Weight of ORCL, percent")).toBeNull();
+    expect(calls).not.toContain("GET /api/market/candles/ORCL?range=2Y");
   });
 
   it("a ticker the price endpoint does not list is not added, in its words", async () => {

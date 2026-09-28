@@ -143,7 +143,9 @@ describe("Client view", () => {
     renderTab("/desk/event-study?preset=golden-cross&view=client");
     await waitFor(() => expect(calls).toContain("GET /api/desk/study?preset=golden-cross"));
     expect(calls.some((c) => c.startsWith("GET /api/desk/study?preset=gold-2sigma-spx-weak"))).toBe(false);
-    await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent(/Episodes\s*Awaiting refresh/));
+    // The fixtures carry no answer for it: the page says it could not load it (§14.12).
+    await waitFor(() => expect(screen.getByRole("main")).toHaveTextContent(/Episodes\s*—/));
+    expect(screen.getByRole("main")).toHaveTextContent("Couldn't load");
   });
 
   it("a question the desk asks at another horizon is read at a month: the client view is h = 20 (v4 B-01)", async () => {
@@ -215,13 +217,15 @@ describe("Client view", () => {
     expect(screen.getByRole("main")).not.toHaveTextContent("Awaiting refresh");
   });
 
-  it("a study that does not answer keeps the labels and says Awaiting refresh", async () => {
+  it("a study that does not answer keeps the labels and says Couldn't load · Retry once (§14.12)", async () => {
     stubDesk({ "/api/desk/study": deskError(503, "warming") });
     renderTab("/desk/overview?view=client");
     const main = await screen.findByRole("main");
-    await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*Awaiting refresh/));
-    expect(main).toHaveTextContent(/Higher a month later\s*Awaiting refresh/);
-    expect(backdrop()).toHaveTextContent("Awaiting refresh");
+    await waitFor(() => expect(main).toHaveTextContent(/Episodes\s*—/));
+    expect(main).toHaveTextContent(/Higher a month later\s*—/);
+    expect(within(main).getAllByTestId("dk-failed")).toHaveLength(1);
+    expect(within(main).getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry");
+    expect(main).not.toHaveTextContent("Awaiting refresh");
   });
 
   it("while the study loads, the labels and the card's title are already there", async () => {

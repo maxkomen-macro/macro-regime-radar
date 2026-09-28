@@ -9,6 +9,16 @@
  * per-row action ("+ Add" / "✓ Listed"), and `onDismiss` for Escape on an
  * empty box. Every default is unchanged for the Markets search.
  *
+ * desk/usability: the Desk's InstrumentSearch (screens/desk/kit) reuses
+ * this component with `scope="us"` (US-listed equities and ETFs only,
+ * primary listings first, also filtered here so an API that predates the
+ * scope cannot leak another listing), a `fallback` list shown when the
+ * search does not answer (the series the store prices itself), a controlled
+ * `value` (the Position Monitor's instrument field keeps what is typed or
+ * picked), `dense` for a header-sized field and `className` for the Desk's
+ * colors. Every default is unchanged for the Markets search and the
+ * watchlist.
+ *
  * Iteration 1 (M5): `onSubmitText` receives the typed text when Enter is
  * pressed on a settled search with no hits (the Markets research panel then
  * names the miss instead of doing nothing). While the search is still in
@@ -37,6 +47,30 @@ interface Props {
   disabled?: boolean;
   /** Enter on a settled search with no hits: the trimmed text (M5). */
   onSubmitText?: (text: string) => void;
+  /** "us": US-listed equities and ETFs only, primary listings first (the Desk). */
+  scope?: "all" | "us";
+  /** Hits to offer when the search did not answer, for the text in the box (the Desk's stored series). */
+  fallback?: (text: string) => SearchHit[];
+  /** The fallback list's footer line. */
+  fallbackNote?: string;
+  /** Controlled text: the box shows `value`, every edit goes to `onTextChange`, and a pick keeps the text. */
+  value?: string;
+  onTextChange?: (text: string) => void;
+  /** The field's id, for a visible <label htmlFor> (its name then comes from the label). */
+  inputId?: string;
+  /** The field's name when no label names it. */
+  ariaLabel?: string;
+  /** A 34 px field (a page header). */
+  dense?: boolean;
+  /** The wrapper's class (the Desk sets its colors through it). */
+  className?: string;
+  /** The wrapper's maximum width (default 640 px; the watchlist's compact box none). */
+  maxWidth?: number | "none";
+}
+
+/** A hit the Desk can price from US daily history: a US listing, an equity or an ETF. */
+export function usPriceable(h: SearchHit): boolean {
+  return h.exchange === "US" && (h.type === "Equity" || h.type === "ETF");
 }
 
 const DEFAULT_PLACEHOLDER = "Search any ticker or company (e.g. NVDA, BRK.B, Nestlé)…";
@@ -84,19 +118,45 @@ export default function SymbolSearch({
   onDismiss,
   disabled = false,
   onSubmitText,
+  scope = "all",
+  fallback,
+  fallbackNote = "The search did not answer · series this store prices",
+  value,
+  onTextChange,
+  inputId,
+  ariaLabel,
+  dense = false,
+  className,
+  maxWidth,
 }: Props) {
-  const [text, setText] = useState("");
+  const [inner, setInner] = useState("");
+  const controlled = value !== undefined;
+  const text = controlled ? value : inner;
+  const setText = (t: string) => {
+    if (!controlled) setInner(t);
+    onTextChange?.(t);
+  };
   const [active, setActive] = useState(0);
   const [open, setOpen] = useState(false);
   const debounced = useDebounced(text, 250);
-  const q = useSymbolSearch(debounced);
+  const q = useSymbolSearch(debounced, 10, scope);
   const aliasQuery = dashedAlias(debounced);
-  const alt = useSymbolSearch(aliasQuery);
+  const alt = useSymbolSearch(aliasQuery, 10, scope);
   // A disabled alias query still carries its previous placeholder data; only
   // read it while an alias is actually being searched (regression 2026-09-06:
   // "ZZZQ" showed the earlier "BRK.B" alias hits).
   const altHits = aliasQuery ? (alt.data?.hits ?? []) : [];
-  const hits = rankHits([...altHits, ...(q.data?.hits ?? [])], debounced);
+  const ranked = rankHits([...altHits, ...(q.data?.hits ?? [])], debounced);
+  // The Desk's scope: US equities and ETFs only, primary listings first (the rank kept within each).
+  const searched = scope === "us" ? [...ranked.filter((h) => usPriceable(h) && h.primary !== false), ...ranked.filter((h) => usPriceable(h) && h.primary === false)] : ranked;
+  // The search did not answer: the caller's own list, for the same text.
+  const fallbackHits = q.isError && fallback && debounced.trim() ? fallback(debounced.trim()) : [];
+  const usingFallback = !searched.length && fallbackHits.length > 0;
+  // Codex R-04: a suggestion belongs to the exact text that was searched. While the box holds other text
+  // (the debounce still pending), none is shown, and neither Enter nor a click can pick one.
+  const fresh = debounced === text;
+  const hits = !fresh ? [] : usingFallback ? fallbackHits : searched;
+  const pending = !fresh || q.isFetching || !!(aliasQuery && alt.isFetching);
   // The provider that answered is part of the result (2026-09-06).
   const provider = q.data?.provider ?? alt.data?.provider ?? null;
   const listId = useId();
@@ -118,7 +178,8 @@ export default function SymbolSearch({
 
   const pick = (hit: SearchHit) => {
     onSelect(hit);
-    setText("");
+    // A controlled box keeps its text: the caller decides what it shows after a pick.
+    if (!controlled) setText("");
     setOpen(false);
   };
 
@@ -133,8 +194,11 @@ export default function SymbolSearch({
     }
     if (!open || !hits.length) {
       if (e.key === "Escape") {
-        if (text !== "") e.preventDefault();
-        setText("");
+        if (text !== "" && !controlled) {
+          e.preventDefault();
+          setText("");
+        }
+        setOpen(false);
       } else if (e.key === "Enter" && onSubmitText && !hits.length && text.trim() !== "" && settled) {
         e.preventDefault();
         onSubmitText(text.trim());
@@ -155,7 +219,8 @@ export default function SymbolSearch({
     } else if (e.key === "Escape") {
       e.preventDefault();
       setOpen(false);
-      setText("");
+      // A controlled box keeps what was typed: Escape only closes the list.
+      if (!controlled) setText("");
     }
   };
 
@@ -180,11 +245,11 @@ export default function SymbolSearch({
         background: "var(--void)",
         border: "0.5px solid var(--line)",
         borderRadius: "var(--r-sm)",
-        padding: "10px 14px",
-        minHeight: 44,
+        padding: dense ? "6px 12px" : "10px 14px",
+        minHeight: dense ? 34 : 44,
         color: "var(--text)",
         ...mono,
-        fontSize: "var(--fs-body)",
+        fontSize: dense ? "var(--fs-body-s)" : "var(--fs-body)",
       };
 
   const listStyle: React.CSSProperties = compact
@@ -231,7 +296,8 @@ export default function SymbolSearch({
       aria-controls={listId}
       aria-autocomplete="list"
       aria-activedescendant={showList && hits.length ? `${listId}-opt-${Math.min(active, hits.length - 1)}` : undefined}
-      aria-label="Search any listed symbol"
+      id={inputId}
+      aria-label={ariaLabel ?? (inputId ? undefined : "Search any listed symbol")}
       placeholder={placeholder}
       value={text}
       onChange={(e) => {
@@ -249,7 +315,7 @@ export default function SymbolSearch({
   );
 
   return (
-    <div ref={boxRef} style={{ position: "relative", maxWidth: compact ? "none" : 640 }}>
+    <div ref={boxRef} className={className} style={{ position: "relative", maxWidth: maxWidth ?? (compact ? "none" : 640) }}>
       {compact ? (
         // The Esc hint sits inside the field at its right edge (mockup
         // `.search kbd{margin-left:auto}`); the wrapper is exactly the
@@ -357,17 +423,23 @@ export default function SymbolSearch({
               )}
             </div>
           ))}
-          {(q.isFetching || (aliasQuery && alt.isFetching)) && !hits.length && (
+          {pending && !hits.length && (
             <div style={{ padding: "8px 12px", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
               Searching…
             </div>
           )}
-          {!q.isFetching && !(aliasQuery && alt.isFetching) && !hits.length && debounced.trim().length > 0 && (
+          {!pending && !hits.length && debounced.trim().length > 0 && (
             <div style={{ padding: "8px 12px", fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--text-muted)" }}>
               {q.isError ? "Symbol search unavailable: the data service did not answer." : `No listings match "${debounced.trim()}".`}
             </div>
           )}
-          {hits.length > 0 && provider ? (
+          {fresh && usingFallback ? (
+            <div
+              style={{ padding: "6px 12px", borderTop: "0.5px solid var(--line-hair)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)" }}
+            >
+              {fallbackNote}
+            </div>
+          ) : hits.length > 0 && provider ? (
             <div
               style={{ padding: "6px 12px", borderTop: "0.5px solid var(--line-hair)", fontFamily: "var(--font-mono)", fontSize: "var(--fs-micro)", letterSpacing: "var(--ls-micro)", textTransform: "uppercase", color: "var(--text-muted)" }}
             >

@@ -209,12 +209,77 @@ def catalog_answer(params: list[tuple[str, str]]) -> dict:
             "question": s.question.as_dict() if s.question is not None else None,
             "allowed_horizons": list(s.allowed_horizons),
         })
-    return {"studies": rows}
+    # Codex R-05: the builder's series come with the catalog, so a question that fails or is not served
+    # leaves its Shock and "What happens to" slots editable; the same list /study serves.
+    return {"studies": rows, "series": _series_list()}
+
+
+# ── desk/usability §14.3: any well-formed question, computed on request ─────
+
+MOVE_SIGN = {"up2s": "+2σ", "down2s": "−2σ"}
+CLIENT_MOVE = {"up2s": "jumps", "down2s": "falls sharply"}
+CLIENT_SPAN = {5: "within a week", 20: "over a month", 60: "over three months"}
+
+
+def _label(key: str) -> str:
+    spec = registry.BY_KEY.get(key)
+    return spec.label if spec is not None else key
+
+
+def question_label(q: catalog.Question) -> str:
+    """A question outside the catalog in the catalog's style: "Gold +2σ, 60 days → S&P 500"."""
+    cond = "" if q.while_ == "none" else (" while the S&P is below its 50-day" if q.while_ == "spx_below_50"
+                                          else f", in {q.while_.split(':', 1)[1]}")
+    return f"{_label(q.shock)} {MOVE_SIGN[q.move]}, {q.window} days{cond} → {_label(q.target)}"
+
+
+def question_short(q: catalog.Question) -> str:
+    return f"{_label(q.shock)} {MOVE_SIGN[q.move]} {q.window}d → {_label(q.target)}"
+
+
+def question_client(q: catalog.Question) -> str:
+    """The Client view's title in plain words (§11: no σ, no engine terms)."""
+    regime = q.while_.split(":", 1)[1] if q.while_.startswith("regime:") else ""
+    cond = "" if q.while_ == "none" else (", while the S&P 500 is below its 50-day average" if q.while_ == "spx_below_50"
+                                          else f", in {'an' if regime[:1] in 'AEIOU' else 'a'} {regime} economy")
+    return f"{_label(q.shock)} {CLIENT_MOVE[q.move]} {CLIENT_SPAN[q.window]}{cond}, and what the {_label(q.target)} does next"
+
+
+def named(study: catalog.Study) -> catalog.Study:
+    """A catalog row as it is; a question outside the catalog with its engine
+    slug (a permalink the engine parses back) and its words."""
+    if study.slug:
+        return study
+    from dataclasses import replace
+
+    from api.desk import es
+
+    q = study.question
+    return replace(study, slug=es.slug_for(es.Query(**study.engine_kwargs)), label=question_label(q),
+                   short=question_short(q), client_label=question_client(q))
+
+
+def study_item(study: catalog.Study) -> dict:
+    """A catalog study's worker item (a lookup); any other question computed on
+    request against the request's generation through api/desk.py's pool and
+    cache (computing past its wait, busy when the queue is full)."""
+    if study.slug in catalog.BY_SLUG:
+        return _item(study.slug)
+    from api import desk as desk_mod
+
+    try:
+        item = desk_mod.traced_result(desk_mod.es.Query(**study.engine_kwargs), env._generation())
+    except desk_mod.QueueFull as exc:
+        raise env.Busy(f"{desk_mod.CACHE_MAX} studies are computing; retry in a few seconds.") from exc
+    if item is None:
+        raise env.Computing()
+    return item
 
 
 def study_answer(params: list[tuple[str, str]], t0: float) -> dict:
-    study, h = catalog.normalize(params, "/study", resolve_alias=engine_alias)
-    item = _item(study.slug)
+    study, h = catalog.normalize(params, "/study", resolve_alias=engine_alias, allow_any=True)
+    study = named(study)
+    item = study_item(study)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])
     hit, (payload, trace) = memo(("/study", study.slug, h), lambda: (study_projection(study, h, item), item["trace"]))
@@ -248,6 +313,24 @@ def desk_sectors(request: Request) -> Response:
 def desk_overview(request: Request) -> Response:
     params = list(request.query_params.multi_items())
     return _response(env.answer("/overview", lambda: overview_answer(params)))
+
+
+# ── §12.17 GET /instruments (desk/usability) ───────────────────────────────
+
+@router.get("/instruments")
+def desk_instruments(request: Request) -> Response:
+    params = list(request.query_params.multi_items())
+    return _response(env.answer("/instruments", lambda: instruments_answer(params)))
+
+
+def instruments_answer(params: list[tuple[str, str]]) -> dict:
+    """The instruments this store prices from its own daily closes: the list
+    the Desk's instrument search falls back to when the upstream search does
+    not answer (a lookup of the generation's item)."""
+    if params:
+        raise env.Unsupported(f"{params[0][0]} is not a parameter of /instruments.")
+    item = _result("desk_instruments")
+    return {"instruments": item["instruments"], "excluded": item.get("excluded", [])}
 
 
 # ── §12.1 GET /overview ─────────────────────────────────────────────────────
@@ -455,11 +538,16 @@ def overview_answer(params: list[tuple[str, str]]) -> dict:
 
 # ── §12.7 GET /technicals ───────────────────────────────────────────────────
 
-TECHNICALS_KEYS = ("price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y", "ret_1y_dates", "ma50",
-                   "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross", "move_20d_sigma",
-                   "move_20d_date", "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70",
-                   "rsi_last_below_30", "macd", "seasonality", "series", "signals_allowlist", "vol", "sectors")
+TECHNICALS_KEYS = ("symbol", "name", "scored", "price", "date", "freq", "source", "chg_1d", "chg_1d_dates", "ret_1y",
+                   "ret_1y_dates", "ma50", "ma200", "ma50_window", "ma200_window", "vs_ma50", "vs_ma200", "trend", "cross",
+                   "move_20d_sigma", "move_20d_date", "rsi", "rsi_date", "rsi_prev", "rsi_prev_date", "rsi_last_above_70",
+                   "rsi_last_below_30", "macd", "seasonality", "series", "drawdown", "realized_vol", "rs",
+                   "excluded_bars", "unadjusted_bars", "signals_allowlist", "vol", "sectors")
 SPX_SOURCE = "asset_prices ^GSPC"
+# desk/usability item 2: the spellings that name the S&P 500 itself, the page's default.
+SPX_SYMBOLS = frozenset({"^GSPC", "GSPC", "SPX", "^SPX", "GSPC.INDX"})
+CANDLES_SOURCE = "EODHD daily candles (2Y), split- and dividend-adjusted"
+STOCK_RANGES = {"6m": 6, "1y": 12}  # two years of daily bars carry the 200-day average across a year's chart
 
 
 def _technicals_item() -> dict:
@@ -485,19 +573,116 @@ def move_20d() -> tuple[float | None, str | None]:
     return (z if math.isfinite(z) else None), tr.sessions[int(ev[-1])]
 
 
+def technicals_symbol(params: list[tuple[str, str]]) -> str | None:
+    """The one `symbol` parameter (desk/usability item 2), upper-cased; None
+    for the S&P 500 itself, the page's default. Any other parameter, or a
+    repeated one, is refused."""
+    symbol = None
+    for i, (key, value) in enumerate(params):
+        if key != "symbol":
+            raise env.Unsupported(f"{key} is not a parameter of /technicals.")
+        if i:
+            raise env.Unsupported("symbol is given more than once.")
+        symbol = value.strip().upper()
+    if not symbol:
+        if params:
+            raise env.Unsupported("symbol is empty.")
+        return None
+    return None if symbol in SPX_SYMBOLS else symbol
+
+
 def technicals_answer(params: list[tuple[str, str]]) -> dict:
-    if params:
-        raise env.Unsupported(f"{params[0][0]} is not a parameter of /technicals.")
+    """§12.7 for the S&P 500 (a lookup), or desk/usability's §14.2 for any
+    US-listed stock or ETF: a stored ETF is a lookup of the instruments item;
+    any other symbol reads two years of EODHD daily candles (the provider
+    cache holds them) and runs the same technicals function, its relative
+    strength against the stored S&P of the request's generation."""
+    symbol = technicals_symbol(params)
     item = _technicals_item()
-    if not item["ok"]:
-        raise env.Awaiting(item["reason"])
-    sigma, sigma_date = move_20d()
-    out = {**item, "freq": "daily", "source": SPX_SOURCE, "move_20d_sigma": sigma, "move_20d_date": sigma_date,
-           "signals_allowlist": list(catalog.TECHNICALS_ALLOWLIST),
+    if symbol is None:
+        if not item["ok"]:
+            raise env.Awaiting(item["reason"])
+        sigma, sigma_date = move_20d()
+        out = {**item, "symbol": "^GSPC", "name": "S&P 500", "scored": True, "freq": "daily", "source": SPX_SOURCE, "excluded_bars": None, "unadjusted_bars": None,
+               "move_20d_sigma": sigma, "move_20d_date": sigma_date, "rs": None,
+               "signals_allowlist": list(catalog.TECHNICALS_ALLOWLIST),
+               "vol": env.block_deferred("/technicals", "vol"),
+               # desk/fill-etf: the sector leadership /sectors serves, from the same item (§12.7, §12.14)
+               "sectors": etf_block("/technicals", "sectors", "sectors")}
+        return {k: out[k] for k in TECHNICALS_KEYS}
+    stored = _result("desk_instruments")
+    names = {r["symbol"]: r["name"] for r in stored["instruments"]}
+    if symbol in stored.get("technicals", {}):
+        t, name, source = stored["technicals"][symbol], names[symbol], f"asset_prices {symbol}"
+    else:
+        t, name = stock_technicals(symbol, item.get("_level") if item.get("ok") else None)
+        source = CANDLES_SOURCE
+    # desk/usability §14.2: a stock's page reads its own figures and main's shared RSI, MACD and seasonality for it;
+    # the S&P-only parts (the scored signals, the options) are not a stock's, and its sector bars are the index's.
+    out = {"excluded_bars": None, "unadjusted_bars": None, **t, "symbol": symbol, "name": name, "scored": False, "freq": "daily", "source": source,
+           "move_20d_sigma": None, "move_20d_date": None, "signals_allowlist": [],
            "vol": env.block_deferred("/technicals", "vol"),
-           # desk/fill-etf: the sector leadership /sectors serves, from the same item (§12.7, §12.14)
            "sectors": etf_block("/technicals", "sectors", "sectors")}
     return {k: out[k] for k in TECHNICALS_KEYS}
+
+
+def stock_technicals(symbol: str, bench: Any) -> tuple[dict, str]:
+    """A US-listed stock's technicals from two years of EODHD daily candles
+    (the dashboard's /api/market/candles, range 2Y) and its name from the
+    search index, or a refusal: a symbol that is not a US equity or ETF is
+    422 `unsupported`; a provider failure is its typed error (map_exception).
+    The figures are the shared ones (api/desk_items.technicals_from_level):
+    main's averages, RSI, MACD and seasonality, and desk/usability's drawdown,
+    realized volatility and relative strength.
+
+    Codex R-03: only bars dated at or before the last completed NYSE session
+    (api/calendar, as of the request) are read; a bar after it (today's while
+    the session is open, or one dated in the future) is dropped before any
+    technical is computed, and `excluded_bars` says how many and after what.
+
+    Adjusted closes only, as Basket & Hedge reads them (desk/books' Codex
+    R-07): a bar EODHD served without an adjusted close carries its raw close,
+    which would mix unadjusted prices into every return, so it is left out and
+    `unadjusted_bars` says how many; a symbol with no adjusted close at all is
+    refused (502 `provider`)."""
+    import pandas as pd
+
+    from api.desk_items import technicals_from_level
+    from api.providers import market
+    from api.providers.symbols import SymbolError, parse
+    from src.desk.technicals import PRICE_SPEC
+
+    try:
+        inst = parse(symbol)
+    except SymbolError as exc:
+        raise env.Unsupported(str(exc)) from exc
+    if not inst.is_us_equity:
+        raise env.Unsupported(f"Technicals read US-listed stocks and ETFs; {symbol} is not one.")
+    candles = market.candles(inst.canonical, "2Y")
+    closes: dict[str, float] = {}
+    unadjusted = 0
+    for b in candles["bars"]:
+        c = b.get("close")
+        if not isinstance(c, (int, float)) or not math.isfinite(c) or c <= 0:
+            continue
+        if b.get("adjusted") is not True:
+            unadjusted += 1
+            continue
+        closes[b["ts"][:10]] = float(c)
+    if not closes and unadjusted:
+        raise env.Refused(502, "provider", f"{symbol}: EODHD served no adjusted closes; technicals read adjusted closes only.")
+    asof = nyse.last_completed_session(_now()).isoformat()
+    after = sorted(d for d in closes if d > asof)
+    pairs = sorted((d, c) for d, c in closes.items() if d <= asof)
+    if not pairs:
+        raise env.Awaiting(f"EODHD holds no daily closes for {symbol} through {asof}, the last completed session.")
+    level = pd.Series([c for _, c in pairs], index=pd.DatetimeIndex([d for d, _ in pairs]))
+    out = technicals_from_level(level, spec=PRICE_SPEC, ranges=STOCK_RANGES, bench=bench, source=CANDLES_SOURCE)
+    out.pop("_sessions")
+    out["excluded_bars"] = {"n": len(after), "after": asof} if after else None
+    out["unadjusted_bars"] = {"n": unadjusted} if unadjusted else None
+    name = (market._identity(inst) or {}).get("name") or symbol
+    return out, name
 
 
 # ── §12.14 GET /sectors (desk/fill-etf) ─────────────────────────────────────
@@ -620,8 +805,9 @@ def fire_lists(entries: list[tuple[dict, dict | None]]) -> tuple[list[dict], lis
 
 def events_answer(params: list[tuple[str, str]]) -> dict:
     """§12.4 as JSON: the study's full event table, newest first (plan §2)."""
-    study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias)
-    item = _item(study.slug)
+    study, h = catalog.normalize(params, "/study/events", resolve_alias=engine_alias, allow_any=True)
+    study = named(study)
+    item = study_item(study)
     if not item["ok"]:
         raise env.Awaiting(item["reason"])
     _hit, rows = memo(("/study/events", study.slug), lambda: event_rows(item["events"]))
@@ -899,15 +1085,32 @@ def share(x: float) -> str:
 # ── The /study projection (plan §1.2, §2) ───────────────────────────────────
 
 def _series_list() -> list[dict]:
-    """§12.2 `series`: the registry's available tier-1 and tier-2 series with a
-    role that some catalog study reads, in registry order (Codex R-03,
-    desk/fill-etf: the Event Study page offers only what the catalog can ask,
-    so the nine sector ETFs, whose roles the legacy /api/desk/event-study
-    keeps, are not listed)."""
-    ops = catalog.ops_by_shock()
-    read = catalog.series_read()
-    return [{"key": s.key, "label": s.label, "roles": list(s.roles), "ops": ops.get(s.key, []), "unit": s.unit}
-            for s in registry.SERIES if s.available and s.roles and s.tier <= 2 and s.key in read]
+    """§12.2 `series`, as desk/usability §14.3 amends it: the registry's tier-1
+    and tier-2 series with a role whose history this generation stores (the
+    `desk_assets` item's status), in order, each with the moves the Event
+    Study asks with it as the shock: a 2σ move either way, the S&P 500's own
+    crosses, and any other move a catalog study asks with it (desk/fill-compute's
+    RSI crossings). A series the store lacks is not offered at all.
+
+    Rebase ruling (owner, 2026-09-28): the builder computes any well-formed
+    question on request, so its list wins over desk/fill-etf's catalog-only
+    filter (Codex R-03 there): a stored series with a role is offered even
+    when no catalog study reads it, the sector ETFs included."""
+    ops_catalog = catalog.ops_by_shock()
+    try:
+        assets = _result("desk_assets")
+        stored = {r["key"] for r in [*assets["shocks"], *assets["targets"]] if r.get("status") == "stored"}
+    except Exception as exc:  # a worker without the assets item (a test's) lists the registry's series
+        if env._route_level(exc):
+            raise
+        stored = None
+
+    def ops_of(s: Any) -> list[str]:
+        base = (["up2s", "down2s"] + (["cross_above", "cross_below"] if s.key == "spx" else [])) if "shock" in s.roles else []
+        return base + [m for m in ops_catalog.get(s.key, []) if m not in base]
+
+    return [{"key": s.key, "label": s.label, "roles": list(s.roles), "ops": ops_of(s), "unit": s.unit}
+            for s in registry.SERIES if s.available and s.roles and s.tier <= 2 and (stored is None or s.key in stored)]
 
 
 def served_warnings(provenance: dict, pre1970: dict[str, int]) -> list[str]:
@@ -972,6 +1175,18 @@ def why_sentence(row: dict, unit: str) -> str:
                    f"{share(row['adverse_share'])} of resampled medians are adverse against a 3% bar.")
 
 
+# desk/usability §14.3: a question may target gold now, and the engine's entry rule for a deferred target says
+# "never"; the Desk's language list keeps the word off the page, so the served copy says the same thing without it
+# (as /pipeline serves the registry's gold note, api/desk_pipeline.DESK_WORDING). The native payload is untouched.
+ENTRY_RULE_WORDING = (("so entry is never the event's own session", "so entry is a later session than the event's own"),)
+
+
+def entry_rule_words(rule: str) -> str:
+    for before, after in ENTRY_RULE_WORDING:
+        rule = rule.replace(before, after)
+    return rule
+
+
 def study_projection(study: catalog.Study, h: int, item: dict) -> dict:
     """The generation-dependent part of a /study answer (what the memo holds)."""
     native, table = item["native"], item["events"]
@@ -1022,7 +1237,7 @@ def study_projection(study: catalog.Study, h: int, item: dict) -> dict:
              "value_20": None if math.isnan(table.value[20][i]) else float(table.value[20][i])}
             for i in range(k - 1, max(-1, k - 6), -1)],
         "without_condition": env.block_deferred("/study", "without_condition"),
-        "provenance": {"entry_rule": P["entry_rule"], "cooldown": P["cooldown_sessions"], "seed": P["seed"],
+        "provenance": {"entry_rule": entry_rule_words(P["entry_rule"]), "cooldown": P["cooldown_sessions"], "seed": P["seed"],
                        "engine_version": env.ENGINE_VERSION,
                        "series_start": {m["key"]: m["history_from"] for m in P["inputs"]}},
         "warnings": served_warnings(P, item.get("pre1970", {})),

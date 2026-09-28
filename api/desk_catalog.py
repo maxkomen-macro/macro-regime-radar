@@ -198,13 +198,33 @@ def _horizon(study: Study, raw: str | None) -> int | None:
     return h
 
 
+CROSS_RULE = ("A cross is the S&P 500's own 50- and 200-day averages crossing: the shock and the target are spx, "
+              "with no condition.")
+# desk/fill-compute's RSI moves, asked outside the catalog's two rows (desk/usability §14.3's rebase follow-through).
+RSI_RULE = ("An RSI crossing is the S&P 500's own 14-day RSI crossing 70 or 30: the shock and the target are spx, "
+            "with no condition.")
+
+
+def ad_hoc(question: Question) -> Study:
+    """A well-formed question outside the catalog (desk/usability §14.3): a
+    study the router names and computes on request. Its slug, label, short
+    and Client title are the router's (they need the registry's labels and
+    the engine's slug); here they are empty."""
+    return Study("", "", "", None, question)
+
+
 def normalize(params: Iterable[tuple[str, str]], route: str = "/study",
-              resolve_alias=None) -> tuple[Study, int | None]:
+              resolve_alias=None, *, allow_any: bool = False) -> tuple[Study, int | None]:
     """A request's parameters as (catalog study, selected horizon); the horizon
     is None for a row with no horizons. `preset` names a catalog slug, or an
     engine slug that parses to a catalog query (`resolve_alias`, which the
     router supplies from the engine; the written-out engine slugs resolve
-    without it). Otherwise the six slots name the question."""
+    without it). Otherwise the six slots name the question.
+
+    desk/usability §14.3: with `allow_any`, a well-formed six-slot question
+    that is no catalog row is returned as an `ad_hoc` study at any of the four
+    horizons (a cross is still only the S&P's own); the engine validates the
+    series."""
     p = _one(params, route)
     if "preset" in p:
         extra = sorted(k for k in p if k in SLOTS)
@@ -243,6 +263,10 @@ def normalize(params: Iterable[tuple[str, str]], route: str = "/study",
         raise Unsupported(f"while {while_} is not one of {', '.join(WHILE)}.")
     q = Question(p["shock"], window, move, while_, p["target"])
     study = study_for(q)
+    if study is None and allow_any:
+        if cross and (q.shock != "spx" or q.target != "spx" or while_ != "none"):
+            raise Unsupported(CROSS_RULE if move.startswith("cross") else RSI_RULE)
+        study = ad_hoc(q)
     if study is None:
         asked = ", ".join([f"shock {q.shock}", "no window" if window is None else f"window {window}",
                            f"move {move}", f"while {while_}", f"target {q.target}"])
@@ -274,16 +298,15 @@ def series_read() -> set[str]:
 
 
 def fixes_for(study: Study) -> list[str]:
-    """Plan R15: `widen_window` when the question with the next larger window
-    is a catalog study; `drop_condition` when the question with `while: none` is."""
+    """Plan R15, as desk/usability §14.3 amends it (every well-formed question is
+    answered on request now): `widen_window` when a larger window exists;
+    `drop_condition` when the question has one."""
     q = study.question
     out: list[str] = []
     if q is None:
         return out
     if q.window is not None and q.window != WINDOWS[-1]:
-        wider = WINDOWS[WINDOWS.index(q.window) + 1]
-        if study_for(Question(q.shock, wider, q.move, q.while_, q.target)) is not None:
-            out.append("widen_window")
-    if q.while_ != "none" and study_for(Question(q.shock, q.window, q.move, "none", q.target)) is not None:
+        out.append("widen_window")
+    if q.while_ != "none":
         out.append("drop_condition")
     return out

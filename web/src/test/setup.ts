@@ -1,6 +1,11 @@
 import "@testing-library/jest-dom/vitest";
 import { afterEach } from "vitest";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
+
+// A lazily imported Desk tab can take more than the default second to arrive while the whole suite runs
+// in parallel (desk/usability: the Event Study tab's first test missed it under load); five seconds keeps
+// findBy and waitFor patient without changing what any test asserts.
+configure({ asyncUtilTimeout: 5000 });
 
 // jsdom lacks a few browser APIs the screens touch.
 if (typeof window !== "undefined") {

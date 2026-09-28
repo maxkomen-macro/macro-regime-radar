@@ -23,9 +23,12 @@ The connection is closed on every path. Every heavy import is lazy.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from api import desk_catalog
+
+log = logging.getLogger("mrr.desk")
 
 
 def desk_study(slug: str) -> Callable[[dict], dict]:
@@ -78,7 +81,134 @@ def desk_technicals(ctx: dict) -> dict:
         conn.close()
     out = technicals_from_level(raw)
     out.pop("_sessions")
-    return {"ok": True, **out}
+    # The S&P's own closes, kept for the relative strength of every other instrument (never served).
+    return {"ok": True, **out, "_level": raw}
+
+
+# The instruments this store prices from its own daily history (desk/usability): the US-listed ETFs
+# the full refresh stores in asset_prices for allocation, and the S&P 500 itself. The Desk's
+# instrument search falls back to this list when the upstream search does not answer. Names are
+# written out here (api/ never imports src.analytics.allocation, which configures the symbols);
+# tests/test_desk_instruments.py pins that every stored daily ETF has one.
+INSTRUMENT_NAMES: dict[str, tuple[str, str]] = {
+    "^GSPC": ("S&P 500", "index"),
+    "SPY": ("SPDR S&P 500 ETF Trust", "etf"),
+    "IWM": ("iShares Russell 2000 ETF", "etf"),
+    "EFA": ("iShares MSCI EAFE ETF", "etf"),
+    "EEM": ("iShares MSCI Emerging Markets ETF", "etf"),
+    "AGG": ("iShares Core US Aggregate Bond ETF", "etf"),
+    "IEF": ("iShares 7-10 Year Treasury Bond ETF", "etf"),
+    "LQD": ("iShares iBoxx $ Investment Grade Corporate Bond ETF", "etf"),
+    "HYG": ("iShares iBoxx $ High Yield Corporate Bond ETF", "etf"),
+    "DJP": ("iPath Bloomberg Commodity Index Total Return ETN", "etf"),
+    "GLD": ("SPDR Gold Shares", "etf"),
+    # desk/fill-etf's daily series: the eleven sector SPDRs and the breadth and theme ETFs.
+    "XLB": ("Materials Select Sector SPDR Fund", "etf"),
+    "XLE": ("Energy Select Sector SPDR Fund", "etf"),
+    "XLF": ("Financial Select Sector SPDR Fund", "etf"),
+    "XLI": ("Industrial Select Sector SPDR Fund", "etf"),
+    "XLK": ("Technology Select Sector SPDR Fund", "etf"),
+    "XLP": ("Consumer Staples Select Sector SPDR Fund", "etf"),
+    "XLU": ("Utilities Select Sector SPDR Fund", "etf"),
+    "XLV": ("Health Care Select Sector SPDR Fund", "etf"),
+    "XLY": ("Consumer Discretionary Select Sector SPDR Fund", "etf"),
+    "XLC": ("Communication Services Select Sector SPDR Fund", "etf"),
+    "XLRE": ("Real Estate Select Sector SPDR Fund", "etf"),
+    "RSP": ("Invesco S&P 500 Equal Weight ETF", "etf"),
+    "QQQ": ("Invesco QQQ Trust", "etf"),
+    "SMH": ("VanEck Semiconductor ETF", "etf"),
+    "SOXX": ("iShares Semiconductor ETF", "etf"),
+    "IGV": ("iShares Expanded Tech-Software Sector ETF", "etf"),
+    "TLT": ("iShares 20+ Year Treasury Bond ETF", "etf"),
+    "UUP": ("Invesco DB US Dollar Index Bullish Fund", "etf"),
+}
+
+
+def desk_instruments(ctx: dict) -> dict:
+    """The /instruments item: every named instrument with stored daily closes
+    in asset_prices, its first and last stored session; an instrument the store
+    does not hold is left out. A store without the table lists none.
+
+    desk/usability item 2: each stored ETF's technicals too, by the shared
+    function over its stored closes, its relative strength against the stored
+    S&P 500 (the `desk_technicals` item's level, listed before this one), so
+    /technicals?symbol=<a stored ETF> is a lookup. An ETF whose technicals
+    cannot be computed is left out of `technicals`, and the route then asks
+    the provider like any other stock.
+
+    Codex R-08: each instrument's rows are read and checked on their own (a
+    canonical YYYY-MM-DD date, a finite positive close); one malformed row
+    drops that instrument, listed in `excluded` with the reason, and every
+    other instrument stands. Its first and last sessions are its checked
+    rows'. Round 2: the conversion to a dated series happens inside the same
+    per-instrument isolation, so a date that passes the check and still
+    cannot be converted excludes its instrument, never the item."""
+    import pandas as pd
+
+    from src.analytics import dbpath
+    from src.desk import event_study as es
+
+    conn = dbpath.connect_ro(es.DB_PATH)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'asset_prices'").fetchone():
+            return {"instruments": [], "technicals": {}, "excluded": []}
+        cutoff = es.resolve_as_of(None, es.DB_PATH)
+        out, closes, excluded = [], {}, []
+        for sym, (name, kind) in INSTRUMENT_NAMES.items():
+            rows = conn.execute(
+                "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = '1d' AND date <= ? ORDER BY date",
+                (sym, cutoff),
+            ).fetchall()
+            if not rows:
+                continue
+            bad = [why for why in (_row_problem(d, c) for d, c in rows) if why]
+            if bad:
+                excluded.append({"symbol": sym, "reason": f"{len(bad)} stored row{'' if len(bad) == 1 else 's'} could not be read ({bad[0]}); not offered until the store is repaired."})
+                continue
+            try:
+                # Every instrument's dates are converted here, inside its own isolation (Codex R-08, round 2).
+                level = pd.Series([float(c) for _, c in rows], index=pd.DatetimeIndex([d for d, _ in rows], dtype="datetime64[ns]"))
+            except Exception as exc:  # noqa: BLE001 — any failure is this instrument's, never the item's
+                log.warning("desk: instrument %s excluded: %s", sym, exc)
+                excluded.append({"symbol": sym, "reason": f"its stored dates could not be read ({type(exc).__name__}); not offered until the store is repaired."})
+                continue
+            out.append({"symbol": sym, "name": name, "kind": kind, "first": rows[0][0], "last": rows[-1][0], "source": "asset_prices"})
+            if kind == "etf":
+                closes[sym] = level
+    finally:
+        conn.close()
+    from src.desk.technicals import PRICE_SPEC
+
+    spx = ctx.get("desk_technicals") or {}
+    bench = spx.get("_level") if spx.get("ok") else None
+    technicals = {}
+    for sym, level in closes.items():
+        try:
+            t = technicals_from_level(level, spec=PRICE_SPEC, bench=bench, source=f"asset_prices {sym}")
+        except Exception as exc:  # noqa: BLE001 — too short a history, or any one-ETF failure: listed, no technicals
+            log.warning("desk: technicals for %s not computed: %s", sym, exc)
+            continue
+        t.pop("_sessions")
+        technicals[sym] = t
+    return {"instruments": out, "technicals": technicals, "excluded": excluded}
+
+
+def _row_problem(d: Any, close: Any) -> str | None:
+    """Why one stored daily row cannot be read (Codex R-08), or None: its date must be a canonical YYYY-MM-DD
+    calendar date (round 2: `date.fromisoformat` alone also takes ISO week dates such as '2025-W01-1', ten
+    characters that pandas cannot convert) and its close a finite positive number."""
+    import math
+    import re
+    from datetime import date as _date
+
+    try:
+        if not isinstance(d, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or _date.fromisoformat(d).isoformat() != d:
+            raise ValueError
+    except ValueError:
+        return f"{d!r} is not a YYYY-MM-DD date"
+    if isinstance(close, bool) or not isinstance(close, (int, float)) or not math.isfinite(close) or close <= 0:
+        return f"{d}: close {close!r} is not a positive number"
+    return None
 
 
 # /overview's data_status contributors (plan N9): the tier-1 inputs of the twelve Ledger
@@ -170,25 +300,40 @@ def trend_states(price, ma50, ma200) -> list[str]:
     return technicals.trend_states(price, ma50, ma200)
 
 
-def technicals_from_level(raw: Any) -> dict:
-    """N2 and N3 over a ^GSPC level series (the engine's load_level output): the
-    shared `src.desk.technicals.level_technicals` at /technicals' three chart
-    ranges, which Basket & Hedge reads for its index too (desk/books), then
-    /technicals' RSI, MACD and seasonality (desk/fill-compute) from the shared
-    indicators in `src.analytics.technicals`, over the same extended XNYS
-    calendar (see `level_technicals`). `_sessions` (the calendar) is for tests
-    and is not served."""
+# desk/usability item 2: the figures /technicals adds for any symbol, beside main's.
+HIGH_WINDOW = 252   # the drawdown from the high of the last 252 session slots (one year)
+RS_CHANGE_N = 63    # relative strength's change over 63 sessions (three months)
+
+
+def technicals_from_level(raw: Any, *, spec: Any = None, ranges: dict[str, int] | None = None, bench: Any = None,
+                          source: str = "asset_prices ^GSPC") -> dict:
+    """N2 and N3 over a level series (the engine's load_level output for
+    ^GSPC; desk/usability: any stock's or stored ETF's daily closes, `spec`
+    `src.desk.technicals.PRICE_SPEC`): the shared
+    `src.desk.technicals.level_technicals` at /technicals' chart ranges, which
+    Basket & Hedge reads for its index too (desk/books), then /technicals' RSI,
+    MACD and seasonality (desk/fill-compute) from the shared indicators in
+    `src.analytics.technicals`, over the same extended XNYS calendar (see
+    `level_technicals`), for whatever symbol the closes are.
+
+    desk/usability adds (`usability_fields`), on the same calendar: the
+    drawdown from the high of the last 252 slots, the 21-day realized
+    volatility (the shared `realized_vol`) as a fraction, and, given a `bench`
+    level (the stored S&P 500), the relative strength. `_sessions` (the
+    calendar) is for tests and is not served."""
     import pandas as pd
 
     from src.analytics import technicals
     from src.desk import technicals as level
 
-    out = level.level_technicals(raw, ranges=TECH_CHART_MONTHS)
+    ranges = ranges if ranges is not None else TECH_CHART_MONTHS
+    out = level.level_technicals(raw, spec=spec, ranges=ranges)
     al = out.pop("_aligned")
     iso = out.pop("_sessions")
     sessions = al.index
     px = al.to_numpy(dtype=float)
-    date_ = sessions[iso.index(out["date"])]
+    i = iso.index(out["date"])
+    date_ = sessions[i]
     rsi = technicals.rsi(al).to_numpy(dtype=float)
     macd = technicals.macd(al)
     chart = [k for k in range(len(sessions)) if date_ - pd.DateOffset(months=TECH_CHART_MONTHS["6m"]) < sessions[k] <= date_]
@@ -196,9 +341,77 @@ def technicals_from_level(raw: Any) -> dict:
         **out,
         **rsi_fields(rsi, px, iso),
         "macd": macd_fields(macd, iso, chart),
-        "seasonality": seasonality_fields(raw),
+        "seasonality": seasonality_fields(raw, source),
+        **usability_fields(al, px, iso, i, ranges, bench),
         "_sessions": iso,
     }
+
+
+def usability_fields(al: Any, px: Any, iso: list[str], i: int, ranges: dict[str, int], bench: Any) -> dict:
+    """desk/usability item 2's figures for any symbol, each null when a slot it
+    reads has no close: `drawdown` from the high of the last 252 slots (the
+    earliest session on a tie), `complete` only when all 252 hold a valid close
+    (Codex R-01: a shorter or broken history is partial, and `window.n` says
+    how many it read); `realized_vol`, the shared
+    `src.analytics.technicals.realized_vol` (21 daily log returns, none
+    missing) as a fraction; and, given `bench` (the stored S&P 500), `rs`: the
+    close divided by the benchmark's on each session, its 50-session average,
+    its 63-session change and the chart series rebased to 100."""
+    import math
+
+    import numpy as np
+    import pandas as pd
+
+    from src.analytics import technicals
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    sessions = al.index
+    date_ = sessions[i]
+
+    def f(x: float) -> float | None:
+        return float(x) if math.isfinite(x) else None
+
+    def window(w: int) -> dict:
+        lo = i - w + 1
+        return {"start": iso[lo], "end": iso[i], "n": int(np.isfinite(px[lo:i + 1]).sum())}
+
+    def in_range(months: int) -> list[int]:
+        lo = date_ - pd.DateOffset(months=months)
+        return [k for k in range(len(sessions)) if lo < sessions[k] <= date_]
+
+    lo = i - HIGH_WINDOW + 1
+    hi_k = lo + int(np.nanargmax(px[lo:i + 1]))
+    dd_window = window(HIGH_WINDOW)
+    drawdown = {"value": float(px[i] / px[hi_k] - 1), "peak": {"date": iso[hi_k], "close": float(px[hi_k])}, "window": dd_window,
+                "complete": dd_window["n"] >= HIGH_WINDOW}
+
+    w = technicals.REALIZED_WINDOW
+    rv = technicals.realized_vol(al).to_numpy(dtype=float)
+    realized_vol = {"value": f(rv[i] / 100.0), "window": {"start": iso[i - w], "end": iso[i], "n": w},
+                    "annualization": technicals.PERIODS_PER_YEAR}
+
+    rs = None
+    if bench is not None and len(bench):
+        bl, _o, _m = es.align(bench, sessions)
+        bl, _b, _w = es.validate_values(bl, registry.get("spx"))
+        bx = bl.to_numpy(dtype=float)
+        ratio = np.where(np.isfinite(px) & np.isfinite(bx), px / np.where(bx == 0, np.nan, bx), np.nan)
+        rma = pd.Series(ratio).rolling(50, min_periods=50).mean().to_numpy(dtype=float)
+        both = np.flatnonzero(np.isfinite(ratio[: i + 1]))
+        if len(both):
+            k = int(both[-1])
+            chg = ratio[k] / ratio[k - RS_CHANGE_N] - 1 if k >= RS_CHANGE_N and math.isfinite(ratio[k - RS_CHANGE_N]) else math.nan
+            rs_series = {}
+            for name, months in ranges.items():
+                ks = in_range(months)
+                base = next((ratio[x] for x in ks if math.isfinite(ratio[x])), math.nan)
+                rs_series[name] = [{"date": iso[x], "rs": f(100 * ratio[x] / base), "rs_ma50": f(100 * rma[x] / base)} for x in ks]
+            rs = {"benchmark": "^GSPC", "date": iso[k], "value": float(ratio[k]), "ma50": f(rma[k]),
+                  "vs_ma50": f(ratio[k] / rma[k] - 1) if math.isfinite(rma[k]) else None,
+                  "chg_3m": f(chg), "chg_3m_dates": {"from": iso[k - RS_CHANGE_N], "to": iso[k]} if k >= RS_CHANGE_N else None,
+                  "series": rs_series}
+    return {"drawdown": drawdown, "realized_vol": realized_vol, "rs": rs}
 
 
 def macd_fields(m: Any, iso: list[str], chart: list[int]) -> dict | None:
@@ -237,7 +450,7 @@ def macd_fields(m: Any, iso: list[str], chart: list[int]) -> dict | None:
     }
 
 
-def seasonality_fields(raw: Any) -> dict | None:
+def seasonality_fields(raw: Any, source: str = "asset_prices ^GSPC") -> dict | None:
     """/technicals' seasonality (spec §12.7, desk/fill-compute, the owner's
     item 10): the shared `src/analytics/technicals.monthly_seasonality` over
     every stored close, on the XNYS calendar through the end of the newest
@@ -249,7 +462,7 @@ def seasonality_fields(raw: Any) -> dict | None:
     s = technicals.monthly_seasonality(month_closes(raw))
     if not s["window"]["n"]:
         return None
-    return {**s, "freq": "monthly", "source": "asset_prices ^GSPC"}
+    return {**s, "freq": "monthly", "source": source}
 
 
 RSI_AFTER = 20  # sessions: the S&P's move after the last session in each RSI zone

@@ -66,6 +66,7 @@ export default function TrendChart({
   crosses = [],
   height = 230,
   ticks: maxTicks = 3,
+  tickText,
 }: {
   points: readonly TrendPoint[];
   ariaLabel: string;
@@ -73,6 +74,8 @@ export default function TrendChart({
   crosses?: readonly { kind: "golden" | "death"; date: string }[];
   height?: number;
   ticks?: number;
+  /** An axis tick's words, given the ticks (Codex R-02: a stock's axis carries the decimals its step needs); whole numbers when absent. */
+  tickText?: (v: number, ticks: readonly number[]) => string;
 }) {
   const all = points.flatMap((p) => [p.close, p.ma50, p.ma200]).filter(fin);
   const lo = all.length ? Math.min(...all) : 0;
@@ -89,7 +92,7 @@ export default function TrendChart({
       height={height}
       n={points.length}
       yDomain={[ticks[0], ticks[ticks.length - 1]]}
-      yTicks={ticks.map((v) => ({ v, text: grouped(v) }))}
+      yTicks={ticks.map((v) => ({ v, text: tickText ? tickText(v, ticks) : grouped(v) }))}
       xTicks={monthTicks(points.map((p) => p.date))}
       series={[
         { key: "ma200", values: points.map((p) => (fin(p.ma200) ? p.ma200 : null)), color: DESK_ACCENTS.gray, dash: "4 4", width: 2, label: "200-day" },

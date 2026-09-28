@@ -40,9 +40,8 @@ describe("the unavailable state (§1.0.2)", () => {
     expect(card).not.toHaveTextContent("Cyclical");
     expect(within(card).getByTestId("dk-live")).toHaveTextContent("Not yet served");
     expect(card).not.toHaveTextContent("Yahoo");
-    const adv = within(card).getByTestId("dk-advanced");
-    expect(adv).toBeDisabled();
-    expect(card).toHaveTextContent("Advanced ▸ not yet served");
+    // desk/usability §14.13: an Advanced that would open nothing is not shown.
+    expect(within(card).queryByTestId("dk-advanced")).toBeNull();
     expect(card).toHaveAttribute("data-unserved");
   });
 

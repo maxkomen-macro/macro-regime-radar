@@ -84,7 +84,8 @@ describe("Sectors tab", () => {
     expect(within(breadth).getAllByText("breadth is not computed yet.")).toHaveLength(1);
     for (const l of ["Above 50-day", "Above 200-day", "Equal vs cap weight"]) expect(breadth).toHaveTextContent(new RegExp(l, "i"));
     expect(within(breadth).getByTestId("dk-live")).toHaveTextContent("Not yet served");
-    expect(within(breadth).getByTestId("dk-advanced")).toBeDisabled();
+    // desk/usability §14.13: an Advanced that would open nothing is not shown.
+    expect(within(breadth).queryByTestId("dk-advanced")).toBeNull();
     // The leadership card stands beside it.
     expect(screen.getByRole("region", { name: /Sector leadership/ })).toHaveTextContent("Energy");
   });

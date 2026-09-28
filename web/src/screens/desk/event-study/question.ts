@@ -8,7 +8,7 @@
  */
 
 import type { Move, Question } from "../data/types";
-import { paramsFor } from "./studies";
+import { paramsFor, slugFor } from "./studies";
 
 /** §4's nine chips, in the spec's order, each its catalog label (§12.3); the served catalog's label and availability win. */
 export const PRESET_CHIPS: readonly { slug: string; label: string }[] = [
@@ -57,8 +57,46 @@ export const HORIZONS: readonly { h: number; label: string }[] = [
   { h: 60, label: "3 months" },
 ];
 
-/** The rail's confidence chips (§4): shown, disabled, "not yet served"; 90% is the engine's served level. */
-export const CONFIDENCES: readonly number[] = [0.8, 0.9, 0.95];
+/** The engine's slug for a question (desk/usability §14.3): the address the API serves a study outside the
+ * catalog under (`slug`), and the key the fixtures file it by. A cross is the S&P 500's own. */
+export function engineSlugOf(q: Pick<Question, "shock" | "window" | "move" | "while" | "target">): string {
+  if (isCross(q.move)) return slugFor({ kind: "cross", cross: q.move === "cross_below" ? "death" : "golden", shock: "spx", w: 20, z: 2, sign: "+", cond: "none", regime: "all", target: q.target });
+  if (isRsi(q.move)) return slugFor({ kind: "rsi", cross: q.move === "rsi_below_30" ? "below" : "above", shock: "spx", w: 14, z: 2, sign: "+", cond: "none", regime: "all", target: q.target });
+  const cond = q.while === "none" ? "none" : q.while === "spx_below_50" ? "spx_below_50dma" : `regime=${q.while.slice("regime:".length).toLowerCase().replace(/ /g, "_")}`;
+  return slugFor({ kind: "shock", cross: null, shock: q.shock, w: q.window ?? 20, z: 2, sign: q.move === "down2s" ? "-" : "+", cond, regime: "all", target: q.target });
+}
+
+/** The S&P 500, the only series a cross is defined on (§4, §12.2). */
+export const CROSS_SERIES = "spx";
+
+/**
+ * One slot changed, the others kept where they still make a question the engine asks (desk/usability
+ * §14.3): every option in every slot works. A cross is the S&P 500's own 50- and 200-day averages, and an
+ * RSI crossing its own 14-day RSI (desk/fill-compute), so picking either sets the shock and the target to
+ * the S&P, the condition to none and the window to none; picking a window, another shock or target, or a
+ * condition while one is asked turns the move into a 2σ rise over 20 sessions (or the window picked). The
+ * note says what else moved, in words; null when nothing did.
+ */
+export function adjust(q: Question, slot: keyof Question, value: Question[keyof Question], label: (key: string) => string = (k) => k): { question: Question; note: string | null } {
+  const next = { ...q, [slot]: value } as Question;
+  if (slot === "move" && takesNoWindow(value as Move)) {
+    const moved = next.shock !== CROSS_SERIES || next.target !== CROSS_SERIES || next.while !== "none";
+    const out = { ...next, shock: CROSS_SERIES, target: CROSS_SERIES, while: "none", window: null };
+    const what = isRsi(value as Move) ? "An RSI crossing is the" : "A cross is the";
+    const whose = isRsi(value as Move) ? "own 14-day RSI" : "own averages";
+    return { question: out, note: moved ? `${what} ${label(CROSS_SERIES)}'s ${whose}: the shock and the target are the ${label(CROSS_SERIES)}, with no condition.` : null };
+  }
+  if (slot === "window" && value === null && !takesNoWindow(next.move)) {
+    const out = { ...next, move: "cross_above" as Move, shock: CROSS_SERIES, target: CROSS_SERIES, while: "none" };
+    return { question: out, note: `No window is a cross: the ${label(CROSS_SERIES)}'s 50-day average crossing above its 200-day.` };
+  }
+  if (takesNoWindow(next.move) && ((slot === "window" && value !== null) || (slot === "shock" && value !== CROSS_SERIES) || (slot === "target" && value !== CROSS_SERIES) || (slot === "while" && value !== "none"))) {
+    const out = { ...next, move: "up2s" as Move, window: slot === "window" ? (value as number) : 20 };
+    return { question: out, note: `${isRsi(next.move) ? "An RSI crossing" : "A cross"} is only the S&P 500's own: the move is now a 2σ rise.` };
+  }
+  if (slot === "move" && !takesNoWindow(value as Move) && next.window == null) return { question: { ...next, window: 20 }, note: null };
+  return { question: next, note: null };
+}
 
 /** The address of what the page asks: a preset, with the horizon its address names kept verbatim for the server
  * to judge (§12.2; Codex R-23), or the six slots (§12.2: no `confidence`). */
