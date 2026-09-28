@@ -366,13 +366,21 @@ test.describe("desk v2", () => {
 
   test("macro: the two rows are equal and sized to their cards; the gauge's caption gives way to a band name and follows a resize", async ({ page }) => {
     await open(page, "/desk/macro");
-    const heights = await page.locator("section.dk-card.mc-card").evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
+    // The 2×2's own cards (desk/matrix: the correlation matrix is a full-width card under the grid, not a fifth cell).
+    const cells = page.locator(".mc-grid > section.dk-card.mc-card");
+    const heights = await cells.evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().height)));
     expect(heights).toHaveLength(4);
     expect(new Set(heights).size).toBe(1);
+    const matrix = page.locator("section.dk-card.mc-mx-card");
+    await expect(matrix).toHaveCount(1);
+    const [gridBox, matrixBox] = await Promise.all([page.locator(".mc-grid").boundingBox(), matrix.boundingBox()]);
+    expect(matrixBox!.y).toBeGreaterThanOrEqual(gridBox!.y + gridBox!.height);
+    expect(Math.abs(matrixBox!.width - gridBox!.width)).toBeLessThanOrEqual(1);
     // Taller viewport, same cards: they never stretch to the window.
     await page.setViewportSize({ width: 1440, height: 1500 });
     await settle(page, 200);
-    expect(await page.locator("section.dk-card.mc-card").first().evaluate((e) => Math.round(e.getBoundingClientRect().height))).toBe(heights[0]);
+    expect(await cells.first().evaluate((e) => Math.round(e.getBoundingClientRect().height))).toBe(heights[0]);
+    expect(Math.round((await matrix.boundingBox())!.height)).toBe(Math.round(matrixBox!.height));
     const tight = page.locator(".mc-card .dk-gauge-names > span > span", { hasText: "Tight" });
     await expect(tight).toBeVisible();
     await page.setViewportSize({ width: 390, height: 900 });
