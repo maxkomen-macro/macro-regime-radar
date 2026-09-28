@@ -8,11 +8,20 @@ import o from "../../../fixtures/desk/proto-options.json";
 import books from "../../../fixtures/desk/proto-books-basket.json";
 import { putValue, years } from "./black-scholes";
 import { basketInputs, inputsFrom, sampleBasket } from "./basket-inputs";
-import { etfStrike, hedge, largest, pct2, STRUCTURES, usd, usdM } from "./options";
+import { etfStrike, hedge, largest, pct2, STRUCTURES, usd, usdM, type Priced } from "./options";
 
 const inputs = basketInputs(sampleBasket())!;
 const h = hedge(inputs);
-const route = (k: string) => h.routes.find((r) => r.key === k)!;
+type Ok = Extract<Priced, { reason: null }>;
+/** A priced row: the sample basket's are all inside the domain. */
+const ok = (p: Priced): Ok => {
+  if (p.reason !== null) throw new Error(p.reason);
+  return p;
+};
+const route = (k: string) => {
+  const r = h.routes.find((x) => x.key === k)!;
+  return { ...r, rows: r.rows.map(ok) };
+};
 const put = (strike: number, days: number, vol: number, q: number) => putValue({ strike, t: years(days), vol: vol / 100, r: o.rate, q });
 
 describe("the basket engine's inputs (the rebase seam)", () => {
@@ -105,7 +114,7 @@ describe("the three routes", () => {
 
   it("on every route the spread costs less than the put and the 3-month put more; the ETF and the basket put pay the same at −10%, the names less", () => {
     expect(STRUCTURES.map((s) => s.label)).toEqual(["1M 95 put", "3M 95 put", "1M 95/85 put spread"]);
-    for (const r of h.routes) {
+    for (const r of h.routes.map((x) => route(x.key))) {
       const [p1, p3, sp] = r.rows;
       expect(sp.cost).toBeLessThan(p1.cost);
       expect(p3.cost).toBeGreaterThan(p1.cost);
@@ -120,6 +129,7 @@ describe("the three routes", () => {
 
   it("a name with no assumed vol takes the stated default, and says so", () => {
     const other = hedge({ ...inputs, legs: [{ symbol: "ZZZZ", name: null, weight: 40 }, ...inputs.legs.slice(0, 2)] });
+    expect(other.routes.every((r) => r.rows.every((p) => p.reason === null))).toBe(true);
     expect(other.names[0]).toMatchObject({ symbol: "ZZZZ", assumed: true, vol: o.name_default.vol });
     expect(other.names[1].assumed).toBe(false);
   });
@@ -135,5 +145,36 @@ describe("the three routes", () => {
       expect(Object.keys(o.etfs)).toContain(e.symbol);
     }
     expect(books.legs.reduce((a, l) => a + l.weight, 0)).toBe(100);
+  });
+});
+
+describe("Codex R-02: each structure is priced only inside its domain; outside it, a plain reason and no number", () => {
+  const at = (ratio: number) => hedge({ ...inputs, top: { ...inputs.top, hedge_ratio: ratio } });
+  const numbersOf = (h: ReturnType<typeof hedge>) => h.routes.flatMap((r) => r.rows.flatMap((p) => (p.reason === null ? [p.cost, p.costUsd, p.payoff, p.payoffUsd, p.breakeven ?? 0] : [])));
+
+  it("hedge_ratio 0.10: the ETF and basket routes are not priced, each row says why; the names route still is; no NaN", () => {
+    const h = at(0.1);
+    const etf = h.routes.find((r) => r.key === "etf")!;
+    const otc = h.routes.find((r) => r.key === "otc")!;
+    for (const p of [...etf.rows, ...otc.rows]) expect(p.reason).toBe("Not priced: the hedge ratio, 0.10, is outside the 0.25 to 4 this card prices.");
+    for (const p of h.routes.find((r) => r.key === "names")!.rows) expect(p.reason).toBeNull();
+    expect(numbersOf(h).every(Number.isFinite)).toBe(true);
+    // A number that is not finite serializes as null: no priced field is.
+    expect(JSON.stringify(h.routes)).not.toMatch(/"(cost|costUsd|payoff|payoffUsd)":null/);
+  });
+
+  it("hedge_ratio 0.25: the puts are priced; the spread's 85% strike moves to 40% of the ETF, outside 50% to 100%, so it is not", () => {
+    const etf = at(0.25).routes.find((r) => r.key === "etf")!;
+    expect(etf.rows[0].reason).toBeNull();
+    expect(etf.rows[1].reason).toBeNull();
+    expect(etf.rows[2].reason).toBe("Not priced: the 85% strike moves to 40.0% of XLK, outside the 50% to 100% of spot this card prices.");
+  });
+
+  it("a ratio that is not a number, an R² outside (0, 1], a vol that is not positive: not priced, with the reason", () => {
+    expect(at(NaN).routes.find((r) => r.key === "etf")!.rows[0].reason).toBe("Not priced: no hedge ratio was served.");
+    const r2 = hedge({ ...inputs, top: { ...inputs.top, r2: 0 } }).routes.find((r) => r.key === "otc")!;
+    expect(r2.rows[0].reason).toBe("Not priced: an R² of 0.00 cannot carry the ETF's volatility to the basket's.");
+    const flat = hedge({ ...inputs, legs: [{ symbol: "ZZZZ", name: null, weight: 100 }] }, { name_default: { q: 0, vol: { "1m_95": 0, "1m_85": 0, "3m_95": 0 } } });
+    for (const p of flat.routes.find((r) => r.key === "names")!.rows) expect(p.reason).toBe("Not priced: no volatility is assumed for ZZZZ at this strike.");
   });
 });

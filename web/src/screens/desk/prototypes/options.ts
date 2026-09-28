@@ -13,7 +13,12 @@
  *       (hedge ratio × the ETF's vol at the strike ÷ √R²) plus a dealer's margin.
  * Every cost, breakeven and payoff is a fraction of the basket's notional, at
  * expiry. The payoff if the basket falls 10% assumes the ETF moves by the
- * fitted ratio (10% ÷ hedge ratio) and each name moves with the basket. Pure.
+ * fitted ratio (10% ÷ hedge ratio) and each name moves with the basket.
+ * Each structure is priced only inside its domain (Codex R-02): a hedge ratio
+ * from 0.25 to 4 for the routes that read it, every strike handed to
+ * Black-Scholes from 50% to 100% of its underlying's spot, a positive assumed
+ * volatility, an R² in (0, 1] for the basket put, and finite results;
+ * outside it the structure carries a plain reason and no number. Pure.
  */
 
 import o from "../../../fixtures/desk/proto-options.json" with { type: "json" };
@@ -42,17 +47,26 @@ export const STRUCTURES: readonly Structure[] = [
   { key: "spread1m", label: `1M ${Math.round(o.put_strike * 100)}/${Math.round(o.spread_short_strike * 100)} put spread`, tenor: "1m", long: o.put_strike, short: o.spread_short_strike },
 ];
 
-export interface Priced {
-  structure: Structure;
-  /** The premium, a fraction of the basket's notional, and in dollars. */
-  cost: number;
-  costUsd: number;
-  /** How far the basket must fall by expiry for the payoff to repay the premium (a positive fraction). */
-  breakeven: number;
-  /** What it pays at expiry if the basket is 10% lower, a fraction of notional and in dollars. */
-  payoff: number;
-  payoffUsd: number;
-}
+/** A structure priced, or, outside its domain, the reason it is not (Codex R-02). */
+export type Priced =
+  | {
+      structure: Structure;
+      reason: null;
+      /** The premium, a fraction of the basket's notional, and in dollars. */
+      cost: number;
+      costUsd: number;
+      /** How far the basket must fall by expiry for the payoff to repay the premium (a positive fraction);
+       * null when no fall does. */
+      breakeven: number | null;
+      /** What it pays at expiry if the basket is 10% lower, a fraction of notional and in dollars. */
+      payoff: number;
+      payoffUsd: number;
+    }
+  | { structure: Structure; reason: string };
+
+/** The pricing domain (Codex R-02): the hedge ratios the ETF and basket routes price at, and the strikes, as
+ * fractions of the underlying's spot, handed to Black-Scholes (from the low end, below the high end). */
+export const DOMAIN = { ratio: { lo: 0.25, hi: 4 }, strike: { lo: 0.5, hi: 1 } } as const;
 
 export type RouteKey = "etf" | "names" | "otc";
 
@@ -70,9 +84,11 @@ export interface Hedge {
   rate: number;
   days: Record<Tenor, number>;
   basketMove: number;
-  etf: { symbol: string; q: number; vol: Record<VolKey, number>; notional: number; move: number; strikes: { long: number; short: number } } | null;
+  /** The ETF route's inputs; `reason` when its hedge ratio is outside the domain. */
+  etf: { symbol: string; q: number; vol: Record<VolKey, number>; notional: number; move: number; strikes: { long: number; short: number }; reason: string | null } | null;
   names: (BasketLeg & { q: number; vol: Record<VolKey, number>; assumed: boolean })[];
-  basket: { q: number; margin: number; vol: Record<VolKey, number> } | null;
+  /** The basket put's inputs; `reason` when its hedge ratio or R² is outside the domain. */
+  basket: { q: number; margin: number; vol: Record<VolKey, number>; reason: string | null } | null;
   swapSpreadBp: number;
   routes: Route[];
 }
@@ -117,66 +133,123 @@ export function largest(legs: readonly BasketLeg[], n = 3): BasketLeg[] {
     .map((x) => x.l);
 }
 
-/** Every number the card prints, from the engine's inputs and the assumed volatilities. */
-export function hedge(inputs: BasketInputs): Hedge {
-  const r = o.rate;
-  const days = o.days as Record<Tenor, number>;
+const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
+const pctOf = (k: number) => `${Math.round(k * 100)}%`;
+
+/** Why a hedge ratio is outside the domain, or null when the ETF and basket routes may read it. */
+export function ratioReason(beta: number): string | null {
+  if (!fin(beta)) return "Not priced: no hedge ratio was served.";
+  if (beta < DOMAIN.ratio.lo || beta > DOMAIN.ratio.hi) return `Not priced: the hedge ratio, ${beta.toFixed(2)}, is outside the ${DOMAIN.ratio.lo} to ${DOMAIN.ratio.hi} this card prices.`;
+  return null;
+}
+
+/** Why a structure's strikes, moved onto `symbol` by `at`, are outside the domain, or null. */
+function strikeReason(s: Structure, at: (k: number) => number, symbol: string | null): string | null {
+  for (const k of s.short == null ? [s.long] : [s.long, s.short]) {
+    const x = at(k);
+    if (!fin(x) || x < DOMAIN.strike.lo || x >= DOMAIN.strike.hi)
+      return symbol
+        ? `Not priced: the ${pctOf(k)} strike moves to ${fin(x) ? `${(x * 100).toFixed(1)}%` : "no number"} of ${symbol}, outside the ${pctOf(DOMAIN.strike.lo)} to ${pctOf(DOMAIN.strike.hi)} of spot this card prices.`
+        : `Not priced: the ${pctOf(k)} strike is outside the ${pctOf(DOMAIN.strike.lo)} to ${pctOf(DOMAIN.strike.hi)} of spot this card prices.`;
+  }
+  return null;
+}
+
+/** Why an underlying's assumed volatility for a structure is not usable, or null. */
+function volReason(u: Underlying, s: Structure, name: string | null): string | null {
+  for (const k of s.short == null ? [s.long] : [s.long, s.short]) {
+    const v = u.vol[volKey(s.tenor, k)];
+    if (!fin(v) || v <= 0) return `Not priced: no volatility is assumed${name ? ` for ${name}` : ""} at this strike.`;
+  }
+  return null;
+}
+
+/** Every number the card prints, from the engine's inputs and the assumed volatilities (`over` replaces
+ * parts of proto-options.json, for the tests). */
+export function hedge(inputs: BasketInputs, over: Partial<typeof o> = {}): Hedge {
+  const a = { ...o, ...over };
+  const r = a.rate;
+  const days = a.days as Record<Tenor, number>;
   const N = inputs.notional;
-  const move = o.basket_move;
-  const priced = (cost: number, pay: (x: number) => number, s: Structure): Priced => {
+  const move = a.basket_move;
+  // A structure priced when every check passes and every result is finite; else its reason (Codex R-02).
+  const priced = (s: Structure, reason: string | null, cost: () => number, pay: (x: number) => number): Priced => {
+    if (reason) return { structure: s, reason };
+    const c = cost();
     const payoff = pay(-move);
-    return { structure: s, cost, costUsd: cost * N, breakeven: breakevenOf(pay, cost) ?? NaN, payoff, payoffUsd: payoff * N };
+    const breakeven = fin(c) && fin(payoff) ? breakevenOf(pay, c) : null;
+    if (!fin(c) || c < 0 || !fin(payoff) || !fin(c * N) || !fin(payoff * N) || (breakeven !== null && !fin(breakeven))) return { structure: s, reason: "Not priced: the price is not a finite number." };
+    return { structure: s, reason: null, cost: c, costUsd: c * N, breakeven, payoff, payoffUsd: payoff * N };
   };
   const routes: Route[] = [];
 
   // (a) the top hedge ETF: hedge ratio × notional of it, at the basket's strikes moved by the ratio; the ETF
   // moves by the basket's move ÷ the ratio.
-  const e = (o.etfs as Record<string, Underlying>)[inputs.top.symbol];
+  const e = (a.etfs as Record<string, Underlying>)[inputs.top.symbol];
   const beta = inputs.top.hedge_ratio;
+  const betaWhy = ratioReason(beta);
   const at = (k: number) => etfStrike(k, beta);
-  const etf = e ? { symbol: inputs.top.symbol, q: e.q, vol: e.vol, notional: beta * N, move: move / beta, strikes: { long: at(o.put_strike), short: at(o.spread_short_strike) } } : null;
+  const etf = e ? { symbol: inputs.top.symbol, q: e.q, vol: e.vol, notional: beta * N, move: move / beta, strikes: { long: at(a.put_strike), short: at(a.spread_short_strike) }, reason: betaWhy } : null;
   if (e)
     routes.push({
       key: "etf",
       letter: "a",
       covered: 1,
-      rows: STRUCTURES.map((s) => priced(beta * premium(e, s, r, days, at), (x) => beta * payoffAt(s, 1 - x / beta, at), s)),
+      rows: STRUCTURES.map((s) =>
+        priced(
+          s,
+          betaWhy ?? strikeReason(s, at, inputs.top.symbol) ?? volReason(e, s, inputs.top.symbol),
+          () => beta * premium(e, s, r, days, at),
+          (x) => beta * payoffAt(s, 1 - x / beta, at),
+        ),
+      ),
     });
 
   // (b) the three largest names, each sized to its weight, each moving with the basket.
-  const known = o.names as Record<string, Underlying>;
+  const known = a.names as Record<string, Underlying>;
   const names = largest(inputs.legs).map((l) => {
-    const u = known[l.symbol] ?? (o.name_default as Underlying);
+    const u = known[l.symbol] ?? (a.name_default as Underlying);
     return { ...l, q: u.q, vol: u.vol, assumed: !(l.symbol in known) };
   });
-  const W = names.reduce((a, l) => a + l.weight / 100, 0);
+  const W = names.reduce((acc, l) => acc + l.weight / 100, 0);
   routes.push({
     key: "names",
     letter: "b",
     covered: W,
     rows: STRUCTURES.map((s) =>
       priced(
-        names.reduce((a, l) => a + (l.weight / 100) * premium(l, s, r, days), 0),
-        (x) => W * payoffAt(s, 1 - x),
         s,
+        strikeReason(s, (k) => k, null) ?? names.map((l) => volReason(l, s, l.symbol)).find((x) => x) ?? null,
+        () => names.reduce((acc, l) => acc + (l.weight / 100) * premium(l, s, r, days), 0),
+        (x) => W * payoffAt(s, 1 - x),
       ),
     ),
   });
 
-  // (c) an OTC put on the basket: the ETF's vol at the strike × the ratio ÷ √R², plus the dealer's margin.
-  const margin = o.basket.dealer_margin_pts;
+  // (c) an OTC put on the basket: the ETF's vol at the strike × the ratio ÷ √R², plus the dealer's margin; it
+  // reads the ratio and R², so it takes their domain too.
+  const margin = a.basket.dealer_margin_pts;
+  const r2 = inputs.top.r2;
+  const r2Why = !fin(r2) || r2 <= 0 || r2 > 1 ? `Not priced: an R² of ${fin(r2) ? r2.toFixed(2) : "no number"} cannot carry the ETF's volatility to the basket's.` : null;
   const basket = e
-    ? { q: o.basket.q, margin, vol: Object.fromEntries((Object.keys(e.vol) as VolKey[]).map((k) => [k, (beta * e.vol[k]) / Math.sqrt(inputs.top.r2) + margin])) as Record<VolKey, number> }
+    ? { q: a.basket.q, margin, vol: Object.fromEntries((Object.keys(e.vol) as VolKey[]).map((k) => [k, (beta * e.vol[k]) / Math.sqrt(r2) + margin])) as Record<VolKey, number>, reason: betaWhy ?? r2Why }
     : null;
   if (basket)
     routes.push({
       key: "otc",
       letter: "c",
       covered: 1,
-      rows: STRUCTURES.map((s) => priced(premium(basket, s, r, days), (x) => payoffAt(s, 1 - x), s)),
+      rows: STRUCTURES.map((s) =>
+        priced(
+          s,
+          basket.reason ?? strikeReason(s, (k) => k, null) ?? volReason(basket, s, "the basket"),
+          () => premium(basket, s, r, days),
+          (x) => payoffAt(s, 1 - x),
+        ),
+      ),
     });
 
-  return { inputs, rate: r, days, basketMove: move, etf, names, basket, swapSpreadBp: o.swap_spread_bp, routes };
+  return { inputs, rate: r, days, basketMove: move, etf, names, basket, swapSpreadBp: a.swap_spread_bp, routes };
 }
 
 /** Dollars to the nearest hundred, grouped: 209944 → "$209,900". */

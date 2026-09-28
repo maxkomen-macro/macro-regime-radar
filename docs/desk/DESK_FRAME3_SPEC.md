@@ -1028,7 +1028,13 @@ the three largest names, each sized to its weight, each moving with the
 basket; (c) an OTC basket put from a dealer, an exact hedge, dealer-priced at
 the ETF's vol at the strike × hedge ratio ÷ √R² plus a stated margin, with the
 basket swap named as the alternative. Black-Scholes
-at the volatilities of `proto-options.json`, stated in Advanced. Footnote:
+at the volatilities of `proto-options.json`, stated in Advanced. Each
+structure is priced only inside its domain (Codex R-02): a hedge ratio from
+0.25 to 4 for the ETF and basket routes, every strike handed to Black-Scholes
+from 50% to 100% of its underlying's spot, a positive assumed vol, an R² in
+(0, 1] for the basket put, and finite results; outside it the row keeps its
+label and prints the reason in plain words ("Not priced: the hedge ratio,
+0.10, is outside the 0.25 to 4 this card prices."), no number. Footnote:
 "Illustrative values · In production: EODHD option chains for the hedge ETF
 and the names, and a dealer's quote for the basket put, stored with each
 basket."

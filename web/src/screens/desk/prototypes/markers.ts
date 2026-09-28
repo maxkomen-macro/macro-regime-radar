@@ -25,7 +25,7 @@ function optionsMarkers(): string[] {
   const i = basketInputs(sampleBasket());
   if (!i) return [];
   const h = hedge(i);
-  return h.routes.flatMap((r) => r.rows.flatMap((p) => [usd(p.costUsd), usd(p.payoffUsd)]));
+  return h.routes.flatMap((r) => r.rows.flatMap((p) => (p.reason === null ? [usd(p.costUsd), usd(p.payoffUsd)] : [])));
 }
 
 /** The sample basket's names: the crowding words and the two short interests over 10% of float. */

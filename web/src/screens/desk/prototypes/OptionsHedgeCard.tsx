@@ -14,11 +14,19 @@ import { PrototypeCard } from "../kit/Prototype";
 import { dayShort } from "../kit/format";
 import { AdvancedPanel, Signed, Stat, StatRow, useAdvanced } from "../kit/ui";
 import { basketInputs, type BasketInputs } from "./basket-inputs";
-import { hedge, pct1, pct2, STRUCTURES, usd, usdM, type Hedge, type Route } from "./options";
+import { DOMAIN, hedge, pct1, pct2, STRUCTURES, usd, usdM, type Hedge, type Route } from "./options";
 import { prototype } from "./registry";
 import "./prototypes.css";
 
 const pct0 = (x: number) => `${Math.round(x * 100)}%`;
+
+/** "; strikes moved by it, so 95/85 is 96.4%/89.2% of XLK", or nothing when either strike is outside the domain. */
+function strikesText(h: Hedge): string {
+  const e = h.etf;
+  if (!e || e.reason) return "";
+  const inDomain = (x: number) => Number.isFinite(x) && x >= DOMAIN.strike.lo && x < DOMAIN.strike.hi;
+  return inDomain(e.strikes.long) && inDomain(e.strikes.short) ? `; strikes moved by it, so 95/85 is ${pct1(e.strikes.long)}/${pct1(e.strikes.short)} of ${e.symbol}` : "";
+}
 
 /** The route's heading and the line under it. */
 function routeWords(h: Hedge, r: Route): { title: string; sub: string; tradeoff: string } {
@@ -26,7 +34,8 @@ function routeWords(h: Hedge, r: Route): { title: string; sub: string; tradeoff:
   if (r.key === "etf" && h.etf)
     return {
       title: `Puts on ${h.etf.symbol}, the top-ranked hedge ETF`,
-      sub: `${usdM(h.etf.notional)} of ${h.etf.symbol} against ${usdM(i.notional)} of basket, at the hedge ratio; strikes moved by it, so 95/85 is ${pct1(h.etf.strikes.long)}/${pct1(h.etf.strikes.short)} of ${h.etf.symbol} · basis risk: R² ${i.top.r2.toFixed(2)}`,
+      // The strikes are named only when both sit inside the pricing domain (Codex R-02).
+      sub: `${h.etf.reason ? `hedge ratio × notional of ${h.etf.symbol}` : `${usdM(h.etf.notional)} of ${h.etf.symbol} against ${usdM(i.notional)} of basket, at the hedge ratio`}${strikesText(h)} · basis risk: R² ${i.top.r2.toFixed(2)}`,
       tradeoff: `Listed and liquid, but an R² of ${i.top.r2.toFixed(2)} leaves ${pct0(1 - i.top.r2)} of the basket's variance unhedged: the basket can fall while ${h.etf.symbol} holds.`,
     };
   if (r.key === "names") {
@@ -65,19 +74,29 @@ function RouteBlock({ h, r }: { h: Hedge; r: Route }) {
             </tr>
           </thead>
           <tbody>
-            {r.rows.map((p) => (
-              <tr key={p.structure.key}>
-                <th scope="row">{p.structure.label}</th>
-                <td>{pct2(p.cost)}</td>
-                <td>{usd(p.costUsd)}</td>
-                <td>{Number.isFinite(p.breakeven) ? `basket down ${pct1(p.breakeven)}` : "—"}</td>
-                <td>
-                  <Signed value={p.payoffUsd}>
-                    {usd(p.payoffUsd)} · {pct2(p.payoff)}
-                  </Signed>
-                </td>
-              </tr>
-            ))}
+            {r.rows.map((p) =>
+              p.reason !== null ? (
+                // Outside the pricing domain: the reason in plain words, no number (Codex R-02).
+                <tr key={p.structure.key} data-unpriced="">
+                  <th scope="row">{p.structure.label}</th>
+                  <td colSpan={4} className="pr-left pr-muted">
+                    {p.reason}
+                  </td>
+                </tr>
+              ) : (
+                <tr key={p.structure.key}>
+                  <th scope="row">{p.structure.label}</th>
+                  <td>{pct2(p.cost)}</td>
+                  <td>{usd(p.costUsd)}</td>
+                  <td>{p.breakeven !== null ? `basket down ${pct1(p.breakeven)}` : "no fall repays it"}</td>
+                  <td>
+                    <Signed value={p.payoffUsd}>
+                      {usd(p.payoffUsd)} · {pct2(p.payoff)}
+                    </Signed>
+                  </td>
+                </tr>
+              ),
+            )}
           </tbody>
         </table>
       </div>
@@ -119,14 +138,19 @@ function Assumptions({ h }: { h: Hedge }) {
   if (h.etf)
     rows.push([
       `(a) ${h.etf.symbol}`,
-      `strikes ${pct1(h.etf.strikes.long)} and ${pct1(h.etf.strikes.short)} of ${h.etf.symbol} (the basket's 95% and 85%, 1 − the distance ÷ ${h.inputs.top.hedge_ratio.toFixed(2)}); vol ${vols(h.etf)}; dividend yield ${pct2(h.etf.q)}; ${usdM(h.etf.notional)} of puts; a ${pct0(-h.basketMove)} basket fall moves ${h.etf.symbol} ${pct1(-h.etf.move)}`,
+      h.etf.reason
+        ? `${h.etf.reason} Assumed vol ${vols(h.etf)}.`
+        : `strikes the basket's 95% and 85% moved by the ratio (1 − the distance ÷ ${h.inputs.top.hedge_ratio.toFixed(2)})${strikesText(h).replace("; strikes moved by it, so 95/85 is", ":")}; vol ${vols(h.etf)}; dividend yield ${pct2(h.etf.q)}; ${usdM(h.etf.notional)} of puts; a ${pct0(-h.basketMove)} basket fall moves ${h.etf.symbol} ${pct1(-h.etf.move)}`,
     ]);
   for (const n of h.names) rows.push([`(b) ${n.symbol}`, `${n.weight}% of the basket; vol ${vols(n)}${n.assumed ? " (no vol assumed for this name: the default)" : ""}; dividend yield ${pct2(n.q)}; falls with the basket`]);
   if (h.basket)
     rows.push([
       "(c) basket",
-      `vol = ${h.etf?.symbol}'s at the strike × ${h.inputs.top.hedge_ratio.toFixed(2)} ÷ √${h.inputs.top.r2.toFixed(2)}, plus ${h.basket.margin} points of dealer margin: ${vols(h.basket)}${h.inputs.basketVol != null ? ` (the engine's realized basket vol over the same window: ${pct1(h.inputs.basketVol)})` : ""}; dividend yield ${pct2(h.basket.q)}`,
+      h.basket.reason
+        ? `vol = ${h.etf?.symbol}'s at the strike × the hedge ratio ÷ √R², plus ${h.basket.margin} points of dealer margin. ${h.basket.reason}`
+        : `vol = ${h.etf?.symbol}'s at the strike × ${h.inputs.top.hedge_ratio.toFixed(2)} ÷ √${h.inputs.top.r2.toFixed(2)}, plus ${h.basket.margin} points of dealer margin: ${vols(h.basket)}${h.inputs.basketVol != null ? ` (the engine's realized basket vol over the same window: ${pct1(h.inputs.basketVol)})` : ""}; dividend yield ${pct2(h.basket.q)}`,
     ]);
+  rows.push(["Domain", `priced only at a hedge ratio from ${DOMAIN.ratio.lo} to ${DOMAIN.ratio.hi} (the ETF and basket routes) and at strikes from ${DOMAIN.strike.lo * 100}% to ${DOMAIN.strike.hi * 100}% of the underlying's spot; outside it a structure says why instead of a price`]);
   rows.push(["Breakeven", "the basket's fall by expiry at which the payoff repays the premium"]);
   rows.push(["Basket swap", `short the basket for a financing spread of ${h.swapSpreadBp} bp a year`]);
   return (

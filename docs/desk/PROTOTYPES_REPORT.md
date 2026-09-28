@@ -99,7 +99,10 @@ Trade-offs, one line each: (a) listed and liquid, but R² 0.69 leaves 31% of
 the variance unhedged; (b) covers only the 52% the three names carry, at
 single-name vol; (c) exact, dealer-priced (1.5 vol points over the fair mark)
 under an ISDA, with a basket swap (about 45 bp a year, no upside) named as
-the alternative. Advanced states every assumed vol, the strike mapping, the
+the alternative. Each structure is priced only inside its domain (a hedge
+ratio from 0.25 to 4, strikes from 50% to 100% of spot, a positive vol, R²
+in (0, 1], finite results); outside it the row says why and prints no number
+(Codex R-02). Advanced states every assumed vol, the domain, the strike mapping, the
 dividend yields, and the engine's realized basket vol on the same window
 (44.1%, `basket_vol`), just under the 44.8% the dealer is assumed to charge.
 Footnote: "…In production: EODHD option chains for the hedge ETF and the
@@ -349,7 +352,8 @@ the rebase onto desk/books).
 
 | Finding | Fix | Test (Codex's repro) | Commit |
 |---|---|---|---|
-| R-01 Positioning's summaries hid what they cover; a name without data counted as not crowded; CRWV 0% / MSFT 100% printed NaN | The weighted figures say what they cover (weight and names); a name without data reads "no data" and is in no count; a figure without a positive covered weight is "—" with the reason | CRWV 50% / MSFT 50%, MSFT 100%, CRWV 0% / MSFT 100% (`positioning.test.ts`, `BasketHedgePage.test.tsx`) | @@R01@@ |
+| R-01 Positioning's summaries hid what they cover; a name without data counted as not crowded; CRWV 0% / MSFT 100% printed NaN | The weighted figures say what they cover (weight and names); a name without data reads "no data" and is in no count; a figure without a positive covered weight is "—" with the reason | CRWV 50% / MSFT 50%, MSFT 100%, CRWV 0% / MSFT 100% (`positioning.test.ts`, `BasketHedgePage.test.tsx`) | `fffb83d` |
+| R-02 "Hedge with options" priced any hedge ratio: at 0.10 the spread's 85% strike moved to −50% of the ETF and the rows printed NaN | Each structure is priced only inside its domain (a hedge ratio from 0.25 to 4 for the ETF and basket routes, strikes from 50% to 100% of spot, a positive vol, R² in (0, 1], finite results); outside it the row prints its reason and no number, and the route's line names no strike outside the domain | hedge_ratio 0.10 (`options.test.ts`, `OptionsHedgeCard.test.tsx`), and 0.25, NaN, R² 0, a zero vol | @@R02@@ |
 
 ## Open for the owner
 
