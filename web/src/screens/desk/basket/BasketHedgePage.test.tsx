@@ -548,9 +548,9 @@ describe("Positioning (PROTOTYPE, §1.0.3): per name in the basket open here", (
     await loaded();
     const c = await screen.findByRole("region", { name: /^Positioning/ });
     expect(c).toHaveAttribute("data-prototype", "positioning");
-    expect(c).toHaveTextContent(/Short interest\s*5\.3%\s*of float, weighted/);
-    expect(c).toHaveTextContent(/Days to cover\s*1\.8\s*weighted/);
-    expect(c).toHaveTextContent(/Crowded\s*4 of 7\s*names flagged/);
+    expect(c).toHaveTextContent(/Short interest\s*5\.3%\s*of float, weighted over all 7 names/);
+    expect(c).toHaveTextContent(/Days to cover\s*1\.8\s*weighted over all 7 names/);
+    expect(c).toHaveTextContent(/Crowded\s*4 of 7\s*names with data/);
     const rows = within(within(c).getByRole("table")).getAllByRole("row").slice(1);
     expect(rows).toHaveLength(7);
     expect(rows[3]).toHaveTextContent(/CRWV\s*CoreWeave\s*12%\s*17\.8%\s*2\.4\s*1\.36\s*Crowded short/);
@@ -562,12 +562,12 @@ describe("Positioning (PROTOTYPE, §1.0.3): per name in the basket open here", (
     expect(c).toHaveTextContent("13F top-ten share: NVDA 38%");
   });
 
-  it("a name the prototype has no row for is listed without numbers", async () => {
+  it("a name the prototype has no row for reads no data and is not counted", async () => {
     seed([{ id: "local-1", name: "Mixed", legs: [{ symbol: "MSFT", name: "Microsoft", weight: 50 }, { symbol: "SMCI", name: "Supermicro", weight: 50 }], saved_at: "2026-09-22T20:00:00Z" }]);
     renderTab();
     const c = await screen.findByRole("region", { name: /^Positioning/ });
-    expect(c).toHaveTextContent(/MSFT\s*50%\s*no illustrative row for this name/);
-    expect(c).toHaveTextContent(/Crowded\s*1 of 2/);
+    expect(c).toHaveTextContent(/MSFT\s*50%\s*no data/);
+    expect(c).toHaveTextContent(/Crowded\s*1 of 1\s*names with data; 1 without/);
   });
 });
 
@@ -599,5 +599,40 @@ describe("Event study on this basket (PROTOTYPE, §1.0.3): as an Event Study ans
     expect(c).toHaveTextContent("Illustrative values are drawn for the AI infrastructure sample basket; open it to see this card filled.");
     expect(within(c).queryByRole("img")).toBeNull();
     expect(c).not.toHaveTextContent("Suggestive");
+  });
+});
+
+describe("Codex R-01: Positioning discloses what its figures cover", () => {
+  const basket = (legs: { symbol: string; name: string | null; weight: number }[]) => [{ id: "local-1", name: "Probe", legs, saved_at: "2026-09-22T20:00:00Z" }];
+  const card = () => screen.findByRole("region", { name: /^Positioning/ });
+
+  it("CRWV 50% / MSFT 50%: over 50% of the basket, 1 of 2 names; MSFT reads no data and is not counted", async () => {
+    seed(basket([{ symbol: "CRWV", name: "CoreWeave", weight: 50 }, { symbol: "MSFT", name: "Microsoft", weight: 50 }]));
+    renderTab();
+    const c = await card();
+    expect(c).toHaveTextContent(/Short interest\s*17\.8%\s*of float, weighted over 50% of the basket \(1 of 2 names\)/);
+    expect(c).toHaveTextContent(/Crowded\s*1 of 1\s*names with data; 1 without/);
+    expect(c).toHaveTextContent(/MSFT\s*50%\s*no data/);
+    expect(c.textContent).not.toMatch(/NaN|1 of 2 names flagged/);
+  });
+
+  it("MSFT 100%: no figure and no count, said in words", async () => {
+    seed(basket([{ symbol: "MSFT", name: "Microsoft", weight: 100 }]));
+    renderTab();
+    const c = await card();
+    expect(c).toHaveTextContent(/Short interest\s*—\s*no name with data/);
+    expect(c).toHaveTextContent(/Days to cover\s*—\s*no name with data/);
+    expect(c).toHaveTextContent(/Crowded\s*—\s*no name with data/);
+    expect(c).toHaveTextContent(/MSFT\s*100%\s*no data/);
+    expect(c.textContent).not.toMatch(/NaN/);
+  });
+
+  it("CRWV 0% / MSFT 100%: the covered weight is 0%, so the weighted figures are withheld; no NaN on screen", async () => {
+    seed(basket([{ symbol: "CRWV", name: "CoreWeave", weight: 0 }, { symbol: "MSFT", name: "Microsoft", weight: 100 }]));
+    renderTab();
+    const c = await card();
+    expect(c).toHaveTextContent(/Short interest\s*—\s*the names with data carry 0% of the basket/);
+    expect(c).toHaveTextContent(/Crowded\s*1 of 1\s*names with data; 1 without/);
+    expect(c.textContent).not.toMatch(/NaN/);
   });
 });

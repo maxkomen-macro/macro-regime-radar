@@ -5,8 +5,10 @@
  * proto-positioning.json. The flag's rule is stated in the card's Advanced
  * section: crowded short at a short interest of 10% of float or more, else
  * crowded long when at least 25% of the funds a 13F sample tracks hold the
- * name in their top ten. The basket's figures weight each name by its share.
- * A name the fixture has no row for is listed without numbers. Pure.
+ * name in their top ten. The basket's figures weight each name with data by
+ * its share and say what they cover (the weight and the names); a name
+ * without data reads "no data" and is in no count; a figure without a
+ * positive covered weight is withheld, never NaN (Codex R-01). Pure.
  */
 
 import p from "../../../fixtures/desk/proto-positioning.json" with { type: "json" };
@@ -31,12 +33,18 @@ export interface NameRow extends BasketLeg {
 }
 
 export interface Positioning {
+  /** The names with data. */
   rows: NameRow[];
-  /** The legs with no illustrative row. */
+  /** The names with no data: listed, never counted (Codex R-01). */
   missing: BasketLeg[];
-  /** Weighted over the names with a row, by their weights. */
-  weightedSi: number;
-  weightedDtc: number;
+  /** The basket weight the names with data carry, and the whole basket's, in percent. */
+  coveredWeight: number;
+  totalWeight: number;
+  /** Weighted over the names with data by their weights; null unless that weight is positive and the figure
+   * finite, so nothing on screen is NaN (Codex R-01). */
+  weightedSi: number | null;
+  weightedDtc: number | null;
+  /** Crowded names among those with data. */
   flagged: number;
   rules: { shortSi: number; longTop10: number };
 }
@@ -62,6 +70,19 @@ export function positioning(legs: readonly BasketLeg[]): Positioning {
     else rows.push({ ...l, si: r.si_pct_float, dtc: r.days_to_cover, putCall: r.put_call_oi, top10: r.top10_13f_pct, flag: crowding(r) });
   }
   const w = rows.reduce((a, r) => a + r.weight, 0);
-  const avg = (f: (r: NameRow) => number) => (w > 0 ? rows.reduce((a, r) => a + r.weight * f(r), 0) / w : NaN);
-  return { rows, missing, weightedSi: avg((r) => r.si), weightedDtc: avg((r) => r.dtc), flagged: rows.filter((r) => r.flag).length, rules: RULES };
+  const avg = (f: (r: NameRow) => number): number | null => {
+    if (!(Number.isFinite(w) && w > 0)) return null;
+    const v = rows.reduce((a, r) => a + r.weight * f(r), 0) / w;
+    return Number.isFinite(v) ? v : null;
+  };
+  return {
+    rows,
+    missing,
+    coveredWeight: w,
+    totalWeight: legs.reduce((a, l) => a + l.weight, 0),
+    weightedSi: avg((r) => r.si),
+    weightedDtc: avg((r) => r.dtc),
+    flagged: rows.filter((r) => r.flag).length,
+    rules: RULES,
+  };
 }

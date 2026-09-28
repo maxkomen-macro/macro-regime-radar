@@ -38,13 +38,46 @@ describe("positioning", () => {
     const names = p.names as Record<string, { si_pct_float: number; days_to_cover: number }>;
     const si = legs.reduce((a, l) => a + (l.weight / 100) * names[l.symbol].si_pct_float, 0);
     expect(x.weightedSi).toBeCloseTo(si, 12);
-    expect(x.weightedSi.toFixed(1)).toBe("5.3");
-    expect(x.weightedDtc.toFixed(1)).toBe("1.8");
+    expect(x.weightedSi!.toFixed(1)).toBe("5.3");
+    expect(x.weightedDtc!.toFixed(1)).toBe("1.8");
+    expect(x.coveredWeight).toBe(100);
   });
 
   it("a name with no illustrative row is listed apart, and the weights are the named ones'", () => {
     const x = positioning([{ symbol: "ZZZZ", name: null, weight: 50 }, { symbol: "CRWV", name: "CoreWeave", weight: 50 }]);
     expect(x.missing.map((l) => l.symbol)).toEqual(["ZZZZ"]);
     expect(x.weightedSi).toBeCloseTo(17.8, 12);
+  });
+});
+
+describe("Codex R-01: coverage is disclosed, a name without data is never counted as not crowded, no NaN", () => {
+  const leg = (symbol: string, weight: number) => ({ symbol, name: null, weight });
+
+  it("CRWV 50% / MSFT 50%: the figures cover 50% of the basket, 1 of 2 names; MSFT is not in the crowded count", () => {
+    const x = positioning([leg("CRWV", 50), leg("MSFT", 50)]);
+    expect(x.coveredWeight).toBe(50);
+    expect(x.totalWeight).toBe(100);
+    expect(x.rows.map((r) => r.symbol)).toEqual(["CRWV"]);
+    expect(x.missing.map((l) => l.symbol)).toEqual(["MSFT"]);
+    expect(x.weightedSi).toBeCloseTo(17.8, 12);
+    expect(x.flagged).toBe(1);
+  });
+
+  it("MSFT 100%: no name has data, so there is no aggregate and nothing is counted", () => {
+    const x = positioning([leg("MSFT", 100)]);
+    expect(x.rows).toEqual([]);
+    expect(x.coveredWeight).toBe(0);
+    expect(x.weightedSi).toBeNull();
+    expect(x.weightedDtc).toBeNull();
+    expect(x.flagged).toBe(0);
+  });
+
+  it("CRWV 0% / MSFT 100%: the name with data carries no weight, so the weighted figures are withheld, not NaN", () => {
+    const x = positioning([leg("CRWV", 0), leg("MSFT", 100)]);
+    expect(x.coveredWeight).toBe(0);
+    expect(x.weightedSi).toBeNull();
+    expect(x.weightedDtc).toBeNull();
+    // CRWV's own flag stands: crowding is per name, not weighted.
+    expect(x.flagged).toBe(1);
   });
 });

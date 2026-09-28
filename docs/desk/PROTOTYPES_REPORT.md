@@ -112,9 +112,12 @@ cover, put/call open interest, and a crowding flag by the rule Advanced
 states (Crowded short at 10% of float or more, else Crowded long when 25% of
 the funds a 13F sample tracks hold it in their top ten). The sample basket:
 SHORT INTEREST 5.3% of float weighted, DAYS TO COVER 1.8, CROWDED 4 of 7
-(NVDA, AVGO long; CRWV 17.8%, SMCI 14.9% short). A name with no illustrative
-row is listed without numbers. Footnote: "…In production: exchange
-short-interest files, OCC open interest, 13F holdings."
+(NVDA, AVGO long; CRWV 17.8%, SMCI 14.9% short). Each figure says what it
+covers ("weighted over all 7 names"; for a basket with other names "weighted
+over 50% of the basket (1 of 2 names)"), a name without data reads "no
+data" and is in no count, and a figure with no covered weight is "—" with
+the reason (Codex R-01). Footnote: "…In production: exchange short-interest
+files, OCC open interest, 13F holdings."
 
 ### 5 · Basket & Hedge "Event study on this basket" (`BasketStudyCard`)
 
@@ -336,6 +339,17 @@ column) and `web/src/styles/desk2.css`. At the rebase:
    reads the stand-in if one is left behind.
 4. Re-run the real-API check above with desk/books deployed: the inputs row
    is then LIVE-verified or it is not.
+
+## Codex round on 24daa38 (DO NOT PUSH, three findings)
+
+Each fixed in its own commit, with a test built from Codex's repro that
+failed before the fix; gates per commit: tsc, `vitest --maxWorkers=2
+--minWorkers=1`, the build, and the related tests (the full gates wait for
+the rebase onto desk/books).
+
+| Finding | Fix | Test (Codex's repro) | Commit |
+|---|---|---|---|
+| R-01 Positioning's summaries hid what they cover; a name without data counted as not crowded; CRWV 0% / MSFT 100% printed NaN | The weighted figures say what they cover (weight and names); a name without data reads "no data" and is in no count; a figure without a positive covered weight is "—" with the reason | CRWV 50% / MSFT 50%, MSFT 100%, CRWV 0% / MSFT 100% (`positioning.test.ts`, `BasketHedgePage.test.tsx`) | @@R01@@ |
 
 ## Open for the owner
 

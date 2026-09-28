@@ -39,7 +39,7 @@ function Rules({ p }: { p: Positioning }) {
         </div>
         <div>
           <dt>Basket</dt>
-          <dd>each name weighted by its share of the basket</dd>
+          <dd>each name with data weighted by its share of the basket; a name without data is listed, not counted</dd>
         </div>
       </dl>
       <p className="pr-adv-line">
@@ -49,11 +49,24 @@ function Rules({ p }: { p: Positioning }) {
   );
 }
 
+/** A weight in percent as the basket holds it: "50%", "52.5%". */
+const pctText = (x: number) => `${Number.isInteger(x) ? x : Number(x.toFixed(1))}%`;
+
+/** What the weighted figures cover (Codex R-01): all the names, or the weight and the names with data. */
+export function coverageWords(p: Positioning): string {
+  const n = p.rows.length + p.missing.length;
+  if (!p.rows.length) return "no name with data";
+  if (!(Number.isFinite(p.coveredWeight) && p.coveredWeight > 0)) return `the names with data carry ${pctText(Number.isFinite(p.coveredWeight) ? p.coveredWeight : 0)} of the basket`;
+  if (!p.missing.length) return `weighted over all ${n} names`;
+  return `weighted over ${pctText(p.coveredWeight)} of the basket (${p.rows.length} of ${n} names)`;
+}
+
 export function PositioningCard({ basket }: { basket: SavedBasket }) {
   const adv = useAdvanced();
   const entry = prototype("positioning");
   const p = positioning(legsOf(basket));
-  const n = p.rows.length + p.missing.length;
+  const covered = coverageWords(p);
+  const weighted = p.weightedSi != null;
   return (
     <PrototypeCard
       id={entry.id}
@@ -62,15 +75,16 @@ export function PositioningCard({ basket }: { basket: SavedBasket }) {
       sub="who is short, and who is crowded in"
       production={entry.production}
       advanced={
-        <AdvancedPanel enabled={p.rows.length > 0} adv={adv} items="the crowding rule · each name's 13F share">
+        <AdvancedPanel enabled={p.rows.length > 0} adv={adv} items="the crowding rule · each name's 13F share · what the figures cover">
           <Rules p={p} />
         </AdvancedPanel>
       }
     >
       <StatRow cols={3}>
-        <Stat label="Short interest" value={p.rows.length ? `${one(p.weightedSi)}%` : "—"} sub="of float, weighted" size="sm" />
-        <Stat label="Days to cover" value={p.rows.length ? one(p.weightedDtc) : "—"} sub="weighted" size="sm" />
-        <Stat label="Crowded" value={`${p.flagged} of ${n}`} sub="names flagged" size="sm" />
+        <Stat label="Short interest" value={weighted && p.weightedSi != null ? `${one(p.weightedSi)}%` : "—"} sub={weighted ? `of float, ${covered}` : covered} size="sm" />
+        <Stat label="Days to cover" value={p.weightedDtc != null ? one(p.weightedDtc) : "—"} sub={covered} size="sm" />
+        {/* Crowding is per name: counted among the names with data only, never with a name that has none. */}
+        <Stat label="Crowded" value={p.rows.length ? `${p.flagged} of ${p.rows.length}` : "—"} sub={p.rows.length ? `names with data${p.missing.length ? `; ${p.missing.length} without` : ""}` : "no name with data"} size="sm" />
       </StatRow>
       <div className="pr-table-wrap" role="region" aria-label="Each name, its short interest and open interest" tabIndex={0}>
         <table className="pr-table">
@@ -95,7 +109,7 @@ export function PositioningCard({ basket }: { basket: SavedBasket }) {
                 <td>{one(r.si)}%</td>
                 <td>{one(r.dtc)}</td>
                 <td>{r.putCall.toFixed(2)}</td>
-                <td>{r.flag ? <span className="pr-flag">{CROWDING_WORDS[r.flag]}</span> : <span className="pr-muted">—</span>}</td>
+                <td>{r.flag ? <span className="pr-flag">{CROWDING_WORDS[r.flag]}</span> : <span className="pr-muted">none</span>}</td>
               </tr>
             ))}
             {p.missing.map((l) => (
@@ -103,7 +117,7 @@ export function PositioningCard({ basket }: { basket: SavedBasket }) {
                 <th scope="row">{l.symbol}</th>
                 <td>{l.weight}%</td>
                 <td colSpan={4} className="pr-muted pr-left">
-                  no illustrative row for this name
+                  no data
                 </td>
               </tr>
             ))}

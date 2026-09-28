@@ -1035,13 +1035,17 @@ basket."
 
 **Positioning** (under the step 3, left, for the basket open): PROTOTYPE
 (§1.0.3), from `proto-positioning.json`. Stats: SHORT INTEREST (of float,
-weighted by the basket's weights) · DAYS TO COVER (weighted) · CROWDED
-(<n> of <names>). One row per name: weight, short interest % of float, days
+weighted over the names with data) · DAYS TO COVER (the same) · CROWDED
+(<flagged> of <names with data>). Each says what it covers: "weighted over
+all 7 names", or "weighted over 50% of the basket (1 of 2 names)"; with no
+name with data, or none carrying weight, the figure is "—" and says why
+("no name with data", "the names with data carry 0% of the basket"), never
+NaN (Codex R-01). One row per name: weight, short interest % of float, days
 to cover, put/call open-interest ratio, and a crowding flag by the rule
 Advanced states: Crowded short at a short interest of 10% of float or more,
 else Crowded long when at least 25% of the funds a 13F sample tracks hold the
-name in their top ten. A name the fixture has no row for is listed without
-numbers. Footnote: "Illustrative values · In production: exchange
+name in their top ten, else "none". A name without data reads "no data"
+across the row and is in no count. Footnote: "Illustrative values · In production: exchange
 short-interest files, OCC open interest, 13F holdings."
 
 **Event study on this basket** (under the step 3, right): PROTOTYPE
