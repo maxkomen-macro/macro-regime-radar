@@ -118,9 +118,12 @@ def desk_instruments(ctx: dict) -> dict:
     the provider like any other stock.
 
     Codex R-08: each instrument's rows are read and checked on their own (a
-    real ISO date, a finite positive close); one malformed row drops that
-    instrument, listed in `excluded` with the reason, and every other
-    instrument stands. Its first and last sessions are its checked rows'."""
+    canonical YYYY-MM-DD date, a finite positive close); one malformed row
+    drops that instrument, listed in `excluded` with the reason, and every
+    other instrument stands. Its first and last sessions are its checked
+    rows'. Round 2: the conversion to a dated series happens inside the same
+    per-instrument isolation, so a date that passes the check and still
+    cannot be converted excludes its instrument, never the item."""
     import pandas as pd
 
     from src.analytics import dbpath
@@ -143,9 +146,16 @@ def desk_instruments(ctx: dict) -> dict:
             if bad:
                 excluded.append({"symbol": sym, "reason": f"{len(bad)} stored row{'' if len(bad) == 1 else 's'} could not be read ({bad[0]}); not offered until the store is repaired."})
                 continue
+            try:
+                # Every instrument's dates are converted here, inside its own isolation (Codex R-08, round 2).
+                level = pd.Series([float(c) for _, c in rows], index=pd.DatetimeIndex([d for d, _ in rows], dtype="datetime64[ns]"))
+            except Exception as exc:  # noqa: BLE001 — any failure is this instrument's, never the item's
+                log.warning("desk: instrument %s excluded: %s", sym, exc)
+                excluded.append({"symbol": sym, "reason": f"its stored dates could not be read ({type(exc).__name__}); not offered until the store is repaired."})
+                continue
             out.append({"symbol": sym, "name": name, "kind": kind, "first": rows[0][0], "last": rows[-1][0], "source": "asset_prices"})
             if kind == "etf":
-                closes[sym] = rows
+                closes[sym] = level
     finally:
         conn.close()
     from src.desk.technicals import PRICE_SPEC
@@ -153,11 +163,10 @@ def desk_instruments(ctx: dict) -> dict:
     spx = ctx.get("desk_technicals") or {}
     bench = spx.get("_level") if spx.get("ok") else None
     technicals = {}
-    for sym, pairs in closes.items():
-        level = pd.Series([float(c) for _, c in pairs], index=pd.DatetimeIndex([d for d, _ in pairs]))
+    for sym, level in closes.items():
         try:
             t = technicals_from_level(level, spec=PRICE_SPEC, bench=bench, source=f"asset_prices {sym}")
-        except (ValueError, IndexError) as exc:  # too short a history for the calendar's slots
+        except Exception as exc:  # noqa: BLE001 — too short a history, or any one-ETF failure: listed, no technicals
             log.warning("desk: technicals for %s not computed: %s", sym, exc)
             continue
         t.pop("_sessions")
@@ -166,17 +175,18 @@ def desk_instruments(ctx: dict) -> dict:
 
 
 def _row_problem(d: Any, close: Any) -> str | None:
-    """Why one stored daily row cannot be read (Codex R-08), or None: its date must be a real ISO date and its
-    close a finite positive number."""
+    """Why one stored daily row cannot be read (Codex R-08), or None: its date must be a canonical YYYY-MM-DD
+    calendar date (round 2: `date.fromisoformat` alone also takes ISO week dates such as '2025-W01-1', ten
+    characters that pandas cannot convert) and its close a finite positive number."""
     import math
+    import re
     from datetime import date as _date
 
     try:
-        if not isinstance(d, str) or len(d) != 10:
+        if not isinstance(d, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d) or _date.fromisoformat(d).isoformat() != d:
             raise ValueError
-        _date.fromisoformat(d)
     except ValueError:
-        return f"{d!r} is not a date"
+        return f"{d!r} is not a YYYY-MM-DD date"
     if isinstance(close, bool) or not isinstance(close, (int, float)) or not math.isfinite(close) or close <= 0:
         return f"{d}: close {close!r} is not a positive number"
     return None

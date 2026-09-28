@@ -99,6 +99,56 @@ def test_a_store_without_the_table_lists_none(monkeypatch, tmp_path):
     assert desk_items.desk_instruments({}) == {"instruments": [], "technicals": {}, "excluded": []}
 
 
+def _two_etfs(path, bad_row=None):
+    import numpy as np
+    import pandas as pd
+
+    days = [d.strftime("%Y-%m-%d") for d in pd.bdate_range("2021-01-04", "2026-09-18")]
+    rng = np.random.default_rng(4)
+    with sqlite3.connect(path) as c:
+        c.execute("CREATE TABLE asset_prices (symbol TEXT, interval TEXT, date TEXT, close REAL, provider TEXT)")
+        for sym, base in (("SPY", 400.0), ("GLD", 170.0)):
+            px = base * np.cumprod(1 + rng.normal(0.0003, 0.01, len(days)))
+            c.executemany("INSERT INTO asset_prices VALUES (?, '1d', ?, ?, 'eodhd')", [(sym, d, float(p)) for d, p in zip(days, px)])
+        if bad_row:
+            c.execute("INSERT INTO asset_prices VALUES (?, ?, ?, ?, 'eodhd')", bad_row)
+
+
+def test_a_noncanonical_date_excludes_its_instrument_and_keeps_the_rest(monkeypatch, tmp_path):
+    """Codex R-08 round 2's repro: GLD valid and one SPY row dated '2025-W01-1' (an ISO week date: ten
+    characters `date.fromisoformat` accepts and pandas cannot convert) crashed the whole item."""
+    path = tmp_path / "macro_radar.db"
+    _two_etfs(path, ("SPY", "1d", "2025-W01-1", 450.0))
+    from src.desk import event_study as es
+
+    monkeypatch.setattr(es, "DB_PATH", path)
+    out = desk_items.desk_instruments({})
+    assert [r["symbol"] for r in out["instruments"]] == ["GLD"] and set(out["technicals"]) == {"GLD"}
+    [ex] = out["excluded"]
+    assert ex["symbol"] == "SPY" and "'2025-W01-1' is not a YYYY-MM-DD date" in ex["reason"]
+
+
+def test_a_date_that_passes_the_check_and_still_fails_to_convert_costs_only_its_instrument(monkeypatch, tmp_path):
+    """Round 2: the conversion itself sits inside the per-instrument isolation. With the row check bypassed,
+    SPY's week date fails in pandas and SPY alone is excluded, with a reason; GLD and its technicals stand."""
+    path = tmp_path / "macro_radar.db"
+    _two_etfs(path, ("SPY", "1d", "2025-W01-1", 450.0))
+    from src.desk import event_study as es
+
+    monkeypatch.setattr(es, "DB_PATH", path)
+    monkeypatch.setattr(desk_items, "_row_problem", lambda d, c: None)
+    out = desk_items.desk_instruments({})
+    assert [r["symbol"] for r in out["instruments"]] == ["GLD"] and set(out["technicals"]) == {"GLD"}
+    [ex] = out["excluded"]
+    assert ex["symbol"] == "SPY" and ex["reason"].startswith("its stored dates could not be read (")
+
+
+@pytest.mark.parametrize("d", ["2025-W01-1", "2025-02-30", "2025/01/02", "20250102  ", " 2025-01-02", "2025-1-02", "2025-01-02T00:00"])
+def test_only_a_canonical_calendar_date_is_read(d):
+    assert "is not a YYYY-MM-DD date" in desk_items._row_problem(d, 1.0)
+    assert desk_items._row_problem("2025-01-02", 1.0) is None
+
+
 @pytest.fixture()
 def served(install_worker, monkeypatch, synth_path):  # noqa: F811
     return _serve(install_worker, monkeypatch, synth_path, items=ITEMS)

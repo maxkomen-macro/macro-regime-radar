@@ -2427,8 +2427,11 @@ question pushes one.
   questions and six slots on Build your own; a cold load of any address
   opens the tab it names.
 - **R-08 · one bad row costs one instrument.** The instruments item reads
-  and checks each instrument's `asset_prices` rows on its own (a real ISO
-  date, a finite positive close); a malformed row drops that instrument,
+  and checks each instrument's `asset_prices` rows on its own (a canonical
+  YYYY-MM-DD calendar date, a finite positive close; round 2: an ISO week
+  date such as '2025-W01-1' is refused, and the conversion to a dated series
+  runs inside the same per-instrument isolation, so a date that still fails
+  there excludes its instrument too); a malformed row drops that instrument,
   served in `/instruments`' `excluded` (`{symbol, reason}`), and every other
   instrument, and its technicals, stands. Before, one text close or bad date
   failed the whole item, and the search's fallback list with it.
