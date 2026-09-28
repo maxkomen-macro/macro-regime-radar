@@ -31,7 +31,7 @@ import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { capitalize, dayLong, dayShort, grouped, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, signed, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, priceText, signed, tickText, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -230,9 +230,9 @@ function PriceCard({ t, state, cross, range, onRange, scored }: { t: TechnicalsR
       </div>
       <LoadingLine busy={state === "loading"} />
       <StatRow cols={3}>
-        <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? grouped(t.price) : undefined} sub={ready && fin(t.chg_1d) && t.chg_1d_dates ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.chg_1d_dates.to)}</Signed> : undefined} />
-        <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? grouped(t.ma50) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
-        <Stat label="200-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma200))} value={ready && fin(t.ma200) ? grouped(t.ma200) : undefined} tone="gray" sub={ready && fin(t.vs_ma200) ? aboveBelow(t.vs_ma200) : undefined} />
+        <Stat label="Price" awaiting={state === "awaiting" || (ready && !fin(t.price))} value={ready && fin(t.price) ? priceText(t.price, scored) : undefined} sub={ready && fin(t.chg_1d) && t.chg_1d_dates ? <Signed value={t.chg_1d}>{dayMove(t.chg_1d, t.chg_1d_dates.to)}</Signed> : undefined} />
+        <Stat label="50-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma50))} value={ready && fin(t.ma50) ? priceText(t.ma50, scored) : undefined} tone="green" sub={ready && fin(t.vs_ma50) ? aboveBelow(t.vs_ma50) : undefined} />
+        <Stat label="200-day average" awaiting={state === "awaiting" || (ready && !fin(t.ma200))} value={ready && fin(t.ma200) ? priceText(t.ma200, scored) : undefined} tone="gray" sub={ready && fin(t.vs_ma200) ? aboveBelow(t.vs_ma200) : undefined} />
       </StatRow>
       {ready && drawable(pts) ? (
         <TrendChart
@@ -241,6 +241,7 @@ function PriceCard({ t, state, cross, range, onRange, scored }: { t: TechnicalsR
           points={pts}
           crosses={t.cross ? [t.cross] : []}
           ticks={range === "3y" ? 4 : 3}
+          tickText={tickText}
         />
       ) : state === "loading" ? null : (
         <Awaiting />
@@ -713,7 +714,7 @@ function RiskCard({ t, state, scored }: { t: TechnicalsResponse | undefined; sta
           tone={ready && fin(dd?.value) && dd.value < 0 ? "down" : undefined}
           sub={
             ready && dd?.peak && fin(dd.peak.close)
-              ? [partial ? `partial history: ${ddN ?? "fewer than 252"} of 252 sessions` : null, `high ${grouped(dd.peak.close, dd.peak.close < 1000 ? 2 : 0)} on ${dayInYear(dd.peak.date, asOf)}`].filter(Boolean).join(" · ")
+              ? [partial ? `partial history: ${ddN ?? "fewer than 252"} of 252 sessions` : null, `high ${priceText(dd.peak.close, scored)} on ${dayInYear(dd.peak.date, asOf)}`].filter(Boolean).join(" · ")
               : undefined
           }
         />

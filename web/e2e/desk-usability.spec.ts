@@ -167,7 +167,8 @@ test.describe("desk usability", () => {
       await open(page, "/desk/technicals?symbol=NVDA");
       const main = page.getByRole("main");
       const price = main.getByRole("region", { name: /^NVDA · NVIDIA Corporation/ });
-      await expect(price).toContainText("226");
+      // Codex R-02: a stock's price at two decimals.
+      await expect(price).toContainText("225.51");
       await expect(price.getByRole("img")).toBeVisible();
       await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("RSI (14)");
       await expect(main.getByRole("region", { name: /^Momentum · RSI/ })).toContainText("+23.1%");

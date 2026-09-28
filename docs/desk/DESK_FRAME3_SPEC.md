@@ -2391,3 +2391,8 @@ question pushes one.
   "From high" with "partial history: <n> of 252 sessions", never "From
   1-year high" (the stored S&P's missing 2026-09-22 close makes it 251 of 252
   on the audit's store).
+- **R-02 · a stock's price has its decimals.** A stock's or ETF's price, its
+  averages and the drawdown's high print with two decimals, four below 1
+  (`kit/format.ts` `priceText`), and the chart's axis with the decimals its
+  step needs (`tickText`); a $0.40 stock reads "0.4000", never "0". The
+  S&P 500, an index, stays whole (§3).

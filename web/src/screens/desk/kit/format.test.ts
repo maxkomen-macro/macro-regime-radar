@@ -1,6 +1,6 @@
 /** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
 import { describe, expect, it } from "vitest";
-import { dayLong, dayShort, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, utcTime, year } from "./format";
+import { dayLong, dayShort, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, utcTime, year, priceText, tickText } from "./format";
 import { levelText, roomTone, roomWords, sortByRoom } from "./MonitoredRows";
 
 describe("numbers", () => {
@@ -38,6 +38,22 @@ describe("numbers", () => {
     expect(ordinal(22)).toBe("22nd");
     expect(ordinal(13)).toBe("13th");
     expect(ordinalWord(3)).toBe("third");
+  });
+});
+
+describe("prices (Codex R-02)", () => {
+  it("prints a stock at two decimals and four below 1, an index whole; 0.40 never reads 0", () => {
+    expect(priceText(0.4)).toBe("0.4000");
+    expect(priceText(0.0123)).toBe("0.0123");
+    expect(priceText(225.50999)).toBe("225.51");
+    expect(priceText(1234.5)).toBe("1,234.50");
+    expect(priceText(7706.03, true)).toBe("7,706");
+    expect(priceText(Number.NaN)).toBe("—");
+  });
+  it("prints an axis tick with the decimals its step needs", () => {
+    expect([0.35, 0.4, 0.45].map((v, _i, a) => tickText(v, a))).toEqual(["0.35", "0.40", "0.45"]);
+    expect([100, 102.5, 105].map((v, _i, a) => tickText(v, a))).toEqual(["100.0", "102.5", "105.0"]);
+    expect([6000, 7000, 8000].map((v, _i, a) => tickText(v, a))).toEqual(["6,000", "7,000", "8,000"]);
   });
 });
 

@@ -500,6 +500,24 @@ describe("Technicals for any stock (§14.2)", () => {
     );
   }
 
+  it("Codex R-02: a stock under $1 prints its price, averages and axis with decimals; 0.40 never reads 0", async () => {
+    // Codex's repro: a $0.40 stock (NVDA's served shape scaled down) rendered "Price 0" and a 0 / 0 / 0 axis.
+    const k = 0.4 / technicalsNVDA.price;
+    const scale = (x: number | null) => (x == null ? x : x * k);
+    const series = Object.fromEntries(Object.entries(technicalsNVDA.series).map(([r, pts]) => [r, (pts as { date: string; close: number | null; ma50: number | null; ma200: number | null }[]).map((p) => ({ ...p, close: scale(p.close), ma50: scale(p.ma50), ma200: scale(p.ma200) }))]));
+    const penny = { ...technicalsNVDA, price: 0.4, ma50: scale(technicalsNVDA.ma50), ma200: scale(technicalsNVDA.ma200), series, drawdown: { ...technicalsNVDA.drawdown, peak: { ...technicalsNVDA.drawdown.peak, close: scale(technicalsNVDA.drawdown.peak.close) } } };
+    stubDesk({ "/api/desk/technicals": () => penny });
+    renderAt("/desk/technicals?symbol=NVDA");
+    const price = await screen.findByRole("region", { name: /^NVDA · NVIDIA Corporation/ });
+    await waitFor(() => expect(price).toHaveTextContent("Price0.4000"));
+    expect(price).toHaveTextContent("50-day average0.3817");
+    expect(price).toHaveTextContent("200-day average0.3525");
+    const axis = [...price.querySelectorAll(".dk-chart-axis text, .dk-chart-axis")].map((e) => e.textContent ?? "").join(" ");
+    expect(axis).toMatch(/0\.\d/);
+    expect(axis).not.toMatch(/(^|\s)0(\s|$)/);
+    expect(screen.getByRole("region", { name: /^Risk · drawdown/ })).toHaveTextContent("high 0.4172 on May 14");
+  });
+
   it("Codex R-01: a stock with under a year of closes shows its drawdown as partial history with the session count", async () => {
     // Codex's repro: listed 120 sessions ago, so its "1-year high" is the high of 120 closes.
     const young = { ...technicalsNVDA, drawdown: { ...technicalsNVDA.drawdown, window: { ...technicalsNVDA.drawdown.window, n: 120 }, complete: false } };
@@ -515,7 +533,10 @@ describe("Technicals for any stock (§14.2)", () => {
     const { calls } = stubDesk();
     renderAt("/desk/technicals?symbol=nvda");
     const price = await screen.findByRole("region", { name: /^NVDA · NVIDIA Corporation/ });
-    await waitFor(() => expect(price).toHaveTextContent("Price226"));
+    // Codex R-02: a stock's price and averages at two decimals.
+    await waitFor(() => expect(price).toHaveTextContent("Price225.51"));
+    expect(price).toHaveTextContent("50-day average215.19");
+    expect(price).toHaveTextContent("200-day average198.71");
     expect(price).toHaveTextContent("No 50-day and 200-day cross in the history served.");
     // Two years of daily bars: 6M and 1Y only; no chip that asks what is not served.
     expect(within(price).getAllByRole("button").map((b) => b.textContent)).toEqual(["6M", "1Y"]);

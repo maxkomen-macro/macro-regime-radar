@@ -57,6 +57,23 @@ export function grouped(x: number, digits = 0): string {
   return s.startsWith("-") ? `${MINUS}${s.slice(1)}` : s;
 }
 
+/**
+ * A price at the precision its size needs (Codex R-02): an index (the S&P 500, §3) is whole and grouped;
+ * a stock or ETF has two decimals, and four below 1, so 0.40 reads "0.4000", never "0".
+ */
+export function priceText(x: number, index = false): string {
+  if (!isFiniteNumber(x)) return NOT_SERVED;
+  return grouped(x, index ? 0 : Math.abs(x) < 1 ? 4 : 2);
+}
+
+/** An axis tick with the decimals its step needs (a 0.05 step prints 0.35, 0.40; a 1,000 step prints 7,000). */
+export function tickText(v: number, ticks: readonly number[]): string {
+  const step = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) : 0;
+  const s = step > 0 && step < 1e6 ? String(Number(step.toFixed(10))) : "0";
+  const digits = s.includes(".") ? Math.min(6, s.split(".")[1].length) : 0;
+  return grouped(v, digits);
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const MONTHS_LONG = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
