@@ -24,6 +24,7 @@ import { dayShort, pct, pctPlain } from "../kit/format";
 import type { BasketPriceResponse } from "../data/types";
 import { asOfMismatch, basketLead } from "./trades";
 import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
+import { InstrumentSearch } from "../kit/InstrumentSearch";
 import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
 import { checkTicker } from "./check";
@@ -94,10 +95,11 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
   const [note, setNote] = useState("");
   const [checking, setChecking] = useState(false);
   const tot = legs ? totalText(legs) : null;
-  const add = async () => {
-    const t = parseTicker(ticker);
+  // The typed text on Enter, or a suggestion's ticker when one is picked (desk/usability: the Desk's stock search).
+  const add = async (raw: string) => {
+    const t = parseTicker(raw);
     if (!legs || checking) return;
-    if (!t) return setNote(ticker.trim() ? `“${ticker.trim()}” is not a ticker.` : "");
+    if (!t) return setNote(raw.trim() ? `“${raw.trim()}” is not a ticker.` : "");
     if (legs.some((l) => l.symbol === t)) return setNote(`${t} is already in the basket.`);
     setChecking(true);
     setNote(`Checking ${t}…`);
@@ -197,13 +199,27 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
             className="bh-add"
             onSubmit={(e) => {
               e.preventDefault();
-              void add();
+              void add(ticker);
             }}
           >
             <label htmlFor={`${uid}-t`} className="bh-add-plus" aria-hidden="true">
               +
             </label>
-            <input id={`${uid}-t`} className="bh-add-input" placeholder="Add a ticker…" aria-label="Add a ticker" value={ticker} aria-busy={checking || undefined} onChange={(e) => setTicker(e.target.value)} autoComplete="off" />
+            {/* The Desk's stock search (US-listed stocks and ETFs, suggestions from the first keystroke); Enter with
+                no suggestion adds the typed ticker, as before. */}
+            <InstrumentSearch
+              className="bh-isearch"
+              inputId={`${uid}-t`}
+              ariaLabel="Add a ticker"
+              placeholder="Add a ticker…"
+              value={ticker}
+              onTextChange={setTicker}
+              onSelect={(hit) => {
+                setTicker(hit.symbol);
+                void add(hit.symbol);
+              }}
+              dense
+            />
             <span className="bh-add-hint">any US-listed name</span>
           </form>
           <p className="bh-total">

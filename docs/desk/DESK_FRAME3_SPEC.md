@@ -992,7 +992,8 @@ refuse (Codex R-10). A ticker is checked against the price endpoint
 (`/api/market/candles/{SYM}?range=2Y`): one it does not list is not added,
 in its words; when the check cannot be made the name is added and the note
 says so; a check answered after another basket was opened adds nothing
-(Codex R-12). desk/usability's InstrumentSearch replaces this input. `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
+(Codex R-12). The field is the Desk's stock search (§14.1, desk/usability): a pick adds its ticker the same
+way, and Enter with no suggestion adds the typed ticker. `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
 open basket the same way, as unsaved work, and the address forgets it. A
 browser with no basket store starts with **AI Infrastructure 10**: NVDA AVGO
 AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each, buy-and-hold, $1,000,000
@@ -2110,8 +2111,8 @@ amended in place where it is short, and the report
 
 - **Where.** In the header of every Desk page, between the breadcrumb and the
   toggle; on a phone it takes its own row under the breadcrumb. Also the
-  Position Monitor's INSTRUMENT field (§9); branch `desk/books` adopts it on
-  the basket page. The component is `InstrumentSearch`
+  Position Monitor's INSTRUMENT field (§9), and Basket & Hedge's ticker field
+  (§10, after the rebase onto desk/books). The component is `InstrumentSearch`
   (`web/src/screens/desk/kit/InstrumentSearch.tsx`), the main dashboard's
   `SymbolSearch` reused, not a copy.
 - **What it asks.** `GET /api/market/search?q=<text>&limit=10&scope=us`: the
@@ -2125,7 +2126,10 @@ amended in place where it is short, and the report
   the box). In the header a pick opens Technicals for that stock
   (`/desk/technicals?symbol=<ticker>`; the S&P 500 itself opens the page's
   default). In the Position Monitor the field keeps what is typed and a pick
-  fills the ticker.
+  fills the ticker. In Basket & Hedge a pick adds that ticker to the open
+  basket (checked against the price endpoint, as a typed one is); Enter with
+  no suggestion on screen adds what is typed, so a stale suggestion is never
+  added (Codex R-04).
 - **When the search does not answer.** The list offers the instruments this
   store prices from its own closes (`GET /api/desk/instruments`, §12.17),
   matched on the ticker, then on a word of the name, under the line "Search

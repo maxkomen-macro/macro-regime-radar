@@ -176,16 +176,28 @@
 .bh-add-plus {
   color: var(--dk-t3);
 }
-.bh-add-input {
+/* The ticker field is the Desk's stock search (desk/usability), drawn bare inside the dashed row; the search
+   styles its field inline, hence !important. Its suggestions are wider than the field, so each shows its name. */
+.bh-isearch {
   flex: 1 1 110px;
   min-width: 80px;
-  border: 0;
-  background: none;
-  color: var(--dk-t1);
-  font-size: 13px;
 }
-.bh-add-input::placeholder {
+.bh-isearch input {
+  min-height: 0 !important;
+  padding: 2px 0 !important;
+  border: 0 !important;
+  background: none !important;
+  color: var(--dk-t1) !important;
+  font-family: var(--dk-sans) !important;
+  font-size: 13px !important;
+}
+.bh-isearch input::placeholder {
   color: var(--dk-t3);
+}
+.bh-isearch [role="listbox"] {
+  right: auto !important;
+  min-width: 100%;
+  width: min(440px, calc(100vw - 32px));
 }
 /* The hint wraps under the input when the row is narrow, never cut (verifier R3-6). */
 .bh-add-hint {

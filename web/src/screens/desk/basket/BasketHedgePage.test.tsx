@@ -402,6 +402,54 @@ describe("Basket & Hedge tab", () => {
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1"));
   });
 
+  // desk/usability: the ticker field is the Desk's stock search (InstrumentSearch).
+  const searchHit = (symbol: string, name: string, exchange = "US") => ({ symbol, name, exchange, type: "Equity", sector: null, primary: true });
+  const searchAnswer = (hits: unknown[]) => ({ provider: "eodhd", fallback_used: false, fallback_reason: null, fetched_at: "2026-09-27T12:00:00Z", hits });
+  const listed = () => ({ status: 200, body: { bars: [{ ts: "2026-09-23T00:00:00Z" }] } });
+
+  it("the ticker field suggests from the first keystroke, US-listed names only; a pick adds that ticker, checked (desk/usability)", async () => {
+    seed();
+    const { calls } = stubDesk({
+      "/api/market/search": () => searchAnswer([searchHit("ORC.TO", "Orca Energy", "TO"), searchHit("ORCL", "Oracle Corporation")]),
+      "/api/market/candles/ORCL": listed,
+    });
+    renderTab();
+    const b = await loaded();
+    const box = within(b).getByRole("combobox", { name: "Add a ticker" });
+    fireEvent.change(box, { target: { value: "O" } });
+    const list = await within(b).findByRole("listbox");
+    await waitFor(() => expect(within(list).getAllByRole("option").map((o) => o.textContent)).toEqual([expect.stringMatching(/ORCL.*Oracle Corporation/)]));
+    expect(calls.some((c) => c.startsWith("GET /api/market/search?q=O&limit=10&scope=us"))).toBe(true);
+    fireEvent.mouseDown(within(list).getByText("ORCL"));
+    await waitFor(() => expect(within(b).getByLabelText("Weight of ORCL, percent")).toHaveValue("12.5"));
+    expect(calls).toContain("GET /api/market/candles/ORCL?range=2Y");
+    expect(b).toHaveTextContent("ORCL added;");
+    expect(box).toHaveValue("");
+  });
+
+  it("Codex R-04 in the basket: Enter inside the debounce adds what is typed, never the previous text's suggestion", async () => {
+    seed();
+    const answers: Record<string, unknown[]> = { OR: [searchHit("ORCL", "Oracle Corporation")], MSFT: [searchHit("MSFT", "Microsoft Corporation")] };
+    const { calls } = stubDesk({
+      "/api/market/search": (u) => searchAnswer(answers[u.searchParams.get("q") ?? ""] ?? []),
+      "/api/market/candles/ORCL": listed,
+      "/api/market/candles/MSFT": listed,
+    });
+    renderTab();
+    const b = await loaded();
+    const box = within(b).getByRole("combobox", { name: "Add a ticker" });
+    fireEvent.change(box, { target: { value: "OR" } });
+    await within(b).findByRole("option", { name: /ORCL/ });
+    fireEvent.change(box, { target: { value: "MSFT" } });
+    expect(within(b).queryByRole("option", { name: /ORCL/ })).toBeNull();
+    // Enter at once: the search leaves it to the form (the browser's implicit submission), which adds the typed text.
+    expect(fireEvent.keyDown(box, { key: "Enter" })).toBe(true);
+    fireEvent.submit(box.closest("form")!);
+    await waitFor(() => expect(within(b).getByLabelText("Weight of MSFT, percent")).toBeInTheDocument());
+    expect(within(b).queryByLabelText("Weight of ORCL, percent")).toBeNull();
+    expect(calls).not.toContain("GET /api/market/candles/ORCL?range=2Y");
+  });
+
   it("a ticker the price endpoint does not list is not added, in its words", async () => {
     seed();
     stubDesk({ "/api/market/candles/ZZZZ": () => ({ status: 404, body: { detail: "No listing found for 'ZZZZ' on EODHD.", kind: "unknown_symbol", provider: "api", retryable: false } }) });

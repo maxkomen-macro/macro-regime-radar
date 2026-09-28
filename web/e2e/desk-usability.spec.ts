@@ -199,10 +199,34 @@ test.describe("desk usability", () => {
     await page.getByTestId("dk-act").click();
     await expect(page).toHaveURL(/\/desk\/position-monitor\?new=1&instrument=NVDA$/);
     await expect(page.getByRole("combobox", { name: "Instrument", exact: true })).toHaveValue("NVDA");
-    await open(page, "/desk/technicals?symbol=NVDA");
+    // GLD: the preset basket already holds NVDA. Books' ?add= adds it at equal weight, unsaved.
+    await open(page, "/desk/technicals?symbol=GLD");
     await page.getByTestId("te-add-basket").click();
     await expect(page).toHaveURL(/\/desk\/basket-hedge/);
-    await expect(page.getByRole("region", { name: "Basket" })).toContainText("NVDA added from Technicals at 0%");
+    await expect(page.getByRole("region", { name: "Basket", exact: true })).toContainText("GLD added; the 11 names are at equal weight.");
+  });
+
+  test("item 1: Basket & Hedge's ticker field is the same search; a pick adds the ticker", async ({ page }) => {
+    // No override: the upstream search answers 503 here, so the series this store prices are offered.
+    await open(page, "/desk/basket-hedge");
+    const basket = page.getByRole("region", { name: "Basket", exact: true });
+    const box = basket.getByRole("combobox", { name: "Add a ticker" });
+    await box.pressSequentially("gl");
+    const list = basket.getByRole("listbox");
+    await expect(list).toContainText("Search did not answer · series this store prices");
+    await expect(list.getByRole("option")).toHaveCount(1);
+    await list.getByRole("option").first().click();
+    await expect(basket.getByLabel("Weight of GLD, percent")).toBeVisible();
+    await expect(basket).toContainText("GLD added; the 11 names are at equal weight.");
+    await expect(box).toHaveValue("");
+    // The suggestions are not cut to the narrow field: each shows its name (the live check's lesson on the PM).
+    await box.pressSequentially("gl");
+    const opt = list.getByRole("option").first();
+    await expect(opt).toContainText("SPDR Gold Shares");
+    const cut = await opt.evaluate((el) => [...el.querySelectorAll("*")].some((c) => (c as HTMLElement).scrollWidth > (c as HTMLElement).clientWidth + 1));
+    expect(cut).toBe(false);
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
   });
 
   // ── Item 3: Event Study builder ──────────────────────────────────────────
