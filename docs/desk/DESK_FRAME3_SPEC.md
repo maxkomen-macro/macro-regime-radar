@@ -2476,3 +2476,9 @@ question pushes one.
   close it." until then; before, the button was visible and disabled. The
   guard's saved-positions e2e opens a position's Close… form, with and
   without a type picked.
+- **A failed refetch after a good answer** (round 2). React Query keeps a
+  query's last good data when a later fetch fails, so a card printed the old
+  numbers, its chart and its Live badge beside "Couldn't load · Retry". Every
+  Desk hook (`data/api.ts` `current`) reads its data as undefined while the
+  query is in error, so the failed card keeps its labels only; a Retry that
+  answers brings the numbers back.

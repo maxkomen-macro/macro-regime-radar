@@ -7,7 +7,7 @@
  * /macro fails.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
@@ -277,13 +277,38 @@ describe("Macro tab", () => {
     await waitFor(() => expect(cards.filter((c) => c.getAttribute("aria-busy") === "true")).toHaveLength(5));
     expect(document.querySelector(".mc")?.textContent).not.toContain("Awaiting refresh");
   });
+  it("a good answer, a failed refetch, then a Retry that works (Codex merge review): nothing old shows while it failed", async () => {
+    let fail = false;
+    stubDesk({ "/api/desk/macro": () => (fail ? { status: 503, body: { detail: "forced failure" } } : macroFixture) });
+    const { client } = renderTab();
+    const card = await screen.findByRole("region", { name: /Yield curve/ });
+    await waitFor(() => expect(card).toHaveTextContent("4.96"));
+    expect(within(card).getAllByRole("img").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("dk-live").some((b) => /^Live/.test(b.textContent ?? ""))).toBe(true);
+    fail = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["desk-v2", "/macro"] });
+    });
+    await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
+    // §14.12: the labels stay; no number, no chart and no Live badge from the answer before the failure.
+    expect(card).toHaveTextContent("10-year");
+    expect(card).not.toHaveTextContent("4.96");
+    expect(within(card).queryAllByRole("img")).toEqual([]);
+    expect(screen.queryAllByTestId("dk-live").filter((b) => /^Live/.test(b.textContent ?? ""))).toEqual([]);
+    expect(screen.getAllByTestId("dk-failed")).toHaveLength(5);
+    fail = false;
+    fireEvent.click(within(card).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(card).toHaveTextContent("4.96"));
+    expect(screen.queryAllByTestId("dk-failed")).toEqual([]);
+  });
+
   it("a failed /macro keeps every stat label and prints no number", async () => {
     stubDesk({ "/api/desk/macro": deskError(503, "warming") });
     renderTab();
     const card = await screen.findByRole("region", { name: /Yield curve/ });
     await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
     expect(card).toHaveTextContent("10-year");
-    expect(card).not.toHaveTextContent("4.21");
+    expect(card).not.toHaveTextContent("4.96");
     // §14.12: each of the five cards (the 2×2 and desk/matrix's matrix) says so once.
     expect(screen.getAllByTestId("dk-failed")).toHaveLength(5);
     expect(within(screen.getByRole("region", { name: /^Correlation matrix/ })).getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry");

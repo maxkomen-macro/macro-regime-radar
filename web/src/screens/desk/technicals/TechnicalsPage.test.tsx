@@ -7,7 +7,7 @@
  * card (§1.0.3) until /technicals serves its vol block.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import ledger from "../../../fixtures/desk/ledger.json";
@@ -228,6 +228,26 @@ describe("Technicals tab", () => {
     expect(within(card).queryByRole("img")).toBeNull();
     expect(within(card).queryByTestId("dk-live")).toBeNull();
     expect(within(card).getAllByText("Awaiting refresh").length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("a good answer, then a failed refetch (Codex merge review): the price card shows no old price, chart or Live badge", async () => {
+    let fail = false;
+    stubDesk({ "/api/desk/technicals": () => (fail ? { status: 503, body: { detail: "forced failure" } } : technicals) });
+    const { client } = renderTab();
+    const price = await screen.findByRole("region", { name: /S&P 500 price/ });
+    await waitFor(() => expect(price).toHaveTextContent("7,706"));
+    expect(within(price).getAllByRole("img").length).toBeGreaterThan(0);
+    fail = true;
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["desk-v2", "/technicals"] });
+    });
+    await waitFor(() => expect(within(price).getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry"));
+    expect(price).not.toHaveTextContent("7,706");
+    expect(within(price).queryAllByRole("img")).toEqual([]);
+    expect(screen.queryAllByTestId("dk-live").filter((b) => /^Live/.test(b.textContent ?? ""))).toEqual([]);
+    fail = false;
+    fireEvent.click(within(price).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(price).toHaveTextContent("7,706"));
   });
 
   it("the MACD card reads /technicals' macd (§12.7): the three values, the side, the last crossover and the 6M chart", async () => {
