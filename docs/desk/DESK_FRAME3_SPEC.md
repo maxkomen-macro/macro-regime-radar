@@ -140,9 +140,8 @@ is not served; its numbers are illustrative, and it says so in one place.
    `[data-prototype]` element).
 5. **A live input says so.** An input the engine serves, drawn inside a
    PROTOTYPE card, is labelled live (`from your basket · live`) and reads the
-   engine's field; only the outputs are illustrative. (§10: until desk/books
-   is on main, the basket's inputs are read from `proto-books-basket.json`,
-   shaped like its answer.)
+   engine's field; only the outputs are illustrative. (§10: the options
+   card's inputs row reads step 3's own `/basket/hedge` answer, §12.16.)
 6. **In the block's place.** A PROTOTYPE card stands where the block it
    prototypes stands, and gives way to the LIVE card once that block is
    served (`ready`, or `awaiting` with a reason beginning "Awaiting
@@ -1005,24 +1004,26 @@ fields of §12.15:
 Steps 2 and 3 each carry their own answer's `● Live · <provider> · prices
 <prices_as_of>`; when `/basket/hedge` and `/basket/price` answer different
 sessions, step 3 says so in amber (Codex R-08).
-- **Hedge with options**: the slot for the options card (desk/prototypes).
-  UNAVAILABLE here, and plain (Codex R-14): title, subtitle, the `○ Not yet
-  served` badge and the reason, in a `data-slot="hedge-options"` container;
-  no mode button, stat or Advanced control that cannot act. The deferred
-  option shapes, with the corrections that apply when they are built, are in
-  §12.13.
+- **Hedge with options**: the slot for the options card, a
+  `data-slot="hedge-options"` container. While the step's `/basket/hedge`
+  answer is on its way or has answered, it holds the PROTOTYPE card below,
+  across the step's width. With no answer to read (no basket saved at
+  exactly 100%, or the request failed) it is UNAVAILABLE and plain (Codex
+  R-14): title, subtitle, the `○ Not yet served` badge and the reason; no
+  mode button, stat or Advanced control that cannot act. The deferred option
+  shapes, with the corrections that apply when they are built, are in §12.13.
 
-**Hedge with options** (the hedge's step 3, under the two cards, for the
-basket open; none when no basket is open): PROTOTYPE (§1.0.3). An inputs row
-labelled `from your basket · live` reads the basket engine's fields (desk/books'
-`GET /basket/hedge`, its §12.15): NOTIONAL (`notional`); TOP HEDGE ETF (`top`,
-the first of `etfs[]` ranked by R²); HEDGE RATIO (that row's `hedge_ratio`);
-R² (that row's, on its `basis` window, with the window). Until desk/books is
-on main they come from `proto-books-basket.json`, desk/books' own fixture
-answer for the sample basket (`web/src/screens/desk/prototypes/basket-inputs.ts`
-is the one module that switches to the served answer at the rebase, through
-`inputsFrom`, and the card then fills desk/books' `data-slot="hedge-options"`);
-for any other basket the row says "Awaiting refresh" and nothing is priced. Three
+**Hedge with options** (step 3's options slot, across the step under the two
+cards, for a saved basket whose `/basket/hedge` answer is on its way or has
+answered; otherwise the slot's reason, above): PROTOTYPE (§1.0.3). An inputs
+row labelled `from your basket · live` reads the fields of that answer, the
+one the ETF hedge and the stress test print (§12.16,
+`web/src/screens/desk/prototypes/basket-inputs.ts`, `inputsFrom`): NOTIONAL
+(`notional`); TOP HEDGE ETF (`top`, the first of `etfs[]` ranked by R²);
+HEDGE RATIO (that row's `hedge_ratio`); R² (that row's, on its `basis`
+window, with the window). While the answer is on its way the row reads
+"Awaiting refresh" and nothing is priced; an answer with no top pick prices
+nothing and says so. Three
 routes, each as a 1M 95 put, a 3M 95 put and a 1M 95/85 put spread (strikes
 as the basket's level), with the cost in % and $ of notional, the breakeven
 (the basket's fall by expiry that repays the premium) and the payoff at
@@ -1045,7 +1046,7 @@ label and prints the reason in plain words ("Not priced: the hedge ratio,
 and the names, and a dealer's quote for the basket put, stored with each
 basket."
 
-**Positioning** (under the step 3, left, for the basket open): PROTOTYPE
+**Positioning** (in step 3, below the options slot, left, for the basket open): PROTOTYPE
 (§1.0.3), from `proto-positioning.json`. Stats: SHORT INTEREST (of float,
 weighted over the names with data) · DAYS TO COVER (the same) · CROWDED
 (<flagged> of <names with data>). Each says what it covers: "weighted over
@@ -1060,7 +1061,7 @@ name in their top ten, else "none". A name without data reads "no data"
 across the row and is in no count. Footnote: "Illustrative values · In production: exchange
 short-interest files, OCC open interest, 13F holdings."
 
-**Event study on this basket** (under the step 3, right): PROTOTYPE
+**Event study on this basket** (in step 3, below the options slot, right): PROTOTYPE
 (§1.0.3), from `proto-basket-study.json`, styled as an Event Study answer
 (§4): the question in serif, "After this basket falls 2σ over 5 days, it was
 higher a month later <up>% of the time."; EVENTS · UP A MONTH LATER (against

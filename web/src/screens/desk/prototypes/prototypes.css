@@ -212,6 +212,10 @@
   font-size: 11px;
   color: var(--dk-t3);
 }
+/* Step 3's options slot, holding the card: the whole width of the step, under the ETF hedge and the stress test. */
+.pr-options-slot {
+  grid-column: 1 / -1;
+}
 .pr-routes {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

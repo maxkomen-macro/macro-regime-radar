@@ -7,8 +7,11 @@
  * the short and the cut; the top pick highlighted. The stress test is linear
  * in the fitted betas: the basket if QQQ or SPY falls 10%, unhedged and
  * hedged with the short the table recommends for the top pick, held as it is
- * (Codex R-15), and the card says which short that is. Then the slot for the
- * options card, which is not served here: its title and its reason (§1.0.2).
+ * (Codex R-15), and the card says which short that is. Then the options slot:
+ * for a saved basket this answer is on its way to or has answered, the
+ * PROTOTYPE "Hedge with options" (§1.0.3, ../prototypes/OptionsHedgeCard.tsx),
+ * whose inputs row reads this answer's notional and top pick; with no answer
+ * to read, the slot's title and its reason (§1.0.2).
  */
 
 import { useId, type ReactNode } from "react";
@@ -157,15 +160,15 @@ function OptionsSlot() {
   );
 }
 
-/** Step 3's cards for one saved basket; the options slot holds the PROTOTYPE card (§1.0.3), for a saved basket. */
+/** Step 3's cards for one saved basket; the options slot holds the PROTOTYPE card (§1.0.3) while this answer is on its way or has answered. */
 export default function BasketHedgeStep({ h, state, basket }: { h: BasketHedgeResponse | undefined; state: State; basket?: SavedBasket | null }) {
   return (
     <div className="bh-hedge-step">
       <RankCard h={h} state={state} />
       <StressCard h={h} state={state} />
-      {basket ? (
-        <div className="bh-options-slot" data-slot="hedge-options">
-          <OptionsHedgeCard basket={basket} />
+      {basket && state !== "awaiting" ? (
+        <div className="bh-options-slot pr-options-slot" data-slot="hedge-options">
+          <OptionsHedgeCard basket={basket} answer={h} />
         </div>
       ) : (
         <OptionsSlot />

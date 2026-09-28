@@ -5,12 +5,17 @@
  */
 import { describe, expect, it } from "vitest";
 import o from "../../../fixtures/desk/proto-options.json";
-import books from "../../../fixtures/desk/proto-books-basket.json";
+import hedgeAnswers from "../../../fixtures/desk/basket-hedge.json";
+import { legsKey } from "../basket/weights";
 import { putValue, years } from "./black-scholes";
-import { basketInputs, inputsFrom, sampleBasket } from "./basket-inputs";
+import { inputsFrom, type HedgeAnswer } from "./basket-inputs";
+import { sampleBasket } from "./basket-study";
 import { etfStrike, hedge, largest, pct2, STRUCTURES, usd, usdM, type Priced } from "./options";
 
-const inputs = basketInputs(sampleBasket())!;
+const sample = sampleBasket();
+/** The fixture server's /basket/hedge answer for the sample basket (desk/books, real closes). */
+const answer = (hedgeAnswers as { answers: Record<string, HedgeAnswer> }).answers[`${legsKey(sample.legs)}|hold|1000000`];
+const inputs = inputsFrom(answer, sample)!;
 const h = hedge(inputs);
 type Ok = Extract<Priced, { reason: null }>;
 /** A priced row: the sample basket's are all inside the domain. */
@@ -24,13 +29,13 @@ const route = (k: string) => {
 };
 const put = (strike: number, days: number, vol: number, q: number) => putValue({ strike, t: years(days), vol: vol / 100, r: o.rate, q });
 
-describe("the basket engine's inputs (the rebase seam)", () => {
-  it("the stand-in answers for the sample basket as saved, whatever its id: §12.15's notional, top, and the top row's ratio and R²", () => {
+describe("the basket engine's inputs: step 3's served /basket/hedge answer (§12.16)", () => {
+  it("reads §12.16's notional, top, and the top row's ratio, R², window and basket vol", () => {
     expect(inputs).not.toBeNull();
-    expect(inputs.notional).toBe(books.notional);
-    expect(inputs.top.symbol).toBe(books.top);
+    expect(inputs.notional).toBe(answer.notional);
+    expect(inputs.top.symbol).toBe(answer.top);
     expect(inputs.top.symbol).toBe("XLK");
-    const row = books.etfs.find((e) => e.symbol === books.top)!;
+    const row = answer.etfs!.find((e) => e.symbol === answer.top)!;
     expect(row.rank).toBe(1);
     expect(inputs.top.hedge_ratio).toBe(row.hedge_ratio);
     expect(inputs.top.r2).toBe(row.r2_1y);
@@ -38,31 +43,26 @@ describe("the basket engine's inputs (the rebase seam)", () => {
     expect(inputs.basketVol).toBe(row.basket_vol);
     expect(inputs.next?.symbol).toBe("SMH");
     expect(inputs.ranked).toBe(8);
-    expect(basketInputs({ ...sampleBasket(), id: "local-7" })?.basketId).toBe("local-7");
-    // Weights saved as the exact decimals typed read the same.
-    expect(basketInputs({ ...sampleBasket(), legs: sampleBasket().legs.map((l) => ({ ...l, weight: String(l.weight) })) })).not.toBeNull();
+    // The basket's own id, name and legs; the answer's numbers.
+    expect(inputsFrom(answer, { ...sample, id: "local-7", name: "Mine" })).toMatchObject({ basketId: "local-7", name: "Mine" });
   });
 
-  it("and for no other basket: other weights, other names, none", () => {
-    const legs = sampleBasket().legs;
-    expect(basketInputs({ ...sampleBasket(), legs: legs.map((l, i) => (i === 6 ? { ...l, weight: 8 } : l)) })).toBeNull();
-    expect(basketInputs({ ...sampleBasket(), legs: legs.slice(1) })).toBeNull();
-    expect(basketInputs(null)).toBeNull();
-  });
-
-  it("inputsFrom reads a served answer: a young basket's 60-day basis, and no top pick is no inputs", () => {
-    const row = { symbol: "QQQ", label: "Nasdaq 100", rank: 1, basis: "60d" as const, r2_1y: null, r2_60d: 0.5, hedge_ratio: 1.5, window_60d: { start: "2026-06-29", end: "2026-09-23", n: 60 } };
-    const got = inputsFrom({ notional: 250000, top: "QQQ", etfs: [row] }, sampleBasket());
-    expect(got).toMatchObject({ notional: 250000, top: { symbol: "QQQ", hedge_ratio: 1.5, r2: 0.5 }, next: null, window: { n: 60 } });
-    expect(inputsFrom({ notional: 250000, top: null, etfs: [row] }, sampleBasket())).toBeNull();
-    expect(inputsFrom({ notional: 250000, top: "QQQ", etfs: [{ ...row, hedge_ratio: null }] }, sampleBasket())).toBeNull();
+  it("a young basket's 60-day basis; no answer, no top pick or no usable top row is no inputs", () => {
+    const row = { symbol: "QQQ", label: "Nasdaq 100", rank: 1, basis: "60d" as const, r2_1y: null, r2_60d: 0.5, beta_1y: null, beta_60d: 1.5, hedge_ratio: 1.5, short_usd: 375000, basket_vol: 0.3, residual_vol: 0.2, vol_reduction: 0.33, window_60d: { start: "2026-06-29", end: "2026-09-23", n: 60 }, reason: null };
+    const got = inputsFrom({ notional: 250000, top: "QQQ", etfs: [row] }, sample);
+    expect(got).toMatchObject({ notional: 250000, top: { symbol: "QQQ", hedge_ratio: 1.5, r2: 0.5 }, next: null, window: { n: 60 }, basketVol: 0.3 });
+    expect(inputsFrom(undefined, sample)).toBeNull();
+    expect(inputsFrom({ notional: 250000, top: null, etfs: [row] }, sample)).toBeNull();
+    expect(inputsFrom({ notional: 250000, top: "QQQ", etfs: [{ ...row, hedge_ratio: null }] }, sample)).toBeNull();
+    expect(inputsFrom({ notional: null, top: "QQQ", etfs: [row] }, sample)).toBeNull();
+    expect(inputsFrom({ notional: 250000, top: "QQQ", etfs: [{ ...row, window_60d: { start: null, end: null, n: null } }] }, sample)).toBeNull();
   });
 });
 
 describe("the three routes", () => {
   const beta = inputs.top.hedge_ratio;
   const xlk = o.etfs.XLK;
-  const N = books.notional;
+  const N = answer.notional!;
 
   it("(a) puts on the ETF: hedge ratio × notional of it, at the basket's strikes moved by the ratio; the ETF moves by the basket's move ÷ the ratio", () => {
     const a = route("etf");
@@ -134,17 +134,14 @@ describe("the three routes", () => {
     expect(other.names[1].assumed).toBe(false);
   });
 
-  it("the stand-in is §12.15's answer for the sample basket: its request key, eight ETFs ranked by R², a year each, and an assumed vol for every one", () => {
-    expect(books.request).toBe(`${sampleBasket().legs.map((l) => `${l.symbol}:${l.weight}`).join(",")}|hold|1000000`);
-    expect(books.ranked_by).toBe("r2_1y");
-    expect(books.etfs.map((e) => e.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    const r2 = books.etfs.map((e) => e.r2_1y!);
+  it("the served answer for the sample basket: eight ETFs ranked by R², a year each, and an assumed vol for every one", () => {
+    expect(answer.etfs!.map((e) => e.rank)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+    const r2 = answer.etfs!.map((e) => e.r2_1y!);
     expect(r2).toEqual([...r2].sort((a, b) => b - a));
-    for (const e of books.etfs) {
-      expect(e.window_1y.n).toBe(252);
+    for (const e of answer.etfs!) {
+      expect(e.window_1y?.n).toBe(252);
       expect(Object.keys(o.etfs)).toContain(e.symbol);
     }
-    expect(books.legs.reduce((a, l) => a + l.weight, 0)).toBe(100);
   });
 });
 

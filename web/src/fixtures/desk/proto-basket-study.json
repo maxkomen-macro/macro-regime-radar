@@ -1,7 +1,47 @@
 {
  "kind": "mrr.desk.prototype.basket-study",
  "note": "Illustrative: an event study on the sample basket's index, in the Event Study's shape (DESK_FRAME3_SPEC §1.0.3, §12.2): the basket falls 2σ over 5 days, the basket a week to three months later. Not the engine's output.",
- "basket_id": "local-1",
+ "basket": {
+  "id": "local-1",
+  "name": "AI infrastructure",
+  "legs": [
+   {
+    "symbol": "NVDA",
+    "name": "Nvidia",
+    "weight": 22
+   },
+   {
+    "symbol": "AVGO",
+    "name": "Broadcom",
+    "weight": 16
+   },
+   {
+    "symbol": "VRT",
+    "name": "Vertiv",
+    "weight": 14
+   },
+   {
+    "symbol": "CRWV",
+    "name": "CoreWeave",
+    "weight": 12
+   },
+   {
+    "symbol": "ANET",
+    "name": "Arista",
+    "weight": 12
+   },
+   {
+    "symbol": "CEG",
+    "name": "Constellation",
+    "weight": 12
+   },
+   {
+    "symbol": "SMCI",
+    "name": "Supermicro",
+    "weight": 12
+   }
+  ]
+ },
  "index": {
   "from": "2014-06-06",
   "rule": "weights as saved, a name joining the index when it lists, rebalanced monthly"

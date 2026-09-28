@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "vitest";
 import p from "../../../fixtures/desk/proto-positioning.json";
-import { sampleBasket } from "./basket-inputs";
+import { sampleBasket } from "./basket-study";
 import { crowding, positioning, RULES } from "./positioning";
 
 const legs = sampleBasket().legs.map((l) => ({ symbol: l.symbol, name: l.name ?? null, weight: Number(l.weight) }));

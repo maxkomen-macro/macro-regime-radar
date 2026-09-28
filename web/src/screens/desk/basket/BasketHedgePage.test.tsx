@@ -3,9 +3,11 @@
  * this browser (the baskets, their typed weights, Save, Export / Import JSON,
  * + New basket), and a saved basket at exactly 100% is priced by
  * /basket/price (§12.15): step 2, how the basket trades, from the fixture's
- * real answer. The hedge's option structures stay unavailable (§1.0.2). The
- * header's Send to Position Monitor carries the basket, which Position
- * Monitor reads as a manual subject (§9).
+ * real answer. Step 3's options slot holds the PROTOTYPE "Hedge with
+ * options" (§1.0.3), its inputs row read from the step's /basket/hedge
+ * answer; with no answer to read, the slot's reason (§1.0.2). The header's
+ * Send to Position Monitor carries the basket, which Position Monitor reads
+ * as a manual subject (§9).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -61,7 +63,7 @@ const loaded = async () => {
 };
 
 describe("Basket & Hedge tab", () => {
-  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot unavailable (§10, §12.15, §12.16, §1.0.2)", async () => {
+  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot holding the PROTOTYPE (§10, §12.15, §12.16, §1.0.3)", async () => {
     seed();
     const { calls } = stubDesk();
     renderTab();
@@ -98,14 +100,16 @@ describe("Basket & Hedge tab", () => {
     // Codex R-15: the card names the short it holds, the table's top row's.
     expect(stress).toHaveTextContent("Hedged holds the short the table above recommends, $1,384,473 of XLK (1.38× the basket), as it is under both shocks.");
     expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
-    // The options slot is plain (Codex R-14): its title, badge and why it is not served; no control that cannot act.
+    // §10, §1.0.3: the options slot holds the PROTOTYPE, its inputs row from this answer; its one control, Advanced,
+    // opens something (Codex R-14: no control that cannot act); no badge.
     const h = optionsCard();
-    expect(h).toHaveTextContent("Hedge with options priced off the SPY / QQQ surface");
-    expect(h.querySelector('[data-slot="hedge-options"]')).not.toBeNull();
-    expect(within(h).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1);
-    expect(within(h).queryAllByRole("button")).toHaveLength(0);
-    expect(within(h).queryByTestId("dk-advanced")).toBeNull();
-    expect(within(h).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(h.closest('[data-slot="hedge-options"]')).not.toBeNull();
+    expect(h).toHaveAttribute("data-prototype", "options-hedge");
+    await waitFor(() => expect(h).toHaveTextContent(/Top hedge ETF\s*XLK/));
+    expect(within(h).getAllByRole("button")).toHaveLength(1);
+    expect(within(h).getByTestId("dk-advanced")).toBeEnabled();
+    expect(within(h).queryByTestId("dk-live")).toBeNull();
+    expect(within(hedge).queryAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(0);
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
   });
 
@@ -490,7 +494,7 @@ describe("Basket & Hedge tab", () => {
   });
 });
 
-describe("Hedge with options (PROTOTYPE, §1.0.3): the hedge's step 3 for the basket open here", () => {
+describe("Hedge with options (PROTOTYPE, §1.0.3): step 3's options slot for the saved basket", () => {
   it("reads the basket engine's inputs, live, and prices three routes three ways; no badge, its footnote last", async () => {
     seed();
     const { calls } = stubDesk();
@@ -499,7 +503,7 @@ describe("Hedge with options (PROTOTYPE, §1.0.3): the hedge's step 3 for the ba
     const c = await screen.findByRole("region", { name: /^Hedge with options/ });
     expect(c).toHaveAttribute("data-prototype", "options-hedge");
     expect(c).toHaveTextContent("from your basket · live");
-    // §12.15's fields (desk/books /basket/hedge): notional; top, XLK; its row's hedge ratio and one-year R².
+    // §12.16's fields, the step's own /basket/hedge answer: notional; top, XLK; its row's hedge ratio and one-year R².
     expect(c).toHaveTextContent(/Notional\s*\$1\.0M\s*AI infrastructure/);
     expect(c).toHaveTextContent(/Top hedge ETF\s*XLK\s*first of 8 by R², ahead of SMH at 0\.68/);
     expect(c).toHaveTextContent(/Hedge ratio\s*1\.38/);
@@ -518,26 +522,28 @@ describe("Hedge with options (PROTOTYPE, §1.0.3): the hedge's step 3 for the ba
     fireEvent.click(within(c).getByTestId("dk-advanced"));
     expect(c).toHaveTextContent("vol = XLK's at the strike × 1.38 ÷ √0.69, plus 1.5 points of dealer margin");
     expect(c).toHaveTextContent("the engine's realized basket vol over the same window: 44.1%");
-    // Priced in the browser from the prototype's fixtures: nothing asked of the server.
-    expect(calls.filter((x) => /\/api\/desk\/(basket|hedge)/.test(x))).toEqual([]);
+    // Priced in the browser: the card asks nothing of its own; the one /basket/hedge request is the step's.
+    expect(calls.filter((x) => x.startsWith("GET /api/desk/basket/hedge"))).toHaveLength(1);
+    expect(calls.some((x) => x.startsWith("POST"))).toBe(false);
   });
 
-  it("a basket the engine has no answer for: the inputs await a refresh and nothing is priced", async () => {
+  it("a basket the engine has no answer for: the slot prints its reason, and no prototype is drawn in it", async () => {
     seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l) => (l.symbol === "SMCI" ? { ...l, weight: 8 } : l.symbol === "NVDA" ? { ...l, weight: 26 } : l)) }]);
     renderTab();
     await loaded();
-    const c = await screen.findByRole("region", { name: /^Hedge with options/ });
-    expect(c).toHaveTextContent(/Notional\s*Awaiting refresh/);
-    expect(c).toHaveTextContent("Nothing is priced until the basket's inputs arrive.");
-    expect(within(c).queryAllByRole("table")).toHaveLength(0);
-    expect(within(c).getByTestId("dk-advanced")).toBeDisabled();
-    expect(c.querySelector("[data-prototype-foot]")).not.toBeNull();
+    const step = await screen.findByRole("region", { name: /^Hedge it/ });
+    await waitFor(() => expect(within(step).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1), { timeout: 8000 });
+    expect(step.querySelector('[data-prototype="options-hedge"]')).toBeNull();
+    expect(step.querySelector('[data-slot="hedge-options"]')).not.toBeNull();
   });
 
-  it("with no basket open, no step 3", async () => {
+  it("with no basket saved, the slot prints its reason, and no prototype is drawn", async () => {
+    seed([]);
     renderTab();
     await waitFor(() => expect(basketCard()).toHaveTextContent("No basket is saved in this browser yet"));
-    expect(screen.queryByRole("region", { name: /^Hedge with options/ })).toBeNull();
+    const step = screen.getByRole("region", { name: /^Hedge it/ });
+    expect(within(step).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1);
+    expect(document.querySelector("[data-prototype]")).toBeNull();
   });
 });
 

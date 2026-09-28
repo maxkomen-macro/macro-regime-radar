@@ -1,19 +1,21 @@
 /**
  * Basket & Hedge's "Hedge with options" as a PROTOTYPE card (DESK_FRAME3_SPEC
- * §10, §1.0.3), in the hedge's step-3 slot: three routes to protect the open
- * basket, each as a 1-month put, a 3-month put and a 1-month 95/85 put spread,
- * with its cost in % and $ of notional, its breakeven and its payoff if the
- * basket falls 10%, and a one-line trade-off. The inputs row is the basket
- * engine's, live (./basket-inputs.ts); every output is illustrative,
- * Black-Scholes at the assumed volatilities its Advanced section states
- * (./options.ts).
+ * §10, §1.0.3), in step 3's options slot (../basket/BasketHedgeStep.tsx):
+ * three routes to protect the saved basket, each as a 1-month put, a 3-month
+ * put and a 1-month 95/85 put spread, with its cost in % and $ of notional,
+ * its breakeven and its payoff if the basket falls 10%, and a one-line
+ * trade-off. The inputs row is the basket engine's, live: the fields of the
+ * step's own /basket/hedge answer (§12.16, ./basket-inputs.ts); every output
+ * is illustrative, Black-Scholes at the assumed volatilities its Advanced
+ * section states (./options.ts).
  */
 
 import type { SavedBasket } from "../basket/weights";
 import { PrototypeCard } from "../kit/Prototype";
 import { dayShort } from "../kit/format";
 import { AdvancedPanel, Signed, Stat, StatRow, useAdvanced } from "../kit/ui";
-import { basketInputs, type BasketInputs } from "./basket-inputs";
+import type { BasketHedgeResponse } from "../data/types";
+import { inputsFrom, type BasketInputs } from "./basket-inputs";
 import { DOMAIN, hedge, pct1, pct2, STRUCTURES, usd, usdM, type Hedge, type Route } from "./options";
 import { prototype } from "./registry";
 import "./prototypes.css";
@@ -165,10 +167,11 @@ function Assumptions({ h }: { h: Hedge }) {
   );
 }
 
-export function OptionsHedgeCard({ basket }: { basket: SavedBasket | null }) {
+/** `answer` is step 3's /basket/hedge answer for `basket` (undefined while it is on its way). */
+export function OptionsHedgeCard({ basket, answer }: { basket: SavedBasket; answer: BasketHedgeResponse | undefined }) {
   const adv = useAdvanced();
   const entry = prototype("options-hedge");
-  const inputs = basketInputs(basket);
+  const inputs = inputsFrom(answer, basket);
   const h = inputs ? hedge(inputs) : null;
   return (
     <PrototypeCard
@@ -191,7 +194,7 @@ export function OptionsHedgeCard({ basket }: { basket: SavedBasket | null }) {
           ))}
         </div>
       ) : (
-        <p className="pr-why">Nothing is priced until the basket's inputs arrive.</p>
+        <p className="pr-why">{answer ? "The ETF hedge names no top pick for this basket, so nothing is priced." : "Nothing is priced until the basket's inputs arrive."}</p>
       )}
     </PrototypeCard>
   );

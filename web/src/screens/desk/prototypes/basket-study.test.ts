@@ -5,8 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import s from "../../../fixtures/desk/proto-basket-study.json";
-import { sampleBasket } from "./basket-inputs";
-import { basketStudy, isSampleBasket, verdictV1 } from "./basket-study";
+import baskets from "../../../fixtures/desk/baskets.json";
+import { basketStudy, isSampleBasket, sampleBasket, verdictV1 } from "./basket-study";
 
 const st = basketStudy();
 
@@ -48,7 +48,9 @@ describe("the basket's event study", () => {
     expect(verdictV1([row(5)], 20)).toBe("insufficient");
   });
 
-  it("drawn for the sample basket alone", () => {
+  it("drawn for the sample basket alone: the one the fixture tests save (baskets.json's first)", () => {
+    const saved = (baskets as { baskets: { id: string; name: string; legs: unknown[] }[] }).baskets[0];
+    expect(sampleBasket()).toMatchObject({ id: saved.id, name: saved.name, legs: saved.legs });
     const legs = sampleBasket().legs.map((l) => ({ symbol: l.symbol, name: l.name ?? null, weight: Number(l.weight) }));
     expect(isSampleBasket(legs)).toBe(true);
     expect(isSampleBasket(legs.slice(1))).toBe(false);

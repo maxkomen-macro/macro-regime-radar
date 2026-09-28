@@ -6,9 +6,11 @@
  * React, no CSS), so the browser tests can import it.
  */
 
+import hedgeAnswers from "../../../fixtures/desk/basket-hedge.json" with { type: "json" };
+import { legsKey } from "../basket/weights";
 import { grouped, ordinal, signed } from "../kit/format";
-import { basketInputs, sampleBasket } from "./basket-inputs";
-import { basketStudy } from "./basket-study";
+import { inputsFrom, type HedgeAnswer } from "./basket-inputs";
+import { basketStudy, sampleBasket } from "./basket-study";
 import { hedge, usd } from "./options";
 import { CROWDING_WORDS, positioning } from "./positioning";
 import { costText, protection, strikeText } from "./protection";
@@ -19,10 +21,12 @@ function protectionMarkers(): string[] {
   return [`${signed(p.skew)} pts`, costText(p.put.cost), costText(p.call.cost), strikeText(p.put.strike), strikeText(p.call.strike), `${ordinal(Math.round(p.percentile * 100))} percentile`];
 }
 
-/** The sample basket's routes: each structure's cost and payoff in dollars (the ETF's ticker is also a served
- * benchmark's, so it is no marker). */
+/** The sample basket's routes, priced from the fixture server's /basket/hedge answer for it: each structure's
+ * cost and payoff in dollars (the ETF's ticker is also a served benchmark's, so it is no marker). */
 function optionsMarkers(): string[] {
-  const i = basketInputs(sampleBasket());
+  const b = sampleBasket();
+  const answer = (hedgeAnswers as { answers: Record<string, HedgeAnswer> }).answers[`${legsKey(b.legs)}|hold|1000000`];
+  const i = inputsFrom(answer, b);
   if (!i) return [];
   const h = hedge(i);
   return h.routes.flatMap((r) => r.rows.flatMap((p) => (p.reason === null ? [usd(p.costUsd), usd(p.payoffUsd)] : [])));
