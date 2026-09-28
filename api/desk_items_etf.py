@@ -51,7 +51,9 @@ Rules (the spec names each):
 - The 12-asset matrix (§12.8 `matrix`, desk/matrix): the same 60-date Pearson
   correlation (`corr_at`) of every pair of SPY, QQQ, IWM, SMH, XLE, TLT, IEF,
   HYG, LQD, GLD, UUP and ^VIX, all ending at one session `t`, the newest on
-  which every stored asset has a close. An asset not stored, or without 60
+  which every asset with a valid close has one (Codex R-03: a stored asset
+  without any valid close takes no part in choosing it and is "no data" with
+  that reason). An asset not stored, or without 60
   complete daily returns (or with no variation) to `t`, is "no data": its row
   and column are null with its reason, never filled. The requested horizon
   (`horizon`, 60) is served apart from what was observed (Codex R-02):
@@ -111,6 +113,7 @@ class Store:
                 self.missing.append(k)
         self.first = {k: s.index[0].strftime("%Y-%m-%d") for k, s in raw.items()}
         self.last = {k: s.index[-1].strftime("%Y-%m-%d") for k, s in raw.items()}
+        self.rows = {k: len(s) for k, s in raw.items()}  # the rows read, before alignment and validation
         self.providers: list[str] = []
         self.provider_by: dict[str, set[str]] = {}
         sym_key = {registry.get(k).series_id: k for k in raw if registry.get(k).table == "asset_prices"}
@@ -589,9 +592,17 @@ def matrix_lead(symbols: list[str], values: list[list[float | None]]) -> dict:
             "highest": pair(hi), "lowest": pair(lo)}
 
 
+def no_valid_close(store: Store, key: str) -> str:
+    """Why a stored series has no valid close: none of its rows survived
+    alignment onto the XNYS calendar and validation (Codex R-03)."""
+    n = store.rows.get(key, 0)
+    return f"no valid close among its {n} stored {'row' if n == 1 else 'rows'} (each must be a finite, positive close on an XNYS session)"
+
+
 def matrix(store: Store) -> dict:
     """The /macro matrix block: every pair of the twelve assets over the 60
-    daily returns to the newest session every stored asset closes on."""
+    daily returns to the newest session every asset with a valid close
+    closes on."""
     from src.desk import series as registry
 
     keys = [k for k, _ in MATRIX_ASSETS]
@@ -599,13 +610,23 @@ def matrix(store: Store) -> dict:
     stored = [k for k in keys if store.has(k)]
     if not stored:
         raise awaiting_refresh(symbols)
-    t = common_close(store, stored)
+    # Codex R-03: a stored asset without one valid close takes no part in choosing the end session (it would
+    # leave no session every asset closes on); its row and column are null with the reason, the rest computed.
+    valid = [k for k in stored if store.newest(k) is not None]
+    if not valid:
+        raise env.Awaiting("Awaiting refresh: none of the twelve assets has a valid close in this database.")
+    t = common_close(store, valid)
     if t is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
-    rets = {k: daily_returns(store, k) for k in stored}
+    rets = {k: daily_returns(store, k) for k in valid}
     reasons: dict[str, str | None] = {}
     for k, sym in zip(keys, symbols):
-        reasons[k] = why_no_window(store, k, rets[k], t) if k in rets else awaiting_refresh([sym]).reason
+        if k in rets:
+            reasons[k] = why_no_window(store, k, rets[k], t)
+        elif k in stored:
+            reasons[k] = no_valid_close(store, k)
+        else:
+            reasons[k] = awaiting_refresh([sym]).reason
     ok = [k for k in keys if reasons[k] is None]
     values: list[list[float | None]] = []
     for a in keys:
@@ -628,7 +649,7 @@ def matrix(store: Store) -> dict:
         "lead": matrix_lead(symbols, values),
         "quantity": "adjusted close (^VIX: index level)", "transform": "daily log return (^VIX: daily log change)",
         "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
-        "providers": provider_words(store.providers_of(stored)),
+        "providers": provider_words(store.providers_of(valid)),
     }
 
 

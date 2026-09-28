@@ -478,10 +478,10 @@ def _hand_store(returns: dict[str, list[float]], days: list[str]):
 
     st = etf.Store.__new__(etf.Store)
     st.iso, st.first, st.provider_by, st.missing, st._np = days, {}, {}, [], np
-    st.px = {}
+    st.px, st.rows = {}, {}
     for k, r in returns.items():
         st.px[k] = 100.0 * np.exp(np.concatenate([[0.0], np.cumsum(r)]))
-        st.first[k] = days[0]
+        st.first[k], st.rows[k] = days[0], len(r) + 1
     return st
 
 
@@ -646,3 +646,53 @@ def test_codex_r02_a_calendar_shorter_than_the_horizon_serves_its_observed_count
     why = f"only 29 of 60 daily returns in the window to {days[-1]}: the stored calendar starts {days[0]}"
     assert [n["reason"] for n in d["no_data"]] == [why] * 12
     assert d["lead"]["text"] is None
+
+
+# ── Codex R-03: an asset without a valid close takes no part in the end session ──
+
+def test_codex_r03_an_asset_without_a_valid_close_is_no_data_and_the_rest_are_computed(tmp_path, monkeypatch):
+    """Codex's repro, rebuilt from the finding: XLE is stored, but every close
+    is non-positive, so none survives validation. Before R-03 it took part in
+    choosing the end session, no session had a close of all twelve, and the
+    whole matrix awaited. Now XLE's row and column are null with the reason,
+    and every other pair is computed on the others' last common close."""
+    import sqlite3
+
+    path = _db(tmp_path)
+    conn = sqlite3.connect(path)
+    n = conn.execute("UPDATE asset_prices SET close = 0 WHERE symbol = 'XLE' AND interval = '1d'").rowcount
+    conn.commit()
+    conn.close()
+    assert n > 0
+    c, days = store.closes(path), store.sessions()
+    c["^VIX"] = {d: v for d, v in _vix(path).items() if d in set(days)}
+    others = [s for s in MATRIX_ORDER if s != "XLE"]
+    t = max(set.intersection(*(set(c[s]) for s in others)))
+    i = days.index(t)
+    part = _item(monkeypatch, path)["matrix"]
+    assert part["ok"], part
+    d = part["data"]
+    x = MATRIX_ORDER.index("XLE")
+    reasons = {e["symbol"]: e["reason"] for e in d["no_data"]}
+    assert reasons["XLE"] == f"no valid close among its {n} stored rows (each must be a finite, positive close on an XNYS session)"
+    assert all(v is None for v in d["values"][x]) and all(row[x] is None for row in d["values"])
+    assert d["coverage"][x] is None and d["window"] == {"start": days[i - 59], "end": t, "n": 60}
+    for a, sa in enumerate(MATRIX_ORDER):
+        for b, sb in enumerate(MATRIX_ORDER):
+            if "XLE" in (sa, sb) or "^VIX" in (sa, sb):  # the synthetic ^VIX has no variation (no data, as before)
+                continue
+            assert d["values"][a][b] == pytest.approx(_corr(c, days, sa, sb, i), abs=1e-12), (sa, sb)
+    assert d["lead"]["text"] is not None
+
+
+def test_codex_r03_when_no_stored_asset_has_a_valid_close_the_block_says_so():
+    """Every stored asset without a valid close: no end session to compute on, so the block awaits with that reason."""
+    import numpy as np
+
+    days = store.sessions()[-61:]
+    st = _hand_store({"spy": [0.01] * 60, "tlt": [0.01] * 60}, days)
+    for k in st.px:
+        st.px[k] = np.full(len(days), np.nan)
+    with pytest.raises(etf.env.Awaiting) as e:
+        etf.matrix(st)
+    assert e.value.reason == "Awaiting refresh: none of the twelve assets has a valid close in this database."
