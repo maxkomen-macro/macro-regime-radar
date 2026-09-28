@@ -38,7 +38,6 @@ STUB_PATHS = {  # (/api/desk/sectors is served since desk/fill-etf, tests/test_d
     "/api/desk/vol": "/vol",
     "/api/desk/positions": "/positions",
     "/api/desk/basket/ai-infra": "/basket",
-    "/api/desk/basket/price": "/basket/price",
     "/api/desk/hedge?mode=protect": "/hedge",
 }
 
@@ -172,7 +171,8 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
     routes = _v2_routes()
     assert routes == sorted([
         ("/api/desk/sectors", ["GET"]), ("/api/desk/vol", ["GET"]), ("/api/desk/positions", ["GET"]),
-        ("/api/desk/basket/price", ["GET"]), ("/api/desk/basket/{basket_id}", ["GET"]), ("/api/desk/hedge", ["GET"]),
+        ("/api/desk/basket/price", ["GET"]), ("/api/desk/basket/hedge", ["GET"]), ("/api/desk/basket/{basket_id}", ["GET"]),
+        ("/api/desk/hedge", ["GET"]),
         ("/api/desk/study", ["GET"]), ("/api/desk/study/catalog", ["GET"]), ("/api/desk/study/events", ["GET"]),
         ("/api/desk/ledger", ["GET"]), ("/api/desk/technicals", ["GET"]), ("/api/desk/overview", ["GET"]),
     ])
@@ -183,7 +183,9 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
 
 def test_basket_price_is_not_read_as_a_basket_id():
     order = [r.path for r in desk_v2.router.routes if isinstance(r, APIRoute)]
-    assert order.index("/api/desk/basket/price") < order.index("/api/desk/basket/{basket_id}")
+    for live in ("/api/desk/basket/price", "/api/desk/basket/hedge"):
+        assert order.index(live) < order.index("/api/desk/basket/{basket_id}"), live
+    assert env.route_of("/basket/hedge") == "/basket/hedge" and env.route_of("/basket/ai-infra") == "/basket"
 
 
 def test_the_v2_routes_share_no_path_with_api_desk():
@@ -223,4 +225,6 @@ def test_the_block_paths_are_the_clients_and_the_specs():
 
 def test_the_clients_route_of_reads_as_ours():
     src = _ts_source()
-    assert 'path.startsWith("/basket/") && path !== "/basket/price" ? "/basket" : path' in src
+    assert 'path.startsWith("/basket/") && !BASKET_ROUTES.includes(path) ? "/basket" : path' in src
+    m = re.search(r"const BASKET_ROUTES = \[(.*?)\];", src)
+    assert m and tuple(re.findall(r'"([^"]+)"', m.group(1))) == env.BASKET_ROUTES

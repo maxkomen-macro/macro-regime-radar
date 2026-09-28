@@ -1194,7 +1194,7 @@ def api_market_profile(symbol: str) -> SymbolProfile:
 @api.get("/market/candles/{symbol}", response_model=CandleSeries)
 def api_market_candles(
     symbol: str,
-    range_key: str = Query("6M", alias="range", pattern="^(1D|5D|1M|6M|1Y|5Y|MAX)$"),
+    range_key: str = Query("6M", alias="range", pattern="^(1D|5D|1M|6M|1Y|2Y|5Y|MAX)$"),
 ) -> CandleSeries:
     """Candle envelope from EODHD, provenance stamped; an EODHD failure is a
     typed error, never a Yahoo fallback (api/providers/market.py)."""

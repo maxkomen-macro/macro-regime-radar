@@ -106,28 +106,7 @@
 }
 
 /* Price card */
-.te-range {
-  margin-left: auto;
-  display: inline-flex;
-  gap: 6px;
-}
-.te-range button {
-  height: 21px;
-  min-width: 38px;
-  padding: 0 8px;
-  border: 1px solid var(--dk-box);
-  border-radius: 6px;
-  background: transparent;
-  font-family: var(--dk-mono);
-  font-size: 11px;
-  color: var(--dk-t3);
-  cursor: pointer;
-}
-.te-range button[aria-pressed="true"] {
-  border-color: var(--dk-rel-bd);
-  background: var(--dk-rel-bg);
-  color: var(--dk-green);
-}
+/* The range chips are the kit's (.dk-range, styles/desk2.css). */
 .te .dk-stats {
   margin-top: 9px;
 }

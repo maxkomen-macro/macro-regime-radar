@@ -164,108 +164,38 @@ TECH_CHART_MONTHS = {"6m": 6, "1y": 12, "3y": 36}
 
 
 def trend_states(price, ma50, ma200) -> list[str]:
-    """Plan N2, per session, strict both ways: unavailable when either average
-    is null; above_both above both; below_both below both; mixed otherwise (a
-    price equal to either average is mixed)."""
-    import math
+    """Plan N2 per session; the one implementation is src/desk/technicals (desk/books)."""
+    from src.desk import technicals
 
-    out = []
-    for p, a, b in zip(price, ma50, ma200):
-        if math.isnan(a) or math.isnan(b) or math.isnan(p):
-            out.append("unavailable")
-        elif p > a and p > b:
-            out.append("above_both")
-        elif p < a and p < b:
-            out.append("below_both")
-        else:
-            out.append("mixed")
-    return out
+    return technicals.trend_states(price, ma50, ma200)
 
 
 def technicals_from_level(raw: Any) -> dict:
-    """N2 and N3 over a ^GSPC level series (the engine's load_level output).
-
-    One extended XNYS calendar runs through the newest stored close and opens on
-    1 January of the year four years before the first stored close; before that
-    close it holds at least the larger of 252 sessions (ret_1y) and the 36-month
-    chart range plus 200 sessions (every chart point's average slots), asserted.
-    A session before the first close is a slot with no close, never a missing
-    slot or a wrapped index. Averages are the engine's rolling means with
-    min_periods equal to the window, so one missing close in the slots makes
-    the average null. `_sessions` (the calendar) is for tests and is not served."""
-    import math
-
-    import numpy as np
+    """N2 and N3 over a ^GSPC level series (the engine's load_level output): the
+    shared `src.desk.technicals.level_technicals` at /technicals' three chart
+    ranges, which Basket & Hedge reads for its index too (desk/books), then
+    /technicals' RSI, MACD and seasonality (desk/fill-compute) from the shared
+    indicators in `src.analytics.technicals`, over the same extended XNYS
+    calendar (see `level_technicals`). `_sessions` (the calendar) is for tests
+    and is not served."""
     import pandas as pd
 
     from src.analytics import technicals
-    from src.desk import event_study as es
-    from src.desk import series as registry
+    from src.desk import technicals as level
 
-    spec = registry.get("spx")
-    first, last = raw.index[0], raw.index[-1]
-    start = (first - pd.DateOffset(years=4)).strftime("%Y-%m-%d")
-    end = last.strftime("%Y-%m-%d")
-    sessions = es.sessions_between(es.session_calendar(start, end), start, end)
-    al, _off, _missing = es.align(raw, sessions)
-    al, _bad, _why = es.validate_values(al, spec)
+    out = level.level_technicals(raw, ranges=TECH_CHART_MONTHS)
+    al = out.pop("_aligned")
+    iso = out.pop("_sessions")
+    sessions = al.index
     px = al.to_numpy(dtype=float)
-    closes = np.flatnonzero(np.isfinite(px))
-    i = int(closes[-1])  # `date`: the newest session with a close
-    date_ = sessions[i]
-    n36 = int(((sessions > date_ - pd.DateOffset(months=36)) & (sessions <= date_)).sum())
-    before = int((sessions < first).sum())
-    if before < max(252, n36 + 200):
-        raise ValueError(f"the extended calendar holds {before} sessions before the first close, fewer than {max(252, n36 + 200)}")
-    ma50 = al.rolling(50, min_periods=50).mean().to_numpy(dtype=float)
-    ma200 = al.rolling(200, min_periods=200).mean().to_numpy(dtype=float)
-    iso = [d.strftime("%Y-%m-%d") for d in sessions]
-
-    def f(x: float) -> float | None:
-        return float(x) if math.isfinite(x) else None
-
-    def ret(j: int) -> float | None:
-        return f(px[i] / px[j] - 1) if math.isfinite(px[j]) else None
-
-    def window(w: int) -> dict:
-        lo = i - w + 1
-        return {"start": iso[lo], "end": iso[i], "n": int(np.isfinite(px[lo:i + 1]).sum())}
-
-    states = trend_states(px, ma50, ma200)
-    first_pos = int(sessions.searchsorted(first))
-    j = i
-    while j - 1 >= first_pos and states[j - 1] == states[i]:
-        j -= 1
-    crosses = []
-    for kind in ("golden", "death"):
-        pos = es.cross_positions(al, kind)[0]
-        if len(pos):
-            crosses.append((int(pos[-1]), kind))
-    cross = None
-    if crosses:
-        p, kind = max(crosses)
-        cross = {"kind": kind, "date": iso[p]}
+    date_ = sessions[iso.index(out["date"])]
     rsi = technicals.rsi(al).to_numpy(dtype=float)
     macd = technicals.macd(al)
-    series = {}
-    for name, months in TECH_CHART_MONTHS.items():
-        lo = date_ - pd.DateOffset(months=months)
-        series[name] = [{"date": iso[k], "close": f(px[k]), "ma50": f(ma50[k]), "ma200": f(ma200[k])}
-                        for k in range(len(sessions)) if lo < sessions[k] <= date_]
-    price = float(px[i])
-    m50, m200 = f(ma50[i]), f(ma200[i])
+    chart = [k for k in range(len(sessions)) if date_ - pd.DateOffset(months=TECH_CHART_MONTHS["6m"]) < sessions[k] <= date_]
     return {
-        "price": price, "date": iso[i],
-        "chg_1d": ret(i - 1), "chg_1d_dates": {"from": iso[i - 1], "to": iso[i]},
-        "ret_1y": ret(i - 252), "ret_1y_dates": {"from": iso[i - 252], "to": iso[i]},
-        "ma50": m50, "ma200": m200, "ma50_window": window(50), "ma200_window": window(200),
-        "vs_ma50": None if m50 is None else price / m50 - 1, "vs_ma200": None if m200 is None else price / m200 - 1,
-        "above_50": None if m50 is None else price > m50, "above_200": None if m200 is None else price > m200,
-        "trend": {"state": states[i], "state_since": iso[j]},
-        "cross": cross,
-        "series": series,
+        **out,
         **rsi_fields(rsi, px, iso),
-        "macd": macd_fields(macd, iso, [k for k in range(len(sessions)) if date_ - pd.DateOffset(months=TECH_CHART_MONTHS["6m"]) < sessions[k] <= date_]),
+        "macd": macd_fields(macd, iso, chart),
         "seasonality": seasonality_fields(raw),
         "_sessions": iso,
     }

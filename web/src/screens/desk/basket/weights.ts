@@ -1,10 +1,10 @@
 /**
  * Basket & Hedge's legs (DESK_FRAME3_SPEC §10): the weights the analyst
- * types, and the baskets they save in this browser (§1.8). The weights are
- * the analyst's input, so the page may tidy them (equal-weight, normalize to
- * 100%); nothing about the basket itself is computed here, and nothing is
- * priced while basket pricing is not served (§1.0). Pure except the storage
- * helpers, which never throw.
+ * types, and the baskets they save in this browser (§1.8), each with its
+ * name, method (buy-and-hold or monthly rebalance) and notional. The weights
+ * are the analyst's input, so the page may tidy them (equal-weight, normalize
+ * to 100%); nothing about the basket itself is computed here: the API prices
+ * a saved basket (§12.15). Pure except the storage helpers, which never throw.
  */
 
 export interface WorkLeg {
@@ -15,6 +15,8 @@ export interface WorkLeg {
   weight: string;
 }
 
+export type Method = "hold" | "monthly";
+
 export interface SavedBasket {
   id: string;
   name: string;
@@ -22,9 +24,53 @@ export interface SavedBasket {
    * basket adds to exactly 100% again when it is read back (Codex R-20); an older save's number reads too. */
   legs: { symbol: string; name: string | null; weight: number | string }[];
   saved_at: string;
+  /** How the basket is held (desk/books); an older save without it is bought and held. */
+  method?: Method;
+  /** Dollars (desk/books); an older save without it is $1,000,000. */
+  notional?: number;
 }
 
 export const SAVED_BASKETS_KEY = "mrr.desk.baskets.v1";
+export const DEFAULT_METHOD: Method = "hold";
+export const DEFAULT_NOTIONAL = 1_000_000;
+export const METHOD_WORDS: Record<Method, string> = { hold: "Buy-and-hold", monthly: "Monthly rebalance" };
+export const methodOf = (b: Pick<SavedBasket, "method"> | null | undefined): Method => (b?.method === "monthly" ? "monthly" : DEFAULT_METHOD);
+export const notionalOf = (b: Pick<SavedBasket, "notional"> | null | undefined): number => (typeof b?.notional === "number" && Number.isFinite(b.notional) && b.notional > 0 ? b.notional : DEFAULT_NOTIONAL);
+
+/** The basket this browser starts with when it has none stored (desk/books): ten AI infrastructure names at equal
+ * weight, bought and held, $1,000,000. Written once, when the store is absent; a deleted preset is not written back. */
+export const PRESET: SavedBasket = {
+  id: "local-1",
+  name: "AI Infrastructure 10",
+  legs: [
+    ["NVDA", "NVIDIA"],
+    ["AVGO", "Broadcom"],
+    ["AMD", "AMD"],
+    ["TSM", "TSMC"],
+    ["MU", "Micron"],
+    ["ANET", "Arista Networks"],
+    ["VRT", "Vertiv"],
+    ["CEG", "Constellation Energy"],
+    ["CRWV", "CoreWeave"],
+    ["NBIS", "Nebius"],
+  ].map(([symbol, name]) => ({ symbol, name, weight: "10" })),
+  saved_at: "2026-09-27T00:00:00Z",
+  method: "hold",
+  notional: DEFAULT_NOTIONAL,
+};
+
+/** A notional as typed ("1,000,000", "$2.5m" is not one): dollars above 0 and at most $1 trillion, or null. */
+export function parseNotional(s: string): number | null {
+  const t = s.trim().replace(/^\$/, "").replace(/,/g, "");
+  if (!/^\d+(\.\d+)?$/.test(t)) return null;
+  const v = Number(t);
+  return v > 0 && v <= 1e12 ? v : null;
+}
+
+/** Dollars as the notional input shows them: "1,000,000". */
+export function notionalText(v: number): string {
+  return v.toLocaleString("en-US", { maximumFractionDigits: 2 });
+}
 
 /** A weight as typed: a number from 0 to 100, to any number of decimals, kept exactly as
  * typed (Codex R-14: 22.11 is not 22.1); null otherwise. */
@@ -137,6 +183,29 @@ export function equalWeight(legs: readonly WorkLeg[]): WorkLeg[] {
   return legs.map((l, i) => ({ ...l, weight: fmt(w[i]) }));
 }
 
+/** Whether the legs are at equal weight as Equal-weight writes them (none, or exactly its values). */
+export function isEqualWeight(legs: readonly WorkLeg[]): boolean {
+  return !legs.length || legsKey(legs) === legsKey(equalWeight(legs));
+}
+
+/** A name added to the basket (desk/books, Codex R-10): the weights are re-spread to equal, the new name
+ * included, so no leg is ever added at 0%; the analyst can type other weights after. */
+export function addLeg(legs: readonly WorkLeg[], symbol: string, name: string | null = null): { legs: WorkLeg[]; equal: true } {
+  return { legs: equalWeight([...legs, { symbol, name, weight: "0" }]), equal: true };
+}
+
+/** The API's limit on a basket's names (api/desk_basket.MAX_LEGS). */
+export const MAX_LEGS = 25;
+
+/** Why these legs cannot be saved as a basket the API prices (Codex R-10), or null: every weight above 0%,
+ * at most 25 names. (The total is checked on its own: exactly 100%.) */
+export function saveRefusal(legs: readonly WorkLeg[]): string | null {
+  if (legs.length > MAX_LEGS) return `A basket holds at most ${MAX_LEGS} names; this one has ${legs.length}.`;
+  const zero = legs.find((l) => (parseWeight(l.weight) ?? 0) <= 0);
+  if (zero) return `${zero.symbol}'s weight is ${zero.weight.trim() || "empty"}${parseWeight(zero.weight) == null ? "" : "%"}: every name needs a weight above 0% to save.`;
+  return null;
+}
+
 /** Scaled to 100% in proportion, never coarser than the weights as typed (at least a tenth:
  * 22.11 and 77.86 become 22.12 and 77.88); a weight that is not a number counts as zero.
  * Weights that already add to exactly 100% are left as they are. When the legs add to more than
@@ -204,6 +273,8 @@ function isSaved(v: unknown): v is SavedBasket {
     !!b &&
     typeof b.id === "string" &&
     typeof b.name === "string" &&
+    (b.method === undefined || b.method === "hold" || b.method === "monthly") &&
+    (b.notional === undefined || (typeof b.notional === "number" && Number.isFinite(b.notional) && b.notional > 0)) &&
     Array.isArray(b.legs) &&
     b.legs.every((l) => l && typeof l.symbol === "string" && ((typeof l.weight === "number" && Number.isFinite(l.weight)) || (typeof l.weight === "string" && parseWeight(l.weight) != null)))
   );
@@ -223,6 +294,15 @@ function readRaw(storage: Pick<Storage, "getItem"> | null): unknown[] {
     return Array.isArray(parsed) ? parsed : [text];
   } catch {
     return [text];
+  }
+}
+
+/** Writes the preset when this browser has no basket store at all (never over a store, even an empty one). */
+export function seedPreset(storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): void {
+  try {
+    if (storage && storage.getItem(SAVED_BASKETS_KEY) === null) storage.setItem(SAVED_BASKETS_KEY, JSON.stringify([PRESET]));
+  } catch {
+    /* no storage, or it is full: the page says no basket is saved */
   }
 }
 

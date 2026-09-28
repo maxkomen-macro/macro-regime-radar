@@ -1258,3 +1258,27 @@
     display: none;
   }
 }
+
+/* Range chips (6M / 1Y / 3Y): Technicals' price card and Basket & Hedge's index (kit/TrendChart.tsx). */
+.dk-range {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+.dk-range button {
+  height: 21px;
+  min-width: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--dk-box);
+  border-radius: 6px;
+  background: transparent;
+  font-family: var(--dk-mono);
+  font-size: 11px;
+  color: var(--dk-t3);
+  cursor: pointer;
+}
+.dk-range button[aria-pressed="true"] {
+  border-color: var(--dk-rel-bd);
+  background: var(--dk-rel-bg);
+  color: var(--dk-green);
+}

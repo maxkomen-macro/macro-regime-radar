@@ -104,8 +104,19 @@ def desk_positions() -> Response:
 
 
 @router.get("/basket/price")
-def desk_basket_price() -> Response:
-    return _response(env.deferred("/basket/price"))
+def desk_basket_price(request: Request) -> Response:
+    """§12.15: a basket kept in the browser, priced from EODHD's daily bars (api/desk_basket.py)."""
+    from api import desk_basket
+
+    return _response(env.answer("/basket/price", lambda: desk_basket.price(list(request.query_params.multi_items()))))
+
+
+@router.get("/basket/hedge")
+def desk_basket_hedge(request: Request) -> Response:
+    """§12.16: the ETF hedge for a basket kept in the browser, ranked by fit, and the linear stress test."""
+    from api import desk_basket
+
+    return _response(env.answer("/basket/hedge", lambda: desk_basket.hedge(list(request.query_params.multi_items()))))
 
 
 @router.get("/basket/{basket_id}")

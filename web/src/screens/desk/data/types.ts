@@ -829,3 +829,181 @@ export interface SectorsResponse extends Envelope {
 
 // Basket & Hedge (§10) is unavailable: no page reads `/basket/:id`, `/basket/price` or `/hedge`,
 // deferred stubs whose shapes, when built, are §12.13's.
+
+// ── §12.15 /basket/price (desk/books) ─────────────────────────────────────
+
+export type BasketMethod = "hold" | "monthly";
+
+/** A basket leg priced: weights and returns are fractions; dollars are USD. */
+export interface BasketLegPriced {
+  symbol: string;
+  target_weight: number | null;
+  weight_now: number | null;
+  first_close: string | null;
+  price_end: number | null;
+  return: number | null;
+  /** The leg's share of the index's return since the start (the legs add up to `total_return`). */
+  contribution: number | null;
+  /** The leg's target share of the notional, in dollars. */
+  dollars: number | null;
+  /** 20-session average of unadjusted close × volume. */
+  adv_usd: number | null;
+  adv_window: Window | null;
+  /** How many of the trailing 20 XNYS sessions have no dollar volume (Codex R-05); `adv_usd` is null unless 0. */
+  adv_missing?: number | null;
+  /** Days to trade `dollars` at 20% of `adv_usd`. */
+  days_to_trade: number | null;
+}
+
+/** §12.15: a chart point of the basket index, with its RSI and drawdown. */
+export interface BasketPoint extends PricePoint {
+  rsi: number | null;
+  drawdown: number | null;
+}
+
+/** §12.15: the basket and the benchmarks rebased to 100 on the range's base date, and basket ÷ benchmark (100 there). */
+export interface ComparePoint {
+  date: string;
+  basket: number | null;
+  qqq: number | null;
+  spy: number | null;
+  rs_qqq: number | null;
+  rs_qqq_ma50: number | null;
+  rs_spy: number | null;
+  rs_spy_ma50: number | null;
+}
+
+export interface BasketBenchmark {
+  symbol: string;
+  label: string;
+  price: number | null;
+  date: string;
+  /** The benchmark's own return over the basket's one-year dates. */
+  ret_1y: number | null;
+  beta_1y: number | null;
+  corr_1y: number | null;
+  window_1y?: { start: string | null; end: string | null; n: number | null };
+  reason_1y: string | null;
+  beta_60d: number | null;
+  corr_60d: number | null;
+  window_60d?: { start: string | null; end: string | null; n: number | null };
+  reason_60d: string | null;
+}
+
+/** §12.15: the basket index's technicals, the shared function /technicals reads, with RSI, drawdown and realized vol. */
+export interface BasketIndex {
+  price: number | null;
+  date: string;
+  chg_1d: number | null;
+  chg_1d_dates?: { from: string; to: string };
+  ret_1y: number | null;
+  ret_1y_dates?: { from: string; to: string };
+  ma50: number | null;
+  ma200: number | null;
+  ma50_window?: Window;
+  ma200_window?: Window;
+  vs_ma50: number | null;
+  vs_ma200: number | null;
+  trend?: { state: TrendState; state_since: string | null };
+  cross: { kind: "golden" | "death"; date: string } | null;
+  crosses?: { kind: "golden" | "death"; date: string }[];
+  series?: { "6m"?: BasketPoint[]; "1y"?: BasketPoint[] };
+  rsi: number | null;
+  rsi_date: string | null;
+  drawdown?: { now: number | null; peak_date: string; peak: number | null; max: number | null; max_date: string; max_peak_date: string; since: string };
+  realized_vol_21d: number | null;
+  realized_vol_window: Window | null;
+}
+
+export interface BasketPriceResponse extends Envelope {
+  method?: BasketMethod;
+  notional: number | null;
+  /** Where the closes came from ("EODHD"), for the badge; `source` says it in full. */
+  provider?: string;
+  source?: string;
+  freq?: string;
+  prices_as_of?: string;
+  history_from?: string;
+  /** Base 100: the first session every name has a close. */
+  start?: string;
+  /** The names whose first close is the start. */
+  start_binding?: string[];
+  /** True when the start is a later first close than another name's (a listing); false when every history starts there. */
+  start_is_first_close?: boolean;
+  /** Why the start is where it is (Codex R-03): a later first close, the start of every history, or a gap (a name had no close on the session before). */
+  start_kind?: "first_close" | "history" | "gap";
+  /** For a gap: the session before the start that `start_binding` had no close on. */
+  start_gap_session?: string | null;
+  end?: string;
+  sessions: number | null;
+  missing_sessions?: string[];
+  rebalances: number | null;
+  total_return: number | null;
+  /** Closes the answer left out, by symbol, with why (Codex R-07: a bar without an adjusted close is never priced). */
+  excluded?: { symbol: string; n: number | null; reason?: string }[];
+  legs?: BasketLegPriced[];
+  concentration?: { top3_share: number | null; top3: string[]; effective_n: number | null; avg_pairwise_corr: number | null; corr_window: Window | null };
+  /** `basket_days` and `binding` are null, with `reason`, when any name in `missing` has no ADV (Codex R-04). */
+  liquidity?: { participation: number | null; adv_sessions: number | null; basket_days: number | null; binding: string | null; missing?: string[]; reason?: string | null };
+  index?: BasketIndex;
+  benchmarks?: { qqq?: BasketBenchmark; spy?: BasketBenchmark };
+  compare?: { "6m"?: { base_date: string | null; points: ComparePoint[] }; "1y"?: { base_date: string | null; points: ComparePoint[] } };
+}
+
+// ── §12.16 /basket/hedge (desk/books) ─────────────────────────────────────
+
+export interface HedgeEtf {
+  symbol: string;
+  label: string;
+  rank: number;
+  /** The window the hedge ratio, dollars and volatilities come from: one year, or 60 days for a young basket. */
+  basis: "1y" | "60d" | null;
+  r2_1y: number | null;
+  r2_60d: number | null;
+  beta_1y: number | null;
+  beta_60d: number | null;
+  /** Dollars of the ETF to short per dollar of basket (beta). */
+  hedge_ratio: number | null;
+  short_usd: number | null;
+  basket_vol: number | null;
+  residual_vol: number | null;
+  vol_reduction: number | null;
+  window_1y?: { start: string | null; end: string | null; n: number | null };
+  window_60d?: { start: string | null; end: string | null; n: number | null };
+  reason: string | null;
+}
+
+export interface StressRow {
+  shock: "QQQ" | "SPY";
+  move: number | null;
+  /** The one window every beta of this row is fitted on, ending at the basket's last session (Codex R-01). */
+  window: { start: string | null; end: string | null; n: number | null } | null;
+  reason: string | null;
+  basket_beta: number | null;
+  basket_move: number | null;
+  unhedged_usd: number | null;
+  hedge: string | null;
+  /** The ETF table's hedge ratio for `hedge`, held as the table recommends it (Codex R-15). */
+  hedge_ratio: number | null;
+  /** The dollars of `hedge` the stress assumes short: the table's `short_usd`. */
+  short_usd: number | null;
+  hedge_beta: number | null;
+  hedge_move: number | null;
+  hedge_usd: number | null;
+  hedged_usd: number | null;
+  hedged_move: number | null;
+}
+
+export interface BasketHedgeResponse extends Envelope {
+  method?: BasketMethod;
+  notional: number | null;
+  provider?: string;
+  source?: string;
+  prices_as_of?: string;
+  start?: string;
+  ranked_by?: "r2_1y" | "r2_60d";
+  excluded?: { symbol: string; n: number | null; reason?: string }[];
+  etfs?: HedgeEtf[];
+  top: string | null;
+  stress?: StressRow[];
+}

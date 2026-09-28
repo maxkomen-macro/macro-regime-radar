@@ -171,6 +171,112 @@ def test_candles_5y_weekly_and_max_monthly(up):
     assert periods == ["w", "m"]
 
 
+def _daily_rows(dates, close=100.0, adj=50.0):
+    return [{"date": d, "open": close, "high": close + 1, "low": close - 1, "close": close + i, "adjusted_close": adj + i / 2, "volume": 1000 + i} for i, d in enumerate(dates)]
+
+
+def _at(monkeypatch, iso_utc):
+    monkeypatch.setattr(market, "_utcnow", lambda: datetime.fromisoformat(iso_utc))
+
+
+def test_candles_2y_is_two_years_of_daily_completed_sessions(up, monkeypatch):
+    """desk/books: range=2Y is daily (period d, about 731 days back), split- and dividend-adjusted,
+    with volume, and holds only sessions whose close is past; EODHD's unadjusted close rides along
+    for dollar volume."""
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")  # Friday, after the 16:00 New York close
+    up.script["/api/eod/NVDA.US"] = [(200, _daily_rows(["2026-09-23", "2026-09-24", "2026-09-25", "2026-09-28"]))]
+    s = market.candles("NVDA", "2Y")
+    assert s["interval"] == "1d" and s["range"] == "2Y" and s["adjustment"] == "split_dividend_adjusted"
+    assert [b["ts"][:10] for b in s["bars"]] == ["2026-09-23", "2026-09-24", "2026-09-25"]  # the 28th is not a completed session
+    assert s["count"] == 3 and s["market_ts"] == "2026-09-25T00:00:00Z" and s["session"] == "2026-09-25"
+    b = s["bars"][1]
+    assert b["close"] == pytest.approx(101.0 * (50.5 / 101.0)) and b["volume"] == 1001 and b["close_raw"] == 101.0
+    call = up.calls[0]
+    assert call.url.params.get("period") == "d"
+    frm = datetime.fromisoformat(call.url.params.get("from")).date()
+    assert 729 <= (datetime.now(timezone.utc).date() - frm).days <= 732
+
+
+def test_candles_2y_is_fetched_once_per_ticker_per_session(up, monkeypatch):
+    up.script["/api/eod/NVDA.US"] = [(200, _daily_rows(["2026-09-24", "2026-09-25"]))]
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")
+    market.candles("NVDA", "2Y")
+    market.candles("nvda", "2Y")
+    assert up.paths().count("/api/eod/NVDA.US") == 1
+    up.script["/api/eod/NVDA.US"] = [(200, _daily_rows(["2026-09-24", "2026-09-25", "2026-09-28"]))]
+    _at(monkeypatch, "2026-09-28T21:00:00+00:00")  # the next session closed: a new day's entry
+    assert market.candles("NVDA", "2Y")["bars"][-1]["ts"][:10] == "2026-09-28"
+    assert up.paths().count("/api/eod/NVDA.US") == 2
+
+
+def test_candles_2y_asks_again_while_the_days_close_is_not_posted(up, monkeypatch):
+    _at(monkeypatch, "2026-09-25T20:30:00+00:00")  # the 25th closed half an hour ago
+    up.script["/api/eod/NVDA.US"] = [(200, _daily_rows(["2026-09-23", "2026-09-24"])), (200, _daily_rows(["2026-09-23", "2026-09-24", "2026-09-25"]))]
+    assert market.candles("NVDA", "2Y")["bars"][-1]["ts"][:10] == "2026-09-24"
+    assert market.candles("NVDA", "2Y")["bars"][-1]["ts"][:10] == "2026-09-24"  # within the retry wait: the stored answer
+    assert up.paths().count("/api/eod/NVDA.US") == 1
+    monkeypatch.setattr(market, "DAILY_RETRY_S", -1.0)
+    assert market.candles("NVDA", "2Y")["bars"][-1]["ts"][:10] == "2026-09-25"
+    assert up.paths().count("/api/eod/NVDA.US") == 2
+
+
+def test_codex_r13_a_stale_daily_entry_is_refreshed_once_under_concurrency(up, monkeypatch):
+    """Codex's repro: an entry older than DAILY_RETRY_S whose last bar precedes the completed session, and four
+    concurrent daily_bars("SPY") calls. The refresh ran outside the single-flight lock and made four upstream
+    computations; the staleness decision and the refresh now share the key's lock: one."""
+    import threading
+    import time as _time
+
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")
+    up.script["/api/eod/SPY.US"] = [(200, _daily_rows(["2026-09-23", "2026-09-24"]))]
+    market.daily_bars("SPY")
+    key = "SPY:2Y:2026-09-25"
+    stamp, value = market._daily_cache._data[key]
+    market._daily_cache._data[key] = (stamp - market.DAILY_RETRY_S - 60, value)  # older than the retry wait
+    up.script["/api/eod/SPY.US"] = [(200, _daily_rows(["2026-09-23", "2026-09-24", "2026-09-25"]))]
+    calls = []
+    real = market._daily_compute
+
+    def slow(inst, session):
+        calls.append(session)
+        _time.sleep(0.2)
+        return real(inst, session)
+
+    monkeypatch.setattr(market, "_daily_compute", slow)
+    gate = threading.Barrier(4)
+    out = []
+
+    def one():
+        gate.wait()
+        out.append(market.daily_bars("SPY")["bars"][-1]["ts"][:10])
+
+    threads = [threading.Thread(target=one) for _ in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert calls == ["2026-09-25"] and out == ["2026-09-25"] * 4
+
+
+def test_route_range_2y_returns_daily_bars(up, monkeypatch):
+    """The route over the mocked upstream: /api/market/candles/{SYM}?range=2Y answers daily bars
+    (the user's check against the live API: 2Y and 3Y used to be refused, 5Y is weekly)."""
+    from fastapi.testclient import TestClient
+
+    from api.main import app
+
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")
+    dates = ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25"]
+    up.script["/api/eod/CRWV.US"] = [(200, _daily_rows(dates))]
+    r = TestClient(app).get("/api/market/candles/CRWV", params={"range": "2Y"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["interval"] == "1d" and body["range"] == "2Y" and body["provider"] == "eodhd"
+    assert [b["ts"][:10] for b in body["bars"]] == dates  # one bar per session, no week or month buckets
+    assert set(body["bars"][0]) == {"ts", "open", "high", "low", "close", "volume"}  # the served candle shape
+    assert TestClient(app).get("/api/market/candles/CRWV", params={"range": "3Y"}).status_code == 422
+
+
 def test_candles_eodhd_failure_is_typed_never_a_yahoo_fallback(up):
     """Was test_candles_fallback_to_yfinance_is_disclosed (fix/prelaunch-1)."""
     up.script["/api/eod/AMZN.US"] = [(500, "down")]

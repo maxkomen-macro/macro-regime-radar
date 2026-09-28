@@ -21,6 +21,8 @@ import studyEvents from "./study-events.json" with { type: "json" };
 import study from "./study.json" with { type: "json" };
 import studyHorizons from "./study-horizons.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
+import basketPrice from "./basket-price.json" with { type: "json" };
+import basketHedge from "./basket-hedge.json" with { type: "json" };
 import { isQuestion, questionFromEngine } from "../../screens/desk/event-study/question";
 import { isAnswerable, studyFor } from "../../screens/desk/event-study/catalog";
 import type { CatalogStudy, Question } from "../../screens/desk/data/types";
@@ -89,16 +91,30 @@ function catalogAsk(u: URL): { study: CatalogStudy | null; question: Question | 
 
 /** The deferred resources of §12.13 that are GET-only stubs on Monday (§12.0): each answers the awaiting
  * envelope with §1.0's reason. The vol shape Monday's page still renders once served (vol.json)
- * stays for its unit tests; basket, price and hedge have no page that reads them. /sectors is
- * served since desk/fill-etf (§12.14). */
+ * stays for its unit tests. /sectors is served since desk/fill-etf (§12.14), and /basket/price
+ * since desk/books. */
 const DEFERRED: Readonly<Record<string, string>> = {
   "/vol": "needs stored SPY option snapshots and a versioned skew method.",
   // §9, §12.3's served reasons (S-17): positions are kept in the browser (v2 D-21).
   "/positions": "Positions are kept in this browser; there is no server position store.",
-  // §10, §12.3's served reasons (S-17): basket pricing and option structures (v2 D-25–D-28).
-  "/basket/price": "basket pricing and option structures not yet defined in the engine.",
-  "/hedge": "basket pricing and option structures not yet defined in the engine.",
+  // §10: the option structures (v2 D-25–D-28); the ETF hedge is served (§12.16).
+  "/hedge": "option structures for a basket not yet defined in the engine.",
 };
+
+/** §12.13's served reason for a basket kept on a server (`GET /basket/:id`): baskets live in the browser (§1.8). */
+const BASKET_REASON = "Baskets are kept in this browser; there is no server basket store.";
+
+/** §12.15 (desk/books): the basket answers the fixtures carry, by the request the page makes,
+ * `legs|method|notional` (scripts/desk_basket_fixture.py writes them from real closes). */
+const BASKET_ANSWERS: Record<string, Record<string, unknown>> = {
+  "/basket/price": (basketPrice as { answers: Record<string, unknown> }).answers,
+  "/basket/hedge": (basketHedge as { answers: Record<string, unknown> }).answers,
+};
+
+/** A basket request's fixture key: its legs as sent, the method (hold when absent), the notional (1000000 when absent). */
+export function basketKey(u: URL): string {
+  return `${u.searchParams.get("legs") ?? ""}|${u.searchParams.get("method") ?? "hold"}|${u.searchParams.get("notional") ?? "1000000"}`;
+}
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
 const STUDY_Q = (study as { question: Record<string, string | number> }).question;
@@ -177,8 +193,13 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   // §12.0: a removed write answers 405 (`POST /positions`, `POST /basket/price`).
   if ((path === "/positions" || path === "/basket/price") && method.toUpperCase() !== "GET") return json(405, { error: "method not allowed" });
   // §12.13: `GET /basket/:id` is a deferred stub like the others.
-  if (method.toUpperCase() === "GET" && path.startsWith("/basket/") && path !== "/basket/price") return json(200, awaitingEnvelope({ reason: DEFERRED["/basket/price"], until: null }, FIXTURE_META));
+  if (method.toUpperCase() === "GET" && routeOf(path) === "/basket") return json(200, awaitingEnvelope({ reason: BASKET_REASON, until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && path in DESK_JSON_FIXTURES) return json(200, DESK_JSON_FIXTURES[path]);
+  // §12.15, §12.16: a basket the fixtures priced answers; any other basket has no fixture (never a made-up price).
+  if (method.toUpperCase() === "GET" && path in BASKET_ANSWERS) {
+    const answer = BASKET_ANSWERS[path][basketKey(u)];
+    return answer ? json(200, answer) : json(404, { error: "no fixture for this basket" });
+  }
   if (method.toUpperCase() === "GET" && path in DEFERRED) return json(200, awaitingEnvelope({ reason: DEFERRED[path], until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
     // §12.2: a request must normalize to one catalog study at an allowed horizon, else 422 `unsupported`;
