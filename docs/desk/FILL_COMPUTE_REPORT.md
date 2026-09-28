@@ -26,10 +26,46 @@ Build Notes kept in step, no invented number in a LIVE block.
 | 11 | `cecea91` | the Data Pipeline names Regime as a reader of ^GSPC and ^VIX (a miss in item 4, found on the live shots) |
 | 12 | `57dceb5` | item 7's follow-through: a store without ^VIX, and the tests that read VIXCLS (item 7's gate failures) |
 | — | `a84842a` | CLAUDE.md, and the live shots of every card touched |
-| — | this commit | this report |
+| — | `6d9c96b` | this report (first version) |
+| R-02 | `c4f8e18` | Codex R-02: an RSI study's session is eligible only where both RSIs are defined |
+| R-03 | `c3740df` | Codex R-03: each study input judged on its own calendar and tolerance before stale |
+| R-01, R-04, R-07, R-08 | `3533882` | the regime table measured from when each regime was known; its sample and coverage apart; the VIX aligned and validated; change return statuses |
+| R-08 | `8e0c070` | RSI visits: a window not complete yet and a missing close each have their own status |
+| R-05, R-06 | `c198e1d` | published changes apart from upcoming prints, each release bound to its own month; the other axis a flip reads |
+| — | `a9fde2d` | live shots after the Codex fixes, and CLAUDE.md |
+| — | this commit | this report, with the findings table |
 
 Commits 11 and 12 are fixes to items 4 and 7, kept as their own commits rather than rewriting history under
 items 8–10. Their messages say what they fix.
+
+## Codex review: DO NOT PUSH on `6d9c96b`, eight findings fixed
+
+Each fix has a test built from Codex's repro. The repro fails on the code before the fix; this was checked for R-02
+against the previous engine, and for the others the old value is asserted or named in the test.
+
+| ID | Finding | Fix | Test |
+|---|---|---|---|
+| R-01 | Regime stats and change returns paired each label with its own calendar month, which traded before the label existed | `3533882`: each label over the month it governed (stamp + 2, the engine's K−2); each change dated by its effective month; the card says "measured from when each regime was known" | `tests/test_desk_v2_regime.py::test_codex_r01_each_label_is_measured_over_the_month_it_governed`, `::test_codex_r01_a_change_is_dated_by_the_month_it_took_effect`, `::test_the_stats_and_the_changes_on_the_audits_store`; web `RegimePage.test.tsx` (the table, the changes, the note) |
+| R-02 | The RSI study's eligibility mask (events and baseline alike) required only the session's own RSI | `c4f8e18`: both the RSI at t and at t−1 | `tests/test_event_study.py::test_codex_r02_a_session_whose_preceding_rsi_is_undefined_is_neither_event_nor_baseline` (fails on the previous engine) |
+| R-03 | One allowance per study (the most any input allows), so a FRED grace covered a stale S&P close | `c3740df`: `inputs_behind` judges each input on its own calendar and tolerance; any one stale makes the study stale | `tests/test_desk_firing.py::test_codex_r03_a_fred_grace_never_covers_a_stale_exchange_close`, `::test_each_input_counts_on_its_own_calendar`; `tests/test_desk_v2_ledger.py::test_codex_r03_the_ledger_judges_each_input_on_its_own_calendar` |
+| R-04 | The return sample and the VIX coverage were not shown apart from the month count; missing observations undisclosed | `3533882`: `spx_n`, `spx_pending`, `spx_missing`, `vix_days` of `vix_sessions`, served `totals`; columns S&P N and VIX DAYS and a note built from served numbers only | `::test_codex_r04_r07_the_vix_is_validated_aligned_and_its_coverage_served`; web `meantNote` and the table test |
+| R-05 | The next release date (whatever it covered) sat beside a threshold or a print for another month | `c198e1d`: published rows (with their own prints) apart from upcoming prints; each release bound to its reference month (the first stored release in the month after it), with `released` | `::test_codex_r05_each_release_date_is_its_own_reference_months`, `::test_release_for_binds_a_reference_month_to_its_release_in_new_york_dates`, `::test_a_print_already_made_is_said_from_the_displayed_row`; web wording tests |
+| R-06 | A projected flip held the other axis at the basis row's sign, even when the other series had printed that month the other way | `c198e1d`: `other` is published (the other series' own print) or assumed (said so on the card) | `::test_codex_r06_a_flip_uses_the_other_axis_already_published_for_that_month` (checked against the real classifier); web `otherWords` |
+| R-07 | The VIX was averaged over raw stored rows | `3533882`: aligned on XNYS and validated (`align`, `validate_values`) before averaging; `vix_coverage` counts what was set aside (34 off-session rows in FRED's VIXCLS copy of the audit store, 2 in the ^VIX copy) | `::test_codex_r04_r07_the_vix_is_validated_aligned_and_its_coverage_served`, the audit-store test |
+| R-08 | "Window not complete yet" and "missing historical price" were one null, said as "month not over" / "20 sessions have not passed yet" | `3533882` (regime changes), `8e0c070` (RSI visits): `complete` / `pending` / `missing`, each with its own words | `::test_codex_r08_a_missing_close_is_not_a_window_still_open`; `tests/test_desk_v2_technicals.py::test_codex_r08_an_rsi_visits_missing_close_is_not_a_window_still_open`; web status tests on both cards |
+
+What changed on screen (audit store, and the live store the same):
+- **The regime table.** Goldilocks' S&P median moves from +0.7% (its own months) to +1.2%, and its VIX from 18.0
+  to 16.9, over 26 complete governed months of 27 labels.
+- **The last five changes.** They are now dated Oct 2026, Sep 2026, Mar 2026, Nov 2025 and Aug 2025; the two
+  newest are pending.
+- **What would change it.** It says "Already published: the Aug 2026 row reads Overheating …" and then the
+  September prints: CPI's own release on Oct 14, a −0.39% m/m threshold, "Assumes growth stays rising; the Sep
+  2026 INDPRO print is not out yet."
+
+Where the tree changed: FRAME3_DATA_AUDIT.md §2.4's method ("every stored row, as stamped, no K−2 lag") is
+superseded by R-01, and the spec says so. The audit's Q8 (27 / 213 / 102 / 21 labels) and Q9 (123 changes) still
+hold as counts.
 
 ## What each item serves
 
@@ -61,12 +97,15 @@ so.
      Aug 2026).
 
    Checked by SQL: Aug 2026 +2.6225%, and the Goldilocks VIX average 18.0075 over 564 days on the audit store.
+   Superseded by Codex R-01, R-04, R-07 and R-08: each label is now measured over the month it governed, with its
+   own sample and coverage (§ Codex review).
 5. **One label.** The next prints are read from the K−2 row that Where we are shows (`next_prints.basis`), not
    from the newest row. The August prints are already stored, so the card says so: "Already printed: the Aug 2026
    row reads Overheating, the label from Oct 2026". Each print reports its move ("the Aug 2026 print (+0.40% m/m)
    flipped inflation to rising") instead of a threshold for a different row. A test checks that the flip text
    matches the displayed label for all four regimes, on the route against the real classifier and in the
-   rendered card.
+   rendered card. Codex R-05 and R-06 then separated the published August row from the upcoming September prints,
+   each bound to its own release, with the other axis said as published or assumed (§ Codex review).
 6. **Classifier line.** Under the lede: "The home page's classifier puts Overheating at 42% for the Aug 2026 row;
    this tab's rule-based label is Goldilocks for the Jul 2026 row, the one governing today. They disagree this
    month." The word is "classifier". When that label is Recession Risk its odds are served null, because the Desk
@@ -137,18 +176,18 @@ Shots: `docs/desk/shots/desk-fill-compute/`.
 
 | Card | State | Evidence |
 |---|---|---|
-| Technicals · Momentum · RSI | LIVE-verified | `02-technicals-rsi.png`: 56.7 on Sep 25, Jun 2, Mar 30 |
+| Technicals · Momentum · RSI (R-08: each visit's status) | LIVE-verified | `02-technicals-rsi.png` (retaken at `c198e1d`): 56.7 on Sep 25, Jun 2, Mar 30, both 20-session returns complete |
 | Technicals · Signals (the two RSI rows) | LIVE-verified | `02-technicals-signals.png`: 89× and 45×, No edge |
 | Technicals · Momentum · MACD | LIVE-verified | `02-technicals-macd.png`: +18.8 / +10.7 / +8.1, crossover Sep 21 |
 | Technicals · Seasonality | LIVE-verified | `02-technicals-seasonality.png`: Feb 1990 to Aug 2026 |
 | Event Study · RSI above 70 / below 30 | LIVE-verified | `03-event-study-rsi-*.png`: 89 events, No edge at 1 month |
-| Signal Ledger · RSI rows, the NOW / stale column | LIVE-verified | `07-signal-ledger-page.png`: 12 scored, every row Quiet, none stale |
+| Signal Ledger · RSI rows, the NOW / stale column (R-03: each input on its own calendar) | LIVE-verified | `07-signal-ledger-page.png` (retaken at `c198e1d`): 12 scored, every row Quiet, none stale |
 | Overview · Vol · VIX (band, gap, date) | LIVE-verified | `01-overview-vol-vix.png`: 14.9, Sep 25, calm, +4.1 over 10.8 |
 | Overview · Active signals (RSI rows among them) | LIVE-verified | `01-overview-active-signals.png` |
 | Overview · since last close, data status | LIVE-verified | `01-overview-page.png`: vol down 0.8 pts; seven contributors current |
 | Regime · Where we are (classifier line, "in this regime") | LIVE-verified | `04-regime-where-we-are.png` |
-| Regime · What would change it (one label, last five changes) | LIVE-verified | `04-regime-what-would-change-it.png` |
-| Regime · What each regime has meant | LIVE-verified | `04-regime-what-each-regime-has-meant.png` |
+| Regime · What would change it (one label; published rows apart from upcoming prints, R-05, R-06; changes by effective month, R-01, R-08) | LIVE-verified | `04-regime-what-would-change-it.png` (retaken at `c198e1d`): the Aug row published, the Sep CPI print on Oct 14 at −0.39% m/m, growth assumed |
+| Regime · What each regime has meant (R-01, R-04, R-07) | LIVE-verified | `04-regime-what-each-regime-has-meant.png` (retaken at `c198e1d`): 26 / 212 / 102 / 21 complete governed months; VIX 7,568 of 7,568 sessions, 2 rows set aside |
 | Macro · Yield curve (item 8, no code change) | LIVE-verified | `05-macro-yield-curve.png`: +48.0 bp, −15.0 bp |
 | Data Pipeline · inventory (^VIX row, its feeds) | LIVE-verified | `10-data-pipeline-inventory.png` |
 | Build Notes · Live list | LIVE-verified | `11-build-notes-live-list.png` (authored text, §1.0.1 word for word) |
@@ -236,10 +275,27 @@ Streamlit.
 | 10 `6cbe2ab` | targeted technicals, regime and contract files green; the rest at the final run | ✓ · 1551 · ✓ | targeted 8/8 |
 | 11 `cecea91` | pipeline 39 passed (+1 audit-sha skip); web pipeline 13 | — | — |
 | 12 `57dceb5` | the 19 and every affected file: all green (143 + 2) | ✓ · 1552 · ✓ | — |
+| R-02 `c4f8e18` | related (event study, native regression, study, ledger, technicals): 233 passed | no web change (web tree as `6d9c96b`'s) | — |
+| R-03 `c3740df` | related (firing, ledger, study, overview, events, contract): 257 passed | no web change | — |
+| R-01/04/07/08 `3533882` | related (regime, contract, overview, technicals, fixture): 206 passed | ✓ · 1554 · ✓ | targeted Regime 5/5 |
+| R-08 `8e0c070` | related (technicals, contract, fixture): 116 passed | ✓ · 1555 · ✓ | — |
+| R-05/06 `c198e1d` | related (regime, contract, overview, fixture): 169 passed | ✓ · 1557 · ✓ | targeted Regime and Technicals 8/8 |
 
 ### Final gates at the head
 
-Run at `a84842a` (the last code commit; this report's commit adds only this file), under
+Run at `a9fde2d`, the last commit before this report (this report's commit adds only this file), under
+`/tmp/mrr-full-gates.lock`. The lock was taken at 21:51 EDT with no wait, held for 13 minutes, and released on exit.
+
+- **Build:** exit 0.
+- **Full pytest** (no parallel workers, `tests/test_streamlit_backports.py` excluded): **1659 passed, 2 failed** in
+  10 min 33 s. The two failures are the brief's known `test_asset_history` DB-copy tests; the timing tests passed
+  at load average about 9.
+- **Full Desk Playwright e2e** (`e2e/desk.spec.ts --workers=1`, against `DESK_FIXTURES=1 vite` from the same
+  snapshot): **54 passed** in 2.1 min.
+
+### Final gates at the first report's head (before the Codex review)
+
+Run at `a84842a` (the last code commit then; that report's commit added only the report), under
 `/tmp/mrr-full-gates.lock`. The script waited 42 min for the lock (19:58–20:40 EDT), held it 20:40–20:54, and
 released it on exit.
 
