@@ -452,13 +452,118 @@ def test_without_vix_stored_the_list_leaves_it_out(tmp_path, monkeypatch):
     assert [r["symbol"] for r in rows] == CORR_ORDER[:-1]
 
 
-def test_the_macro_route_serves_the_correlations_and_keeps_the_matrix_awaiting(tmp_path, install_worker, monkeypatch):
+def test_the_macro_route_serves_the_correlations_and_the_matrix(tmp_path, install_worker, monkeypatch):
     _serve(install_worker, monkeypatch, _db(tmp_path), items=MACRO_ITEMS)
     m = dc.check_response("/macro", client.get("/api/desk/macro"))
     assert m["data"]["correlations"]["status"] == "ready" and len(m["data"]["correlations"]["data"]) == 9
-    assert m["data"]["matrix"]["unavailable"]["reason"] == "the 12-asset matrix's assets and method are not specified yet."
-    for sym in CORR_ORDER:
-        assert "Macro" in pipe.feeds_of(sym), sym
+    mx = m["data"]["matrix"]
+    assert mx["status"] == "ready" and mx["data"]["assets"] == MATRIX_ORDER
+    assert desk_v2_macro.macro_payload()["matrix"] == mx
+    for sym in [*CORR_ORDER, *MATRIX_ORDER]:
+        assert "Macro" in pipe.feeds_of(sym) and sym not in pipe.NO_LIVE_READER, sym
+    from src.desk import series as registry
+
+    assert list(pipe.MATRIX_SERIES) == MATRIX_ORDER == [registry.get(k).series_id for k, _ in etf.MATRIX_ASSETS]
+
+
+# ── desk/matrix: the 12-asset correlation matrix (§12.8 matrix) ─────────────
+
+MATRIX_ORDER = ["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]
+
+
+def _hand_store(returns: dict[str, list[float]], days: list[str]):
+    """A Store over `days` holding a close for every session of each asset, the
+    closes compounded from the given daily log returns (the first close 100)."""
+    import numpy as np
+
+    st = etf.Store.__new__(etf.Store)
+    st.iso, st.first, st.provider_by, st.missing, st._np = days, {}, {}, [], np
+    st.px, st.rows = {}, {}
+    for k, r in returns.items():
+        st.px[k] = 100.0 * np.exp(np.concatenate([[0.0], np.cumsum(r)]))
+        st.first[k], st.rows[k] = days[0], len(r) + 1
+    return st
+
+
+def test_a_hand_checked_three_asset_matrix(monkeypatch):
+    """SPY, TLT and GLD only, 61 closes (60 daily returns), the other nine not
+    stored. By hand, in hundredths: SPY's returns repeat +1, −1 (mean 0); TLT's
+    are −2 × SPY's; GLD's repeat +1, +1, +1, −1 (mean 0.5, deviations 0.5, 0.5,
+    0.5, −1.5). Per block of four: Σ SPY·GLD deviations = 1·0.5 − 1·0.5 + 1·0.5
+    + 1·1.5 = 2, Σ SPY² = 4, Σ GLD² = 3·0.25 + 2.25 = 3, so r(SPY, GLD) =
+    2 / √(4·3) = 1/√3 = 0.5774; r(SPY, TLT) = −1; r(TLT, GLD) = −1/√3."""
+    days = store.sessions()[-61:]
+    spy = [0.01, -0.01] * 30
+    st = _hand_store({"spy": spy, "tlt": [-2 * x for x in spy], "gld": [0.01, 0.01, 0.01, -0.01] * 15}, days)
+    d = etf.matrix(st)
+    i = {s: n for n, s in enumerate(d["assets"])}
+    v = d["values"]
+    third = 1 / math.sqrt(3)
+    assert v[i["SPY"]][i["GLD"]] == pytest.approx(third, abs=1e-9) == v[i["GLD"]][i["SPY"]]
+    assert v[i["SPY"]][i["TLT"]] == pytest.approx(-1.0, abs=1e-9)
+    assert v[i["TLT"]][i["GLD"]] == pytest.approx(-third, abs=1e-9)
+    assert [v[i[x]][i[x]] for x in ("SPY", "TLT", "GLD")] == pytest.approx([1.0, 1.0, 1.0])
+    # the nine not stored: their rows and columns null, each with its reason, never filled
+    absent = [x for x in MATRIX_ORDER if x not in ("SPY", "TLT", "GLD")]
+    assert [n["symbol"] for n in d["no_data"]] == absent
+    for x in absent:
+        assert all(c is None for c in v[i[x]]) and all(row[i[x]] is None for row in v), x
+    assert d["no_data"][0]["reason"] == "Awaiting refresh: the full refresh stores QQQ; this database predates it."
+    assert d["window"] == {"start": days[1], "end": days[-1], "n": 60} and d["date"] == days[-1] and d["horizon"] == 60
+    assert d["coverage"] == [60 if x in ("SPY", "TLT", "GLD") else None for x in MATRIX_ORDER]
+    lead = d["lead"]
+    assert (lead["hedging"], lead["spy_tlt"]) == (True, pytest.approx(-1.0))
+    assert (lead["highest"]["a"], lead["highest"]["b"], lead["lowest"]["a"], lead["lowest"]["b"]) == ("SPY", "GLD", "SPY", "TLT")
+    assert lead["text"] == ("Treasuries are hedging equities (SPY and TLT at −1.00); "
+                            "the highest pair is SPY and GLD at +0.58 and the lowest SPY and TLT at −1.00.")
+
+
+def test_the_matrix_is_every_pair_over_60_daily_returns_to_the_last_common_close(tmp_path, monkeypatch):
+    """On the synthetic store: every cell is the pair's own 60-date Pearson r,
+    all ending on the newest session every asset closes on; the synthetic VIX
+    sits at its floor through the window, so it is no data (no variation)."""
+    path = _db(tmp_path)
+    c, days = store.closes(path), store.sessions()
+    c["^VIX"] = {d: v for d, v in _vix(path).items() if d in set(days)}
+    t = max(set.intersection(*(set(c[s]) for s in MATRIX_ORDER)))
+    i = days.index(t)
+    d = _item(monkeypatch, path)["matrix"]["data"]
+    assert d["assets"] == MATRIX_ORDER and d["window"] == {"start": days[i - 59], "end": t, "n": 60} and d["horizon"] == 60
+    assert d["coverage"] == [60] * 12  # the synthetic ^VIX holds every return; it is no data for its variation
+    assert d["no_data"] == [{"symbol": "^VIX", "reason": f"no variation in the window to {t}"}]
+    for a, sa in enumerate(MATRIX_ORDER):
+        for b, sb in enumerate(MATRIX_ORDER):
+            want = None if "^VIX" in (sa, sb) else _corr(c, days, sa, sb, i)
+            got = d["values"][a][b]
+            assert (got is None) == (want is None) and (want is None or got == pytest.approx(want, abs=1e-12)), (sa, sb)
+    assert d["providers"] == ["test", "Yahoo"] and d["source"] == "asset_prices"  # the synthetic ^VIX is provider "test"
+
+
+def test_an_asset_with_a_gap_in_the_window_is_no_data_with_the_gap_named(tmp_path, monkeypatch):
+    """No forward fill: GLD without one close inside the window has no row or
+    column; the rest of the grid stands on the same window."""
+    days = store.sessions()
+    t = max(store.closes(_db(tmp_path, "probe.db"))["SPY"])
+    gap = days[days.index(t) - 3]
+    d = _item(monkeypatch, _db(tmp_path, drop={"GLD": (gap,)}))["matrix"]["data"]
+    g = d["assets"].index("GLD")
+    reason = {n["symbol"]: n["reason"] for n in d["no_data"]}["GLD"]
+    # one close missing takes two returns (its own and the next session's): 58 of the 60
+    assert reason == f"only 58 of 60 daily returns in the window to {t}: no close stored for {gap}"
+    assert d["coverage"][g] == 58 and d["window"]["n"] == d["horizon"] == 60
+    assert all(x is None for x in d["values"][g]) and d["values"][0][1] is not None and d["date"] == t
+
+
+def test_the_matrix_lead_leaves_out_what_is_not_served():
+    """Without TLT the sentence says nothing about hedging; with one pair it names that pair once; with none it is null."""
+    syms = ["SPY", "TLT", "GLD"]
+    only = [[1.0, None, 0.25], [None, None, None], [0.25, None, 1.0]]
+    assert etf.matrix_lead(syms, only)["text"] == "The one pair served is SPY and GLD at +0.25."
+    none = [[None] * 3 for _ in syms]
+    assert etf.matrix_lead(syms, none)["text"] is None
+    flat = [[1.0, 0.0, 0.1], [0.0, 1.0, -0.2], [0.1, -0.2, 1.0]]
+    lead = etf.matrix_lead(syms, flat)
+    assert lead["hedging"] is False and lead["text"].startswith("Treasuries are not hedging equities (SPY and TLT at 0.00);")
 
 
 # ── Codex R-01: no definitive ranking when a sector's return is unavailable ──
@@ -518,3 +623,76 @@ def test_each_block_names_only_its_own_series_providers(tmp_path, monkeypatch):
     item = _item(monkeypatch, path)
     for block in ("sectors", "stock_bond"):
         assert item[block]["data"]["providers"] == ["Yahoo"], block
+
+
+# ── Codex R-02: the requested horizon apart from the observed coverage ──────
+
+def test_codex_r02_a_calendar_shorter_than_the_horizon_serves_its_observed_count():
+    """Codex's repro, rebuilt from the finding: every asset holds 30 closes
+    (29 daily returns), fewer than the 60 each pair needs. Before R-02 the
+    block served window.n = 60 over a window clamped to the calendar's start,
+    so the card said "60 daily returns" over 29. Now it serves the horizon
+    (60) and the observed count (29) apart, each asset's coverage, and no pair."""
+    import numpy as np
+
+    days = store.sessions()[-30:]
+    rng = np.random.default_rng(7)
+    st = _hand_store({k: rng.normal(0, 0.01, 29).tolist() for k, _ in etf.MATRIX_ASSETS}, days)
+    d = etf.matrix(st)
+    assert d["horizon"] == 60
+    assert d["window"] == {"start": days[1], "end": days[-1], "n": 29}
+    assert d["coverage"] == [29] * 12
+    assert all(v is None for row in d["values"] for v in row)
+    why = f"only 29 of 60 daily returns in the window to {days[-1]}: the stored calendar starts {days[0]}"
+    assert [n["reason"] for n in d["no_data"]] == [why] * 12
+    assert d["lead"]["text"] is None
+
+
+# ── Codex R-03: an asset without a valid close takes no part in the end session ──
+
+def test_codex_r03_an_asset_without_a_valid_close_is_no_data_and_the_rest_are_computed(tmp_path, monkeypatch):
+    """Codex's repro, rebuilt from the finding: XLE is stored, but every close
+    is non-positive, so none survives validation. Before R-03 it took part in
+    choosing the end session, no session had a close of all twelve, and the
+    whole matrix awaited. Now XLE's row and column are null with the reason,
+    and every other pair is computed on the others' last common close."""
+    import sqlite3
+
+    path = _db(tmp_path)
+    conn = sqlite3.connect(path)
+    n = conn.execute("UPDATE asset_prices SET close = 0 WHERE symbol = 'XLE' AND interval = '1d'").rowcount
+    conn.commit()
+    conn.close()
+    assert n > 0
+    c, days = store.closes(path), store.sessions()
+    c["^VIX"] = {d: v for d, v in _vix(path).items() if d in set(days)}
+    others = [s for s in MATRIX_ORDER if s != "XLE"]
+    t = max(set.intersection(*(set(c[s]) for s in others)))
+    i = days.index(t)
+    part = _item(monkeypatch, path)["matrix"]
+    assert part["ok"], part
+    d = part["data"]
+    x = MATRIX_ORDER.index("XLE")
+    reasons = {e["symbol"]: e["reason"] for e in d["no_data"]}
+    assert reasons["XLE"] == f"no valid close among its {n} stored rows (each must be a finite, positive close on an XNYS session)"
+    assert all(v is None for v in d["values"][x]) and all(row[x] is None for row in d["values"])
+    assert d["coverage"][x] is None and d["window"] == {"start": days[i - 59], "end": t, "n": 60}
+    for a, sa in enumerate(MATRIX_ORDER):
+        for b, sb in enumerate(MATRIX_ORDER):
+            if "XLE" in (sa, sb) or "^VIX" in (sa, sb):  # the synthetic ^VIX has no variation (no data, as before)
+                continue
+            assert d["values"][a][b] == pytest.approx(_corr(c, days, sa, sb, i), abs=1e-12), (sa, sb)
+    assert d["lead"]["text"] is not None
+
+
+def test_codex_r03_when_no_stored_asset_has_a_valid_close_the_block_says_so():
+    """Every stored asset without a valid close: no end session to compute on, so the block awaits with that reason."""
+    import numpy as np
+
+    days = store.sessions()[-61:]
+    st = _hand_store({"spy": [0.01] * 60, "tlt": [0.01] * 60}, days)
+    for k in st.px:
+        st.px[k] = np.full(len(days), np.nan)
+    with pytest.raises(etf.env.Awaiting) as e:
+        etf.matrix(st)
+    assert e.value.reason == "Awaiting refresh: none of the twelve assets has a valid close in this database."

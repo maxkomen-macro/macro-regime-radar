@@ -393,7 +393,17 @@ MACRO = obj(
         asset=STR, symbol=STR, quantity=STR, transform=E("daily log return", "daily log change"),
         corr=null(NUM), date=null(DATE), window=null(SPAN), reason=null(STR),
     ), min=1, max=9)),
-    matrix=Deferred("the 12-asset matrix's assets and method are not specified yet."),
+    # desk/matrix: every pair of the twelve assets over one 60-date window
+    matrix=Block(obj(
+        assets=Const(["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]),
+        labels=Arr(STR, min=12, max=12), no_data=Arr(obj(symbol=STR, reason=STR), max=12),
+        values=Arr(Arr(null(NUM), min=12, max=12), min=12, max=12), window=SPAN,
+        horizon=Const(60), coverage=Arr(null(INT), min=12, max=12),
+        lead=obj(text=null(STR), rule=Const("matrix-lead-v1"), hedging=null(BOOL), spy_tlt=null(NUM),
+                 highest=null(obj(a=STR, b=STR, corr=NUM)), lowest=null(obj(a=STR, b=STR, corr=NUM))),
+        quantity=STR, transform=STR, unit=Const("correlation"), date=DATE, freq=Const("daily"),
+        source=Const("asset_prices"), providers=Arr(STR),
+    )),
 )
 
 # ── §12.9 GET /pipeline ─────────────────────────────────────────────────────

@@ -225,7 +225,8 @@ def macro_payload() -> dict:
         # desk/fill-etf: SPY against TLT from the ETF item (api/desk_items_etf.py), a block of its own
         "stock_bond": _etf_block("stock_bond"),
         "correlations": _etf_block("correlations"),
-        "matrix": env.block_deferred("/macro", "matrix"),
+        # desk/matrix: every pair of the twelve assets, the same item
+        "matrix": _etf_block("matrix"),
     }
 
 

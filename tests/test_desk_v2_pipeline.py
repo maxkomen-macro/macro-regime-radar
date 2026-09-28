@@ -46,7 +46,7 @@ SCRATCH = Path(os.environ.get("DESK_DB", ROOT / "data" / "desk_scratch.db"))
 PUBLISHED = ROOT / "data" / "macro_radar.db"
 AUDIT_SHA = "9a8b857968b8de22"
 # desk/fill-etf: the stored ETFs no served Desk value reads yet (items 2 to 5 serve the rest)
-UNREAD_ETFS = ("SMH", "SOXX", "IGV")
+UNREAD_ETFS = ("SOXX", "IGV")  # desk/matrix: the Macro matrix reads SMH
 client = TestClient(app)
 GROUPS = ["Rates", "Credit", "Equities & vol", "FX & commodities", "Macro (monthly)",
           "Sector ETFs", "Equity ETFs", "Bond, gold & dollar ETFs"]  # the last three since desk/fill-etf

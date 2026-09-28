@@ -109,8 +109,6 @@ POSITIONS_REASON = "Positions are kept in this browser; there is no server posit
 BASKET_REASON = "Baskets are kept in this browser; there is no server basket store."
 OPTIONS_REASON = "option structures for a basket not yet defined in the engine."
 WITHOUT_CONDITION_REASON = "conditional-versus-unconditional comparison is not defined"
-# desk/fill-etf: stock_bond and correlations are served; the matrix's assets and method are open
-MATRIX_REASON = "the 12-asset matrix's assets and method are not specified yet."
 # S-27: a block whose computation failed on this generation.
 BLOCK_FAILED_REASON = "Awaiting refresh: this could not be computed from the current data."
 
@@ -127,7 +125,6 @@ DEFERRED_REASONS: dict[str, str] = {
 DEFERRED_BLOCKS: dict[tuple[str, str], str] = {
     ("/study", "without_condition"): WITHOUT_CONDITION_REASON,
     ("/technicals", "vol"): VOL_REASON,
-    ("/macro", "matrix"): MATRIX_REASON,
 }
 
 INTERNAL_MESSAGE = "Internal error. The incident is logged server-side."

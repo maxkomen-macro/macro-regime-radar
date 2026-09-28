@@ -103,6 +103,8 @@ LEADERSHIP_SERIES: tuple[str, ...] = ("SPY", *SECTOR_ETFS)   # /sectors and /tec
 BREADTH_SERIES: tuple[str, ...] = ("SPY", *SECTOR_ETFS, "RSP", "IWM")  # /sectors' breadth block
 STOCK_BOND_SERIES: tuple[str, ...] = ("SPY", "TLT")                     # /macro's stock_bond block
 CORRELATION_SERIES: tuple[str, ...] = ("SPY", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "IWM", "QQQ", "^VIX")  # /macro's correlations
+# desk/matrix: /macro's matrix (api/desk_items_etf.MATRIX_ASSETS)
+MATRIX_SERIES: tuple[str, ...] = ("SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX")
 CREDIT_SERIES: tuple[str, ...] = ("BAMLH0A0HYM2", "BAMLC0A0CM")                # /macro credit: HY stored, IG's watermark
 
 
@@ -126,7 +128,8 @@ def tab_readers() -> dict[str, set[str]]:
         # the rows, the next prints, the recession score; the stats and the changes read the S&P's and the
         # VIX's months (desk/fill-compute)
         "Regime": set(REGIME_INPUTS) | set(RECESSION_MODEL) | {"^GSPC", "^VIX"},
-        "Macro": set(CURVE_SERIES) | set(CREDIT_SERIES) | set(STOCK_BOND_SERIES) | set(CORRELATION_SERIES),
+        "Macro": set(CURVE_SERIES) | set(CREDIT_SERIES) | set(STOCK_BOND_SERIES) | set(CORRELATION_SERIES)
+                 | set(MATRIX_SERIES),
         "Sectors": set(LEADERSHIP_SERIES) | set(BREADTH_SERIES),
         "Ledger": ledger,
         "Position Monitor": {"^GSPC", "DGS2", "DGS10"},        # the S&P from /technicals, 2s10s from /macro
@@ -140,8 +143,8 @@ NO_LIVE_READER: dict[str, str] = {
     "^NDX": "No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge is not served.",
     "^RUT": "No Desk tab reads it: Sectors compares small caps with large through IWM against SPY.",
     "JPY=X": "No Desk tab reads it: the dollar row on Macro & Correlations reads UUP.",
-    # desk/fill-etf: stored; the tabs that read them are served by items 4 and 5
-    **{t: "No Desk tab reads it yet: Basket & Hedge is not served." for t in ("SMH", "SOXX", "IGV")},
+    # desk/fill-etf: stored; the tabs that read them are served by items 4 and 5 (desk/matrix: Macro reads SMH)
+    **{t: "No Desk tab reads it yet: Basket & Hedge is not served." for t in ("SOXX", "IGV")},
 }
 
 
