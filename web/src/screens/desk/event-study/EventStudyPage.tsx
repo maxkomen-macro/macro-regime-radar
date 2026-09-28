@@ -131,7 +131,10 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [servedKey]);
 
-  const seriesList = Array.isArray(study?.series) ? study.series : null;
+  // Codex R-05: the builder's series come with the catalog, independent of the study asked, so a question that
+  // fails or is not served keeps Shock and "What happens to" editable; the study's own list is the fallback.
+  const catalogSeries = Array.isArray(cq.data?.series) ? cq.data.series : null;
+  const seriesList = catalogSeries ?? (Array.isArray(study?.series) ? study.series : null);
   const label = (k: string) => seriesList?.find((s) => s.key === k)?.label ?? k;
   const go = (next: Ask) => {
     const nextSearch = searchFor(next, search);
@@ -212,14 +215,14 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         draft={draft}
         catalog={catalog}
         gateSlots={!catalogLost}
-        seriesLost={droppedOf(study, "series")}
+        seriesLost={catalogSeries ? droppedOf(cq.data, "series") : droppedOf(study, "series")}
         onDraft={(d) => {
           setDraft(d);
           setDirty(true);
           setMode("build");
         }}
         series={seriesList}
-        seriesFailed={!!study && !seriesList}
+        seriesFailed={!seriesList && (!!study || !!cq.data || cq.isError)}
         onRun={onRun}
         onSave={onSave}
         running={q.isFetching}

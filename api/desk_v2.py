@@ -209,7 +209,9 @@ def catalog_answer(params: list[tuple[str, str]]) -> dict:
             "question": s.question.as_dict() if s.question is not None else None,
             "allowed_horizons": list(s.allowed_horizons),
         })
-    return {"studies": rows}
+    # Codex R-05: the builder's series come with the catalog, so a question that fails or is not served
+    # leaves its Shock and "What happens to" slots editable; the same list /study serves.
+    return {"studies": rows, "series": _series_list()}
 
 
 # ── desk/usability §14.3: any well-formed question, computed on request ─────

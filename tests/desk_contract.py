@@ -180,6 +180,9 @@ OVERVIEW = obj(
     )),
 )
 
+# §12.2 `series`; Codex R-05: /study/catalog serves the same list, so the builder's slots never wait on a study.
+SERIES_ROW = obj(key=STR, label=STR, roles=Arr(E("shock", "target", "condition")), ops=Arr(MOVE), unit=TARGET_UNIT)
+
 # ── §12.2 GET /study ────────────────────────────────────────────────────────
 
 EXTREME = obj(value=NUM, event_date=DATE, entry_date=DATE)
@@ -212,7 +215,7 @@ STUDY = obj(
     without_condition=Deferred("conditional-versus-unconditional comparison is not defined"),
     provenance=obj(entry_rule=STR, cooldown=null(INT), seed=INT, engine_version=STR, series_start=MapOf(DATE)),
     warnings=Arr(STR),
-    series=Arr(obj(key=STR, label=STR, roles=Arr(E("shock", "target", "condition")), ops=Arr(MOVE), unit=TARGET_UNIT)),
+    series=Arr(SERIES_ROW),
     client=null(obj(horizon=Const(20), headline=STR, summary=STR)),
     empty_state=null(obj(horizon=HORIZON, sentence=STR, fixes=Arr(E("widen_window", "drop_condition")))),
     inputs_hash=STR, served_from_cache=BOOL, elapsed_ms=NUM,
@@ -225,7 +228,7 @@ CATALOG = obj(studies=Arr(obj(
     available=BOOL, unavailable=null(UNAVAILABLE),
     question=null(obj(shock=STR, window=null(WINDOW), move=MOVE, target=STR, **{"while": WHILE})),
     allowed_horizons=Arr(HORIZON, max=4),
-), min=15, max=15))
+), min=15, max=15), series=Arr(SERIES_ROW))
 
 # ── §12.4 GET /study/events ─────────────────────────────────────────────────
 

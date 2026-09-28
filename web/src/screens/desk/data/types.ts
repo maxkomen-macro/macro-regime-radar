@@ -537,6 +537,8 @@ export interface CatalogStudy {
 
 export interface StudyCatalogResponse extends Envelope {
   studies?: CatalogStudy[];
+  /** Codex R-05: the builder's series, the same list /study serves, independent of any one study. */
+  series?: { key: string; label: string; roles?: string[]; ops?: string[]; unit?: string }[];
 }
 
 /** A regime label; a listed event always carries one (§12.2, §12.4, S-06). */

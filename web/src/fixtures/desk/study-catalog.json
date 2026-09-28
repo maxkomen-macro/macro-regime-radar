@@ -326,5 +326,118 @@
     60
    ]
   }
+ ],
+ "series": [
+  {
+   "key": "spx",
+   "label": "S&P 500",
+   "roles": [
+    "shock",
+    "condition",
+    "target"
+   ],
+   "ops": [
+    "up2s",
+    "down2s",
+    "cross_above",
+    "cross_below"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "gold",
+   "label": "Gold (COMEX front month)",
+   "roles": [
+    "shock",
+    "condition",
+    "target"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  },
+  {
+   "key": "us10y",
+   "label": "10Y Treasury",
+   "roles": [
+    "shock",
+    "condition",
+    "target"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "bp"
+  },
+  {
+   "key": "us2y",
+   "label": "2Y Treasury",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "bp"
+  },
+  {
+   "key": "curve_2s10s",
+   "label": "2s10s curve",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "bp"
+  },
+  {
+   "key": "vix",
+   "label": "VIX",
+   "roles": [
+    "shock",
+    "condition",
+    "target"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_change"
+  },
+  {
+   "key": "hy_oas",
+   "label": "US HY OAS",
+   "roles": [
+    "shock",
+    "condition",
+    "target"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "bp"
+  },
+  {
+   "key": "rut",
+   "label": "Russell 2000",
+   "roles": [
+    "shock",
+    "condition"
+   ],
+   "ops": [
+    "up2s",
+    "down2s"
+   ],
+   "unit": "log_return"
+  }
  ]
 }

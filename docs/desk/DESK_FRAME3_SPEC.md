@@ -2409,3 +2409,8 @@ question pushes one.
   pick a row from the previous text. Codex's repro, AAPL's results then
   "NVDA" and Enter within 250 ms, picks nothing until NVDA's own answer, then
   NVDA.
+- **R-05 · the builder's series come with the catalog.** `/study/catalog`
+  serves `series`, the same list `/study` serves (the stored series with a
+  role, each with its moves), and the builder's Shock and "What happens to"
+  read it first, so a question that fails or is served unavailable keeps
+  both slots editable; the study's own list is the fallback.

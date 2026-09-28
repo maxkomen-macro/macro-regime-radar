@@ -88,6 +88,17 @@ def test_the_series_offered_are_the_ones_the_store_holds(served):
     assert ops["spx"] == ["up2s", "down2s", "cross_above", "cross_below", "rsi_above_70", "rsi_below_30"] and ops["gold"] == ["up2s", "down2s"]
 
 
+def test_the_catalog_serves_the_builders_series_with_no_study_asked(served):
+    """Codex R-05: the builder's Shock and "What happens to" lists come with /study/catalog, so a question
+    that fails or is not served leaves them editable; the list is the one /study serves."""
+    cat = dc.check_response("/study/catalog", client.get("/api/desk/study/catalog"))["data"]
+    assert [s["key"] for s in cat["series"]] and all(s["roles"] for s in cat["series"])
+    assert cat["series"] == _study(f"{ASK}&horizon=20")["data"]["series"]
+    refused = client.get("/api/desk/study?shock=gold&move=cross_above&while=none&target=spx")
+    assert refused.status_code == 422
+    assert dc.check_response("/study/catalog", client.get("/api/desk/study/catalog"))["data"]["series"] == cat["series"]
+
+
 def test_a_gold_target_says_its_entry_rule_without_the_banned_word(served):
     d = _study("shock=vix&window=20&move=up2s&while=none&target=gold&horizon=20")["data"]
     assert "never" not in d["provenance"]["entry_rule"]

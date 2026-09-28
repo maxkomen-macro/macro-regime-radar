@@ -113,7 +113,8 @@ describe("R-16: rows the boundary drops are said; no total and no 'none' is read
   });
 
   it("the slots' hint counts no series from a partial list", async () => {
-    stubDesk({ "/api/desk/study": () => ({ ...study, series: [{ label: "no key" }, ...study.series] }) });
+    // Codex round 1 R-05: the builder reads the catalog's list first, so the lost row is planted there.
+    stubDesk({ "/api/desk/study/catalog": () => ({ ...catalogFixture, series: [{ label: "no key" }, ...catalogFixture.series] }) });
     renderTab("/desk/event-study");
     await waitFor(() => expect(screen.getByText(/the series this store holds; 1 series could not be read/)).toBeInTheDocument());
     expect(screen.queryByText(/can be a shock/)).toBeNull();

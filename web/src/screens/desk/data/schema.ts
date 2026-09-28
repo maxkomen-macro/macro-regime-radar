@@ -654,6 +654,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         allowed_horizons: l("n!"),
       }),
     ),
+    // Codex R-05: the builder's series, served with the catalog (the same list /study serves).
+    series: l(o({ key: "s!", label: "s!", roles: l("s!"), ops: l("s!"), unit: "s" })),
   }),
   // §12.4: every retained event, newest first, with each horizon's exit, value and completeness.
   "/study/events": o({

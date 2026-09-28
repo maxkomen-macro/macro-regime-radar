@@ -12,6 +12,7 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import { QueryClient } from "@tanstack/react-query";
 import DeskShell from "../DeskShell";
 import study from "../../../fixtures/desk/study.json";
+import studyCatalog from "../../../fixtures/desk/study-catalog.json";
 import studyEvents from "../../../fixtures/desk/study-events.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
@@ -257,14 +258,35 @@ describe("Event Study tab", () => {
     await waitFor(() => expect(screen.getAllByText(/Awaiting refresh/).length).toBeGreaterThan(0));
     expect(localStorage.getItem(LAST_STUDY_KEY)).toBeNull();
   });
-  it("without the served series list the two series slots are held and say so", async () => {
+  it("without any served series list (neither the catalog's nor the study's) the two series slots are held and say so", async () => {
     const { series: _s, ...rest } = study;
+    const { series: _c, ...bareCatalog } = studyCatalog;
     void _s;
-    stubDesk({ "/api/desk/study": () => rest });
+    void _c;
+    stubDesk({ "/api/desk/study": () => rest, "/api/desk/study/catalog": () => bareCatalog });
     renderTab();
     await waitFor(() => expect(screen.getByText(/the series list is awaiting refresh/)).toBeInTheDocument());
     expect(screen.getByLabelText("Shock")).toBeDisabled();
     expect(screen.getByLabelText("What happens to")).toBeDisabled();
+  });
+
+  it("Codex R-05: a question that fails or is not served keeps Shock and What happens to editable (the series come with the catalog)", async () => {
+    const shockOptions = () => [...(screen.getByLabelText("Shock") as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
+    const targetOptions = () => [...(screen.getByLabelText("What happens to") as HTMLSelectElement).options].map((o) => o.value).filter(Boolean);
+    // Codex's repro: the study request fails (503), then the same question is served awaiting (an input not stored).
+    for (const answer of [deskError(503, "warming"), deskAwaiting("Russell 2000 (^RUT) is not stored in this database.")]) {
+      stubDesk({ "/api/desk/study": answer });
+      const { unmount } = renderTab("/desk/event-study?shock=rut&window=20&move=up2s&while=none&target=spx&horizon=20");
+      await waitFor(() => expect(screen.getByLabelText("Shock")).toBeEnabled());
+      expect(screen.getByLabelText("What happens to")).toBeEnabled();
+      expect(shockOptions()).toEqual(expect.arrayContaining(["spx", "gold", "us10y", "vix", "hy_oas"]));
+      expect(targetOptions()).toEqual(expect.arrayContaining(["spx", "gold", "us10y", "vix", "hy_oas"]));
+      expect(screen.queryByText(/the series list is awaiting refresh/)).toBeNull();
+      // A slot changed after the failure asks the new question.
+      fireEvent.change(screen.getByLabelText("Shock"), { target: { value: "gold" } });
+      expect((screen.getByLabelText("Shock") as HTMLSelectElement).value).toBe("gold");
+      unmount();
+    }
   });
 
   it("a failed /study keeps the stat labels and says Couldn't load · Retry, once per card (§14.12)", async () => {
