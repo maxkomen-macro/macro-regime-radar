@@ -126,3 +126,80 @@ def test_every_served_label_maps_to_its_lookback_on_the_stored_database(monkeypa
             assert s["change_1w_bps"] is None
         else:
             assert s["change_bps"] is None and s["change_1w_bps"] is None
+
+
+# ── Codex round 1 (R-05, R-06): the Desk's eligibility rules, and no watermark ──
+
+def _migrate(path: Path, *, committed_on: str) -> None:
+    """Give desk_series provenance the way the refresh does: every stored row
+    becomes the committed pre-provenance run dated `committed_on` (New York)."""
+    from datetime import datetime, timezone
+
+    from api import provenance
+
+    conn = sqlite3.connect(path)
+    y, m, d = map(int, committed_on.split("-"))
+    provenance.migrate(conn, now=datetime(y, m, d, 22, tzinfo=timezone.utc))  # 18:00 ET that day
+    conn.commit()
+    conn.close()
+
+
+def _add_desk_rows(path: Path, series_id: str, rows: dict[str, float], *, run_id: str, run_as_of: str, status: str) -> None:
+    from api import provenance
+
+    conn = sqlite3.connect(path)
+    conn.execute(f"INSERT OR IGNORE INTO {provenance.RUNS} (run_id, started_at, as_of, committed_at, status) VALUES (?, ?, ?, ?, ?)",
+                 (run_id, f"{run_as_of}T21:00:00Z", run_as_of, f"{run_as_of}T21:05:00Z" if status == "committed" else None, status))
+    conn.executemany("INSERT OR REPLACE INTO desk_series (series_id, date, value, provider, run_id, ingested_at) VALUES (?, ?, ?, 'FRED', ?, ?)",
+                     [(series_id, d, v, run_id, f"{run_as_of}T21:00:00Z") for d, v in rows.items()])
+    conn.commit()
+    conn.close()
+
+
+def _read(path: Path, monkeypatch) -> dict:
+    monkeypatch.setattr(db, "DB_PATH", path)
+    return {s["series_id"]: s for s in db.credit_oas(DAYS)["series"]}
+
+
+def test_r05_rows_the_desk_refuses_never_reach_the_rates(tmp_path, monkeypatch):
+    """Codex R-05: an uncommitted DGS10 row of 999 (the repro's 99,500 bp), a
+    row dated after its committed run's day, a far-future row and a non-finite
+    value are all left out of the latest value, the week and the sparkline,
+    exactly as the Desk's reader leaves them out."""
+    path = tmp_path / "macro_radar.db"
+    _store(path, desk={"DGS10": DGS10_DAILY}, raw=RAW, marks=MARKS)
+    _migrate(path, committed_on="2026-09-28")
+    _add_desk_rows(path, "DGS10", {"2026-09-29": 999.0}, run_id="uncommitted", run_as_of="2026-09-29", status="started")
+    _add_desk_rows(path, "DGS10", {"2026-09-30": 888.0}, run_id="early-run", run_as_of="2026-09-29", status="committed")
+    _add_desk_rows(path, "DGS10", {"2999-01-04": 777.0}, run_id="far-future", run_as_of="2999-01-04", status="committed")
+    _add_desk_rows(path, "DGS10", {"2026-09-25": float("inf")}, run_id="inf-run", run_as_of="2026-09-28", status="committed")
+    ten = _read(path, monkeypatch)["DGS10"]
+    assert ten["date"] == "2026-09-28" and ten["value_pct"] == pytest.approx(5.24)
+    assert (ten["change_basis"], ten["change_from"]) == ("1w", "2026-09-21")
+    assert ten["change_bps"] == pytest.approx(28.0)  # never 99,500 bp
+    dates = [h["date"] for h in ten["history"]]
+    assert "2026-09-29" not in dates and "2026-09-30" not in dates and "2999-01-04" not in dates
+    assert "2026-09-25" not in dates  # the non-finite value is dropped, not served
+    assert all(abs(h["value"]) < 100 for h in ten["history"])
+
+
+def test_r05_the_comparison_value_obeys_the_same_rules(tmp_path, monkeypatch):
+    """The only candidate in the 7–10 day window is uncommitted: no week is claimed."""
+    path = tmp_path / "macro_radar.db"
+    newest_only = {d: v for d, v in DGS10_DAILY.items() if d >= "2026-09-22"}
+    _store(path, desk={"DGS10": newest_only}, raw=RAW, marks=MARKS)
+    _migrate(path, committed_on="2026-09-28")
+    _add_desk_rows(path, "DGS10", {"2026-09-21": 1.0}, run_id="uncommitted", run_as_of="2026-09-28", status="started")
+    ten = _read(path, monkeypatch)["DGS10"]
+    assert ten["date"] == "2026-09-28"
+    assert ten["change_basis"] is None and ten["change_bps"] is None
+
+
+def test_r06_without_a_source_watermark_the_month_row_is_read(store):
+    """Codex R-06: desk DGS10 Aug 31 = 4, raw DGS10 Sep 1 = 5, no fred:DGS10
+    watermark: nothing shows the desk row is current, so raw_series serves."""
+    raw = {"DGS10": {"2026-08-01": 4.75, "2026-09-01": 5.0}}
+    ten = store(desk={"DGS10": {"2026-08-28": 4.6, "2026-08-31": 4.0}}, raw=raw, marks={})["DGS10"]
+    assert ten["value_pct"] == pytest.approx(5.0)
+    assert (ten["change_basis"], ten["change_from"]) == ("month_end", "2026-08")
+    assert ten["history_basis"] == "monthly"

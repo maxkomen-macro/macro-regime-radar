@@ -154,6 +154,15 @@ export function trainingWords(m: RecessionMetrics | undefined): string {
   return `Trained on ${monthLongYear(w.start)} to ${monthLongYear(w.end)} (n = ${m.training_n} months)${recs}.`;
 }
 
+/** Codex R-13: how many recessions the model's sample holds, from the served episodes; without the metadata only
+ * the claim that needs none. */
+export function recessionSampleWords(m: RecessionMetrics | undefined): string {
+  const eps = m?.training_recessions;
+  if (!eps || !m?.training_n) return "The recession model has no out-of-sample test.";
+  const count = eps.length < NUMBER_WORDS.length ? NUMBER_WORDS[eps.length] : String(eps.length);
+  return `The recession model has ${count} recession${eps.length === 1 ? "" : "s"} in its sample and no out-of-sample test.`;
+}
+
 function ModuleLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link to={to} style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--link)" }}>
@@ -644,8 +653,7 @@ export default function MethodologyScreen() {
               change, or causation. Playbooks, analogues and scenario rules are reference content and stress
               sketches, not measured outcomes. Small-sample backtests are anecdotes. Monthly inputs mean the regime
               read can lag the tape by weeks, and the freshness line says exactly how many. The inflation axis tracks
-              whether the CPI level rose, not whether inflation accelerated. The recession model has two recessions in
-              its sample and no out-of-sample test. Every number here is a
+              whether the CPI level rose, not whether inflation accelerated. {recessionSampleWords(recession.data)} Every number here is a
               claim with its date attached; the desk reads state conclusions, and the audit trail underneath is how a
               reader checks them.
             </p>

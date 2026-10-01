@@ -254,7 +254,20 @@ export function featureCurrent(name: string, m: RecessionMetrics): string {
 
 const LEDE_HEAD = "The ";
 const LEDE_TERM = "logistic model";
-const LEDE_MID = " scores recession odds for this month from inputs three months old; recession months are 7% of its training months, and it is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. ";
+/** Codex R-13: the training sample's recession share from the served metadata (`training_recession_months` of
+ * `training_n`, "7%" on 2026-10-01), or null when the response does not carry it. */
+export function trainingShare(m: RecessionMetrics): string | null {
+  const n = m.training_n;
+  const k = m.training_recession_months;
+  if (n == null || k == null || !(n > 0) || !(k >= 0) || k > n) return null;
+  const pct = (k / n) * 100;
+  return pct > 0 && pct < 0.5 ? "under 1%" : `${Math.round(pct)}%`;
+}
+
+function ledeMid(share: string | null): string {
+  const sample = share ? `recession months are ${share} of its training months, and it` : "it";
+  return ` scores recession odds for this month from inputs three months old; ${sample} is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. `;
+}
 const LEDE_TAIL = " This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 
 /** The divergence clause (X4, verbatim): the served label, then whether the
@@ -295,13 +308,15 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   // sentence is `ledeMore`. `ledeText` stays the whole paragraph.
   const div = divergenceParts(m);
   const divergence = div.more ? `${div.head.slice(0, -1)}. ${div.more}` : div.head;
-  const ledeText = `${LEDE_HEAD}${LEDE_TERM}${LEDE_MID}${divergence}${LEDE_TAIL}`;
+  const share = trainingShare(m);
+  const mid = ledeMid(share);
+  const ledeText = `${LEDE_HEAD}${LEDE_TERM}${mid}${divergence}${LEDE_TAIL}`;
   const lede = createElement(
     Fragment,
     null,
     LEDE_HEAD,
     createElement(Jargon, { term: "recession model" }, LEDE_TERM),
-    LEDE_MID,
+    mid,
     div.head,
     LEDE_TAIL,
   );
@@ -309,7 +324,9 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
 
   // Rule 4: the band and its range, without the number (the h1 carries it).
   const range = bandRange(label);
-  const note = `Sits in the ${label} band${range ? ` (${range})` : ""}; recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.`;
+  const note = share
+    ? `Sits in the ${label} band${range ? ` (${range})` : ""}; recession months are ${share} of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.`
+    : `Sits in the ${label} band${range ? ` (${range})` : ""}; the model is class-balanced, so this is not a calibrated probability, and 2008 peaked near 89%.`;
 
   // Rule 5.
   const footnote = [`Logistic model on ${m.model_features.length} FRED inputs, lagged 3 months`];

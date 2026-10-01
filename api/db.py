@@ -31,6 +31,7 @@ import logging
 import sqlite3
 import threading
 from contextlib import closing
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from src.analytics import dbpath
@@ -678,33 +679,52 @@ def _oas_daily(conn: sqlite3.Connection, series_id: str, days: int, newest_water
     """The series from desk_series (true observation dates), or None when the
     store does not hold it, holds nothing in the window, or trails the
     month-stamped row's own newest observation (a failed desk step must never
-    serve an older number than raw_series)."""
-    newest = conn.execute(
-        "SELECT date, value FROM desk_series WHERE series_id = ? AND value IS NOT NULL ORDER BY date DESC LIMIT 1",
-        (series_id,),
-    ).fetchone()
-    if newest is None or (newest_watermark and newest["date"] < newest_watermark):
+    serve an older number than raw_series).
+
+    Codex R-05: the rows are read through the Desk's own reader,
+    ``event_study.load_level`` (only rows a committed refresh wrote, none dated
+    after the as-of or after its run's New York date, ISO dates, numeric
+    values) and ``event_study.validate_values`` (finite values), so the latest
+    value, the comparison value and the sparkline never use a row the Desk
+    refuses. Codex R-06: without the source watermark nothing shows the desk
+    row is not behind raw_series, so the month-stamped row is read instead."""
+    if not newest_watermark:
         return None
-    rows = conn.execute(
-        "SELECT date, value FROM desk_series WHERE series_id = ? AND date >= date('now', ?) "
-        "AND value IS NOT NULL ORDER BY date",
-        (series_id, f"-{days} days"),
-    ).fetchall()
-    if not rows:
+    # Lazy: the Desk engine loads pandas, which `import api.main` must not (CLAUDE.md).
+    from api import provenance
+    from src.desk import event_study as es
+    from src.desk import series as registry
+
+    spec = next((d for d in registry.SERIES if d.series_id == series_id and d.table == "desk_series"), None)
+    if spec is None:
         return None
-    prior = conn.execute(
-        "SELECT date, value FROM desk_series WHERE series_id = ? AND date <= date(?, '-7 days') "
-        "AND date >= date(?, ?) AND value IS NOT NULL ORDER BY date DESC LIMIT 1",
-        (series_id, newest["date"], newest["date"], f"-{WEEK_MAX_GAP_DAYS} days"),
-    ).fetchone()
-    change = (newest["value"] - prior["value"]) * 100.0 if prior else None
+    try:
+        level = es.load_level(conn, spec)
+    except (es.NotStored, provenance.SchemaCheckFailed):
+        return None
+    level, _bad, _why = es.validate_values(level, spec)
+    level = level.dropna()
+    if level.empty:
+        return None
+    obs = [(ts.strftime("%Y-%m-%d"), float(v)) for ts, v in level.items()]
+    newest_date, newest_value = obs[-1]
+    if newest_date < newest_watermark:
+        return None
+    window_start = (datetime.now(timezone.utc).date() - timedelta(days=days)).isoformat()  # SQLite's date('now', -N days)
+    history = [{"date": d, "value": v} for d, v in obs if d >= window_start]
+    if not history:
+        return None
+    newest_day = date.fromisoformat(newest_date)
+    latest_ok = (newest_day - timedelta(days=7)).isoformat()
+    earliest_ok = (newest_day - timedelta(days=WEEK_MAX_GAP_DAYS)).isoformat()
+    prior = next(((d, v) for d, v in reversed(obs) if earliest_ok <= d <= latest_ok), None)
     return {
-        "date": newest["date"],
-        "value": newest["value"],
-        "change_bps": change,
+        "date": newest_date,
+        "value": newest_value,
+        "change_bps": (newest_value - prior[1]) * 100.0 if prior else None,
         "change_basis": "1w" if prior else None,
-        "change_from": prior["date"] if prior else None,
-        "history": rows,
+        "change_from": prior[0] if prior else None,
+        "history": history,
         "history_basis": "daily",
     }
 

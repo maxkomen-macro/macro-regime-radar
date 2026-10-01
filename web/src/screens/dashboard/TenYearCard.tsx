@@ -130,7 +130,9 @@ export default function TenYearCard({ credit }: TenYearCardProps) {
           as-of word is the server's DGS10 state from the credit payload's own
           block, never the month-stamped row date (FRESHNESS_CONTRACT §3). */}
       <div style={{ ...monoNoteStyle, marginTop: 8 }}>
-        10-year Treasury yield · {ten?.history_basis === "monthly" ? "one value per month" : "daily closes, 90 days"} ·{" "}
+        {/* Codex R-08: an older API serves no history_basis, so its sampling is unknown: "stored history". */}
+        10-year Treasury yield ·{" "}
+        {ten?.history_basis === "monthly" ? "one value per month" : ten?.history_basis === "daily" ? "daily closes, 90 days" : "stored history"} ·{" "}
         <Stamp source={`${SRC.fred} ${ten?.series_id ?? "DGS10"}`} label={report.series(ten?.series_id ?? "DGS10", credit.data?.freshness)} style={{ fontSize: 12 }} />
       </div>
     </Card>

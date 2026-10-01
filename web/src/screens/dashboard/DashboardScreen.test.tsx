@@ -661,6 +661,16 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series: high-yield daily observations, investment-grade one value per month (its newest).");
   });
 
+  it("Codex R-08: an older API serves no history_basis, so the 10Y card says stored history, never daily closes", async () => {
+    const legacy: CreditOAS = { ...CREDIT, series: CREDIT.series.map(({ history_basis: _drop, ...rest }) => rest as CreditSeries) };
+    stubFetch(routes({ "/api/credit/oas": () => legacy }));
+    renderDashboard();
+    const ten = await awaitSection("us10y");
+    await waitFor(() => expect(text(ten)).toContain("4.21%"));
+    expect(text(ten)).toContain("10-year Treasury yield · stored history · FRED DGS10");
+    expect(text(ten)).not.toContain("daily closes");
+  });
+
   it("fix/freshness 7: without a quote the VIX card prints the FRED close by its true date, labeled Close, never the month stamp", async () => {
     renderDashboard();
     const kl = await awaitSection("key-levels");

@@ -91,6 +91,14 @@ function recessionFixture(over: Partial<RecessionMetrics> = {}): RecessionMetric
     yield_curve_series: ycSeries(),
     usrec_series: usrec(),
     n_training_samples: 281,
+    // The served training sample (2026-10-01): the lede's share and Methodology's count read these (Codex R-13).
+    training_window: { start: "2003-04", end: "2026-09" },
+    training_n: 281,
+    training_recession_months: 20,
+    training_recessions: [
+      { start: "2008-01", end: "2009-06" },
+      { start: "2020-03", end: "2020-04" },
+    ],
     model_features: ["yield_curve", "unemployment", "hy_spread", "indpro_yoy", "lei_proxy"],
     feature_coefficients: { yield_curve: 0.65, unemployment: -2.54, hy_spread: 2.58, indpro_yoy: 0.05, lei_proxy: -0.49 },
     data_as_of: "2026-09-01",

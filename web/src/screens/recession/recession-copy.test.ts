@@ -12,7 +12,7 @@
  * copy rules, never the mockup's or the baseline's figures.
  */
 import { describe, expect, it } from "vitest";
-import { bandRange, featureCurrent, featureLabel, headlineIndex, heroCopy, labelTone, lastMonths, lastYears, pillToneFor, priorPoint, riseStreak, stripSummary } from "./recession-copy";
+import { bandRange, featureCurrent, featureLabel, headlineIndex, heroCopy, labelTone, lastMonths, lastYears, pillToneFor, priorPoint, riseStreak, stripSummary, trainingShare } from "./recession-copy";
 import type { DatedValue, RecessionMetrics } from "../../api/types";
 
 /* ── fixtures (Sep 2026) ─────────────────────────────────────────────────── */
@@ -88,6 +88,14 @@ function recessionFixture(over: Partial<RecessionMetrics> = {}): RecessionMetric
     yield_curve_series: ycSeries(),
     usrec_series: usrec(),
     n_training_samples: 281,
+    // The served training sample (2026-10-01): the lede's share and Methodology's count read these (Codex R-13).
+    training_window: { start: "2003-04", end: "2026-09" },
+    training_n: 281,
+    training_recession_months: 20,
+    training_recessions: [
+      { start: "2008-01", end: "2009-06" },
+      { start: "2020-03", end: "2020-04" },
+    ],
     model_features: ["yield_curve", "unemployment", "hy_spread", "indpro_yoy", "lei_proxy"],
     feature_coefficients: { yield_curve: 0.65, unemployment: -2.54, hy_spread: 2.58, indpro_yoy: 0.05, lei_proxy: -0.49 },
     data_as_of: "2026-09-01",
@@ -269,6 +277,30 @@ describe("heroCopy (checklist 07 C.1 rules 1 to 6)", () => {
     expect(c.note).toContain("2008 peaked near 89%");
     expect(c.note).not.toContain("11.6");
     expect(heroCopy(recessionFixture({ recession_label: "High Risk" })).note).toBe("Sits in the High Risk band (40% and above); recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.");
+  });
+
+  it("Codex R-13: the training share comes from the served metadata, and without it the claim is left out", () => {
+    expect(trainingShare(BASE)).toBe("7%"); // 20 of 281
+    const other = recessionFixture({
+      training_n: 100,
+      training_recession_months: 20,
+      training_recessions: [
+        { start: "1990-07", end: "1991-03" },
+        { start: "2001-03", end: "2001-11" },
+        { start: "2008-01", end: "2009-06" },
+      ],
+    });
+    expect(trainingShare(other)).toBe("20%");
+    expect(heroCopy(other).ledeText).toContain("recession months are 20% of its training months");
+    expect(heroCopy(other).note).toContain("recession months are 20% of the training months");
+    for (const absent of [{ training_n: null }, { training_recession_months: null }, { training_n: 0 }, { training_n: undefined, training_recession_months: undefined }]) {
+      const m = recessionFixture(absent as Partial<RecessionMetrics>);
+      expect(trainingShare(m)).toBeNull();
+      expect(heroCopy(m).ledeText).not.toMatch(/recession months are|7%/);
+      expect(heroCopy(m).ledeText).toContain("from inputs three months old; it is class-balanced, so scores are not calibrated probabilities.");
+      expect(heroCopy(m).note).toBe("Sits in the Low Risk band (under 20%); the model is class-balanced, so this is not a calibrated probability, and 2008 peaked near 89%.");
+    }
+    expect(trainingShare(recessionFixture({ training_n: 1000, training_recession_months: 3 }))).toBe("under 1%");
   });
 
   it("rule 5: the footnote names the input count with the 3-month lag and the month the headline scores; the second item drops without a headline point", () => {
