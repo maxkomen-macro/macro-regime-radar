@@ -9,13 +9,15 @@
  * motion. The number itself is the h1 beside it; the gauge never prints it.
  */
 
-import { fmtProb } from "../../lib/format";
+import { fmtMonYr, fmtProb } from "../../lib/format";
 import { BANDS, toneColor, type LabelTone } from "./recession-copy";
 
 export interface ProbabilityGaugeProps {
   prob: number;
   label: string;
   tone: LabelTone;
+  /** fix/freshness 4 (D5): the month the score is for ("YYYY-MM"), printed under the dial. */
+  scoredMonth?: string | null;
   /** The widest the drawing may render, px (default 360, the mockup size).
    * The hero passes the width its chart frame measured (Iteration 1 G3). */
   maxWidth?: number;
@@ -50,7 +52,7 @@ export function arcPath(p0: number, p1: number, r: number, cx = CX, cy = CY): st
 
 const f1 = (v: number) => Number(v.toFixed(1));
 
-export default function ProbabilityGauge({ prob, label, tone, maxWidth = 360 }: ProbabilityGaugeProps): JSX.Element {
+export default function ProbabilityGauge({ prob, label, tone, scoredMonth, maxWidth = 360 }: ProbabilityGaugeProps): JSX.Element {
   const p = Math.max(0, Math.min(100, Number.isFinite(prob) ? prob : 0));
   const [nx, ny] = arcPoint(p, R_NEEDLE);
   const color = toneColor(tone) ?? "var(--text-3)";
@@ -61,7 +63,7 @@ export default function ProbabilityGauge({ prob, label, tone, maxWidth = 360 }: 
       viewBox="0 0 360 210"
       width="100%"
       role="img"
-      aria-label={`Recession probability gauge at ${fmtProb(prob, "percent", 1)} · ${label}`}
+      aria-label={`Recession odds gauge at ${fmtProb(prob, "percent", 1)} · ${label}`}
       className="mrr-rec-gauge"
       style={{ display: "block", maxWidth, margin: "0 auto" }}
     >
@@ -103,7 +105,7 @@ export default function ProbabilityGauge({ prob, label, tone, maxWidth = 360 }: 
         );
       })}
       <text data-role="caption" x={CX} y="204" textAnchor="middle" fontSize="10" letterSpacing=".1em" fill="var(--text-3)" style={{ fontFamily: "var(--font-mono)" }}>
-        12-MONTH PROBABILITY
+        {scoredMonth ? `RECESSION ODDS · ${fmtMonYr(`${scoredMonth.slice(0, 7)}-01`).toUpperCase()}` : "RECESSION ODDS"}
       </text>
     </svg>
   );

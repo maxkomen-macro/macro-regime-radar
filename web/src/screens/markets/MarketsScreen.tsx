@@ -41,7 +41,8 @@ import { LIVE_WINDOW_MS, streamWord, useQuotes, useStreamStatus, type LiveQuote,
 import { fmtBps, fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { rateChange } from "../shared/rate-change";
-import { monDD, stampLabel } from "../shared/fresh-state";
+import { stampLabel } from "../shared/fresh-state";
+import { pricedMonths } from "../shared/priced-when";
 import { useFreshReport } from "../shared/useFreshReport";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { Caption, MISSING, StateNote, metaStyle, missingNote, useHashScroll, useSnapshotMode } from "../shared/screen-ui";
@@ -479,7 +480,8 @@ export default function MarketsScreen() {
       const q = quotes.get(d.symbol);
       return q?.src === "ws" && q.t != null && now - q.t < LIVE_WINDOW_MS;
     });
-  const pricedDate = priced.data?.length ? priced.data.map((p) => p.date).reduce((a, b) => (a > b ? a : b)) : null;
+  // fix/freshness 4: the pricing block's observation months, never its run date.
+  const pricedMonth = priced.data?.length ? pricedMonths(priced.data) : null;
 
   const sectorReads: SectorRead[] = SECTORS.map(({ symbol, name }) => {
     const bars = barsBySymbol.get(symbol);
@@ -518,8 +520,8 @@ export default function MarketsScreen() {
             spy?.delayed ? " (15-minute delayed quotes)" : ""
           }.`;
   const why = usLive
-    ? "Day moves are the exchange feed's own figures. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence."
-    : "Off-hours the board holds the last quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence.";
+    ? "Day moves are measured against each name's previous regular-session close. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence."
+    : "Outside the regular session the board holds the last regular-session quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
   // A3 (Iteration 1 step 6): the tape reads the server's live_quotes state
   // and the candles its market_daily state (§5 words: "Live", "Delayed 15
   // min", "Close · Sep 18", "Sep 14 · 4 sessions behind"). The weekly pricing
@@ -532,7 +534,7 @@ export default function MarketsScreen() {
       noun: "Priced",
       label: freshReport.seeded
         ? freshReport.series("market_daily")
-        : stampLabel(pricedDate ? `Week ending ${monDD(pricedDate)}` : null, "The weekly pricing block's newest stamp; the freshness report does not judge this feed."),
+        : stampLabel(pricedMonth, "Each priced metric's own observation month; the freshness report does not judge this block."),
     },
   ];
 

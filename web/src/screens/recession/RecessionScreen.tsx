@@ -3,7 +3,7 @@
  * docs/redesign-v2/checklists/07-recession.md B.0).
  *
  * Order of <main> children, all inside `.mrr-rec`: the hero row (TabHero
- * `#recession-hero`, whose h1 is the served 12-month probability with the
+ * `#recession-hero`, whose h1 is the served recession odds for this month (scored from inputs three months old) with the
  * served `recession_label` as the pill, the three-month change as the
  * subhead, the semicircle gauge over the 24M / Full history probability line
  * as the signature visual, beside SummaryCard `#recession-summary` with the
@@ -71,7 +71,7 @@ const STRIP_TARGET = "/app/recession#model";
 const STRIP_SUFFIX = "Opens the model inputs";
 
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
-const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession probability above";
+const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession odds above";
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
 const THRESHOLDS_TITLE = "Reference levels used in the desk read. Not model thresholds and not alert rules; none are served by the API.";
 
@@ -195,6 +195,7 @@ export default function RecessionScreen() {
                   prob={prob}
                   label={m.recession_label}
                   tone={labelTone(m.recession_label)}
+                  scoredMonth={m.probability_month ?? m.recession_prob_series?.at(-1)?.date ?? null}
                   maxWidth={Math.min(gaugeWidth(box.w), Math.floor(box.h / GAUGE_ASPECT))}
                 />
               )}
@@ -237,7 +238,7 @@ export default function RecessionScreen() {
   const rows: SummaryRow[] = [
     {
       id: "probability",
-      label: "12-month probability",
+      label: "Recession odds · this month",
       value: val(
         (x) => (
           <>

@@ -701,7 +701,7 @@ test.describe("X1 recession model above the fold", () => {
       const h1 = page.locator("main h1");
       await expect(h1).toHaveCount(1);
       await expect(h1).toHaveText(/\d+(\.\d)?%/, { timeout: 60_000 });
-      const gauge = page.locator("#recession-hero svg[aria-label^='Recession probability gauge']");
+      const gauge = page.locator("#recession-hero svg[aria-label^='Recession odds gauge']");
       await expect(gauge).toHaveCount(1, { timeout: 30_000 });
       await page.waitForTimeout(300);
       const m = await page.evaluate(() => {
@@ -714,7 +714,7 @@ test.describe("X1 recession model above the fold", () => {
           vh: window.innerHeight,
           vw: window.innerWidth,
           h1: box(document.querySelector("main h1")),
-          gauge: box(document.querySelector("#recession-hero svg[aria-label^='Recession probability gauge']")),
+          gauge: box(document.querySelector("#recession-hero svg[aria-label^='Recession odds gauge']")),
         };
       });
       expect(m.y, "scrollY on load").toBe(0);

@@ -73,7 +73,7 @@ describe("ProbabilityGauge (checklist 07 B.1.1, E.1)", () => {
   it("renders svg[role=img] with the spoken label, the mockup viewBox and a fluid width capped at 360", () => {
     const svg = gauge(11.6, "Low Risk", "clear");
     expect(svg).toHaveAttribute("role", "img");
-    expect(svg).toHaveAttribute("aria-label", "Recession probability gauge at 11.6% · Low Risk");
+    expect(svg).toHaveAttribute("aria-label", "Recession odds gauge at 11.6% · Low Risk");
     expect(svg).toHaveAttribute("viewBox", "0 0 360 210");
     expect(svg.getAttribute("width") === "100%" || svg.style.width === "100%").toBe(true);
     expect(svg.style.maxWidth).toBe("360px");
@@ -82,15 +82,16 @@ describe("ProbabilityGauge (checklist 07 B.1.1, E.1)", () => {
   });
 
   it("speaks the label as served, whatever the number says", () => {
-    expect(gauge(11.6, "Elevated", "watch")).toHaveAttribute("aria-label", "Recession probability gauge at 11.6% · Elevated");
-    expect(gauge(40, "High Risk", "alert")).toHaveAttribute("aria-label", "Recession probability gauge at 40.0% · High Risk");
-    expect(gauge(7.24, "Low Risk", "clear")).toHaveAttribute("aria-label", "Recession probability gauge at 7.2% · Low Risk");
+    expect(gauge(11.6, "Elevated", "watch")).toHaveAttribute("aria-label", "Recession odds gauge at 11.6% · Elevated");
+    expect(gauge(40, "High Risk", "alert")).toHaveAttribute("aria-label", "Recession odds gauge at 40.0% · High Risk");
+    expect(gauge(7.24, "Low Risk", "clear")).toHaveAttribute("aria-label", "Recession odds gauge at 7.2% · Low Risk");
   });
 
-  it("the band words LOW, ELEVATED and HIGH RISK and the ticks 0, 20, 40 and 100 are real text nodes, with the 12-MONTH PROBABILITY caption", () => {
+  it("the band words LOW, ELEVATED and HIGH RISK and the ticks 0, 20, 40 and 100 are real text nodes, with the RECESSION ODDS caption (fix/freshness 4, D5)", () => {
     const svg = gauge(11.6);
     const all = texts(svg);
-    for (const t of ["LOW", "ELEVATED", "HIGH RISK", "0", "20", "40", "100", "12-MONTH PROBABILITY"]) expect(all, t).toContain(t);
+    for (const t of ["LOW", "ELEVATED", "HIGH RISK", "0", "20", "40", "100", "RECESSION ODDS"]) expect(all, t).toContain(t);
+    expect(all).not.toContain("12-MONTH PROBABILITY");
     expect(all.filter((t) => t === "20")).toHaveLength(1);
     expect(all.filter((t) => t === "40")).toHaveLength(1);
     expect(svg.querySelectorAll("text").length).toBeGreaterThanOrEqual(8);
@@ -160,5 +161,12 @@ describe("ProbabilityGauge (checklist 07 B.1.1, E.1)", () => {
     const svg = gauge(11.6);
     const hub = [...svg.querySelectorAll("circle")].find((c) => near(num(c, "cx"), CENTRE) && near(num(c, "cy"), CENTRE));
     expect(hub).toBeDefined();
+  });
+});
+
+describe("the scored month under the dial (fix/freshness 4, D5)", () => {
+  it("reads RECESSION ODDS · <scored month> when the month is served", () => {
+    const { container } = render(<ProbabilityGauge prob={9.8} label="Low Risk" tone="clear" scoredMonth="2026-09" />);
+    expect(container.querySelector("text[data-role='caption']")?.textContent).toBe("RECESSION ODDS · SEP 2026");
   });
 });

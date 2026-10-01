@@ -269,7 +269,7 @@ export default function DashboardScreen() {
     id: "next-3m",
     label: "Next 3 months",
     value: tr
-      ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")}`
+      ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")} (hand-set priors)`
       : transitions.isError
         ? <StateNote error missing={MISSING.transitions} />
         : <StateNote loading />,
@@ -310,7 +310,7 @@ export default function DashboardScreen() {
         hyChange ? ` (${fmtBps(hyChange.bps)} ${hyChange.phrase})` : ""
       }. Growth trend reads ${r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and inflation trend ${
         r.inflation_trend != null ? fmtSigned(r.inflation_trend) : "—"
-      }; both are 3-month slopes of z-scored macro data.`,
+      }; both are 3-month slopes of the index levels, z-scored against their history for the odds.`,
       `What would change the read: a CPI print above ${thr("cpi_hot")}% YoY trips Inflation pressure, a 2s10s close below ${thr("yield_curve_inversion")}% trips Curve inversion risk, and a VIX close above ${thr("vix_spike")} trips the vol signal. ` +
         (triggered.length > 0
           ? `${triggered.length} of the ${reporting.length} monitored signals ${triggered.length === 1 ? "is" : "are"} currently triggered.`
@@ -350,9 +350,9 @@ export default function DashboardScreen() {
       },
       {
         id: "model-probability",
-        label: "Model probability",
+        label: "Leading odds",
         value: (
-          <Metric id={ODDS_METRIC[leadKey]} value={served[leadKey]} title="Dominant stored probability of the four-way classifier">
+          <Metric id={ODDS_METRIC[leadKey]} value={served[leadKey]} title="Dominant stored odds of the four-way classifier (a strength score, not a fitted probability)">
             {fmtWholePct(lead[1])}
           </Metric>
         ),
@@ -389,7 +389,7 @@ export default function DashboardScreen() {
                   <Metric id="recession-prob" value={recession.data.recession_prob}>
                     {fmtProb(recession.data.recession_prob, "percent", 1)}
                   </Metric>{" "}
-                  over 12m · {recession.data.recession_label} (a separate model from the{" "}
+                  for this month, from inputs three months old · {recession.data.recession_label} (a separate model from the{" "}
                   <Metric id="odds-recession-risk" value={served.recession}>
                     {fmtWholePct(probs.recession)}
                   </Metric>{" "}
@@ -465,7 +465,7 @@ export default function DashboardScreen() {
   } else {
     rows.push(
       { id: "model-regime", label: "Model regime", value: regimeNote },
-      { id: "model-probability", label: "Model probability", value: regimeNote },
+      { id: "model-probability", label: "Leading odds", value: regimeNote },
       { id: "odds", label: "Odds", value: regimeNote },
       { id: "model-confidence", label: "Model confidence", value: regimeNote },
       divergenceRow,
@@ -655,9 +655,9 @@ export default function DashboardScreen() {
           <Disclosure title="Method and provenance" right="reference" style={{ marginTop: 6 }}>
             <Card>
               <p className="mrr-prose" style={{ ...errStyle, fontSize: "var(--fs-body-s)", lineHeight: 1.6, margin: 0 }}>
-                The regime is a 4-way softmax classifier over z-scored growth (industrial production) and inflation (CPI)
-                trends, run monthly on FRED data; the four odds always sum to 100% and the header badge shows the dominant
-                stored probability. The five monitored signals compare the latest print against fixed thresholds and are
+                The regime is set by the signs of the 3-month slopes of the industrial-production and CPI levels, run
+                monthly on FRED data; a softmax over the slopes' z-scores gives the four odds, which sum to 100%, and the
+                header badge shows the dominant stored odds (a strength score, not a fitted probability). The five monitored signals compare the latest print against fixed thresholds and are
                 scored server-side; the recession model is a logistic regression trained on NBER dates. Nothing on this
                 screen is re-derived in the browser.{" "}
                 <Link to="/app/methodology" style={{ color: "var(--link)" }}>

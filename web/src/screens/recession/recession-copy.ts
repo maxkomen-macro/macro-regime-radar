@@ -254,8 +254,8 @@ export function featureCurrent(name: string, m: RecessionMetrics): string {
 
 const LEDE_HEAD = "The ";
 const LEDE_TERM = "logistic model";
-const LEDE_MID = " scores twelve-month odds against a ~15% historical base rate; Elevated starts at 20%, High Risk at 40%. ";
-const LEDE_TAIL = " This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
+const LEDE_MID = " scores recession odds for this month from inputs three months old; recession months are 7% of its training months, and it is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. ";
+const LEDE_TAIL = " This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 
 /** The divergence clause (X4, verbatim): the served label, then whether the
  * two readings agree, by the server's ±20 materiality band. `more` is the
@@ -284,10 +284,10 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   // Rule 2: the three-month change at 0.1 resolution, or the NBER sentence.
   const change = i >= 0 ? deltaPoints(series, i, 3) : null;
   let subhead: string;
-  if (!change) subhead = "Twelve-month odds from the NBER-trained model.";
-  else if (change.delta > 0) subhead = `Twelve-month odds, up ${change.delta.toFixed(1)} points in three months.`;
-  else if (change.delta < 0) subhead = `Twelve-month odds, down ${Math.abs(change.delta).toFixed(1)} points in three months.`;
-  else subhead = "Twelve-month odds, unchanged over three months.";
+  if (!change) subhead = "Recession odds for this month, scored from inputs three months old.";
+  else if (change.delta > 0) subhead = `Recession odds for this month, up ${change.delta.toFixed(1)} points in three months.`;
+  else if (change.delta < 0) subhead = `Recession odds for this month, down ${Math.abs(change.delta).toFixed(1)} points in three months.`;
+  else subhead = "Recession odds for this month, unchanged over three months.";
 
   // Rule 3: X4 with its three edits; the Jargon affordance on "logistic model".
   // G4: the visible lede is the model sentence, the divergence word and the
@@ -309,7 +309,7 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
 
   // Rule 4: the band and its range, without the number (the h1 carries it).
   const range = bandRange(label);
-  const note = `Sits in the ${label} band${range ? ` (${range})` : ""}; the historical base rate runs ~15% and 2008 peaked near 89%.`;
+  const note = `Sits in the ${label} band${range ? ` (${range})` : ""}; recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.`;
 
   // Rule 5.
   const footnote = [`Logistic model on ${m.model_features.length} FRED inputs, lagged 3 months`];

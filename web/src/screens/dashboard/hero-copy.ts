@@ -5,7 +5,7 @@
  * The rule the whole module exists for: the classifier's four-way odds and the
  * NBER-trained recession model are two readings and never read as one
  * distribution. The headline is the regime label, the pill is the dominant
- * stored probability, the subhead ties the runner-up's number to the same
+ * stored odds (a strength score, not a fitted probability), the subhead ties the runner-up's number to the same
  * four-way split, and nothing in the hero prints the recession model's
  * probability, the words "recession model" or "NBER". The one exception is
  * the disambiguation clause (rule 4): when the runner-up is Recession Risk it
@@ -33,10 +33,10 @@ export const REGIME_NAMES: Record<string, string> = {
 
 /** The classifier's own definition of each quadrant (Methodology copy). */
 export const REGIME_MEANING: Record<string, string> = {
-  Goldilocks: "growth trending up while inflation stays calm: the equity-friendly quadrant",
-  Overheating: "growth and inflation both running hot: real assets lead, duration suffers",
-  Stagflation: "inflation hot while growth stalls: the hardest tape, cash and commodities defend",
-  "Recession Risk": "growth rolling over with inflation fading: quality bonds and defensives lead",
+  Goldilocks: "industrial production rising while the CPI level falls over three months: the equity-friendly quadrant",
+  Overheating: "industrial production and the CPI level both rising over three months: real assets lead, duration suffers",
+  Stagflation: "the CPI level rising while industrial production falls: the hardest tape, cash and commodities defend",
+  "Recession Risk": "industrial production and the CPI level both falling over three months: quality bonds and defensives lead",
 };
 
 export function regimeOdds(r: Regime) {
@@ -74,8 +74,8 @@ export function heroPillTone(label: string): HeroPillTone {
 }
 
 /** The lead word by the gap between the top two odds, in percentage points. */
-export function leadWord(gapPp: number): "A coin flip with" | "A contested lead over" | "A clear lead over" {
-  if (gapPp < 10) return "A coin flip with";
+export function leadWord(gapPp: number): "A narrow lead over" | "A contested lead over" | "A clear lead over" {
+  if (gapPp < 10) return "A narrow lead over";
   if (gapPp < 25) return "A contested lead over";
   return "A clear lead over";
 }
@@ -88,7 +88,7 @@ export const RECESSION_RUNNER_CLAUSE =
 export interface HeroCopy {
   /** The regime label, and nothing else. */
   headline: string;
-  /** "{pct}% probability": the dominant stored probability. */
+  /** "{pct}% odds": the dominant stored odds. */
   pill: string;
   pillTone: HeroPillTone;
   glow: string;
@@ -122,7 +122,7 @@ export function heroCopy(r: Regime): HeroCopy {
   const pillTone = heroPillTone(r.label);
   return {
     headline: r.label,
-    pill: `${fmtWholePct(lead[1])} probability`,
+    pill: `${fmtWholePct(lead[1])} odds`,
     pillTone,
     glow: HERO_GLOW[pillTone],
     subhead,

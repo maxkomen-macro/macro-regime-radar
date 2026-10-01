@@ -75,11 +75,12 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "macro_radar.
 REGIME_SYSTEM_PROMPT = """You are a senior macro research analyst at a hedge fund.
 
 REGIME TAXONOMY
-Four macroeconomic regimes, each with distinct growth/inflation signatures:
-  • Goldilocks  — growth trending up, inflation contained
-  • Overheating — growth hot, inflation accelerating
-  • Stagflation — growth slowing, inflation sticky or rising
-  • Deflation   — growth contracting, inflation falling / Recession Risk
+Four macroeconomic regimes, set by the signs of two 3-month slopes: the
+industrial-production level (growth) and the CPI level (inflation):
+  • Goldilocks     — growth rising, CPI level falling
+  • Overheating    — growth rising, CPI level rising
+  • Stagflation    — growth falling, CPI level rising
+  • Recession Risk — growth falling, CPI level falling
 
 SIGNIFICANCE RUBRIC (1-5 on each of 5 dimensions)
 
@@ -622,7 +623,7 @@ def _interpretation_user_content(
 ) -> str:
     return (
         f"Current regime: {current_regime}\n"
-        f"Regime probabilities: {regime_probabilities}\n"
+        f"Regime odds (a strength score from the two trends, not fitted probabilities): {regime_probabilities}\n"
         f"Headline: {headline}\n"
         f"Summary: {(summary or 'N/A')[:400]}\n\n"
         "Score this headline and write a ≤20-word regime interpretation. "
@@ -933,7 +934,7 @@ def _current_regime(conn: sqlite3.Connection) -> tuple[str, dict]:
         "Goldilocks":  row[1],
         "Overheating": row[2],
         "Stagflation": row[3],
-        "Deflation":   row[4],
+        "Recession Risk": row[4],
     }
 
 

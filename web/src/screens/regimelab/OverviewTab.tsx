@@ -232,8 +232,8 @@ export function TransitionsSection({
       <SectionHeader
         layout="panel"
         title="Transition outlook"
-        description="30 years of monthly regime history"
-        right={<MetaWithStamp meta="Stored empirical analysis" stamp={<Stamp source={SRC.classifierHistory} asOf={rows?.length ? fmtMonYr(rows[rows.length - 1].date) : null} />} />}
+        description="Hand-set priors, not counted from the stored history"
+        right={<MetaWithStamp meta="Hand-set priors" stamp={<Stamp source={SRC.classifierHistory} asOf={rows?.length ? fmtMonYr(rows[rows.length - 1].date) : null} />} />}
       />
       <div className="mrr-lab-tiles-3">
         {t ? (
@@ -294,8 +294,8 @@ export function TransitionsSection({
       {t ? (
         <Disclosure variant="quiet" title="Details" style={{ marginTop: 6 }}>
           <Caption style={{ marginTop: 0 }}>
-            Odds are counted month-over-month from the stored classifier history: a <Jargon term="transition matrix">transition matrix</Jargon>,
-            not a forecast model.
+            These odds are hand-set priors typed into the code, not counted from the stored classifier history: a{" "}
+            <Jargon term="transition matrix">transition matrix</Jargon>, not a forecast model. The exits beside them are counted from the stored history.
           </Caption>
         </Disclosure>
       ) : null}

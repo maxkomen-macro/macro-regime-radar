@@ -721,7 +721,7 @@ function OddsGauge() {
       viewBox="0 0 360 210"
       width="100%"
       role="img"
-      aria-label="Recession odds within 12 months, 35 percent against a 30 percent threshold"
+      aria-label="Recession odds for this month, scored from inputs three months old, 35 percent against a 30 percent threshold"
       style={{ display: "block", maxWidth: 360, margin: "0 auto" }}
     >
       <path
@@ -767,7 +767,7 @@ function OddsGauge() {
         textAnchor="middle"
         style={label}
       >
-        within 12 months
+        for this month
       </text>
       <text
         x="30"
@@ -982,7 +982,7 @@ const SUMMARY_ROWS: SummaryRow[] = [
     id: "takeaway",
     label: "Key takeaway",
     value:
-      "Growth near trend with inflation cooling; the read has held for three months.",
+      "Growth near trend with the CPI level falling; the read has held for three months.",
     prose: true,
   },
 ];
@@ -1127,8 +1127,8 @@ export default function KitScreen() {
                 headline="35%"
                 pill="Elevated"
                 pillTone="amber"
-                subhead="Odds within 12 months, up from 28% in June."
-                lede="The curve is flat, high-yield spreads are 40 bps wider than in June and the leading-indicator proxy has rolled over. Odds this high have preceded four of the last six downturns within a year."
+                subhead="Recession odds for this month, scored from inputs three months old; up from 28% in June."
+                lede="The curve is flat, high-yield spreads are 40 bps wider than in June and the breakeven-spread proxy has rolled over. Scores are fitted and scored on the same history (in-sample)."
                 actions={[{ label: "Open the model", to: "/app/recession" }]}
                 footnote={["Model inputs through Aug 2026", "Threshold 30%"]}
                 freshness={[{ noun: "Macro", label: FRESH_MACRO_DELAYED }]}

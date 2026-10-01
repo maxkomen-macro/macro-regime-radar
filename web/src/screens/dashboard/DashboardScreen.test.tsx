@@ -191,7 +191,7 @@ const FRESHNESS: Freshness = {
 
 /** Em-dash asides (tidied to semicolons on screen) and a <strong> span in the closing sentence. */
 const NARRATIVE =
-  "Goldilocks leads the four-way split at 58% odds \u2014 the NBER model reads 13.7% over twelve months. Growth is steady while inflation eases. " +
+  "Goldilocks leads the four-way split at 58% odds \u2014 the NBER model reads 13.7% for this month, from inputs three months old. Growth is steady while inflation eases. " +
   "Conditions favour <strong>risk assets</strong>, though valuations limit upside \u2014 drawdown risk rises from current spread levels.";
 const TAKEAWAY_SENTENCE = "Conditions favour risk assets, though valuations limit upside; drawdown risk rises from current spread levels.";
 const TAKEAWAY: Takeaway = {
@@ -295,9 +295,9 @@ async function awaitSection(id: string): Promise<HTMLElement> {
 }
 const strip = async () => within(summary()).findByRole("button", { name: /Open the alert feed\.$/ });
 
-const LABELS_WATCH = ["Model regime", "Model probability", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", "Watch", "Invalidates", "NBER recession model"];
+const LABELS_WATCH = ["Model regime", "Leading odds", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", "Watch", "Invalidates", "NBER recession model"];
 const LABELS_TRIGGERED = LABELS_WATCH.map((l) => (l === "Watch" ? "Triggered" : l));
-const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession model · 12m"];
+const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds · this month"];
 const IDS_IN_ORDER = ["regime-hero", "regime-summary", "signals", "key-levels", "markets-glance", "whats-priced", "us10y", "macro-calendar", "macro-charts", "read-through"];
 
 beforeEach(() => {
@@ -321,12 +321,12 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(within(hero()).getByText("Current regime")).toBeInTheDocument();
     const pill = hero().querySelector(".mrr-pill") as HTMLElement;
     expect(pill).not.toBeNull();
-    expect(text(pill)).toBe("58% probability");
+    expect(text(pill)).toBe("58% odds");
     expect(pill).toHaveAttribute("data-tone", "mint");
     expect(h1.parentElement?.contains(pill)).toBe(true); // beside the headline
     expect(within(hero()).getByRole("heading", { level: 2 })).toHaveTextContent("A clear lead over Recession Risk at 31% of the same four-way odds.");
     const heroText = text(hero());
-    expect(heroText).toContain("Goldilocks means growth trending up while inflation stays calm: the equity-friendly quadrant.");
+    expect(heroText).toContain("Goldilocks means industrial production rising while the CPI level falls over three months: the equity-friendly quadrant.");
     expect(heroText).toContain("The call rests on a growth trend of +0.31 and an inflation trend of -0.42; model confidence of 47% is a separate reading of how firmly the classifier holds the call.");
     expect(heroText).toContain("Recession Risk here is the classifier's fourth quadrant; the NBER recession model is a separate reading, shown in the summary.");
     expect(within(hero()).getByRole("button", { name: "model confidence" })).toHaveClass("jargon");
@@ -379,7 +379,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
   it("the hero section text never contains the recession model's probability", async () => {
     renderDashboard();
     await awaitHero();
-    await waitFor(() => expect(text(summary())).toContain("13.7% over 12m"));
+    await waitFor(() => expect(text(summary())).toContain("13.7% for this month, from inputs three months old"));
     const heroText = text(hero());
     expect(heroText).not.toContain("13.7");
     expect(heroText).not.toMatch(/over 12m/);
@@ -392,16 +392,16 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await awaitHero();
     expect(within(summary()).getByRole("heading", { level: 2 })).toHaveTextContent("Model & market summary");
     await waitFor(() => expect(dts()).toEqual(LABELS_WATCH));
-    expect(text(ddFor("Model probability"))).toBe("58%");
+    expect(text(ddFor("Leading odds"))).toBe("58%");
     expect(text(ddFor("Model confidence"))).toBe("Medium (47%)");
     expect(text(ddFor("Odds"))).toContain("GL 58%");
     expect(ddFor("Odds").querySelector(".mrr-odds")).not.toBeNull();
     await waitFor(() => expect(text(ddFor("Model vs market"))).toBe("Aligned · +8 on ±100"));
-    await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path \u2192 Recession Risk 12%"));
+    await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path \u2192 Recession Risk 12% (hand-set priors)"));
     await waitFor(() => expect(text(ddFor("What changed"))).toBe("Switched from Recession Risk in Jul 2026 · 3 months in"));
     expect(text(ddFor("Watch"))).toBe("Inflation pressure (78% of trigger)");
     expect(text(ddFor("Invalidates"))).toBe("CPI > 4.00% YoY · 2s10s < 0.00% · VIX > 30");
-    expect(text(ddFor("NBER recession model"))).toBe("13.7% over 12m · Low Risk (a separate model from the 31% Recession Risk regime odds)");
+    expect(text(ddFor("NBER recession model"))).toBe("13.7% for this month, from inputs three months old · Low Risk (a separate model from the 31% Recession Risk regime odds)");
     expect(text(ddFor("NBER recession model"))).toContain("a separate model");
     // The D22 caption lives in the quiet disclosure under the rows.
     const about = within(summary()).getByRole("button", { name: /About model vs market/ });
@@ -601,12 +601,13 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(t).toContain("VIX · Cboe volatility index · daily close.");
     expect(t).toContain("+0.31");
     expect(t).toContain("-0.42");
-    expect(t).toContain("3-month slope of the industrial-production z-score; feeds the regime call.");
-    expect(t).toContain("3-month slope of the CPI z-score; feeds the regime call.");
+    expect(t).toContain("3-month slope of the industrial-production level; its sign feeds the regime call, and the odds use it z-scored against its history.");
+    expect(t).toContain("3-month slope of the CPI level; its sign feeds the regime call, and the odds use it z-scored against its history.");
     await waitFor(() => expect(text(kl)).toContain("+52 bps"));
     expect(text(kl)).toContain(`The 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the 61st percentile of the model's monthly history. Below 0 is an inversion, the classic pre-recession shape.`);
     expect(text(kl)).toContain("13.7%");
-    expect(text(kl)).toContain("13.7% sits in the Low Risk band (Elevated starts at 20%, High at 40%). The model trains on NBER dates; inputs through Aug 2026.");
+    // fix/freshness 4: inputs through the served (lagged) month; this fixture serves none, so data_as_of's month.
+    expect(text(kl)).toContain("13.7% sits in the Low Risk band (Elevated starts at 20%, High at 40%). The model scores this month from inputs three months old, trained on NBER dates; inputs through Aug 2026.");
     expect(kl.querySelectorAll("article, .mrr-hero")).toHaveLength(0);
 
     // The US 10Y card prints the same value, its weekly change and the sparkline.
@@ -623,7 +624,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(ten.querySelector("svg path")).not.toBeNull();
     expect(within(ten).getByRole("link", { name: /View rates/ })).toHaveAttribute("href", "/app/credit#financing");
     // And the summary NBER row prints the same recession figure as the tile.
-    await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7% over 12m/));
+    await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7% for this month, from inputs three months old/));
   });
 
   it("macro charts: three accordion buttons closed on load (the regime odds moved to the hero, D1); clicking the first opens its chart", async () => {
@@ -638,7 +639,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     // The decorative glyph (aria-hidden) leads each button; the title follows.
     expect(buttons.map((b) => text(b))).toEqual([
       expect.stringMatching(/^\u25b8\s*Yield curve 2s10s · model history/),
-      expect.stringMatching(/^\u25b8\s*Recession model probability · history/),
+      expect.stringMatching(/^\u25b8\s*Recession model odds · history/),
       expect.stringMatching(/^\u25b8\s*Credit spreads · 90 days/),
     ]);
     expect(byId("chart-regime-panel")).toBeNull();
@@ -683,7 +684,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     const paragraphs = [...panel.querySelectorAll("p")].map((p) => text(p));
     expect(paragraphs).toHaveLength(2);
     expect(paragraphs[0]).toBe(
-      `The drivers on file: the 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the VIX sits at 16.42 (subdued), and high-yield spreads run 294 bps (+4 bps on the week). Growth trend reads +0.31 and inflation trend -0.42; both are 3-month slopes of z-scored macro data.`,
+      `The drivers on file: the 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the VIX sits at 16.42 (subdued), and high-yield spreads run 294 bps (+4 bps on the week). Growth trend reads +0.31 and inflation trend -0.42; both are 3-month slopes of the index levels, z-scored against their history for the odds.`,
     );
     expect(paragraphs[1]).toBe(
       "What would change the read: a CPI print above 4.00% YoY trips Inflation pressure, a 2s10s close below 0.00% trips Curve inversion risk, and a VIX close above 30.00 trips the vol signal. None of the 5 monitored signals is triggered; 1 sits in Watch.",
@@ -693,7 +694,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(method).toHaveAttribute("aria-expanded", "true");
     const link = within(rt).getByRole("link", { name: /Full methodology/ });
     expect(link).toHaveAttribute("href", "/app/methodology");
-    expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("The regime is a 4-way softmax classifier over z-scored growth (industrial production) and inflation (CPI) trends");
+    expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("The regime is set by the signs of the 3-month slopes of the industrial-production and CPI levels");
     expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("Nothing on this screen is re-derived in the browser.");
   });
 
@@ -757,7 +758,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(screen.queryByText(/Regime unavailable/)).toBeNull();
     expect(screen.queryByText("Unavailable")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Goldilocks");
-    expect(text(hero().querySelector(".mrr-pill"))).toBe("58% probability");
+    expect(text(hero().querySelector(".mrr-pill"))).toBe("58% odds");
   });
 
   it("route #whats-priced selects the What's priced tab", async () => {

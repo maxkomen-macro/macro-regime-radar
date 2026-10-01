@@ -473,7 +473,7 @@ const EMPTY_CELLS: EmptyCell[] = [
     route: "/app/dashboard#whats-priced",
     prepare: (page) => emptyEndpoint(page, "/api/priced", []),
     check: async (page) => {
-      await expect(section(page, "whats-priced")).toContainText("No priced metrics on file; the weekly pipeline has not written them yet.", { timeout: 20_000 }); // MarketsGlance.tsx:169
+      await expect(section(page, "whats-priced")).toContainText("No priced metrics on file; the full refresh has not written them yet.", { timeout: 20_000 }); // MarketsGlance.tsx:169
     },
   },
   {
@@ -491,7 +491,7 @@ const EMPTY_CELLS: EmptyCell[] = [
     def: byTab("markets"),
     prepare: (page) => emptyEndpoint(page, "/api/priced", []),
     check: async (page) => {
-      await expect(section(page, "whats-priced-full")).toContainText("No priced metrics on file; the weekly pipeline has not written them yet.", { timeout: 20_000 }); // WhatsPriced.tsx:144
+      await expect(section(page, "whats-priced-full")).toContainText("No priced metrics on file; the full refresh has not written them yet.", { timeout: 20_000 }); // WhatsPriced.tsx:144
     },
   },
   {

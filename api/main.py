@@ -700,6 +700,12 @@ class RecessionMetrics(BaseModel):
     probability_month: str | None = None
     inputs_through: str | None = None
     current_input_months: dict[str, str] | None = None
+    # fix/freshness 4: the training sample, for the Methodology's words (months, size, recession months and the
+    # recessions they form, each a run of consecutive months).
+    training_window: dict[str, str] | None = None
+    training_n: int | None = None
+    training_recession_months: int | None = None
+    training_recessions: list[dict[str, str]] | None = None
     # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
     # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
     freshness: dict[str, Any] | None = None
@@ -729,9 +735,11 @@ class PricedMetric(BaseModel):
     metric: str
     label: str
     unit: str
-    date: str
+    date: str  # the run that wrote the level, not the observation
     value: float
     mom_chg: float | None
+    # fix/freshness 4: the observation's own month ("YYYY-MM").
+    observation_month: str | None = None
 
 
 class Surprise(BaseModel):

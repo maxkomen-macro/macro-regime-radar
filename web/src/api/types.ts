@@ -190,6 +190,11 @@ export interface RecessionMetrics {
   probability_month?: string | null;
   inputs_through?: string | null;
   current_input_months?: Record<string, string> | null;
+  /** fix/freshness 4: the training sample (months, size, recession months, each recession as a run of months). */
+  training_window?: { start: string; end: string } | null;
+  training_n?: number | null;
+  training_recession_months?: number | null;
+  training_recessions?: { start: string; end: string }[] | null;
   /** B3: per-series state for the model's inputs (FRESHNESS_CONTRACT §6). */
   freshness?: Record<string, SeriesState> | null;
 }
@@ -199,10 +204,12 @@ export interface PricedMetric {
   metric: string;
   label: string;
   unit: string;
-  /** Week-end Friday stamp from the derived-metrics pipeline. */
+  /** The run that wrote the level (every full refresh), not the observation. */
   date: string;
   value: number;
   mom_chg: number | null;
+  /** fix/freshness 4: the observation's own month ("YYYY-MM"). */
+  observation_month?: string | null;
 }
 
 export interface Surprise {

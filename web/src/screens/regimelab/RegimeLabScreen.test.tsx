@@ -82,14 +82,14 @@ const HISTORY = history();
 /** Overheating odds 5% three rows back against 7% now: up 2 points, rising. */
 const HISTORY_RISING = history(SPELLS, (_, i, n) => (i === n - 4 ? { prob_overheating: 0.05 } : {}));
 
-/** Em-dash asides (tidied to semicolons on screen) and a <strong> span. */
+/** Em-dash asides (tidied to semicolons on screen) and a <strong> span; the recession sentence as intelligence.py words it since fix/freshness 4 (D5). */
 const NARRATIVE =
-  "Goldilocks leads the four-way split at 58% odds — the 12-month recession model reads 13.7%. Growth is steady while inflation eases. " +
+  "Goldilocks leads the four-way split at 58% odds — the recession model's odds for this month, scored from inputs three months old, read 13.7%. Growth is steady while inflation eases. " +
   "Conditions favour <strong>risk assets</strong>, though valuations limit upside — drawdown risk rises from current spread levels.";
 const LEDE_TEXT =
-  "Goldilocks leads the four-way split at 58% odds; the 12-month recession model reads 13.7%. Growth is steady while inflation eases. " +
+  "Goldilocks leads the four-way split at 58% odds; the recession model's odds for this month, scored from inputs three months old, read 13.7%. Growth is steady while inflation eases. " +
   "Conditions favour risk assets, though valuations limit upside; drawdown risk rises from current spread levels.";
-const FIRST_SENTENCE = "Goldilocks leads the four-way split at 58% odds; the 12-month recession model reads 13.7%.";
+const FIRST_SENTENCE = "Goldilocks leads the four-way split at 58% odds; the recession model's odds for this month, scored from inputs three months old, read 13.7%.";
 const TAKEAWAY: Takeaway = {
   narrative: NARRATIVE,
   conviction: "Medium",
@@ -424,8 +424,8 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
   it("Next 3 months prints the R9 form and Next 6 months uses the residual stay with the top 6-month path", async () => {
     renderLab();
     await awaitHero();
-    await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path → Recession Risk 12%"));
-    expect(text(ddFor("Next 6 months"))).toBe("Stays Goldilocks 68% · highest-risk path → Recession Risk 19%");
+    await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path → Recession Risk 12% (hand-set priors)"));
+    expect(text(ddFor("Next 6 months"))).toBe("Stays Goldilocks 68% · highest-risk path → Recession Risk 19% (hand-set priors)");
   });
 
   it("divergences join with a middle dot in amber, and a material model-vs-market score reads amber", async () => {

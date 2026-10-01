@@ -717,8 +717,9 @@ export default function MacroTape({
         ) : null}
         <Caption>
           Twelve large-cap tech, semis, and crypto-adjacent names as market
-          thermometers; biggest day move on top. Off-hours the board holds at
-          the last close until the next session opens.
+          thermometers; biggest day move on top. Outside the regular session the
+          board holds the last regular-session quote until the next open;
+          pre- and post-market trades do not move it.
         </Caption>
       </div>
 
@@ -736,13 +737,14 @@ export default function MacroTape({
           {statusLine.full}
         </Caption>
         <Caption style={{ marginTop: 0 }}>
-          Day moves come straight from the exchange feed&apos;s own day-change
-          figures; never recomputed here. 1W / 1M and sparklines come from the
-          stored daily candles
+          Day moves: each US trade is measured by the relay against the
+          previous regular-session close; FX, crypto and the VIX carry the
+          feed&apos;s own day change. Nothing is recomputed here. 1W / 1M and
+          sparklines come from the stored daily candles
           {storedThrough ? ` through ${fmtDate(storedThrough)}` : ""}; crypto,
           FX, VIX and single names have no stored history yet, so those columns
-          print a dash. A dash under Day % means the feed sent a price without a
-          day change (off-hours REST fill); the as-of stamp says when.
+          print a dash. A dash under Day % means the relay has no previous close
+          for that session yet; the as-of stamp says when.
           {droppedLabel ? " Columns this width cannot show whole are named above the board; they return as the window widens." : ""}
           {/* Cadence + cross-surface reconciliation: the VIX row is a quote off
               this feed, while the Dashboard's VIX spike card reads the monthly

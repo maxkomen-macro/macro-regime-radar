@@ -120,26 +120,26 @@ const ERROR_HEADLINE = "Recession model unavailable: the data service did not an
 const LOADING_ROW = "Training the recession model; the first call takes about a second.";
 const STATE_LOADING = "Reading stored data…";
 const STATE_ERROR = "Unavailable: the data service did not answer.";
-const SUBHEAD = "Twelve-month odds, up 1.4 points in three months.";
+const SUBHEAD = "Recession odds for this month, up 1.4 points in three months.";
 // Iteration 1 step 5 (G4): the visible lede is three sentences; the material
 // divergence's second sentence sits behind the hero's Details (LEDE_MORE).
 const LEDE =
-  "The logistic model scores twelve-month odds against a ~15% historical base rate; Elevated starts at 20%, High Risk at 40%. Macro ahead of markets: credit pricing and the model disagree. This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
+  "The logistic model scores recession odds for this month from inputs three months old; recession months are 7% of its training months, and it is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. Macro ahead of markets: credit pricing and the model disagree. This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 const LEDE_MORE = "The divergence is material and requires judgment.";
-const NOTE = "Sits in the Low Risk band (under 20%); the historical base rate runs ~15% and 2008 peaked near 89%.";
+const NOTE = "Sits in the Low Risk band (under 20%); recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.";
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
 // Iteration 1 step 5 (G4): three visible sentences (data-copy-max 3: the tail
 // and the headline are different numbers); the lag sentence sits behind Details.
 // fix/freshness 3b: the served tail is the headline (B7). This fixture's tail (10.0) is not its headline (11.6), so
 // the sentence about the tail goes; it never calls them a partial-month fit and a complete read again.
 const CHART_CAPTION_24M =
-  "The model's 12-month odds, monthly since Oct 2024. Shaded bands are actual NBER recessions, dashed rules the 20/40 band edges.";
-const CHART_CAPTION_MORE = "Features enter with a 3-month lag so the line never peeks at data it wouldn't have had.";
+  "The model's recession odds for each month, scored from inputs three months old, monthly since Oct 2024. Shaded bands are actual NBER recessions, dashed rules the 20/40 band edges.";
+const CHART_CAPTION_MORE = "Inputs lagged three months; fitted and scored on the same history (in-sample), so the line is a fit, not a record of past forecasts.";
 // Iteration 1 X2 adds two served rows (Training sample, Inputs through) before the reference thresholds.
-const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
+const SUMMARY_LABELS = ["Recession odds · this month", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
 const THRESHOLDS_TITLE = "Reference levels used in the desk read. Not model thresholds and not alert rules; none are served by the API.";
-const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession probability above";
+const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession odds above";
 /** Iteration 1 E2: the fifth input is named for what recession.py computes. */
 const BREAKEVEN = "10Y − 5Y breakeven spread";
 const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", BREAKEVEN];
@@ -161,7 +161,7 @@ const SENS_LEAD = "Move the model's five inputs and watch 11.6% respond.";
 const SCENARIO_EYEBROW = "Scenario at current readings · inputs unchanged";
 const INCOMPLETE = "The model's current inputs are incomplete in this snapshot; nothing honest to seed the sliders with.";
 const SCENARIO_CAPTION =
-  "The headline scores 3-month-lagged inputs (the model never peeks); these sliders score the readings as if they were today's features, so the starting position sits near, not on, the headline. Same fitted coefficients, same scaler.";
+  "The headline scores inputs lagged three months; fitted and scored on the same history (in-sample). These sliders score the latest readings as if they were the model's inputs, so the starting position sits near, not on, the headline: roughly what the headline will score in three months. Same fitted coefficients, same scaler.";
 const SLIDER_LABELS = ["Yield curve 2s10s", "Unemployment rate", "HY credit spread", "Industrial production YoY", BREAKEVEN];
 const SEEDED_VALUETEXT = ["+35 bps", "4.1%", "270 bps", "1.0%", "0.0pp"];
 const COEF_ORDER = ["HY credit spread", "Unemployment rate", "Yield curve (2s10s)", BREAKEVEN, "Industrial production YoY"];
@@ -321,7 +321,7 @@ const tileWith = (root: HTMLElement, label: string) => {
 const heroViz = () => hero().querySelector(".mrr-hero-viz") as HTMLElement;
 const historyGroup = () => within(hero()).getByRole("group", { name: "History window" });
 const curveGroup = () => within(curve()).getByRole("group", { name: "Curve window" });
-const gaugeSvg = () => hero().querySelector("svg[aria-label^='Recession probability gauge']") as SVGSVGElement | null;
+const gaugeSvg = () => hero().querySelector("svg[aria-label^='Recession odds gauge']") as SVGSVGElement | null;
 /** The LineChart legend's "{first} → {last}" range line inside a root. */
 function legendRange(root: HTMLElement): string {
   const span = [...root.querySelectorAll<HTMLElement>("span")].find((s) => /^[A-Z][a-z]{2} \d\d, \d{4} → [A-Z][a-z]{2} \d\d, \d{4}$/.test(text(s)));
@@ -421,21 +421,21 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(css(hero().querySelector(".mrr-hero-glow"))).toMatch(/rgba\(245, ?181, ?46, ?0?\.06\)/);
     expect(text(hero().querySelector(".mrr-hero-note"))).toContain("Sits in the Elevated band (20 to 40%)");
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
-    expect(text(ddFor("12-month probability"))).toBe("11.6% · Elevated");
-    expect(ddFor("12-month probability").style.color).toBe("var(--amber)");
-    expect(gaugeSvg()).toHaveAttribute("aria-label", "Recession probability gauge at 11.6% · Elevated");
+    expect(text(ddFor("Recession odds · this month"))).toBe("11.6% · Elevated");
+    expect(ddFor("Recession odds · this month").style.color).toBe("var(--amber)");
+    expect(gaugeSvg()).toHaveAttribute("aria-label", "Recession odds gauge at 11.6% · Elevated");
     expect(text(hero())).not.toContain("Low Risk");
   });
 
-  it("the h2 starts with Twelve-month odds and equals the three-month delta; the lede is X4 with the three edits and the recession model jargon; the hero never names the classifier", async () => {
+  it("the h2 starts with Recession odds for this month and equals the three-month delta; the lede is X4 with the three edits and the recession model jargon; the hero never names the classifier", async () => {
     renderRecession();
     await awaitHero();
     const h2 = within(hero()).getByRole("heading", { level: 2 });
     expect(text(h2)).toBe(SUBHEAD);
-    expect(text(h2).startsWith("Twelve-month odds")).toBe(true);
+    expect(text(h2).startsWith("Recession odds for this month")).toBe(true);
     const lede = hero().querySelector(".mrr-hero-lede") as HTMLElement;
     expect(text(lede)).toBe(LEDE);
-    expect(text(lede)).toContain("recession model's own probability");
+    expect(text(lede)).toContain("recession model's own score");
     expect(lede).toHaveAttribute("data-copy", "lede");
     expect(text(hero())).not.toContain(LEDE_MORE);
     fireEvent.click(within(hero().querySelector(".mrr-hero-copy") as HTMLElement).getByRole("button", { name: /Details/ }));
@@ -470,7 +470,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     const gauge = gaugeSvg();
     expect(gauge).not.toBeNull();
     expect(viz.contains(gauge)).toBe(true);
-    expect(gauge).toHaveAttribute("aria-label", "Recession probability gauge at 11.6% · Low Risk");
+    expect(gauge).toHaveAttribute("aria-label", "Recession odds gauge at 11.6% · Low Risk");
     const words = [...(gauge as SVGSVGElement).querySelectorAll("text")].map((t) => text(t));
     for (const w of ["LOW", "ELEVATED", "HIGH RISK", "0", "20", "40", "100"]) expect(words, w).toContain(w);
     const group = historyGroup();
@@ -515,8 +515,8 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(within(summary()).getByRole("heading", { level: 2 })).toHaveTextContent(/^Model summary$/);
     expect(summary()).toHaveClass("mrr-summary");
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
-    expect(text(ddFor("12-month probability"))).toBe("11.6% · Low Risk");
-    expect(ddFor("12-month probability").style.color).toBe("var(--mint)");
+    expect(text(ddFor("Recession odds · this month"))).toBe("11.6% · Low Risk");
+    expect(ddFor("Recession odds · this month").style.color).toBe("var(--mint)");
     expect(text(ddFor("3 months ago"))).toBe("10.2% +1.4 pts · May 2026");
     const rise = [...ddFor("3 months ago").querySelectorAll<HTMLElement>("span")].find((el) => text(el).startsWith("+1.4 pts"));
     expect(rise, "the signed delta span").toBeDefined();
@@ -593,7 +593,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(link).toHaveAttribute("href", "/app/recession#model");
     expect(stripTitle(link)).toBe("No consecutive rises");
     expect(stripDetail(link)).toBe("0.0 pts · Jun 2026 → Sep 2026");
-    expect(text(within(hero()).getByRole("heading", { level: 2 }))).toBe("Twelve-month odds, unchanged over three months.");
+    expect(text(within(hero()).getByRole("heading", { level: 2 }))).toBe("Recession odds for this month, unchanged over three months.");
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
     expect(text(ddFor("3 months ago"))).toBe("11.6% 0.0 pts · Jun 2026");
     const flat = [...ddFor("3 months ago").querySelectorAll<HTMLElement>("span")].find((el) => text(el).startsWith("0.0 pts"));
@@ -1084,7 +1084,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     await awaitHero();
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
     await waitFor(() => expect(text(ddFor("Regime context"))).toBe(STATE_ERROR));
-    expect(text(ddFor("12-month probability"))).toBe("11.6% · Low Risk");
+    expect(text(ddFor("Recession odds · this month"))).toBe("11.6% · Low Risk");
     expect(text(ddFor("3 months ago"))).toBe("10.2% +1.4 pts · May 2026");
     expect(text(ddFor("Model vs market"))).toBe("Macro ahead of markets · -34 on ±100");
     expect(text(ddFor("Reference thresholds"))).toContain(THRESHOLDS);
@@ -1100,7 +1100,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     await awaitHero();
     await waitFor(() => expect(dts()).toEqual(SUMMARY_LABELS));
     expect(text(ddFor("Regime context"))).toBe(STATE_LOADING);
-    expect(text(ddFor("12-month probability"))).toBe("11.6% · Low Risk");
+    expect(text(ddFor("Recession odds · this month"))).toBe("11.6% · Low Risk");
     for (const dd of summary().querySelectorAll("dl dd")) expect(text(dd)).not.toBe("");
   });
 });

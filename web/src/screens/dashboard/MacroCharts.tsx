@@ -184,7 +184,7 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
           },
           {
             id: "chart-recession",
-            title: "Recession model probability · history",
+            title: "Recession model odds · history",
             right:
               recession.data?.recession_prob_series.length != null
                 ? `${recession.data.recession_prob_series.length} monthly points`
@@ -197,13 +197,13 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                   <LineChart
                     series={[
                       {
-                        label: "P(recession, 12m)",
+                        label: "Recession odds, scored from inputs three months old",
                         color: "var(--warn-hot)",
                         points: (recession.data?.recession_prob_series ?? []).map((p) => ({ x: p.date, y: p.value })),
                       },
                     ]}
                     yFmt={(v) => `${v.toFixed(0)}%`}
-                    caption="Recession model probability history"
+                    caption="Recession model odds history"
                   />
                   <Caption>
                     Monthly stored series. Elevated starts at 20%, High at 40%. The model&apos;s current call is{" "}

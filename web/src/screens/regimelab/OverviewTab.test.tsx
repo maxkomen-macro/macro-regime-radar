@@ -195,8 +195,9 @@ describe("OverviewTab (checklist 04 B.4 to B.6)", () => {
     renderWithProviders(<OverviewTab />, { route: "/app/regime-lab" });
     const section = await awaitSection("transitions");
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent(/^Transition outlook$/);
-    expect(text(section)).toContain("30 years of monthly regime history");
-    expect(text(section)).toContain("Stored empirical analysis");
+    // fix/freshness 4 (D4): the transition odds are hand-set priors, and say so.
+    expect(text(section)).toContain("Hand-set priors, not counted from the stored history");
+    expect(text(section)).not.toContain("Stored empirical analysis");
     await waitFor(() => expect(text(section)).toContain("stays Goldilocks"));
     const three = tileOf(within(section).getByRole("heading", { level: 3, name: "Next 3 months" }));
     const six = tileOf(within(section).getByRole("heading", { level: 3, name: "Next 6 months" }));
@@ -216,12 +217,12 @@ describe("OverviewTab (checklist 04 B.4 to B.6)", () => {
     expect(rows6.map(rowValue)).toEqual(["68%", "19%", "9%", "4%"]); // 100 - (19 + 9 + 4)
     expect(text(six)).toContain("Over six months the hold rate falls as spells age.");
     expect(text(six)).not.toContain("Highest-risk path");
-    expect(text(section)).not.toContain("Odds are counted month-over-month");
+    expect(text(section)).not.toContain("These odds are hand-set priors typed into the code");
     const details = within(section).getByRole("button", { name: /Details/ });
     expect(details).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(details);
     expect(details).toHaveAttribute("aria-expanded", "true");
-    expect(text(section)).toContain("Odds are counted month-over-month from the stored classifier history: a transition matrix, not a forecast model.");
+    expect(text(section)).toContain("These odds are hand-set priors typed into the code, not counted from the stored classifier history: a transition matrix, not a forecast model. The exits beside them are counted from the stored history.");
     expect(within(section).getByRole("button", { name: "transition matrix" })).toHaveClass("jargon");
     expect(text(section)).not.toMatch(/vs 3 mo ago/i);
     expect(section.querySelectorAll(".mrr-meter-row [style*='58px']")).toHaveLength(0);

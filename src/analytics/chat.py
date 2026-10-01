@@ -441,7 +441,7 @@ _RECESSION_MODEL_CACHE: dict[str, Any] = {}
 
 
 def _recession_model_view() -> dict[str, Any]:
-    """The recession model's 12-month probability (percent) and its 1/3/6-month
+    """The recession model's odds for this month, scored from inputs three months old (percent), and its 1/3/6-month
     priors. Under the API the worker derives it once per generation
     (api/analytics_cache "assistant_recession") and this only looks it up, so
     no request fits the model (fix/prelaunch-1); elsewhere the model trains
@@ -473,7 +473,7 @@ def recession_view_from_metrics(m: dict) -> dict[str, Any]:
     """The assistant's view of one get_recession_metrics() result."""
     series = m.get("recession_prob_series")
     prob = m.get("recession_prob")
-    view: dict[str, Any] = {"source": "NBER recession model, 12-month probability (the app's recession probability)",
+    view: dict[str, Any] = {"source": "NBER recession model: recession odds for this month, scored from inputs three months old (in-sample fit; the app's recession odds)",
                             "probability_pct": prob, "label": m.get("recession_label")}
     if series is not None and len(series):
         vals = [float(v) for v in series.values]
@@ -663,7 +663,7 @@ TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_recession_probability",
-        "description": "The recession model's 12-month recession probability in percent (the app's recession probability) with 1m / 3m / 6m priors, and separately the regime classifier's Recession Risk odds (0-1). Two different numbers, each labelled.",
+        "description": "The recession model's recession odds for this month, scored from inputs three months old, in percent (the app's recession odds; an in-sample, class-balanced logistic fit, not a calibrated probability) with 1m / 3m / 6m priors, and separately the regime classifier's Recession Risk odds (0-1). Two different numbers, each labelled.",
         "input_schema": {"type": "object", "properties": {}},
     },
     {
@@ -786,7 +786,7 @@ def _build_state_snapshot() -> str:
         rec = _tool_get_recession_probability()
         model = rec.get("recession_model") or {}
         if model.get("probability_pct") is not None:
-            parts.append(f"Recession model (12m): {model['probability_pct']:.0f}%")
+            parts.append(f"Recession model (this month, inputs three months old): {model['probability_pct']:.1f}%")
         odds = rec.get("regime_recession_risk_odds") or {}
         if odds.get("odds_now") is not None:
             parts.append(f"Regime Recession Risk odds: {odds['odds_now']:.0%}")

@@ -24,8 +24,8 @@ const BRANCH = git("rev-parse --abbrev-ref HEAD"); // the branch under test, nev
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Summary row labels in C.2 order; row 9 reads Watch, or Triggered when a signal is triggered on verify day. */
-const SUMMARY_LABELS = ["Model regime", "Model probability", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", ["Watch", "Triggered"], "Invalidates", "NBER recession model"];
-const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession model · 12m"];
+const SUMMARY_LABELS = ["Model regime", "Leading odds", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", ["Watch", "Triggered"], "Invalidates", "NBER recession model"];
+const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds · this month"];
 /** The B.5 table: option label, capture suffix and the tile symbols per tab. */
 const GLANCE_TABS = [
   { label: "Equities", file: "equities", symbols: ["SPY", "QQQ", "IWM", "EEM"] },
@@ -124,7 +124,7 @@ test.describe("dashboard (checklist 03 E.3)", () => {
     expect(computed.variation).toContain('"opsz" 30');
     const pill = page.locator("#regime-hero .mrr-pill");
     await expect(pill).toHaveCount(1);
-    expect(await visibleText(pill)).toMatch(/^\d+% probability$/i);
+    expect(await visibleText(pill)).toMatch(/^\d+% odds$/i);
     await expect(page.locator("main h2").first()).toContainText("of the same four-way odds");
     await expect(page.locator("#regime-hero")).toContainText("Current regime", { ignoreCase: true });
 

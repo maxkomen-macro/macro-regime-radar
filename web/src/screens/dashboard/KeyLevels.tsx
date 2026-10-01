@@ -79,7 +79,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             size="sm"
           />
           <Caption>
-            3-month slope of the industrial-production <Jargon term="z-score">z-score</Jargon>; feeds the regime call.
+            3-month slope of the industrial-production level; its sign feeds the regime call, and the odds use it{" "}
+            <Jargon term="z-score">z-scored</Jargon> against its history.
           </Caption>
           {classifierStamp}
         </Card>
@@ -92,7 +93,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             size="sm"
           />
           <Caption>
-            3-month slope of the CPI <Jargon term="z-score">z-score</Jargon>; feeds the regime call.
+            3-month slope of the CPI level; its sign feeds the regime call, and the odds use it{" "}
+            <Jargon term="z-score">z-scored</Jargon> against its history.
           </Caption>
           {classifierStamp}
         </Card>
@@ -159,7 +161,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
 
         <Card variant="tile" className="mrr-level-wide" tone={recessionTone(rec?.recession_label)}>
           <StatTile
-            label="Recession model · 12m"
+            label="Recession odds · this month"
             value={
               rec?.recession_prob != null ? (
                 <Metric id="recession-prob" value={rec.recession_prob}>
@@ -177,8 +179,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             {rec?.recession_prob != null ? (
               <>
                 {fmtProb(rec.recession_prob, "percent", 1)} sits in the {rec.recession_label} band (Elevated starts at 20%, High at 40%). The{" "}
-                <Jargon term="recession model">model</Jargon> trains on <Jargon term="NBER">NBER</Jargon> dates; inputs through{" "}
-                {fmtMonYr(rec.data_as_of)}.
+                <Jargon term="recession model">model</Jargon> scores this month from inputs three months old, trained on{" "}
+                <Jargon term="NBER">NBER</Jargon> dates; inputs through {rec.inputs_through ? fmtMonYr(`${rec.inputs_through}-01`) : fmtMonYr(rec.data_as_of)}.
               </>
             ) : recession.isError ? (
               missingNote(MISSING.recession, snapshot)

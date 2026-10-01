@@ -1,6 +1,6 @@
 /**
  * The hero chart under the gauge (redesign Phase 7, checklist 07 B.1.2): the
- * model's monthly 12-month odds on `LineChart` behind a mono 24M / Full
+ * model's monthly recession odds (each month scored from inputs three months old) on `LineChart` behind a mono 24M / Full
  * history `Segmented`, with the NBER recessions shaded and the 20 / 40 band
  * edges as dashed rules (drawn only when they fall inside the plotted range,
  * so a quiet 24-month window shows the mockup's plain line and Full history
@@ -62,19 +62,19 @@ export default function ProbabilityHistory({ m }: { m: RecessionMetrics }): JSX.
         <Segmented mono label="History window" options={WINDOW_OPTIONS} value={win} onChange={(id) => setWin(id as HistoryWindow)} />
       </div>
       <LineChart
-        series={[{ label: "Recession probability", color: "var(--amber)", points: plotted.map((p) => ({ x: p.date, y: p.value })) }]}
+        series={[{ label: "Recession odds", color: "var(--amber)", points: plotted.map((p) => ({ x: p.date, y: p.value })) }]}
         height={win === "24m" ? 90 : 150}
         yFmt={(v) => `${v.toFixed(0)}%`}
         bands={usrecBands(m.usrec_series ?? [])}
         hlines={RULES.map(({ y }) => ({ y }))}
         showLast={false}
-        caption="Model recession probability history with NBER recessions shaded"
+        caption="Model recession odds history with NBER recessions shaded"
       />
       {/* fix/freshness 3b: the plotted tail is the headline, the same served
           float dated the same way (B7), so the third sentence says so instead
           of calling them different numbers. The lag sentence sits behind Details. */}
       <Caption mono copyMax={3}>
-        The model&apos;s 12-month odds, monthly since {plotted[0] ? fmtMonYr(plotted[0].date) : DASH}. Shaded bands are actual{" "}
+        The model&apos;s recession odds for each month, scored from inputs three months old, monthly since {plotted[0] ? fmtMonYr(plotted[0].date) : DASH}. Shaded bands are actual{" "}
         <Jargon term="NBER">NBER</Jargon> recessions, dashed rules the 20/40 band edges.
         {tailIsHeadline && tail ? (
           <>
@@ -88,7 +88,7 @@ export default function ProbabilityHistory({ m }: { m: RecessionMetrics }): JSX.
       </Caption>
       <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
         <Caption mono style={{ marginTop: 0 }}>
-          Features enter with a 3-month lag so the line never peeks at data it wouldn&apos;t have had.
+          Inputs lagged three months; fitted and scored on the same history (in-sample), so the line is a fit, not a record of past forecasts.
         </Caption>
       </Disclosure>
     </div>

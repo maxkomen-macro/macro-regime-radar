@@ -204,7 +204,7 @@ const GROUP_LABELS = ["Equities", "Rates", "Credit", "Dollar & FX", "Metals", "E
 /** 19 on disk (5+2+2+3+2+2+2+1); the checklist's "18" is a miscount, so the count is read from the registry. */
 const MACRO_ROWS = TAPE_GROUPS.reduce((n, g) => n + g.defs.length, 0);
 const MACRO_TABLE_NAME = new RegExp(`^Macro tape: ${MACRO_ROWS} symbols in (?:${TAPE_GROUPS.length}|eight) groups$`);
-const SINGLES_CAPTION = "Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers; biggest day move on top. Off-hours the board holds at the last close until the next session opens.";
+const SINGLES_CAPTION = "Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers; biggest day move on top. Outside the regular session the board holds the last regular-session quote until the next open; pre- and post-market trades do not move it.";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -275,9 +275,9 @@ describe("MacroTape (checklist 05 B.7)", () => {
     }
     expect(text(panel())).toContain("through Sep 18, 2026");
     // M2: the provenance paragraphs sit behind Details on the same panel.
-    expect(text(panel())).not.toContain("Day moves come straight from the exchange feed");
+    expect(text(panel())).not.toContain("Day moves: each US trade is measured by the relay");
     openDetails();
-    expect(text(panel())).toContain("Day moves come straight from the exchange feed");
+    expect(text(panel())).toContain("Day moves: each US trade is measured by the relay");
     expect(text(panel())).toContain("Every row states its own as-of stamp");
     expect(text(panel())).not.toContain("return above 768px");
   });
@@ -293,7 +293,7 @@ describe("MacroTape (checklist 05 B.7)", () => {
     fireEvent.click(details);
     expect(details).toHaveAttribute("aria-expanded", "true");
     expect(text(panel())).toContain("Showing the last close: the stream is not connected, so rows print stored closes through Sep 18, 2026.");
-    expect(text(panel())).toContain("A dash under Day % means the feed sent a price without a day change");
+    expect(text(panel())).toContain("A dash under Day % means the relay has no previous close for that session yet");
     expect(text(panel())).toContain("The dashboard's VIX spike signal reads the monthly signal print");
   });
 

@@ -12,7 +12,8 @@ Primary entry point:
 
 Returns a dict with:
   hy_oas, ig_oas, ccc_oas, bb_oas, b_oas   — latest values in bps (float | None)
-  hy_1w_change, ig_1w_change, ...           — 5-business-day change in bps (float | None)
+  hy_1w_change, ig_1w_change, ...           — change from the previous month's stored row in bps, month over
+                                              month despite the name (raw_series keeps one row a month) (float | None)
   hy_ig_ratio                               — hy_oas / ig_oas (float | None)
   ccc_pct_of_distress_line                  — CCC OAS as % of the 1,000 bps distress line (float | None;
                                               may exceed 100: a level vs a threshold, not a share)

@@ -19,7 +19,7 @@
 import { useMemo, type ReactNode } from "react";
 import { Card, SectionHeader, Tag } from "../../components";
 import { useRecessionScenario } from "../../api/queries";
-import type { RecessionScenarioRequest } from "../../api/types";
+import type { RecessionMetrics, RecessionScenarioRequest } from "../../api/types";
 import { fmtMonYr, fmtProb, fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
@@ -32,6 +32,26 @@ import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
 const DASH = "—";
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const month = (ym: string | undefined) => {
+  const [y, m] = (ym ?? "").split("-").map(Number);
+  return y && m ? `${MONTHS[m - 1]} ${y}` : null;
+};
+
+/** fix/freshness 4: "Latest readings: curve, HY spread and breakevens from Sep 2026, unemployment and industrial
+ * production from Aug 2026." from the served current_input_months; null without them. */
+export function latestWords(m: Pick<RecessionMetrics, "current_input_months"> | null | undefined): string | null {
+  const c = m?.current_input_months;
+  if (!c) return null;
+  const daily = month(c.yield_curve) && month(c.yield_curve) === month(c.hy_spread) && month(c.hy_spread) === month(c.lei_proxy) ? month(c.yield_curve) : null;
+  const monthly = month(c.unemployment) && month(c.unemployment) === month(c.indpro_yoy) ? month(c.unemployment) : null;
+  if (daily && monthly) return `Latest readings: curve, HY spread and breakevens from ${daily}, unemployment and industrial production from ${monthly}.`;
+  const parts = ([["curve", c.yield_curve], ["HY spread", c.hy_spread], ["breakevens", c.lei_proxy], ["unemployment", c.unemployment], ["industrial production", c.indpro_yoy]] as const)
+    .map(([k, v]) => (month(v) ? `${k} ${month(v)}` : null))
+    .filter(Boolean);
+  return parts.length ? `Latest readings: ${parts.join(", ")}.` : null;
+}
 
 export default function SensitivityPanel({ m, status, inputs, onInputsChange }: SensitivityPanelProps): JSX.Element {
   const { isNarrow } = useBreakpoint();
@@ -101,6 +121,8 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
         <div className="mrr-rec-sens">
           <Card variant="tile" padding="6px 18px 8px" style={{ minWidth: 0 }}>
             <div style={{ ...eyebrowStyle, margin: "8px 0 4px" }}>Model inputs · {inputs ? "modified by you" : "seeded from current readings"}</div>
+            {/* fix/freshness 4: which month each latest reading is from (served current_input_months). */}
+            {latestWords(m) ? <div style={{ ...capStyle, marginTop: 0, marginBottom: 6 }}>{latestWords(m)}</div> : null}
             <SliderRow
               label="Yield curve 2s10s"
               valueText={`${effective.yield_curve_bps >= 0 ? "+" : ""}${effective.yield_curve_bps} bps`}
@@ -275,8 +297,9 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                   )}
                   {/* X19 caption (RecessionScreen.tsx:573-578 before Phase 7), verbatim. */}
                   <Caption>
-                    The headline scores 3-month-lagged inputs (the model never peeks); these sliders score the readings as if they were today&apos;s features,
-                    so the starting position sits near, not on, the headline. Same fitted coefficients, same scaler.
+                    The headline scores inputs lagged three months; fitted and scored on the same history (in-sample). These sliders score the latest readings as if
+                    they were the model&apos;s inputs, so the starting position sits near, not on, the headline: roughly what the headline will score in three
+                    months. Same fitted coefficients, same scaler.
                   </Caption>
                 </>
               ) : (

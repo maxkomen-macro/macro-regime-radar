@@ -188,7 +188,10 @@ def test_api_priced_groups_and_units():
     rows = client.get("/api/priced").json()
     assert isinstance(rows, list)
     if rows:
-        assert set(rows[0]) == {"group", "metric", "label", "unit", "date", "value", "mom_chg"}
+        # fix/freshness 4: observation_month, the observation's own month ("YYYY-MM"), beside the run date.
+        assert set(rows[0]) == {"group", "metric", "label", "unit", "date", "value", "mom_chg", "observation_month"}
+        for r in rows:
+            assert r["observation_month"] is None or (len(r["observation_month"]) == 7 and r["observation_month"] <= r["date"][:7])
         groups = {r["group"] for r in rows}
         assert groups <= {"Policy rate proxies", "Inflation breakevens", "Real yields (TIPS)"}
 

@@ -1,6 +1,6 @@
 /**
  * Single-name movers (Iteration 1, M3a): the three biggest gainers and the
- * three biggest losers among the twelve stored single names (`SINGLE_NAMES`),
+ * three biggest losers among the twelve streamed single names (`SINGLE_NAMES`),
  * under the sector heatmap. Each tile opens that ticker's single-name
  * research panel (the screen routes it through `?name=`, the watchlist path).
  *
@@ -213,7 +213,7 @@ export default function Movers({ read, onOpen }: { read: MoversRead; onOpen: (sy
       <SectionHeader
         layout="panel"
         title="Single-name movers"
-        description="Day moves of the twelve stored names; each opens its research panel"
+        description="Day moves of the twelve streamed names; each opens its research panel"
         right={
           <MetaWithStamp
             meta="stream change, else last close"

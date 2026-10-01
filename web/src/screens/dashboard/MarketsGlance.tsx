@@ -28,7 +28,7 @@ import { Card, SectionHeader, Segmented, StatTile } from "../../components";
 import { useMarketDaily, usePriced } from "../../api/queries";
 import type { DailyBar, PricedMetric } from "../../api/types";
 import { useQuotes, type LiveQuote } from "../../live/quotes";
-import { fmtDate, fmtSigned, fmtSignedPct } from "../../lib/format";
+import { fmtSigned, fmtSignedPct } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { quoteFor } from "../shell/quote-ladder";
 import { QuoteSlots, SPARK_H, SPARK_W, type QuoteCardProps } from "../shell/QuoteCard";
@@ -36,6 +36,7 @@ import Jargon from "../shared/Jargon";
 import { Caption, MISSING, StateNote, metaStyle, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import { SRC, Stamp, quoteStamp } from "../shared/Stamp";
 import { useFreshReport, type FreshReport } from "../shared/useFreshReport";
+import { pricedWhen } from "../shared/priced-when";
 import { GLANCE_DAILY_SYMBOLS, GLANCE_TABS, glanceTabFromHash, type GlanceSymbol, type GlanceTabId } from "./glance-symbols";
 
 export interface MarketsGlanceProps {
@@ -141,7 +142,8 @@ function PricedPanel({ priced, report }: { priced: UseQueryResult<PricedMetric[]
                   size="sm"
                 />
                 <Caption>
-                  {p.group.toLowerCase()} · weekly pipeline · {fmtDate(p.date)}
+                  {p.group.toLowerCase()}
+                  {pricedWhen(p) ? ` · ${pricedWhen(p)}` : ""}
                 </Caption>
                 <Stamp block source={SRC.fred} label={report.series(p.metric)} style={{ marginTop: 4 }} />
               </div>
@@ -158,7 +160,7 @@ function PricedPanel({ priced, report }: { priced: UseQueryResult<PricedMetric[]
             ? "Market-implied pricing unavailable: the data service did not answer."
             : priced.isLoading
               ? "Reading market-implied pricing…"
-              : "No priced metrics on file; the weekly pipeline has not written them yet."}
+              : "No priced metrics on file; the full refresh has not written them yet."}
         </div>
       )}
       <div>

@@ -110,9 +110,9 @@ const NULL_INPUT = recessionFixture({ current_inputs: { unrate: 4.1, hy_oas: 270
 
 const READY = { isLoading: false, isError: false };
 const LEDE_MATERIAL =
-  "The logistic model scores twelve-month odds against a ~15% historical base rate; Elevated starts at 20%, High Risk at 40%. Macro ahead of markets: credit pricing and the model disagree. The divergence is material and requires judgment. This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
+  "The logistic model scores recession odds for this month from inputs three months old; recession months are 7% of its training months, and it is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. Macro ahead of markets: credit pricing and the model disagree. The divergence is material and requires judgment. This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 const LEDE_ALIGNED =
-  "The logistic model scores twelve-month odds against a ~15% historical base rate; Elevated starts at 20%, High Risk at 40%. Aligned: credit pricing and the model tell one story. This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
+  "The logistic model scores recession odds for this month from inputs three months old; recession months are 7% of its training months, and it is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. Aligned: credit pricing and the model tell one story. This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 const GLOW_MINT = "rgba(38,220,160,.07)";
 const GLOW_AMBER = "rgba(245,181,46,.06)";
 const GLOW_GRAY = "rgba(200,210,220,.05)";
@@ -230,12 +230,12 @@ describe("heroCopy (checklist 07 C.1 rules 1 to 6)", () => {
   });
 
   it("rule 2: the subhead states the three-month change in points: up, down, unchanged, or the NBER sentence without four stored months", () => {
-    expect(heroCopy(BASE).subhead).toBe("Twelve-month odds, up 1.4 points in three months.");
-    expect(heroCopy(DOWN).subhead).toBe("Twelve-month odds, down 1.4 points in three months.");
-    expect(heroCopy(FLAT).subhead).toBe("Twelve-month odds, unchanged over three months.");
-    expect(heroCopy(SHORT).subhead).toBe("Twelve-month odds from the NBER-trained model.");
-    expect(heroCopy(EMPTY).subhead).toBe("Twelve-month odds from the NBER-trained model.");
-    for (const m of [BASE, DOWN, FLAT, SHORT]) expect(heroCopy(m).subhead.startsWith("Twelve-month odds")).toBe(true);
+    expect(heroCopy(BASE).subhead).toBe("Recession odds for this month, up 1.4 points in three months.");
+    expect(heroCopy(DOWN).subhead).toBe("Recession odds for this month, down 1.4 points in three months.");
+    expect(heroCopy(FLAT).subhead).toBe("Recession odds for this month, unchanged over three months.");
+    expect(heroCopy(SHORT).subhead).toBe("Recession odds for this month, scored from inputs three months old.");
+    expect(heroCopy(EMPTY).subhead).toBe("Recession odds for this month, scored from inputs three months old.");
+    for (const m of [BASE, DOWN, FLAT, SHORT]) expect(heroCopy(m).subhead.startsWith("Recession odds for this month")).toBe(true);
   });
 
   it("rule 2: the subhead's points figure equals the 3 months ago row's delta at 0.1 resolution", () => {
@@ -248,7 +248,7 @@ describe("heroCopy (checklist 07 C.1 rules 1 to 6)", () => {
   it("rule 3: the lede is X4 with the three edits, the divergence clause following the served score, and a Jargon node behind ledeText", () => {
     const c = heroCopy(BASE);
     expect(c.ledeText).toBe(LEDE_MATERIAL);
-    expect(c.ledeText).toContain("recession model's own probability");
+    expect(c.ledeText).toContain("recession model's own score");
     expect(c.ledeText).toContain("High Risk at 40%");
     expect(c.ledeText).not.toContain("in the header");
     expect(c.ledeText).not.toContain("11.6");
@@ -264,11 +264,11 @@ describe("heroCopy (checklist 07 C.1 rules 1 to 6)", () => {
 
   it("rule 4: the note names the served band and its range with the base rate and the 2008 peak, without the number", () => {
     const c = heroCopy(BASE);
-    expect(c.note).toBe("Sits in the Low Risk band (under 20%); the historical base rate runs ~15% and 2008 peaked near 89%.");
+    expect(c.note).toBe("Sits in the Low Risk band (under 20%); recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.");
     expect(c.note).toContain("Low Risk band (under 20%)");
     expect(c.note).toContain("2008 peaked near 89%");
     expect(c.note).not.toContain("11.6");
-    expect(heroCopy(recessionFixture({ recession_label: "High Risk" })).note).toBe("Sits in the High Risk band (40% and above); the historical base rate runs ~15% and 2008 peaked near 89%.");
+    expect(heroCopy(recessionFixture({ recession_label: "High Risk" })).note).toBe("Sits in the High Risk band (40% and above); recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.");
   });
 
   it("rule 5: the footnote names the input count with the 3-month lag and the month the headline scores; the second item drops without a headline point", () => {

@@ -305,14 +305,26 @@ def _latest_metric(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
 def priced_metrics() -> list[dict]:
     """What's Priced — policy proxies, breakevens, real yields written to
     derived_metrics by src/analytics/priced.py, each from its own most-recent
-    date (per-name latest, mirroring db_helpers.get_derived_latest)."""
+    date (per-name latest, mirroring db_helpers.get_derived_latest).
+
+    `date` is the run that wrote the level (priced.py keys it to the run
+    date). fix/freshness 4: `observation_month` ("YYYY-MM") is the month of
+    the observation itself: the month-over-month row is dated by it
+    (priced.py writes it at the series' own latest month), else the series'
+    source watermark."""
     out: list[dict] = []
     with closing(_connect()) as conn:
+        marks = (
+            {r["source"]: r["last_obs"] for r in conn.execute("SELECT source, last_obs FROM source_watermarks WHERE source LIKE 'fred:%'")}
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='source_watermarks'").fetchone()
+            else {}
+        )
         for group, base, label, unit in PRICED_METRICS:
             val = _latest_metric(conn, f"{base}_latest")
             if not val:
                 continue
             chg = _latest_metric(conn, f"{base}_mom_chg")
+            observed = (chg["date"] if chg else None) or marks.get(f"fred:{base}")
             out.append(
                 {
                     "group": group,
@@ -322,6 +334,7 @@ def priced_metrics() -> list[dict]:
                     "date": val["date"],
                     "value": val["value"],
                     "mom_chg": chg["value"] if chg else None,
+                    "observation_month": str(observed)[:7] if observed else None,
                 }
             )
     return out
