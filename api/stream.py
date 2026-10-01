@@ -41,6 +41,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import os
 import random
 import time
@@ -131,13 +132,23 @@ def rest_interval(open_seconds: float, now: datetime | None = None) -> float:
 
 
 def _f(x: Any) -> float | None:
-    """EODHD sends numbers as strings in some feeds — parse defensively."""
+    """EODHD sends numbers as strings in some feeds — parse defensively. A
+    non-finite value ("Infinity", "NaN") is no number: it would reach the
+    browser as invalid JSON and fail the whole batch (Codex R-03)."""
     if x is None:
         return None
     try:
-        return float(x)
+        v = float(x)
     except (TypeError, ValueError):
         return None
+    return v if math.isfinite(v) else None
+
+
+def target_session(now: datetime) -> date:
+    """The US session a previous close is kept FOR: today when today is a
+    trading day, else the next one (Codex R-01)."""
+    d = now.astimezone(cal.NY).date()
+    return d if cal.is_trading_day(d) else cal.next_trading_day(d)
 
 
 def _iso(ts: float | None) -> str | None:
@@ -200,6 +211,11 @@ class QuoteHub:
         # session it is the previous close FOR). Kept from REST rows; a US tick
         # reads it only when the tick belongs to that session.
         self._prev_close: dict[str, tuple[float, date]] = {}
+        # How each anchor was learned (Codex R-01): ("a", ts) from a row dated
+        # the target session (its previousClose), ("b", ts) from the previous
+        # session's row at or before that session's close (its close). An "a"
+        # anchor supersedes a "b" one; nothing else sets or overwrites either.
+        self._prev_close_how: dict[str, tuple[str, float]] = {}
         # Ops counters for /api/stream/debug — how many raw frames each feed
         # delivered, how often it (re)connected, and what got stored/flushed.
         self.stats: dict[str, Any] = {
@@ -674,25 +690,66 @@ class QuoteHub:
         if day != session:
             return None, None
         dd = price - prev
-        return round(dd / prev * 100.0, 4), round(dd, 4)
+        dc = dd / prev * 100.0
+        if not (math.isfinite(dc) and math.isfinite(dd)):
+            return None, None  # Codex R-03: never cache or broadcast a non-finite change
+        return round(dc, 4), round(dd, 4)
 
     def _note_prev_close(self, sym: str, row: dict, ts: float | None, now: datetime | None) -> None:
-        """Keep a US symbol's previous regular-session close from its REST row.
-        A row from today's New York session carries it as previousClose; a row
-        from an earlier session (pre-open, a holiday, a name that has not
-        printed yet today) is itself the last close before today's session."""
+        """Keep a US symbol's previous regular-session close from its REST row
+        (Codex R-01). The anchor is FOR the target session (today if it is a
+        trading day, else the next one) and is accepted only from
+          (a) a row dated the target session: its previousClose, or
+          (b) a row dated the trading session immediately before the target,
+              stamped at or before that session's regular close (early closes
+              included): its close.
+        Any other row (an older session, an after-the-close print, a clock
+        fault) sets nothing and never overwrites a valid anchor; (a)
+        supersedes (b). A new or changed anchor re-prices the retained WS
+        quote of that session (Codex R-02)."""
         if ts is None:
             return
-        today = (now or datetime.now(timezone.utc)).astimezone(cal.NY).date()
+        target = target_session(now or datetime.now(timezone.utc))
         row_day = _ny_day(ts)
-        if row_day < today:
-            prev = _f(row.get("close"))
-        elif row_day == today:
-            prev = _f(row.get("previousClose"))
+        if row_day == target:
+            how, prev = "a", _f(row.get("previousClose"))
+        elif row_day == cal.previous_trading_day(target):
+            bounds = cal.session_bounds(row_day)
+            if bounds is None or ts > bounds[1].timestamp():
+                return  # after that session's close: not its regular close
+            how, prev = "b", _f(row.get("close"))
         else:
-            return  # a row dated after today is a clock fault
-        if prev is not None and prev > 0:
-            self._prev_close[sym] = (prev, today)
+            return  # an older session, or a clock fault
+        if prev is None or prev <= 0:
+            return  # Codex R-03: finite (via _f) and positive only
+        kept = self._prev_close.get(sym)
+        kept_how = self._prev_close_how.get(sym)
+        if kept is not None and kept[1] == target and kept_how is not None:
+            if kept_how[0] == "a" and how == "b":
+                return  # (a) supersedes (b)
+            if kept_how[0] == how and ts < kept_how[1]:
+                return  # an older row of the same kind never replaces a newer one
+        self._prev_close_how[sym] = (how, ts)
+        if kept == (prev, target):
+            return
+        self._prev_close[sym] = (prev, target)
+        self._reprice_ws(sym)
+
+    def _reprice_ws(self, sym: str) -> None:
+        """Codex R-02: when a symbol's anchor is set or changes, recompute the
+        day change of its retained WS quote for that session from the quote's
+        own price, keeping its price and timestamp, and send it again."""
+        q = self.quotes.get(sym)
+        if not q or q.get("src") != "ws" or self._feed_of(sym) != "us":
+            return
+        price = _f(q.get("p"))
+        if price is None or q.get("t") is None:
+            return
+        dc, dd = self._day_change(sym, price, q["t"])
+        if dc is None or (dc, dd) == (q.get("dc"), q.get("dd")):
+            return
+        self.quotes[sym] = {**q, "dc": dc, "dd": dd}
+        self._dirty.add(sym)
 
     # ── upstream: REST delayed quotes (VIX + off-hours seed) ─────────────────
 

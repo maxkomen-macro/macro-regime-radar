@@ -230,3 +230,141 @@ def test_recorded_frames_through_the_real_socket_loop(monkeypatch):
         assert h.quotes[sym]["p"] == p
         assert h.quotes[sym]["dc"] == pytest.approx(_pct(p, CLOSES[sym][0]))
     assert h.stats["us_ticks_held"] == 1
+
+
+# ── Codex round 1 (R-01, R-02, R-03): which rows may set the anchor ─────────
+# Sep 30 2026 is a Wednesday, Oct 1 a Thursday, Oct 2 a Friday; EDT is UTC−4.
+
+FRI_NOON = _utc(2026, 10, 2, 16)  # 12:00 ET Friday Oct 2
+WED_CLOSE = _utc(2026, 9, 30, 20)  # 16:00 ET Wednesday
+THU_LAST_REGULAR = _utc(2026, 10, 1, 19, 59, 30)  # 15:59:30 ET Thursday
+THU_AFTER_HOURS = _utc(2026, 10, 1, 20, 15)  # 16:15 ET Thursday
+
+
+def _row_at(sym: str, close: float, at: datetime, prev: float | None = None) -> dict:
+    return _rest_row(sym, close, prev if prev is not None else close, at)
+
+
+@pytest.mark.parametrize("order", ["wednesday_first", "thursday_first"])
+def test_r01_an_older_sessions_close_never_anchors_fridays_session(order):
+    """Codex R-01: Wednesday's close 90 must not price Friday against Thursday's 100."""
+    h = _hub()
+    rows = [_row_at("SPY", 90.0, WED_CLOSE), _row_at("SPY", 100.0, THU_LAST_REGULAR)]
+    for row in rows if order == "wednesday_first" else rows[::-1]:
+        h._store_rest_quote(row, delayed=True, now=FRI_NOON)
+    assert h._prev_close["SPY"] == (100.0, datetime(2026, 10, 2).date())
+    h._handle_tick("us", _us_frame("SPY", 102.0, FRI_NOON))
+    assert h.quotes["SPY"]["dc"] == pytest.approx(2.0)  # not +13.3333
+    assert h.quotes["SPY"]["dd"] == pytest.approx(2.0)
+
+
+def test_r01_a_row_after_the_previous_sessions_close_sets_no_anchor_and_overwrites_none():
+    h = _hub()
+    h._store_rest_quote(_row_at("SPY", 110.0, THU_AFTER_HOURS), delayed=True, now=FRI_NOON)
+    assert "SPY" not in h._prev_close  # Thursday 16:15 ET is not Thursday's regular close
+    h._handle_tick("us", _us_frame("SPY", 102.0, FRI_NOON))
+    assert h.quotes["SPY"]["dc"] is None and h.quotes["SPY"]["dd"] is None  # not −7.2727
+    # Thursday's regular close arrives; a later after-hours row never replaces it.
+    h._store_rest_quote(_row_at("SPY", 100.0, THU_LAST_REGULAR), delayed=True, now=FRI_NOON)
+    h._store_rest_quote(_row_at("SPY", 110.0, THU_AFTER_HOURS), delayed=True, now=FRI_NOON)
+    assert h._prev_close["SPY"] == (100.0, datetime(2026, 10, 2).date())
+
+
+def test_r01_a_row_dated_the_target_session_supersedes_the_previous_sessions_close():
+    h = _hub()
+    friday = datetime(2026, 10, 2).date()
+    h._store_rest_quote(_row_at("SPY", 100.0, THU_LAST_REGULAR), delayed=True, now=FRI_NOON)
+    assert h._prev_close["SPY"] == (100.0, friday)
+    # Friday's own row: its previousClose is the official Thursday close.
+    h._store_rest_quote(_rest_row("SPY", 101.0, 100.25, _utc(2026, 10, 2, 15, 45)), delayed=True, now=FRI_NOON)
+    assert h._prev_close["SPY"] == (100.25, friday)
+    # A (b) row arriving later never takes the anchor back.
+    h._store_rest_quote(_row_at("SPY", 100.0, _utc(2026, 10, 1, 19, 59, 59)), delayed=True, now=FRI_NOON)
+    assert h._prev_close["SPY"] == (100.25, friday)
+    # A row dated after the target session is a clock fault: nothing changes.
+    h._store_rest_quote(_rest_row("SPY", 99.0, 50.0, _utc(2026, 10, 5, 15)), delayed=True, now=FRI_NOON)
+    assert h._prev_close["SPY"] == (100.25, friday)
+
+
+def test_r01_on_a_weekend_the_anchor_is_for_mondays_session():
+    h = _hub()
+    saturday = _utc(2026, 10, 3, 15)
+    fri_last_regular = _utc(2026, 10, 2, 19, 59, 50)
+    h._store_rest_quote(_row_at("SPY", 103.0, fri_last_regular), delayed=True, now=saturday)
+    assert h._prev_close["SPY"] == (103.0, datetime(2026, 10, 5).date())
+    h._handle_tick("us", _us_frame("SPY", 104.03, _utc(2026, 10, 5, 13, 31)))  # 09:31 ET Monday
+    assert h.quotes["SPY"]["dc"] == pytest.approx(1.0)
+
+
+def test_r01_an_early_close_day_bounds_its_regular_close_at_1300():
+    """Fri Nov 27 2026 closes at 13:00 ET (EST, UTC−5): a 12:59 row anchors
+    Monday Nov 30; a 13:20 row is after that day's close and is refused."""
+    assert datetime(2026, 11, 27).date() in cal.EARLY_CLOSES[2026]
+    h = _hub()
+    monday_pre = _utc(2026, 11, 30, 13)  # 08:00 ET Monday
+    h._store_rest_quote(_row_at("SPY", 805.0, _utc(2026, 11, 27, 18, 20)), delayed=True, now=monday_pre)
+    assert "SPY" not in h._prev_close
+    h._store_rest_quote(_row_at("SPY", 800.0, _utc(2026, 11, 27, 17, 59, 30)), delayed=True, now=monday_pre)
+    assert h._prev_close["SPY"] == (800.0, datetime(2026, 11, 30).date())
+    h._store_rest_quote(_row_at("SPY", 805.0, _utc(2026, 11, 27, 18, 20)), delayed=True, now=monday_pre)
+    assert h._prev_close["SPY"] == (800.0, datetime(2026, 11, 30).date())
+    h._handle_tick("us", _us_frame("SPY", 808.0, _utc(2026, 11, 30, 15)))  # 10:00 ET
+    assert h.quotes["SPY"]["dc"] == pytest.approx(1.0)
+
+
+def test_r02_learning_the_anchor_reprices_the_retained_ws_quote():
+    """Codex R-02: a noon WS tick at 102 with no anchor, then an 11:45 REST row
+    with previousClose 100: the retained quote gets +2% at once, keeping its
+    own price and timestamp, and is sent again."""
+    h = _hub()
+    noon = _utc(2026, 10, 1, 16)
+    h._handle_tick("us", _us_frame("SPY", 102.0, noon))
+    assert h.quotes["SPY"]["dc"] is None
+    h._dirty.clear()
+    h._store_rest_quote(_rest_row("SPY", 101.5, 100.0, _utc(2026, 10, 1, 15, 45)), delayed=True, now=noon)
+    q = h.quotes["SPY"]
+    assert q["src"] == "ws" and q["p"] == 102.0 and q["t"] == _ms(noon)  # the older REST row did not replace it
+    assert q["dc"] == pytest.approx(2.0) and q["dd"] == pytest.approx(2.0)
+    assert "SPY" in h._dirty
+    # A changed anchor (a later row of the same kind) re-prices it again.
+    h._store_rest_quote(_rest_row("SPY", 101.6, 101.0, _utc(2026, 10, 1, 15, 50)), delayed=True, now=noon)
+    assert h.quotes["SPY"]["dc"] == pytest.approx(round(1.0 / 101.0 * 100, 4))
+
+
+def test_r02_restart_mid_session_with_a_quiet_name():
+    """The relay restarts at 11:00 ET. AAPL has not traded today: its REST row
+    is Wednesday's last regular trade (anchor b). MSFT's row is an after-hours
+    print (no anchor) until a row dated today arrives, which re-prices the WS
+    quote already on the board."""
+    h = _hub()
+    restart = _utc(2026, 10, 1, 15)  # 11:00 ET Thursday
+    h._store_rest_quote(_row_at("AAPL", 255.10, _utc(2026, 9, 30, 19, 59, 58), prev=252.0), delayed=True, now=restart)
+    h._store_rest_quote(_row_at("MSFT", 500.0, _utc(2026, 9, 30, 21, 30), prev=498.0), delayed=True, now=restart)
+    assert h._prev_close["AAPL"] == (255.10, datetime(2026, 10, 1).date())
+    assert "MSFT" not in h._prev_close
+    h._handle_tick("us", _us_frame("AAPL", 257.65, _utc(2026, 10, 1, 15, 30)))
+    assert h.quotes["AAPL"]["dc"] == pytest.approx(_pct(257.65, 255.10))
+    h._handle_tick("us", _us_frame("MSFT", 505.0, _utc(2026, 10, 1, 15, 31)))
+    assert h.quotes["MSFT"]["dc"] is None
+    h._store_rest_quote(_rest_row("MSFT", 504.0, 499.0, _utc(2026, 10, 1, 15, 16)), delayed=True, now=_utc(2026, 10, 1, 15, 35))
+    assert h.quotes["MSFT"]["p"] == 505.0 and h.quotes["MSFT"]["dc"] == pytest.approx(_pct(505.0, 499.0))
+
+
+def test_r03_non_finite_numbers_set_no_anchor_and_never_reach_the_wire():
+    h = _hub()
+    noon = _utc(2026, 10, 1, 16)
+    row = _rest_row("SPY", 101.0, 100.0, _utc(2026, 10, 1, 15, 45))
+    row["previousClose"] = "Infinity"
+    h._store_rest_quote(row, delayed=True, now=noon)
+    assert "SPY" not in h._prev_close
+    h._handle_tick("us", _us_frame("SPY", 102.0, noon))
+    assert h.quotes["SPY"]["dc"] is None and h.quotes["SPY"]["dd"] is None
+    # A non-finite price, change or anchor of any kind is dropped before it is stored.
+    h._store_rest_quote({"code": "QQQ.US", "close": "NaN", "timestamp": int(noon.timestamp())}, delayed=True, now=noon)
+    assert "QQQ" not in h.quotes
+    h._store_rest_quote({"code": "IWM.US", "close": 200.0, "change_p": "Infinity", "change": "-Infinity", "previousClose": "-Infinity", "timestamp": int(noon.timestamp())}, delayed=True, now=noon)
+    assert h.quotes["IWM"]["dc"] is None and h.quotes["IWM"]["dd"] is None and "IWM" not in h._prev_close
+    h._handle_tick("us", {"s": "DIA", "p": "Infinity", "ms": "open", "t": _ms(noon)})
+    assert "DIA" not in h.quotes
+    # Everything stored serializes as strict JSON (what the browser's JSON.parse accepts).
+    json.dumps({"type": "quotes", "items": list(h.quotes.values())}, allow_nan=False)
