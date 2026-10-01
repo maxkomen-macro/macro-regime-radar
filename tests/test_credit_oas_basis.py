@@ -1,0 +1,128 @@
+"""/api/credit/oas changes say what they are measured against (fix/freshness 2).
+
+raw_series keeps one row per month for a FRED daily series (the newest
+in-month value, dated the 1st), so the old 7-day lookback on it reached the
+previous month's row: the 10Y "+49 bps 1W" on 2026-09-28 was the change since
+Aug 31 (5.24 − 4.75); the true week was +28 bp (5.24 − 4.96 on Sep 21).
+desk_series holds DGS10 and the HY OAS by observation date. Each change label
+must map to its lookback: "1w" only for a true seven-calendar-day change,
+"month_end" against the previous month's row.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from datetime import date, timedelta
+from pathlib import Path
+
+import pytest
+
+from api import db
+
+
+def _weekdays(start: date, end: date) -> list[date]:
+    out, d = [], start
+    while d <= end:
+        if d.weekday() < 5:
+            out.append(d)
+        d += timedelta(days=1)
+    return out
+
+
+def _store(path: Path, *, desk: dict[str, dict[str, float]] | None, raw: dict[str, dict[str, float]], marks: dict[str, str]) -> None:
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE raw_series (series_id TEXT, date TEXT, value REAL, PRIMARY KEY (series_id, date))")
+    conn.execute("CREATE TABLE source_watermarks (source TEXT PRIMARY KEY, last_obs TEXT, last_value REAL, advanced_at TEXT, checked_at TEXT, status TEXT, detail TEXT)")
+    if desk is not None:
+        conn.execute("CREATE TABLE desk_series (series_id TEXT, date TEXT, value REAL, provider TEXT, PRIMARY KEY (series_id, date))")
+        for sid, rows in desk.items():
+            conn.executemany("INSERT INTO desk_series VALUES (?, ?, ?, 'FRED')", [(sid, d, v) for d, v in rows.items()])
+    for sid, rows in raw.items():
+        conn.executemany("INSERT INTO raw_series VALUES (?, ?, ?)", [(sid, d, v) for d, v in rows.items()])
+    for source, last in marks.items():
+        conn.execute("INSERT INTO source_watermarks (source, last_obs) VALUES (?, ?)", (source, last))
+    conn.commit()
+    conn.close()
+
+
+# The 2026-09 record (FRED's own CSV, /tmp/mrr-brief/notes/fred_DGS10.csv; desk_series on the release DB).
+DGS10_DAILY = {
+    "2026-09-14": 4.90, "2026-09-15": 4.92, "2026-09-16": 4.93, "2026-09-17": 4.94, "2026-09-18": 5.01,
+    "2026-09-21": 4.96, "2026-09-22": 4.96, "2026-09-23": 5.11, "2026-09-24": 5.18, "2026-09-25": 5.17, "2026-09-28": 5.24,
+}
+HY_DAILY = {"2026-09-21": 2.66, "2026-09-22": 2.68, "2026-09-23": 2.73, "2026-09-24": 2.80, "2026-09-25": 2.93, "2026-09-28": 3.02, "2026-09-29": 3.08}
+RAW = {
+    "DGS10": {"2026-08-01": 4.75, "2026-09-01": 5.24},
+    "BAMLH0A0HYM2": {"2026-08-01": 2.63, "2026-09-01": 3.08},
+    "BAMLC0A0CM": {"2026-08-01": 0.80, "2026-09-01": 0.84},
+}
+MARKS = {"fred:DGS10": "2026-09-28", "fred:BAMLH0A0HYM2": "2026-09-29", "fred:BAMLC0A0CM": "2026-09-29"}
+DAYS = 3650  # the window runs from date('now'); wide enough to hold the fixed 2026 rows
+
+
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    def make(**kw):
+        path = tmp_path / "macro_radar.db"
+        _store(path, **kw)
+        monkeypatch.setattr(db, "DB_PATH", path)
+        return {s["series_id"]: s for s in db.credit_oas(DAYS)["series"]}
+
+    return make
+
+
+def test_the_10y_reads_a_true_week_from_the_daily_store_not_the_month_row(store):
+    out = store(desk={"DGS10": DGS10_DAILY, "BAMLH0A0HYM2": HY_DAILY}, raw=RAW, marks=MARKS)
+    ten = out["DGS10"]
+    assert ten["date"] == "2026-09-28"  # the observation's own date, never "2026-09-01"
+    assert ten["change_basis"] == "1w" and ten["change_from"] == "2026-09-21"
+    assert ten["change_bps"] == pytest.approx(28.0)  # not the month row's +49
+    assert ten["change_1w_bps"] == pytest.approx(28.0)
+    assert ten["history_basis"] == "daily" and len(ten["history"]) == len(DGS10_DAILY)
+    hy = out["BAMLH0A0HYM2"]
+    assert (hy["change_basis"], hy["change_from"]) == ("1w", "2026-09-22")
+    assert hy["change_bps"] == pytest.approx(40.0)
+
+
+def test_a_month_stamped_series_reads_against_the_previous_month_and_never_claims_a_week(store):
+    out = store(desk={"DGS10": DGS10_DAILY}, raw=RAW, marks=MARKS)
+    ig = out["BAMLC0A0CM"]
+    assert (ig["change_basis"], ig["change_from"]) == ("month_end", "2026-08")
+    assert ig["change_bps"] == pytest.approx(4.0)
+    assert ig["change_1w_bps"] is None
+    assert ig["date"] == "2026-09-29"  # the watermark's true date inside the September row's month
+    assert ig["history_basis"] == "monthly"
+
+
+def test_a_daily_store_behind_the_month_row_is_not_read(store):
+    behind = {d: v for d, v in HY_DAILY.items() if d <= "2026-09-25"}
+    hy = store(desk={"BAMLH0A0HYM2": behind}, raw=RAW, marks=MARKS)["BAMLH0A0HYM2"]
+    assert hy["change_basis"] == "month_end" and hy["value_pct"] == 3.08 and hy["date"] == "2026-09-29"
+
+
+def test_a_hole_wider_than_ten_days_prints_no_week(store):
+    holey = {"2026-09-10": 4.80, "2026-09-28": 5.24}
+    ten = store(desk={"DGS10": holey}, raw=RAW, marks=MARKS)["DGS10"]
+    assert ten["change_bps"] is None and ten["change_basis"] is None and ten["change_1w_bps"] is None
+
+
+def test_without_a_desk_store_every_series_is_month_end(store):
+    out = store(desk=None, raw=RAW, marks=MARKS)
+    assert {s["change_basis"] for s in out.values()} == {"month_end"}
+    assert out["DGS10"]["change_bps"] == pytest.approx(49.0) and out["DGS10"]["change_from"] == "2026-08"
+
+
+@pytest.mark.skipif(not (Path(__file__).resolve().parents[1] / "data" / "macro_radar.db").exists(), reason="macro_radar.db not present")
+def test_every_served_label_maps_to_its_lookback_on_the_stored_database(monkeypatch):
+    monkeypatch.setattr(db, "DB_PATH", Path(__file__).resolve().parents[1] / "data" / "macro_radar.db")
+    for s in db.credit_oas(90)["series"]:
+        basis, frm = s["change_basis"], s["change_from"]
+        if basis == "1w":
+            gap = (date.fromisoformat(s["date"]) - date.fromisoformat(frm)).days
+            assert 7 <= gap <= db.WEEK_MAX_GAP_DAYS, (s["series_id"], s["date"], frm)
+            assert s["change_1w_bps"] == s["change_bps"] and s["history_basis"] == "daily"
+        elif basis == "month_end":
+            assert len(frm) == 7 and frm < s["date"][:7], (s["series_id"], frm, s["date"])
+            assert s["change_1w_bps"] is None
+        else:
+            assert s["change_bps"] is None and s["change_1w_bps"] is None

@@ -136,6 +136,10 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
   const location = useLocation();
   const requested = chartFromHash(location.hash);
   const hy = credit.data?.series.find((s) => s.label === "HY");
+  // fix/freshness 2: HY is read from the true-dated daily store; IG is still
+  // one stored row per month, and the caption says which is which.
+  const basisWords = (b: string | null | undefined, who: string) =>
+    b === "daily" ? `${who} daily observations` : `${who} one value per month (its newest)`;
   const ig = credit.data?.series.find((s) => s.label === "IG");
   // A1: each chart names its source and as-of under its caption.
   const report = useFreshReport();
@@ -248,8 +252,8 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                     ) : (
                       "—"
                     )}
-                    , investment-grade at {ig ? fmtBpsLevel(ig.value_bps) : "—"}; spreads widen when credit stress builds. FRED BAML series,
-                    monthly observations.
+                    , investment-grade at {ig ? fmtBpsLevel(ig.value_bps) : "—"}; spreads widen when credit stress builds. FRED BAML series:{" "}
+                    {basisWords(hy?.history_basis, "high-yield")}, {basisWords(ig?.history_basis, "investment-grade")}.
                   </Caption>
                   <Stamp block source={SRC.baml} label={report.group(CREDIT_OAS_IDS, credit.data?.freshness)} />
                 </>

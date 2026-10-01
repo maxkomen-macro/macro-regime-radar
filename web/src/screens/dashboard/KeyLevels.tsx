@@ -20,6 +20,7 @@ import Jargon from "../shared/Jargon";
 import { Caption, MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
+import { rateChange } from "../shared/rate-change";
 import { DASH } from "./hero-copy";
 
 export interface SeriesLatest {
@@ -49,6 +50,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
   const r = regime.data;
   const rec = recession.data;
   const ten = credit.data?.series.find((s) => s.label === "UST10Y");
+  const tenChange = rateChange(ten);
   const snapshot = useSnapshotMode();
   // A1: each tile names its own source and as-of; the FRED dates are the
   // server's per-series states (the credit and recession payloads' own
@@ -107,8 +109,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
                 DASH
               )
             }
-            delta={ten?.change_1w_bps != null ? `${fmtBps(ten.change_1w_bps)} 1w` : undefined}
-            direction={ten?.change_1w_bps != null && ten.change_1w_bps >= 0 ? "up" : "down"}
+            delta={tenChange ? `${fmtBps(tenChange.bps)} ${tenChange.basis === "1w" ? "1w" : tenChange.tag}` : undefined}
+            direction={tenChange != null && tenChange.bps >= 0 ? "up" : "down"}
             size="sm"
           />
           <Caption>Benchmark long rate · daily close.</Caption>

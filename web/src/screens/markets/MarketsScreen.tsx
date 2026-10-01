@@ -40,6 +40,7 @@ import type { CandleRange, DailyBar, SearchHit } from "../../api/types";
 import { LIVE_WINDOW_MS, streamWord, useQuotes, useStreamStatus, type LiveQuote, type StreamStatus } from "../../live/quotes";
 import { fmtBps, fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
+import { rateChange } from "../shared/rate-change";
 import { monDD, stampLabel } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
@@ -465,6 +466,7 @@ export default function MarketsScreen() {
   const vixWord = freshReport.series("vix_delayed").word;
   const vixText = vixQ ? `VIX ${vixQ.p.toFixed(2)} (delayed quote)` : "";
   const ten = credit.data?.series.find((x) => x.label === "UST10Y");
+  const tenChange = rateChange(ten);
   const usOpen = nyseSessionOpen();
   // "Live" means a US symbol actually ticked over the socket inside the live
   // window; a connected-but-silent feed is not live (crypto ticking at night
@@ -545,11 +547,13 @@ export default function MarketsScreen() {
         <Metric id="ust10y" value={ten.value_pct}>
           {fmtPct(ten.value_pct)}
         </Metric>
-        {ten.change_1w_bps != null ? (
+        {tenChange ? (
           <>
             {" · "}
-            <span style={{ color: dirColor(ten.change_1w_bps) }}>{fmtBps(ten.change_1w_bps)}</span>
-            {" 1w"}
+            <span style={{ color: dirColor(tenChange.bps) }} title={tenChange.title}>
+              {fmtBps(tenChange.bps)}
+            </span>
+            {tenChange.basis === "1w" ? " 1w" : ` ${tenChange.tag}`}
           </>
         ) : null}
       </>

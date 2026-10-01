@@ -129,14 +129,19 @@ const DAILY_RISK_ON = dailyBars({ XLE: { ret_1d: 0.55 }, XLI: { ret_1d: 0.15 } }
 /** One of four: XLK alone up. */
 const DAILY_RISK_OFF = dailyBars({ XLF: { ret_1d: -0.42 } });
 
-const series = (series_id: string, label: string, value_pct: number, change_1w_bps: number): CreditSeries => ({
+/** fix/freshness 2: the served shape; every fixture series is a true week ("1w"). */
+const series = (series_id: string, label: string, value_pct: number, change_bps: number): CreditSeries => ({
   series_id,
   label,
   date: DAILY_DATE,
   value_pct,
   value_bps: Math.round(value_pct * 100),
-  change_1w_bps,
+  change_bps,
+  change_basis: "1w",
+  change_from: "2026-09-11",
+  change_1w_bps: change_bps,
   history: DATES.map((date, i) => ({ date, value: value_pct - (DATES.length - 1 - i) * 0.02 })),
+  history_basis: "daily",
 });
 const CREDIT: CreditOAS = { as_of: DAILY_DATE, series: [series("DGS10", "UST10Y", 4.27, 6), series("BAMLC0A0CM", "IG", 0.79, -3), series("BAMLH0A0HYM2", "HY", 2.88, 5)] };
 

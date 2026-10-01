@@ -24,7 +24,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Literal, TypeVar
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.exception_handlers import http_exception_handler
@@ -646,11 +646,23 @@ class DatedValue(BaseModel):
 class CreditSeries(BaseModel):
     series_id: str
     label: str
+    # The newest observation's own date (desk_series, or the source watermark
+    # inside the newest month-stamped row's month), never the month stamp.
     date: str
     value_pct: float
     value_bps: float
+    # fix/freshness 2: the change and what it is measured against. "1w": a true
+    # seven-calendar-day change from desk_series, change_from the prior
+    # observation's date; "month_end": against the previous month's
+    # month-stamped row, change_from "YYYY-MM".
+    change_bps: float | None = None
+    change_basis: Literal["1w", "month_end"] | None = None
+    change_from: str | None = None
+    # Kept for older readers: set only when the change is a true week.
     change_1w_bps: float | None
     history: list[DatedValue]
+    # "daily": desk_series observations; "monthly": one month-stamped row per month.
+    history_basis: Literal["daily", "monthly"] | None = None
 
 
 class CreditOAS(BaseModel):

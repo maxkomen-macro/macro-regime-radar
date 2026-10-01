@@ -139,11 +139,22 @@ export interface DatedValue {
 export interface CreditSeries {
   series_id: string;
   label: string;
+  /** The newest observation's own date (never the month stamp). */
   date: string;
   value_pct: number;
   value_bps: number;
+  /** fix/freshness 2: the change and what it is measured against. "1w": a true
+   * seven-calendar-day change (true-dated daily store), `change_from` the prior
+   * observation's date; "month_end": against the previous month's stored row,
+   * `change_from` "YYYY-MM". Read through `rateChange` (shared/rate-change.ts). */
+  change_bps?: number | null;
+  change_basis?: "1w" | "month_end" | null;
+  change_from?: string | null;
+  /** Set only when the change is a true week; kept for older readers. */
   change_1w_bps: number | null;
   history: DatedValue[];
+  /** "daily": true-dated observations; "monthly": one stored row per month. */
+  history_basis?: "daily" | "monthly" | null;
 }
 
 export interface CreditOAS {

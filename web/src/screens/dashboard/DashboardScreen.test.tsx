@@ -144,18 +144,25 @@ const RECESSION: RecessionMetrics = {
   current_inputs: {},
 };
 
-const series = (series_id: string, label: string, value_pct: number, change_1w_bps: number, closes: number[]): CreditSeries => ({
+/** fix/freshness 2: the served shape. DGS10 and HY come from the true-dated
+ * daily store (a real week, "1w"); IG is still one stored row per month
+ * ("month_end", against August). */
+const series = (series_id: string, label: string, value_pct: number, change_bps: number, closes: number[], basis: "1w" | "month_end" = "1w"): CreditSeries => ({
   series_id,
   label,
   date: DAILY_DATE,
   value_pct,
   value_bps: Math.round(value_pct * 100),
-  change_1w_bps,
+  change_bps,
+  change_basis: basis,
+  change_from: basis === "1w" ? "2026-09-07" : "2026-08",
+  change_1w_bps: basis === "1w" ? change_bps : null,
   history: dated(["2026-09-09", "2026-09-10", PRIOR_DATE, DAILY_DATE], closes),
+  history_basis: basis === "1w" ? "daily" : "monthly",
 });
 const CREDIT: CreditOAS = {
   as_of: DAILY_DATE,
-  series: [series("DGS10", "UST10Y", 4.21, 5, [4.11, 4.14, 4.17, 4.21]), series("BAMLC0A0CM", "IG", 0.83, -2, [0.86, 0.85, 0.84, 0.83]), series("BAMLH0A0HYM2", "HY", 2.94, 4, [2.89, 2.9, 2.92, 2.94])],
+  series: [series("DGS10", "UST10Y", 4.21, 5, [4.11, 4.14, 4.17, 4.21]), series("BAMLC0A0CM", "IG", 0.83, -2, [0.86, 0.85, 0.84, 0.83], "month_end"), series("BAMLH0A0HYM2", "HY", 2.94, 4, [2.89, 2.9, 2.92, 2.94])],
 };
 const FEDFUNDS = { series_id: "FEDFUNDS", date: PRIOR_MONTH, value: 4.33 };
 const VIX = { series_id: "VIXCLS", date: DAILY_DATE, value: 16.42 };
@@ -520,7 +527,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await waitFor(() => expect(section.querySelectorAll("article")).toHaveLength(5));
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent(/^Monitored signals$/i);
     expect(text(section)).toContain("Bars show distance to trigger · Clear <50% · Watch ≥50% · Triggered = threshold crossed.");
-    expect(text(section)).toContain("5 signals · latest Sep 01, 2026");
+    expect(text(section)).toContain("5 signals · Sep 2026 print");
     expect(within(section).getByRole("link", { name: /View all signals/ })).toHaveAttribute("href", "/app/methodology#signals");
 
     const expected: [string, string, string, string, string, boolean, string][] = [
@@ -555,7 +562,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     stubFetch(routes({ "/api/signals/latest": () => SIGNALS_MISSING }));
     renderDashboard();
     const section = await awaitSection("signals");
-    await waitFor(() => expect(text(section)).toContain("4 signals · latest Sep 01, 2026"));
+    await waitFor(() => expect(text(section)).toContain("4 signals · Sep 2026 print"));
     const articles = [...section.querySelectorAll("article")];
     expect(articles).toHaveLength(5);
     const card = articles.find((a) => text(a.querySelector("h3")) === "Unemployment spike") as HTMLElement;
@@ -611,7 +618,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     // Iteration 1 step 6 (A1): the provenance line ends in the card's stamp,
     // DGS10's own as-of word (the fixture's report carries no series: unknown),
     // never the month-stamped row date.
-    expect(text(ten)).toContain("10-year Treasury yield · daily close · FRED DGS10 · As of unknown");
+    expect(text(ten)).toContain("10-year Treasury yield · daily closes, 90 days · FRED DGS10 · As of unknown");
     expect(ten.querySelector("[data-stamp]")?.textContent).toBe("FRED DGS10 · As of unknown");
     expect(ten.querySelector("svg path")).not.toBeNull();
     expect(within(ten).getByRole("link", { name: /View rates/ })).toHaveAttribute("href", "/app/credit#financing");
@@ -647,7 +654,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     fireEvent.click(buttons[2]);
     expect(buttons[0]).toHaveAttribute("aria-expanded", "false");
     expect(buttons[2]).toHaveAttribute("aria-expanded", "true");
-    expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series, monthly observations.");
+    expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series: high-yield daily observations, investment-grade one value per month (its newest).");
   });
 
   it("read-through disclosures are closed on load; opening shows the two paragraphs and the Methodology link", async () => {
@@ -803,7 +810,7 @@ describe("DashboardScreen signal cards without a row (checklist 10 C #1 and #2)"
     stubFetch(routes({ "/api/signals/latest": () => ({ date: MONTH, signals: [] }) }));
     renderDashboard();
     const section = await awaitSection("signals");
-    await waitFor(() => expect(text(section)).toContain("0 signals · latest Sep 01, 2026"));
+    await waitFor(() => expect(text(section)).toContain("0 signals · Sep 2026 print"));
     const articles = [...section.querySelectorAll("article")];
     expect(articles).toHaveLength(5);
     for (const a of articles) {

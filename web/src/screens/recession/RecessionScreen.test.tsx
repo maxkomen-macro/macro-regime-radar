@@ -686,7 +686,8 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     const section = await awaitSection("curve");
     expect(section.tagName).toBe("SECTION");
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent(/^Curve monitor$/);
-    expect(text(section)).toContain("2s10s daily, 30 years stored, recessions shaded");
+    expect(text(section)).toContain("2s10s at each month-end, 30 years stored, recessions shaded");
+    expect(text(section)).toContain("FRED · month-end");
     // E3: the curve's as-of is DGS10 and DGS2 in series[], beside the cadence.
     expect(text(section)).toContain("daily");
     await waitFor(() => expect(text(section)).toContain("FRED · Sep 17"));

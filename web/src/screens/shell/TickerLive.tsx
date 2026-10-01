@@ -25,6 +25,7 @@ import { fmtBps, fmtDate, fmtPct } from "../../lib/format";
 import { MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import { SRC, Stamp, metricAttrs, quoteStamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
+import { rateChange } from "../shared/rate-change";
 import FreshnessCard from "./FreshnessCard";
 import QuoteCard, { type QuoteCardProps } from "./QuoteCard";
 import { quoteFor, withFreshTags } from "./quote-ladder";
@@ -69,14 +70,17 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
 
     const ten = credit.data?.series.find((s) => s.label === "UST10Y");
     if (ten) {
+      // fix/freshness 2: "1W" only on a true seven-day change; the date is the
+      // newest observation's own, never the month stamp.
+      const chg = rateChange(ten);
       out.push({
         symbol: "US 10Y",
         price: fmtPct(ten.value_pct),
         raw: ten.value_pct,
-        change: ten.change_1w_bps != null ? fmtBps(ten.change_1w_bps) : undefined,
+        change: chg ? fmtBps(chg.bps) : undefined,
         // Direction, not valence: green is "up", red is "down", for yields too.
-        changeTone: ten.change_1w_bps != null ? (ten.change_1w_bps >= 0 ? "pos" : "neg") : undefined,
-        tag: ten.change_1w_bps != null ? { text: "1W", title: "Change over one week", tone: "muted" } : undefined,
+        changeTone: chg ? (chg.bps >= 0 ? "pos" : "neg") : undefined,
+        tag: chg ? { text: chg.tag, title: chg.title, tone: "muted" } : undefined,
         series: ten.history.map((h) => h.value),
         title: `10-year Treasury yield · FRED ${ten.series_id} · ${fmtDate(ten.date)}`,
         stamp: <Stamp source={SRC.fred} label={report.series(ten.series_id, credit.data?.freshness)} />,

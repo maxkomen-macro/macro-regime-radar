@@ -63,9 +63,15 @@ def test_trace_each_signal_value():
 
 
 def test_trace_oas_stored_percent_served_percent_and_bps():
+    # fix/freshness 2: the served date is the newest observation's own date
+    # (the true-dated desk_series row, or the source watermark inside the
+    # month-stamped row's month), never the month stamp; the value is the
+    # stored month row's (both hold the same newest observation).
+    marks = dict(_q("SELECT source, last_obs FROM source_watermarks WHERE source LIKE 'fred:%'"))
     for s in _get("/api/credit/oas?days=90")["series"]:
         d, v = _latest(s["series_id"])
-        assert s["date"] == d and s["value_pct"] == pytest.approx(v, abs=EPS), s["series_id"]
+        assert s["value_pct"] == pytest.approx(v, abs=EPS), s["series_id"]
+        assert s["date"] == marks.get(f"fred:{s['series_id']}", d) and s["date"][:7] == d[:7], s["series_id"]
         assert s["value_bps"] == pytest.approx(v * 100, abs=1e-6), s["series_id"]  # ×100, once
 
 

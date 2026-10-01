@@ -38,6 +38,7 @@ import Jargon from "../shared/Jargon";
 import { Caption, MISSING, MISSING_ROW, StateNote, useHashScroll } from "../shared/screen-ui";
 import { REGIME_INPUT_IDS, SIGNAL_INPUT_IDS, marketSeries } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
+import { rateChange } from "../shared/rate-change";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
 import TabHero from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
@@ -229,6 +230,7 @@ export default function DashboardScreen() {
   const bannerLive = bannerStamp != null && honest && (stampSeenAtLoad !== bannerStamp || inCycle);
 
   const hy = credit.data?.series.find((s) => s.label === "HY");
+  const hyChange = rateChange(hy);
 
   const lastAlertBySignal = useMemo(() => {
     const m = new Map<string, string>();
@@ -305,7 +307,7 @@ export default function DashboardScreen() {
       }, the VIX sits at ${vixV != null ? vixV.toFixed(2) : "—"}${
         vixV != null ? (vixV < 15 ? " (calm)" : vixV < 25 ? " (subdued)" : " (stressed)") : ""
       }, and high-yield spreads run ${hy ? fmtBpsLevel(hy.value_bps) : "—"}${
-        hy?.change_1w_bps != null ? ` (${fmtBps(hy.change_1w_bps)} on the week)` : ""
+        hyChange ? ` (${fmtBps(hyChange.bps)} ${hyChange.phrase})` : ""
       }. Growth trend reads ${r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and inflation trend ${
         r.inflation_trend != null ? fmtSigned(r.inflation_trend) : "—"
       }; both are 3-month slopes of z-scored macro data.`,
@@ -536,7 +538,7 @@ export default function DashboardScreen() {
           description="Bars show distance to trigger · Clear <50% · Watch ≥50% · Triggered = threshold crossed."
           right={
             signals.data
-              ? `${signals.data.signals.length} signals · latest ${fmtDate(signals.data.date)}`
+              ? `${signals.data.signals.length} signals · ${fmtMonYr(signals.data.date)} print`
               : signals.isError
                 ? "signal feed unavailable"
                 : "loading"

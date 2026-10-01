@@ -646,43 +646,125 @@ def backtests() -> list[dict]:
     )
 
 
+# fix/freshness 2: raw_series keeps one row per month for a FRED daily series
+# (the newest in-month value, dated the 1st), so a 7-day lookback on it always
+# reached the previous month's row: the 10Y "1W" of +49 bp was the change since
+# Aug 31, the true week +28 bp. desk_series holds DGS10 and the HY OAS by
+# observation date, so those two read a real week (the newest observation at or
+# before seven calendar days earlier, at most WEEK_MAX_GAP_DAYS back) and a
+# daily history; every other series reads its change against the previous
+# month's row and says so ("vs <month> month-end").
+WEEK_MAX_GAP_DAYS = 10
+
+
+def _has_table(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def _oas_daily(conn: sqlite3.Connection, series_id: str, days: int, newest_watermark: str | None) -> dict | None:
+    """The series from desk_series (true observation dates), or None when the
+    store does not hold it, holds nothing in the window, or trails the
+    month-stamped row's own newest observation (a failed desk step must never
+    serve an older number than raw_series)."""
+    newest = conn.execute(
+        "SELECT date, value FROM desk_series WHERE series_id = ? AND value IS NOT NULL ORDER BY date DESC LIMIT 1",
+        (series_id,),
+    ).fetchone()
+    if newest is None or (newest_watermark and newest["date"] < newest_watermark):
+        return None
+    rows = conn.execute(
+        "SELECT date, value FROM desk_series WHERE series_id = ? AND date >= date('now', ?) "
+        "AND value IS NOT NULL ORDER BY date",
+        (series_id, f"-{days} days"),
+    ).fetchall()
+    if not rows:
+        return None
+    prior = conn.execute(
+        "SELECT date, value FROM desk_series WHERE series_id = ? AND date <= date(?, '-7 days') "
+        "AND date >= date(?, ?) AND value IS NOT NULL ORDER BY date DESC LIMIT 1",
+        (series_id, newest["date"], newest["date"], f"-{WEEK_MAX_GAP_DAYS} days"),
+    ).fetchone()
+    change = (newest["value"] - prior["value"]) * 100.0 if prior else None
+    return {
+        "date": newest["date"],
+        "value": newest["value"],
+        "change_bps": change,
+        "change_basis": "1w" if prior else None,
+        "change_from": prior["date"] if prior else None,
+        "history": rows,
+        "history_basis": "daily",
+    }
+
+
+def _oas_monthly(conn: sqlite3.Connection, series_id: str, days: int, newest_watermark: str | None) -> dict | None:
+    """The month-stamped raw_series rows: the change is against the previous
+    month's row (that month's newest value, its month-end), and the as-of date
+    is the newest observation's own (source_watermarks) when it falls in the
+    newest row's month, else the month stamp."""
+    rows = conn.execute(
+        "SELECT date, value FROM raw_series WHERE series_id = ? "
+        "AND date >= date('now', ?) AND value IS NOT NULL ORDER BY date",
+        (series_id, f"-{days} days"),
+    ).fetchall()
+    if not rows:
+        return None
+    latest = rows[-1]
+    prior = conn.execute(
+        "SELECT date, value FROM raw_series WHERE series_id = ? AND date < ? AND value IS NOT NULL ORDER BY date DESC LIMIT 1",
+        (series_id, latest["date"]),
+    ).fetchone()
+    as_of = newest_watermark if newest_watermark and newest_watermark[:7] == latest["date"][:7] else latest["date"]
+    return {
+        "date": as_of,
+        "value": latest["value"],
+        "change_bps": (latest["value"] - prior["value"]) * 100.0 if prior else None,
+        "change_basis": "month_end" if prior else None,
+        "change_from": prior["date"][:7] if prior else None,
+        "history": rows,
+        "history_basis": "monthly",
+    }
+
+
 def credit_oas(days: int) -> dict:
-    """Latest OAS (pct + bps) with ~1-week change and a history window for
-    sparklines, for the five BAML series plus the 10Y UST yield."""
+    """Latest OAS (pct + bps) with its change and a history window for
+    sparklines, for the five BAML series plus the 10Y UST yield.
+
+    The change carries its basis (fix/freshness 2): ``change_basis`` "1w" is a
+    true seven-calendar-day change from desk_series (``change_from`` the prior
+    observation's date); "month_end" is against the previous month's
+    month-stamped row (``change_from`` that month, "YYYY-MM").
+    ``change_1w_bps`` is kept for older readers and is set only on a true week."""
     series_out: list[dict] = []
     as_of: str | None = None
     with closing(_connect()) as conn:
+        desk = _has_table(conn, "desk_series")
+        marks = (
+            {r["source"]: r["last_obs"] for r in conn.execute("SELECT source, last_obs FROM source_watermarks WHERE source LIKE 'fred:%'")}
+            if _has_table(conn, "source_watermarks")
+            else {}
+        )
         for series_id, label in CREDIT_OAS_SERIES:
-            rows = conn.execute(
-                "SELECT date, value FROM raw_series WHERE series_id = ? "
-                "AND date >= date('now', ?) AND value IS NOT NULL ORDER BY date",
-                (series_id, f"-{days} days"),
-            ).fetchall()
-            if not rows:
+            mark = marks.get(f"fred:{series_id}")
+            read = (_oas_daily(conn, series_id, days, mark) if desk else None) or _oas_monthly(conn, series_id, days, mark)
+            if read is None:
                 continue
-            latest = rows[-1]
-            week_ago_cut = conn.execute(
-                "SELECT date(?, '-7 days')", (latest["date"],)
-            ).fetchone()[0]
-            prior = next(
-                (r for r in reversed(rows) if r["date"] <= week_ago_cut), None
-            )
-            change_1w_bps = (
-                (latest["value"] - prior["value"]) * 100.0 if prior else None
-            )
             series_out.append(
                 {
                     "series_id": series_id,
                     "label": label,
-                    "date": latest["date"],
-                    "value_pct": latest["value"],
-                    "value_bps": latest["value"] * 100.0,
-                    "change_1w_bps": change_1w_bps,
-                    "history": [{"date": r["date"], "value": r["value"]} for r in rows],
+                    "date": read["date"],
+                    "value_pct": read["value"],
+                    "value_bps": read["value"] * 100.0,
+                    "change_bps": read["change_bps"],
+                    "change_basis": read["change_basis"],
+                    "change_from": read["change_from"],
+                    "change_1w_bps": read["change_bps"] if read["change_basis"] == "1w" else None,
+                    "history": [{"date": r["date"], "value": r["value"]} for r in read["history"]],
+                    "history_basis": read["history_basis"],
                 }
             )
             if label != "UST10Y":
-                as_of = max(as_of, latest["date"]) if as_of else latest["date"]
+                as_of = max(as_of, read["date"]) if as_of else read["date"]
     return {"as_of": as_of, "series": series_out}
 
 

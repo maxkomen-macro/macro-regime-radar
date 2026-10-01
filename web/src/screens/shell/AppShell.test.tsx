@@ -65,7 +65,7 @@ const freshness = {
 const dailyBar = (symbol: string, date: string, close: number) => ({ symbol, date, open: close, high: close, low: close, close, volume: 1, vwap: close, ret_1d: null, ret_1w: null, ret_1m: null });
 const creditOas = {
   as_of: DAILY,
-  series: [{ series_id: "DGS10", label: "UST10Y", date: DAILY, value_pct: 4.12, value_bps: 412, change_1w_bps: 5, history: [{ date: daysAgo(2), value: 4.07 }, { date: DAILY, value: 4.12 }] }],
+  series: [{ series_id: "DGS10", label: "UST10Y", date: DAILY, value_pct: 4.12, value_bps: 412, change_bps: 5, change_basis: "1w", change_from: daysAgo(7), change_1w_bps: 5, history_basis: "daily", history: [{ date: daysAgo(2), value: 4.07 }, { date: DAILY, value: 4.12 }] }],
 };
 
 function renderShell(route = "/app/dashboard") {
