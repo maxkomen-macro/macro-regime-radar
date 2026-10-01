@@ -1,0 +1,166 @@
+{
+ "taken": "2026-10-01T05:37:34.816Z",
+ "base": "http://127.0.0.1:5611",
+ "log": [
+  {
+   "name": "01-markets",
+   "route": "/app/markets",
+   "answers": [
+    "403 /api/market/candles/SPY?range=5D",
+    "403 /api/market/candles/QQQ?range=5D",
+    "403 /api/market/candles/EEM?range=5D",
+    "403 /api/market/candles/IWM?range=5D",
+    "200 /api/alerts?limit=200",
+    "200 /api/market/intraday?symbols=SPY%2CQQQ&since=2026-09-29T05%3A37%3A08Z",
+    "200 /api/assistant/status",
+    "200 /api/regime/latest",
+    "200 /api/market/daily?symbols=SPY%2CQQQ&days=45",
+    "200 /api/freshness",
+    "200 /api/signals/latest",
+    "200 /api/credit/oas?days=90",
+    "403 /api/market/candles/MSFT?range=5D",
+    "403 /api/market/candles/AAPL?range=5D",
+    "403 /api/market/candles/NVDA?range=5D",
+    "200 /api/priced",
+    "403 /api/market/candles/GOOGL?range=5D",
+    "403 /api/market/candles/AMZN?range=5D",
+    "403 /api/market/candles/META?range=5D",
+    "403 /api/market/candles/TSLA?range=5D",
+    "200 /api/surprises?top_n=10",
+    "200 /api/market/daily?symbols=SPY%2CQQQ%2CIWM%2CTLT%2CIEF%2CHYG%2CLQD%2CUUP%2CGLD%2CSLV%2CUSO%2CCPER%2CEEM%2CEFA%2CXLF%2CXLE%2CXLI%2CXLK&days=60",
+    "403 /api/market/candles/AVGO?range=5D",
+    "403 /api/market/candles/TSM?range=5D",
+    "403 /api/market/candles/AMD?range=5D",
+    "403 /api/market/candles/MU?range=5D",
+    "403 /api/market/candles/COIN?range=5D"
+   ]
+  },
+  {
+   "name": "02-strip",
+   "route": "/app/dashboard",
+   "answers": [
+    "403 /api/market/candles/SPY?range=5D",
+    "403 /api/market/candles/IWM?range=5D",
+    "403 /api/market/candles/QQQ?range=5D",
+    "403 /api/market/candles/EEM?range=5D",
+    "200 /api/market/intraday?symbols=SPY%2CQQQ&since=2026-09-29T05%3A37%3A11Z",
+    "200 /api/assistant/status",
+    "200 /api/alerts?limit=200",
+    "200 /api/regime/latest",
+    "200 /api/market/daily?symbols=SPY%2CQQQ&days=45",
+    "200 /api/credit/oas?days=90",
+    "200 /api/signals/latest",
+    "200 /api/freshness",
+    "200 /series/FEDFUNDS/latest",
+    "200 /api/regime/history?limit=36",
+    "200 /api/priced",
+    "200 /api/recession/probability",
+    "200 /api/calendar?days=30",
+    "200 /api/regime/intelligence",
+    "200 /series/VIXCLS/latest",
+    "200 /api/regime/transitions",
+    "200 /api/market/daily?symbols=SPY%2CQQQ%2CIWM%2CEEM%2CTLT%2CIEF%2CHYG%2CLQD%2CUUP%2CGLD%2CSLV%2CUSO%2CCPER&days=45"
+   ]
+  },
+  {
+   "name": "03-dashboard-hero",
+   "route": "/app/dashboard",
+   "answers": [
+    "403 /api/market/candles/SPY?range=5D",
+    "403 /api/market/candles/QQQ?range=5D",
+    "403 /api/market/candles/IWM?range=5D",
+    "403 /api/market/candles/EEM?range=5D",
+    "200 /api/alerts?limit=200",
+    "200 /api/assistant/status",
+    "200 /api/regime/latest",
+    "200 /api/freshness",
+    "200 /api/signals/latest",
+    "200 /api/market/daily?symbols=SPY%2CQQQ&days=45",
+    "200 /api/market/intraday?symbols=SPY%2CQQQ&since=2026-09-29T05%3A37%3A14Z",
+    "200 /api/credit/oas?days=90",
+    "200 /api/calendar?days=30",
+    "200 /series/FEDFUNDS/latest",
+    "200 /api/regime/history?limit=36",
+    "200 /api/recession/probability",
+    "200 /series/VIXCLS/latest",
+    "200 /api/regime/intelligence",
+    "200 /api/priced",
+    "200 /api/regime/transitions",
+    "200 /api/market/daily?symbols=SPY%2CQQQ%2CIWM%2CEEM%2CTLT%2CIEF%2CHYG%2CLQD%2CUUP%2CGLD%2CSLV%2CUSO%2CCPER&days=45"
+   ]
+  },
+  {
+   "name": "04-recession",
+   "route": "/app/recession",
+   "answers": [
+    "403 /api/market/candles/QQQ?range=5D",
+    "403 /api/market/candles/SPY?range=5D",
+    "403 /api/market/candles/EEM?range=5D",
+    "403 /api/market/candles/IWM?range=5D",
+    "200 /api/alerts?limit=200",
+    "200 /api/assistant/status",
+    "200 /api/regime/latest",
+    "200 /api/signals/latest",
+    "200 /api/freshness",
+    "200 /api/recession/probability",
+    "200 /api/recession/scenario"
+   ]
+  },
+  {
+   "name": "05-regime-lab-quadrant",
+   "route": "/app/regime-lab",
+   "answers": [
+    "403 /api/market/candles/SPY?range=5D",
+    "403 /api/market/candles/QQQ?range=5D",
+    "403 /api/market/candles/IWM?range=5D",
+    "403 /api/market/candles/EEM?range=5D",
+    "200 /api/assistant/status",
+    "200 /api/alerts?limit=200",
+    "200 /api/regime/latest",
+    "200 /api/freshness",
+    "200 /api/market/daily?symbols=SPY%2CQQQ&days=45",
+    "200 /api/market/intraday?symbols=SPY%2CQQQ&since=2026-09-29T05%3A37%3A21Z",
+    "200 /api/signals/latest",
+    "200 /api/credit/oas?days=90",
+    "200 /api/regime/duration",
+    "200 /api/regime/intelligence",
+    "200 /api/regime/transitions",
+    "200 /api/recession/probability",
+    "200 /api/regime/history"
+   ]
+  },
+  {
+   "name": "06-desk-overview",
+   "route": "/desk/overview",
+   "answers": [
+    "200 /api/desk/technicals",
+    "200 /api/desk/overview"
+   ]
+  },
+  {
+   "name": "07-desk-regime",
+   "route": "/desk/regime",
+   "answers": [
+    "200 /api/desk/regime",
+    "200 /api/desk/technicals",
+    "200 /api/desk/overview"
+   ]
+  },
+  {
+   "name": "08-methodology",
+   "route": "/app/methodology",
+   "answers": [
+    "403 /api/market/candles/SPY?range=5D",
+    "403 /api/market/candles/IWM?range=5D",
+    "403 /api/market/candles/EEM?range=5D",
+    "403 /api/market/candles/QQQ?range=5D",
+    "200 /api/alerts?limit=200",
+    "200 /api/assistant/status",
+    "200 /api/regime/latest",
+    "200 /api/freshness",
+    "200 /api/signals/latest",
+    "200 /api/recession/probability"
+   ]
+  }
+ ]
+}
