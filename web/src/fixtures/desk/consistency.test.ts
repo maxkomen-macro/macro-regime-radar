@@ -162,7 +162,8 @@ describe("the audit's real values (FRAME3_DATA_AUDIT.md on desk/frame-3-docs, CO
     expect(catalog.studies.filter((s) => !s.available).map((s) => s.slug)).toEqual(["dollar-2sigma-20d", "oil-2sigma-gold", "oil-2sigma-20d"]);
   });
   it("the regime, the recession score, the curve, credit and the cross (§2.1, §2.4, §2.5, §2.2)", () => {
-    expect([regime.current.latest_print, overview.tiles.regime.label, overview.tiles.regime.print]).toEqual(["2026-08", "Goldilocks", "2026-07"]);
+    // fix/freshness 3a (D2): the newest stored row, the Dashboard's Overheating, August 2026.
+    expect([regime.current.latest_print, overview.tiles.regime.label, overview.tiles.regime.print]).toEqual(["2026-08", "Overheating", "2026-08"]);
     expect(Math.round(regime.recession.score * 10000) / 10000).toBe(0.1164);
     expect(regime.next_prints.cpi.release_date).toBe("2026-10-14");
     expect(regime.next_prints.indpro.release_date).toBeNull();
@@ -192,17 +193,19 @@ describe("Ledger rows and their baselines (§4.1, v3 §6)", () => {
   });
 });
 
-describe("the regime row governing today and the recession score (§5, §12.1, §12.6)", () => {
-  it("both tabs serve the stored row stamped K−2 for the session month, its run, and the newest row beside it", () => {
+describe("the regime row and the recession score (§5, §12.1, §12.6)", () => {
+  it("both tabs serve the newest stored row (fix/freshness 3a, D2: the Dashboard's label), its run, and its odds", () => {
     const months = record.months;
-    const K = (regime.as_of as string).slice(0, 7);
-    const print = monthBefore(K, record.lag_months);
+    // The K−2 rule still tags events (record.lag_months); the label shown is the newest row's.
+    expect(monthBefore((regime.as_of as string).slice(0, 7), record.lag_months)).not.toBe(months[months.length - 1].month);
+    const print = months[months.length - 1].month;
     const at = months.findIndex((m) => m.month === print);
     let start = at;
     while (start > 0 && months[start - 1].regime === months[at].regime) start--;
     const want = { label: months[at].regime, print, months_in: at - start + 1, since: months[start].month };
     for (const row of [overview.tiles.regime, regime.current]) expect({ label: row.label, print: row.print, months_in: row.months_in, since: row.since }).toEqual(want);
     expect(regime.current.latest_print).toBe(months[months.length - 1].month);
+    expect([overview.tiles.regime.odds, regime.current.odds, regime.current.classifier?.agrees]).toEqual([0.4246, 0.4246, true]);
   });
   it("the Overview tile's recession fields are the Regime tab's; the band follows v3 §11's edges", () => {
     const r = regime.recession;

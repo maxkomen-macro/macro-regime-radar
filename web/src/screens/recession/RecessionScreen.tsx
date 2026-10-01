@@ -30,7 +30,7 @@ import { useRecessionProbability, useRegimeLatest } from "../../api/queries";
 import type { RecessionMetrics, RecessionScenarioRequest, Regime } from "../../api/types";
 import { fmtBps, fmtMonYr, fmtProb, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
 import { DASH } from "../dashboard/hero-copy";
-import { RECESSION_INPUT_IDS } from "../shared/fresh-state";
+import { RECESSION_INPUT_IDS, type FreshLabel } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { Metric, ODDS_METRIC, SRC, Stamp, type OddsKey } from "../shared/Stamp";
 import { HeroChartFrame } from "../shared/HeroChart";
@@ -109,6 +109,15 @@ function labelOdds(r: Regime): number | null {
   return typeof v === "number" ? v : null;
 }
 
+/** fix/freshness 3b: the hero chip's label. The word is the month the scored inputs come from (served
+ * `inputs_through`); the newest data date rides after it. Without the month, the newest date alone. */
+export function inputsChip(m: RecessionMetrics | null, fresh: FreshLabel): FreshLabel {
+  const month = m?.inputs_through ? fmtMonYr(`${m.inputs_through}-01`) : null;
+  if (!month) return fresh;
+  const latest = [fresh.word, fresh.muted].filter(Boolean).join(" ");
+  return { ...fresh, word: month, muted: latest ? `· latest data ${latest}` : null };
+}
+
 /* ── screen ────────────────────────────────────────────────────────────── */
 
 export default function RecessionScreen() {
@@ -153,7 +162,9 @@ export default function RecessionScreen() {
     actions: HERO_ACTIONS,
     // No absence before an answer: the chip waits for the payload (or its
     // error) instead of printing "Unavailable" while the request is pending.
-    freshness: m || q.isError ? [{ noun: "Model inputs", label: fresh }] : undefined,
+    // fix/freshness 3b: the score reads inputs three months old, so the chip names their month first and the
+    // newest data date after it: "Inputs through Jun 2026 · latest data Sep 28".
+    freshness: m || q.isError ? [{ noun: "Inputs through", label: inputsChip(m, fresh) }] : undefined,
   };
   let hero: ReactNode;
   if (m && copy) {

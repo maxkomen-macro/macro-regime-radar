@@ -35,7 +35,7 @@ import math
 import threading
 import time
 from collections import OrderedDict
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, Request
@@ -350,15 +350,6 @@ def _result(name: str) -> Any:
     return get_worker().result(name)
 
 
-def k_minus_2(session: str) -> str:
-    """R8 (v2 §9.1): the regimes month a session reads, K−2 for its month K
-    (event_study.regime_at's rule, REGIME_LAG_MONTHS = 2)."""
-    y, m = int(session[:4]), int(session[5:7]) - 2
-    if m <= 0:
-        y, m = y - 1, m + 12
-    return f"{y:04d}-{m:02d}"
-
-
 def _month_before(month: str) -> str:
     y, m = int(month[:4]), int(month[5:7]) - 1
     return f"{y - 1:04d}-12" if m == 0 else f"{y:04d}-{m:02d}"
@@ -377,19 +368,46 @@ def regime_run(rows: list[dict], print_month: str) -> tuple[int, str]:
         since, n = prev, n + 1
 
 
-def regime_tile(rows: list[dict], comparison: str) -> dict:
-    """tiles.regime: the stored K−2 row for comparison_session's month;
-    awaiting when that row is not stored or either stored slope is not finite."""
-    month = k_minus_2(comparison)
-    row = next((r for r in rows if r["month"] == month), None)
-    if row is None:
+def regime_tile(rows: list[dict], classifier: dict | None = None) -> dict:
+    """tiles.regime (fix/freshness 3a, D2): the newest stored regimes row, the
+    label and month the Dashboard shows, with its classifier odds; awaiting
+    when nothing is stored or either stored slope is not finite."""
+    from api.desk_v2_macro import odds_for
+
+    if not rows:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    row = rows[-1]
+    month = row["month"]
     growth, inflation = _direction(row["growth_trend"]), _direction(row["inflation_trend"])
     if growth is None or inflation is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
     months_in, since = regime_run(rows, month)
     return {"label": row["label"], "print": month, "growth": growth, "inflation": inflation,
-            "months_in": months_in, "since": since, "freq": "monthly", "source": REGIMES_SOURCE}
+            "months_in": months_in, "since": since, "odds": odds_for(row, classifier), "freq": "monthly",
+            "source": REGIMES_SOURCE}
+
+
+def regime_since(item: dict, prev_session: str) -> tuple[str | None, str | None, bool | None]:
+    """since_last_close's regime (fix/freshness 3a): (from, to, changed) for
+    the newest stored row, the one the tile shows. It changed since the last
+    close when the store learned it (`newest_known_at`, the later CPI and
+    INDPRO watermark advance) after the previous session's close; then `from`
+    is the row before it. Unknown publication: `to` alone, `changed` null."""
+    from api import calendar as cal
+
+    rows = item["rows"]
+    if not rows:
+        return None, None, None
+    to = rows[-1]["label"]
+    known = _rfc3339(item.get("newest_known_at"))
+    if known is None:
+        return None, to, None
+    bounds = cal.session_bounds(date.fromisoformat(prev_session))
+    prev_close = bounds[1].strftime("%Y-%m-%dT%H:%M:%SZ") if bounds else f"{prev_session}T23:59:59Z"
+    if known <= prev_close:
+        return to, to, False
+    before = rows[-2]["label"] if len(rows) > 1 else None
+    return before, to, None if before is None else before != to
 
 
 def recession_tile(regime_item: dict) -> dict:
@@ -490,6 +508,19 @@ def data_status(*, now: datetime, stored: dict | None, watermarks: dict | None, 
     return {"state": max((c["state"] for c in out), key=STATE_RANK.__getitem__), "contributors": out}
 
 
+def oldest_behind(status: dict) -> dict | None:
+    """fix/freshness 3d: the Desk series that is behind with the oldest
+    observation (a missing one first), from the data-status contributors (the
+    Desk's feed set, N9, each judged by its own freshness policy); None when
+    every one is current."""
+    behind = [c for c in status.get("contributors", []) if c.get("state") != "current"]
+    if not behind:
+        return None
+    c = min(behind, key=lambda c: (c.get("observation_date") or "", c["series"]))
+    return {"series": c["series"], "observation_date": c.get("observation_date"), "state": c["state"],
+            "reason": c.get("reason") or ""}
+
+
 def overview_answer(params: list[tuple[str, str]]) -> dict:
     """§12.1, composed from the Ledger, the technicals, regime and recession
     items and the stored facts of the request's one generation; every field
@@ -503,30 +534,35 @@ def overview_answer(params: list[tuple[str, str]]) -> dict:
     entries = ledger_rows(comparison, prev)
     rows = [r for r, _ in entries]
 
-    def since_last_close() -> dict:
-        new, still = fire_lists(entries)
-        regime_rows = _result("desk_regime")["rows"]
-        labels = {r["month"]: r["label"] for r in regime_rows}
-        r_from, r_to = labels.get(k_minus_2(prev)), labels.get(k_minus_2(comparison))
-        vix = _result("desk_facts")["vix_recent"]
-        wm = (db.watermarks() or {}).get("desk_series") or {}
-        return {
-            "comparison_session": comparison, "prev_session": prev, "new_fires": new, "still_firing": still,
-            "vol_change_pts": vix[comparison] - vix[prev] if comparison in vix and prev in vix else None,
-            "regime_from": r_from, "regime_to": r_to,
-            "regime_changed": None if r_from is None or r_to is None else r_from != r_to,
-            "refreshed_at_utc": _rfc3339(wm.get("advanced_at")),
-        }
-
     def status() -> dict:
         newest = _result("desk_facts")["newest"]
         prices = {sym: (newest.get(sym) or {}).get("date") for sym in DATA_STATUS_PRICES}
         return data_status(now=now, stored=db.freshness()["desk_series_latest"], watermarks=db.watermarks(), prices=prices)
 
+    def since_last_close() -> dict:
+        new, still = fire_lists(entries)
+        r_from, r_to, changed = regime_since(_result("desk_regime"), prev)
+        vix = _result("desk_facts")["vix_recent"]
+        wm = (db.watermarks() or {}).get("desk_series") or {}
+        try:
+            behind = oldest_behind(status())
+        except Exception:  # noqa: BLE001 — the data_status block reports its own failure; this line stands
+            behind = None
+        return {
+            "comparison_session": comparison, "prev_session": prev, "new_fires": new, "still_firing": still,
+            "vol_change_pts": vix[comparison] - vix[prev] if comparison in vix and prev in vix else None,
+            "regime_from": r_from, "regime_to": r_to, "regime_changed": changed,
+            # fix/freshness 3d: when the full refresh last ran the Desk store (the summary watermark's checked_at,
+            # the Data Pipeline's last refresh), not its advanced_at, which moves only when the laggard series does.
+            "refreshed_at_utc": _rfc3339(wm.get("checked_at")),
+            "oldest_behind": behind,
+        }
+
     return {
         "since_last_close": env.block_from("/overview", "since_last_close", since_last_close),
         "tiles": {
-            "regime": env.block_from("/overview", "tiles.regime", lambda: regime_tile(_result("desk_regime")["rows"], comparison)),
+            "regime": env.block_from("/overview", "tiles.regime",
+                                     lambda: regime_tile(_result("desk_regime")["rows"], _result("desk_regime").get("classifier"))),
             "recession": env.block_from("/overview", "tiles.recession", lambda: recession_tile(_result("desk_regime"))),
             "trend": env.block_from("/overview", "tiles.trend", trend_tile),
             "vol": env.block_from("/overview", "tiles.vol", lambda: vol_tile(_result("desk_facts"))),

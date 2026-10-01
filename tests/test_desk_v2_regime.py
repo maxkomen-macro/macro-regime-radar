@@ -89,10 +89,11 @@ def test_regime_shape(hermetic, monkeypatch):
     assert d["history_note"] == "labels as stored; revisions are not replayed."
 
 
-def test_current_is_the_k_minus_2_row_and_moves_at_a_month_boundary_inside_one_generation(hermetic, monkeypatch):
-    """R8 and plan §0.5: `print` is K−2 for the comparison session's month,
-    recomputed per response, so it moves at a month boundary with no new
-    generation; `latest_print` stays the newest stored row."""
+def test_current_is_the_newest_row_and_stays_put_across_a_month_boundary(hermetic, monkeypatch):
+    """fix/freshness 3a (D2): `print` is the newest stored row, the label the
+    Dashboard shows, whatever the session, so it does not move at a month
+    boundary inside one generation; `latest_print` is the same month. (Before
+    D2 it was K−2 for the session's month: 2026-07, then 2026-08.)"""
     rows = {r["month"]: r for r in hermetic.current.results["desk_regime"]["rows"]}
     at(monkeypatch, datetime(2026, 9, 30, 21, 0, tzinfo=timezone.utc))  # Wed 17:00 ET: 2026-09-30 is complete
     a = get_regime()
@@ -101,7 +102,7 @@ def test_current_is_the_k_minus_2_row_and_moves_at_a_month_boundary_inside_one_g
     at(monkeypatch, datetime(2026, 10, 1, 20, 30, tzinfo=timezone.utc))  # Thu 16:30 ET: 2026-10-01 is complete
     c = get_regime()
     assert a["generation_id"] == b["generation_id"] == c["generation_id"]
-    for body, month in ((a, "2026-07"), (b, "2026-07"), (c, "2026-08")):
+    for body, month in ((a, store.END_MONTH), (b, store.END_MONTH), (c, store.END_MONTH)):
         cur = body["data"]["current"]["data"]
         assert cur["print"] == month and cur["label"] == rows[month]["label"]
         assert (cur["growth"], cur["inflation"]) == (items.direction(rows[month]["growth_trend"]),
@@ -109,20 +110,29 @@ def test_current_is_the_k_minus_2_row_and_moves_at_a_month_boundary_inside_one_g
         assert cur["latest_print"] == store.END_MONTH
 
 
-def test_a_missing_k_minus_2_row_leaves_current_and_the_next_prints_awaiting_and_the_rest_served(tmp_path, install_worker, monkeypatch):
-    """desk/fill-compute: the next prints are read from the K−2 row too, so without it both cards await together."""
+def test_current_and_the_next_prints_read_one_row_and_a_row_without_its_trends_awaits(tmp_path, install_worker, monkeypatch):
+    """desk/fill-compute: the next prints are read from the row `current` shows, the newest stored row since
+    fix/freshness 3a. Without the newest row, the one before it is current and the next prints follow it; a newest
+    row whose trend is not stored leaves `current` awaiting while the rest serves."""
     path = store.build(tmp_path / "macro_radar.db")
     conn = sqlite3.connect(path)
-    conn.execute("DELETE FROM regimes WHERE date = '2026-07-01'")
+    conn.execute(f"DELETE FROM regimes WHERE date = '{store.END_MONTH}-01'")
     conn.commit()
     conn.close()
     serve(install_worker, monkeypatch, path)
     at(monkeypatch, datetime(2026, 9, 25, 21, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]
+    prev = d["history"][-1]["month"]
+    assert store.END_MONTH not in [h["month"] for h in d["history"]]
+    assert d["current"]["data"]["print"] == prev == d["next_prints"]["data"]["basis"]["month"]
+    conn = sqlite3.connect(path)
+    conn.execute(f"UPDATE regimes SET growth_trend = NULL WHERE date = '{prev}-01'")
+    conn.commit()
+    conn.close()
+    serve(install_worker, monkeypatch, path)
+    d = get_regime()["data"]
     assert d["current"] == {"status": "awaiting", "data": None, "unavailable": {"reason": AWAITING_REFRESH, "until": None}}
-    assert d["next_prints"] == d["current"]
-    assert d["recession"]["status"] == "ready"
-    assert "2026-07" not in [h["month"] for h in d["history"]]
+    assert d["recession"]["status"] == "ready" and d["next_prints"]["status"] == "ready"
 
 
 def test_without_a_recession_result_the_recession_block_is_awaiting(tmp_path, install_worker, monkeypatch):
@@ -557,15 +567,19 @@ def test_codex_r05_each_release_date_is_its_own_reference_months(hermetic, monke
         assert d["upcoming_from"]["month"] == "2026-08"
         assert (d["cpi"]["reference_month"], d["cpi"]["release_date"], d["cpi"]["released"]) == ("2026-09", "2026-10-14", out), now
         assert (d["indpro"]["release_date"], d["indpro"]["released"]) == (None, None)
-    # on Sep 5 the page shows the July row: the August row is already published, apart from the upcoming prints
+    # fix/freshness 3a (D2): the page shows the newest row, August, so nothing after it is published; a basis
+    # before the newest still lists the rows published after it (the item keeps the last three bases).
     at(monkeypatch, datetime(2026, 9, 5, 15, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]["next_prints"]["data"]
-    assert d["basis"]["month"] == "2026-07" and [r["month"] for r in d["published"]] == ["2026-08"]
-    assert d["published"][0]["cpi"]["reference_month"] == "2026-08"
-    # past the last stored release: none (and in Feb 2027 the K−2 row is not stored, so the block awaits with `current`)
+    assert d["basis"]["month"] == "2026-08" and d["published"] == []
+    item = hermetic.current.results["desk_regime"]["next_prints"]
+    july = v2m.next_prints_block(item, {}, datetime(2026, 9, 5, 15, 0, tzinfo=timezone.utc), "2026-07")
+    assert [r["month"] for r in july["published"]] == ["2026-08"] and july["published"][0]["cpi"]["reference_month"] == "2026-08"
+    # past the last stored release: none; the newest row still shows, so both blocks serve (no K−2 row to miss)
     at(monkeypatch, datetime(2027, 2, 1, 15, 0, tzinfo=timezone.utc))
     d = get_regime()["data"]
-    assert d["next_prints"]["status"] == d["current"]["status"] == "awaiting"
+    assert d["next_prints"]["status"] == d["current"]["status"] == "ready"
+    assert d["next_prints"]["data"]["cpi"]["release_date"] is None or d["next_prints"]["data"]["cpi"]["release_date"] <= "2026-12-31"
 
 
 def test_release_for_binds_a_reference_month_to_its_release_in_new_york_dates():
@@ -588,7 +602,8 @@ def test_regime_shape_on_a_real_store(path, install_worker, monkeypatch):
     body = get_regime()
     d = body["data"]
     if d["current"]["status"] == "ready":
-        assert d["current"]["data"]["print"] == "2026-07"
+        # fix/freshness 3a (D2): the newest stored row, not the K−2 row of the session's month.
+        assert d["current"]["data"]["print"] == d["history"][-1]["month"]
     if d["next_prints"]["status"] == "ready":
         assert d["next_prints"]["data"]["basis"]["month"] == d["current"]["data"]["print"]
         for k in ("cpi", "indpro"):
@@ -1013,7 +1028,7 @@ def test_the_classifier_reading_is_the_newest_rows_dominant_odds(tmp_path):
         conn.close()
 
 
-def test_the_route_serves_the_classifier_beside_the_k_minus_2_label(install_worker, monkeypatch):
+def test_the_route_serves_the_newest_label_with_its_odds(install_worker, monkeypatch):
     if not PUBLISHED.exists() or PUBLISHED.stat().st_size == 0:
         pytest.skip("no published copy")
     serve(install_worker, monkeypatch, PUBLISHED)
@@ -1021,5 +1036,6 @@ def test_the_route_serves_the_classifier_beside_the_k_minus_2_label(install_work
     cur = get_regime()["data"]["current"]["data"]
     if cur["latest_print"] != "2026-08":
         pytest.skip("not the audit's store")
-    assert cur["label"] == "Goldilocks" and cur["print"] == "2026-07"
-    assert cur["classifier"] == {"month": "2026-08", "label": "Overheating", "odds": 0.4246, "agrees": False}
+    # fix/freshness 3a (D2): the Dashboard's label and month (Overheating, Aug 2026), not the K−2 July Goldilocks row.
+    assert cur["label"] == "Overheating" and cur["print"] == "2026-08" and cur["odds"] == 0.4246
+    assert cur["classifier"] == {"month": "2026-08", "label": "Overheating", "odds": 0.4246, "agrees": True}

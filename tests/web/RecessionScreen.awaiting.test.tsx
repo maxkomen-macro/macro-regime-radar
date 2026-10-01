@@ -9,7 +9,7 @@
  * Sep 24 and its monthly ones Aug 2026. The next /api/freshness fetch fails,
  * and the cache keeps the report. /api/recession/probability answers with an
  * awaiting block, because the Desk store's schema check could not run. The
- * hero's "Model inputs" chip and the summary's "Inputs through" row must read
+ * hero's "Inputs through" chip (fix/freshness 3b; "Model inputs" before) and the summary's "Inputs through" row must read
  * "—" in the caution tone with the server's reason, never the cached dates.
  * Without the block, the same cache reads Sep 24: that is the repro's premise.
  */
@@ -82,7 +82,7 @@ async function mount(block: RecessionMetrics["freshness"]): Promise<{ container:
   });
   const { container } = renderWithProviders(<main id="main-content"><RecessionScreen /></main>, { route: "/app/recession", client });
   await waitFor(() => expect(client.getQueryState(["freshness"])?.status).toBe("error"));
-  await waitFor(() => expect(container.querySelector("[title^='Model inputs:']")).not.toBeNull());
+  await waitFor(() => expect(container.querySelector("[title^='Inputs through:']")).not.toBeNull());
   expect(client.getQueryData(["freshness"])).toBe(CACHED); // the cache kept the report
   return { container, client };
 }
@@ -94,7 +94,7 @@ function inputsThrough(container: HTMLElement): string {
 
 it("R-31 on /app/recession: an awaiting block labels the numbers — with the reason, never the cached dates", async () => {
   const { container } = await mount({ status: "awaiting", reason: REASON } as unknown as RecessionMetrics["freshness"]);
-  const chip = container.querySelector("[title^='Model inputs:']") as HTMLElement;
+  const chip = container.querySelector("[title^='Inputs through:']") as HTMLElement;
   expect(chip.getAttribute("data-tone")).toBe("delayed");
   expect(chip.querySelector(".mrr-fresh-word")?.textContent).toBe("—");
   expect(chip.getAttribute("title")).toContain(REASON);
@@ -109,7 +109,7 @@ it("R-31 on /app/recession: an awaiting block labels the numbers — with the re
 
 it("the premise: without the block, the same cache dates the numbers Sep 24", async () => {
   const { container } = await mount(undefined);
-  const chip = container.querySelector("[title^='Model inputs:']") as HTMLElement;
+  const chip = container.querySelector("[title^='Inputs through:']") as HTMLElement;
   expect(chip.getAttribute("title")).toContain("Aug 2026 print");
   expect(inputsThrough(container)).toBe("Daily Sep 24 · monthly Aug 2026 print");
 });

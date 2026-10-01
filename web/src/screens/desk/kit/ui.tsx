@@ -152,6 +152,17 @@ export function cx(...names: (string | false | null | undefined)[]): string {
   return names.filter(Boolean).join(" ");
 }
 
+/** fix/freshness 3c: a card's stamp when its number is not a live tick ("Close · Sep 29", or a delayed quote's own
+ * stamp, "Sep 30, 17:15 ET · 15m"): the badge slot, gray, never the word Live. */
+export function StampBadge({ text, boxed = false, className }: { text: string; boxed?: boolean; className?: string }) {
+  return (
+    <span className={cx("dk-live", "dk-live-stamp", boxed && "dk-live-boxed", className)} data-testid="dk-live" data-kind="stamp">
+      <span className="dk-dot" aria-hidden="true" />
+      {text}
+    </span>
+  );
+}
+
 /** `● Live · <source> · <date>` (§1.6): green dot, mono. Parts that are absent are left out. */
 export function LiveBadge({ parts, boxed = false, className }: { parts?: (string | null | undefined)[]; boxed?: boolean; className?: string }) {
   const text = ["Live", ...(parts ?? [])].filter(Boolean).join(" · ");

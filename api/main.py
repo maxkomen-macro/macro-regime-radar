@@ -694,6 +694,12 @@ class RecessionMetrics(BaseModel):
     data_as_of: str
     curve_shape: dict[str, float | None]  # tenors absent from raw_series are None
     current_inputs: dict[str, float | None]
+    # fix/freshness 3b, 4: the month the headline is the score for, the month of
+    # the (three-month-lagged) inputs it was scored from, and the month of each
+    # current reading the sensitivity panel starts from.
+    probability_month: str | None = None
+    inputs_through: str | None = None
+    current_input_months: dict[str, str] | None = None
     # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
     # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
     freshness: dict[str, Any] | None = None

@@ -130,8 +130,10 @@ const NOTE = "Sits in the Low Risk band (under 20%); the historical base rate ru
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
 // Iteration 1 step 5 (G4): three visible sentences (data-copy-max 3: the tail
 // and the headline are different numbers); the lag sentence sits behind Details.
+// fix/freshness 3b: the served tail is the headline (B7). This fixture's tail (10.0) is not its headline (11.6), so
+// the sentence about the tail goes; it never calls them a partial-month fit and a complete read again.
 const CHART_CAPTION_24M =
-  "The model's 12-month odds, monthly since Oct 2024. Shaded bands are actual NBER recessions, dashed rules the 20/40 band edges. The plotted tail (10%) is a partial-month fit; the headline 11.6% is the newest complete monthly read.";
+  "The model's 12-month odds, monthly since Oct 2024. Shaded bands are actual NBER recessions, dashed rules the 20/40 band edges.";
 const CHART_CAPTION_MORE = "Features enter with a 3-month lag so the line never peeks at data it wouldn't have had.";
 // Iteration 1 X2 adds two served rows (Training sample, Inputs through) before the reference thresholds.
 const SUMMARY_LABELS = ["12-month probability", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
@@ -389,12 +391,24 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(hero())).toContain("Logistic model on 5 FRED inputs, lagged 3 months");
     expect(text(hero())).toContain("Scored for Aug 2026");
     // E3: the chip is the weakest of the seven inputs' §5 words (a monthly print ranks with a daily close; the older stamp wins).
-    expect(hero().querySelector("[title^='Model inputs: Aug 2026 print.']")).not.toBeNull();
+    // fix/freshness 3b: the chip leads with "Inputs through"; without a served inputs month it prints the newest data's word.
+    expect(hero().querySelector("[title^='Inputs through: Aug 2026 print.']")).not.toBeNull();
     expect(text(hero().querySelector(".mrr-hero-note"))).toBe(NOTE);
     expect(screen.queryByText(LOADING_HEADLINE)).toBeNull();
     expect(text(hero())).not.toContain(ERROR_HEADLINE);
     expect(document.querySelector("img")).toBeNull();
     expect(text(hero())).not.toContain("—");
+  });
+
+  it("fix/freshness 3b: the chip names the scored inputs' month, then the newest data; a tail equal to the headline says so", async () => {
+    stubFetch(routes({}, () => recessionFixture({ ...FLAT, inputs_through: "2026-06", probability_month: "2026-09" })));
+    renderRecession();
+    await awaitHero();
+    await waitFor(() => expect(hero().querySelector("[title^='Inputs through: Jun 2026 · latest data']")).not.toBeNull());
+    const chip = hero().querySelector("[title^='Inputs through:']") as HTMLElement;
+    expect(text(chip)).toMatch(/^.?Inputs throughJun 2026· latest data /);
+    expect(text(chip)).not.toContain("Model inputs");
+    expect(text(heroViz())).toContain("The line ends at the headline, 11.6%, the score for Sep 2026.");
   });
 
   it("a served label that disagrees with the number prints as served in the pill, the summary row and the note (no client re-derivation)", async () => {
@@ -466,7 +480,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(within(group).getByRole("button", { name: "Full history" })).toHaveAttribute("aria-pressed", "false");
     expect(legendRange(viz)).toBe("Oct 31, 2024 → Sep 30, 2026");
     expect(text(viz)).toContain(CHART_CAPTION_24M);
-    expect(text(viz)).toContain("the headline 11.6%");
+    expect(text(viz)).not.toMatch(/partial-month|newest complete monthly read|The line ends at/);
     expect(text(viz)).not.toContain(CHART_CAPTION_MORE);
     fireEvent.click(within(viz).getByRole("button", { name: /Details/ }));
     expect(text(viz)).toContain(CHART_CAPTION_MORE);
@@ -486,7 +500,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(heroViz())).toContain("20% Elevated");
     expect(text(heroViz())).toContain("40% High Risk");
     expect(text(heroViz())).toContain("monthly since Mar 2023");
-    expect(text(heroViz())).toContain("the headline 11.6%");
+    expect(text(heroViz())).not.toContain("partial-month");
     fireEvent.click(within(historyGroup()).getByRole("button", { name: "24M" }));
     expect(within(historyGroup()).getByRole("button", { name: "24M" })).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(legendRange(heroViz())).toBe("Oct 31, 2024 → Sep 30, 2026"));
@@ -654,7 +668,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(cardNamed("Industrial production YoY").querySelector(".mrr-stale-num[data-stale='true']")).not.toBeNull();
     expect(cardNamed("Unemployment rate").querySelector("[data-stale='true']")).toBeNull();
     expect(text(cardNamed("Yield curve (2s10s)"))).toContain("FRED DGS10, DGS2 · Sep 17");
-    const chip = hero().querySelector("[title^='Model inputs:']") as HTMLElement;
+    const chip = hero().querySelector("[title^='Inputs through:']") as HTMLElement;
     expect(chip).toHaveAttribute("data-stale", "true");
     expect(text(chip)).toContain("Jul 2026 · 1 release behind");
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
@@ -675,7 +689,7 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     await awaitHero();
     await awaitSection("model");
     await waitFor(() => expect(text(ddFor("Inputs through"))).toBe("As of unknown"));
-    expect(hero().querySelector("[title^='Model inputs:']")).toHaveAttribute("data-tone", "unknown");
+    expect(hero().querySelector("[title^='Inputs through:']")).toHaveAttribute("data-tone", "unknown");
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
     expect(text(cardNamed("HY credit spread"))).toContain("FRED BAMLH0A0HYM2 · As of unknown");
   });

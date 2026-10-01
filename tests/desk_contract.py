@@ -139,9 +139,11 @@ RECESSION_TILE_FIELDS = dict(
     freq=Const("monthly"), source=RECESSION_SOURCE,
 )
 
+# fix/freshness 3a (D2): the newest stored row, the Dashboard's label, with the classifier's
+# odds for it (null for Recession Risk: the Desk never shows regimes.prob_recession).
 REGIME_TILE_FIELDS = dict(
     label=REGIME, print=MONTH, growth=DIRECTION, inflation=DIRECTION,
-    months_in=INT, since=MONTH, freq=Const("monthly"), source=REGIMES_SOURCE,
+    months_in=INT, since=MONTH, odds=null(FRAC), freq=Const("monthly"), source=REGIMES_SOURCE,
 )
 
 SPAN = obj(start=DATE, end=DATE, n=INT)
@@ -158,6 +160,8 @@ OVERVIEW = obj(
         vol_change_pts=null(NUM),
         regime_from=null(REGIME), regime_to=null(REGIME), regime_changed=null(BOOL),
         refreshed_at_utc=null(TS),
+        # fix/freshness 3d: the Desk series behind with the oldest observation, null when all are current.
+        oldest_behind=null(obj(series=STR, observation_date=null(DATE), state=E("stale", "missing"), reason=STR)),
     )),
     tiles=obj(
         regime=Block(Obj(dict(REGIME_TILE_FIELDS))),

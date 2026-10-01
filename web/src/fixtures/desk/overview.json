@@ -7,19 +7,21 @@
   "new_fires": [],
   "still_firing": [],
   "vol_change_pts": 0.9700002670288086,
-  "regime_from": "Goldilocks",
-  "regime_to": "Goldilocks",
+  "regime_from": "Overheating",
+  "regime_to": "Overheating",
   "regime_changed": false,
-  "refreshed_at_utc": "2026-09-24T05:07:11Z"
+  "refreshed_at_utc": "2026-09-24T15:52:43Z",
+  "oldest_behind": null
  },
  "tiles": {
   "regime": {
-   "label": "Goldilocks",
-   "print": "2026-07",
+   "label": "Overheating",
+   "print": "2026-08",
    "growth": "rising",
-   "inflation": "falling",
+   "inflation": "rising",
    "months_in": 1,
-   "since": "2026-07",
+   "since": "2026-08",
+   "odds": 0.4246,
    "freq": "monthly",
    "source": "regimes table (src/regime.py)"
   },

@@ -39,6 +39,9 @@ export default function ProbabilityHistory({ m }: { m: RecessionMetrics }): JSX.
   const plotted = win === "24m" ? lastMonths(series, 24) : series;
   const prob = m.recession_prob ?? 0;
   const tail = series.length ? series[series.length - 1] : null;
+  // fix/freshness 3b: the served tail is the headline (B7 dates both by one rule). The sentence that says so
+  // prints only when they match at the printed precision; a tail that does not match is not explained away.
+  const tailIsHeadline = tail != null && m.recession_prob != null && fmtProb(tail.value, "percent", 1) === fmtProb(m.recession_prob, "percent", 1);
   // LineChart draws a rule only when it falls inside the plotted range; the
   // key names exactly the rules on the plot. The words sit in this key row,
   // off the svg (Iteration 1 G1: drawn over the plot they overlapped it).
@@ -67,18 +70,21 @@ export default function ProbabilityHistory({ m }: { m: RecessionMetrics }): JSX.
         showLast={false}
         caption="Model recession probability history with NBER recessions shaded"
       />
-      {/* G4 (Iteration 1 step 5): three sentences, not two, because the
-          plotted tail and the headline are different numbers (a partial-month
-          fit vs the newest complete monthly read) and would be misread as a
-          disagreement without the third. The lag sentence sits behind Details. */}
+      {/* fix/freshness 3b: the plotted tail is the headline, the same served
+          float dated the same way (B7), so the third sentence says so instead
+          of calling them different numbers. The lag sentence sits behind Details. */}
       <Caption mono copyMax={3}>
         The model&apos;s 12-month odds, monthly since {plotted[0] ? fmtMonYr(plotted[0].date) : DASH}. Shaded bands are actual{" "}
-        <Jargon term="NBER">NBER</Jargon> recessions, dashed rules the 20/40 band edges. The plotted tail ({tail ? fmtProb(tail.value, "percent") : DASH})
-        is a partial-month fit; the headline{" "}
-        <Metric id="recession-prob" value={m.recession_prob}>
-          {fmtProb(prob, "percent", 1)}
-        </Metric>{" "}
-        is the newest complete monthly read.
+        <Jargon term="NBER">NBER</Jargon> recessions, dashed rules the 20/40 band edges.
+        {tailIsHeadline && tail ? (
+          <>
+            {" "}The line ends at the headline,{" "}
+            <Metric id="recession-prob" value={m.recession_prob}>
+              {fmtProb(prob, "percent", 1)}
+            </Metric>
+            , the score for {fmtMonYr(tail.date)}.
+          </>
+        ) : null}
       </Caption>
       <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
         <Caption mono style={{ marginTop: 0 }}>

@@ -210,7 +210,7 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                     <Metric id="recession-prob" value={recession.data?.recession_prob}>
                       {fmtProb(recession.data?.recession_prob, "percent", 1)}
                     </Metric>{" "}
-                    (the evidence card above); the plotted tail can differ while a month is partial.
+                    (the evidence card above), the line&apos;s last point.
                   </Caption>
                   <Stamp block source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
                 </>

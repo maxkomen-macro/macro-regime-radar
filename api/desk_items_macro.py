@@ -167,6 +167,29 @@ def classifier_latest(conn: sqlite3.Connection) -> dict | None:
     return {"month": str(row[0])[:7], "label": label, "odds": None if label == "Recession Risk" else top}
 
 
+def newest_known_at(conn: sqlite3.Connection, rows: list[dict]) -> str | None:
+    """When the store learned the newest regimes row (fix/freshness 3a): a row
+    stamped M exists once both its inputs, CPI and INDPRO for M, are stored, so
+    it became known at the later of the two series' watermark advances, when
+    both watermarks stand on M. None when either does not, or the store keeps
+    no watermarks (an older database)."""
+    from api import provenance
+
+    if not rows or not provenance.table_exists(conn, "source_watermarks"):
+        return None
+    marks = dict(conn.execute(
+        "SELECT source, last_obs || '|' || COALESCE(advanced_at, '') FROM source_watermarks "
+        "WHERE source IN ('fred:CPIAUCSL', 'fred:INDPRO')").fetchall())
+    month = rows[-1]["month"]
+    seen = []
+    for source in ("fred:CPIAUCSL", "fred:INDPRO"):
+        last, _, advanced = str(marks.get(source) or "").partition("|")
+        if last[:7] != month or not advanced:
+            return None
+        seen.append(advanced)
+    return max(seen)
+
+
 def _month_after(month: str, n: int = 1) -> str:
     y, m = int(month[:4]), int(month[5:7])
     y, m = divmod((y * 12 + m - 1) + n, 12)
@@ -614,14 +637,17 @@ def _lag() -> int:
 
 def desk_regime(ctx: dict) -> dict:
     """The desk_regime item, the one /regime and /overview read: the stored
-    regimes rows, the recession block (the recession tile is its seven tile
+    regimes rows, the newest row's classifier odds and when the store learned
+    that row, the recession block (the recession tile is its seven tile
     fields), the next-print thresholds, the stored release times, and what
-    each regime has meant and the last changes. The K−2 selection and the
-    release date are the routes', per response (plan §0.5)."""
+    each regime has meant and the last changes. Both routes show the newest
+    stored row (fix/freshness 3a, D2: the label the Dashboard shows); the
+    release date and since-last-close are the routes', per response (plan §0.5)."""
     conn = _connect()
     try:
         rows = regime_rows(conn)
         classifier = classifier_latest(conn)
+        known_at = newest_known_at(conn, rows)
         prints = part("next_prints", lambda: next_prints(conn, rows))
         releases = release_times(conn)
         levels = part("levels", lambda: _levels(conn))
@@ -635,7 +661,8 @@ def desk_regime(ctx: dict) -> dict:
             return fn(*levels["data"])
         return build
 
-    return {"rows": rows, "classifier": classifier, "recession": part("recession", lambda: recession_block(ctx)),
+    return {"rows": rows, "classifier": classifier, "newest_known_at": known_at,
+            "recession": part("recession", lambda: recession_block(ctx)),
             "next_prints": prints, "release_times": releases,
             "stats": part("stats", with_levels(lambda spx, vix: regime_stats(rows, spx, vix))),
             "changes": part("changes", with_levels(lambda spx, vix: regime_changes(rows, spx)))}

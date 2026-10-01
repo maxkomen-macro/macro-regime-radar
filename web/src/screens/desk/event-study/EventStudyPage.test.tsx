@@ -160,8 +160,10 @@ describe("Event Study tab", () => {
     expect(within(rows.find((r) => r.textContent?.startsWith("Goldilocks"))!).getByText("too few cases to say")).toHaveAttribute("colspan", "2");
     expect(rail).not.toHaveTextContent("Unlabeled");
     expect(rail).toHaveTextContent("Mar 23, 2023Stagflation+4.1%");
-    // Today's regime is the K−2 row, Goldilocks (the audit's §2.2).
-    expect(rail).toHaveTextContent("Today is Goldilocks: two events, too few to read alone.");
+    // fix/freshness 3a (D2): today's regime is the newest stored row, Overheating (the Dashboard's); the events
+    // carry the label known when each happened, and the rail says so in one line.
+    expect(rail).toHaveTextContent("Today is Overheating: six events, too few to read alone.");
+    expect(within(rail).getByTestId("es-tagged")).toHaveTextContent("Events are tagged with the label known at the time: a month's print governs two months later.");
     expect(rail).toHaveTextContent("Apr 16, 2025Overheating+12.0%");
     expect(rail).toHaveTextContent("−1.6 to +4.1 pts");
     // §14.3: the engine's one level, in words; no chip for another.

@@ -226,7 +226,7 @@ const rsPoint = o({ date: "s!", rs: "n", rs_ma50: "n" });
 // desk/usability §14.2: the drawdown's and the realized volatility's windows (books' `span` below is the basket's, nullable).
 const techSpan = o({ start: "s!", end: "s!", n: "n" });
 const relPoint = o({ date: "s!", rel: "n" });
-const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", freq: "s", source: "s" });
+const regimeTrend = o({ label: "s!", print: "s", growth: "s", inflation: "s", months_in: "n", since: "s", odds: "n", freq: "s", source: "s" });
 const BANDS = ["low", "elevated", "high_risk"] as const;
 const TREND_STATES = ["above_both", "below_both", "mixed", "unavailable"] as const;
 const FRESH_STATES = ["current", "stale", "missing"] as const;
@@ -351,6 +351,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       regime_from: "s?",
       regime_to: "s?",
       refreshed_at_utc: "s?",
+      // fix/freshness 3d: the Desk series behind with the oldest observation, or null.
+      oldest_behind: o({ series: "s!", observation_date: "s?", state: "s!", reason: "s" }, { nul: true }),
     }),
     tiles: o({
       regime: regimeTrend,
@@ -461,6 +463,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       inflation: "s",
       months_in: "n",
       since: "s",
+      // fix/freshness 3a (D2): the classifier's odds for the newest row's label (null for Recession Risk).
+      odds: "n",
       freq: "s",
       source: "s",
       // desk/fill-compute: a classifier reading without its month, label and verdict claims nothing.

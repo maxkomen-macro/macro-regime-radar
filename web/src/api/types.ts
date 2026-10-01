@@ -185,6 +185,11 @@ export interface RecessionMetrics {
   data_as_of: string;
   curve_shape: Record<string, number | null>;
   current_inputs: Record<string, number | null>;
+  /** fix/freshness 3b, 4: the month the headline is the score for ("YYYY-MM"), the month of the
+   * three-month-lagged inputs it was scored from, and the month of each current reading. */
+  probability_month?: string | null;
+  inputs_through?: string | null;
+  current_input_months?: Record<string, string> | null;
   /** B3: per-series state for the model's inputs (FRESHNESS_CONTRACT §6). */
   freshness?: Record<string, SeriesState> | null;
 }

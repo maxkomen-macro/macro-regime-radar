@@ -10,7 +10,7 @@
  */
 
 import type { StudyResponse } from "../data/types";
-import { dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
+import { REGIME_TAGGED_LINE, dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { Advanced, Awaiting, DroppedNote, Signed, UnservedLine, useUnserved, VerdictWord, useLoadFailed } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { targetLabel } from "./question";
@@ -156,6 +156,8 @@ export default function StudyRail({
         <Awaiting />
       )}
       <DroppedNote n={droppedOf(study, "by_regime")} one="regime row" />
+      {/* fix/freshness 3a (D2): today's label is the newest stored row's; each event carries the label known then. */}
+      {byRegime ? <p className="es-note" data-testid="es-tagged">{REGIME_TAGGED_LINE}</p> : null}
       {fin(study.unlabeled_n) && study.unlabeled_n > 0 ? (
         <p className="es-note">
           {/* §4 (S-06): an event whose K−2 row is not stored carries no label, wherever it falls. */}

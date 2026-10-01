@@ -56,7 +56,7 @@ function TodayCard() {
           <p className="dk-today-regime" data-regime={regime.label}>
             {regime.label}
           </p>
-          {/* §1.1: the K−2 row governing today ("Overheating · regime · July data"). */}
+          {/* §1.1, fix/freshness 3a (D2): the newest stored row, the Dashboard's label ("Overheating · regime · Aug 2026 data"). */}
           <p className="dk-today-sub">{rowWords(regime.print) ? `regime · ${rowWords(regime.print)}` : "regime"}</p>
         </>
       ) : regimeOff ? (
