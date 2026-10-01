@@ -22,7 +22,10 @@ import { useEffect, useSyncExternalStore } from "react";
 export interface LiveQuote {
   s: string;
   p: number;
-  /** EODHD's own day-change % / day-change $ — passed through, never recomputed. */
+  /** Day-change % / day-change $, served by the relay: EODHD's own on forex,
+   * crypto and REST rows; on a US tick, the relay's against the symbol's
+   * previous regular-session close (api/stream.py, fix/freshness 1). Null when
+   * the relay has no previous close for the tick's session. Never computed here. */
   dc: number | null;
   dd: number | null;
   /** Tick time, ms epoch. */

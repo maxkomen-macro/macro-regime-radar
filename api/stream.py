@@ -24,8 +24,15 @@ Message protocol to browsers (JSON):
   {"type": "quotes",   "items": [Quote...]}                   coalesced ticks
   {"type": "status",   "feeds": {feed: state}, "stale": {...}, "degraded": bool}
 Browser → relay: {"action": "watch"|"unwatch", "symbols": ["AMZN", ...]}
-Quote: {"s", "p", "dc", "dd", "t", "delayed", "src"} — dc/dd are EODHD's own
-day-change % / day-change $ fields, passed through, not recomputed.
+Quote: {"s", "p", "dc", "dd", "t", "delayed", "src"} — dc/dd are the
+day-change % / day-change $. Forex and crypto frames and every REST row carry
+EODHD's own (dc/dd, change_p/change), passed through. US trade frames carry
+only {s, p, c, v, dp, ms, t}, so for a US tick the relay computes them against
+the symbol's previous regular-session close, kept from its REST rows
+(fix/freshness 1): dd = p − prev_close, dc = dd / prev_close × 100; with no
+previous close for the tick's session, dc and dd stay null. A US tick flagged
+ms "extended-hours" (or "closed") never changes the stored quote: the board
+holds the last regular-session quote until the next open (decision D1).
 """
 
 from __future__ import annotations
@@ -37,7 +44,7 @@ import logging
 import os
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +100,9 @@ DYNAMIC_IDLE_SECONDS = 600
 WS_MESSAGES_PER_MIN = 30
 WS_NEW_SYMBOLS_PER_HOUR = 40
 STALE_AFTER_SECONDS = {"us": 90.0, "crypto": 120.0, "forex": 120.0}
+# EODHD's US market-status flag (`ms`: open | closed | extended-hours). A trade
+# printed outside the regular session never moves the board (D1).
+US_HOLD_STATES = frozenset({"extended-hours", "closed"})
 _SYMBOL_OK = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
 
 
@@ -132,6 +142,12 @@ def _f(x: Any) -> float | None:
 
 def _iso(ts: float | None) -> str | None:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if ts else None
+
+
+def _ny_day(ts: float) -> date:
+    """The New York calendar date of an epoch-seconds stamp: the session a
+    US print or REST row belongs to."""
+    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(cal.NY).date()
 
 
 def feed_for_symbol(sym: str) -> str | None:
@@ -180,6 +196,10 @@ class QuoteHub:
         # Dynamic subscriptions: symbol → {"feed", "watchers": set[ws], "last_seen": monotonic}
         self._dynamic: dict[str, dict] = {}
         self._watch_lock = asyncio.Lock()
+        # US symbol → (previous regular-session close, the New York date of the
+        # session it is the previous close FOR). Kept from REST rows; a US tick
+        # reads it only when the tick belongs to that session.
+        self._prev_close: dict[str, tuple[float, date]] = {}
         # Ops counters for /api/stream/debug — how many raw frames each feed
         # delivered, how often it (re)connected, and what got stored/flushed.
         self.stats: dict[str, Any] = {
@@ -192,6 +212,8 @@ class QuoteHub:
             "feed_last_tick_at": {"us": None, "crypto": None, "forex": None, "vix": None},
             "feed_last_change_at": {"us": None, "crypto": None, "forex": None, "vix": None},
             "ticks_stored": 0,
+            # US prints outside the regular session, held off the board (D1).
+            "us_ticks_held": 0,
             "flushes_sent": 0,
             "dynamic_subscribes": 0,
             "dynamic_unsubscribes": 0,
@@ -621,15 +643,56 @@ class QuoteHub:
                 price = a if a is not None else b
         if price is None:
             return
+        if feed == "us" and msg.get("ms") in US_HOLD_STATES:
+            # D1: a pre- or post-market print leaves the regular-session quote
+            # standing (and does not date the feed: the board's last print is
+            # the regular one).
+            self.stats["us_ticks_held"] += 1
+            return
+        t = _f(msg.get("t"))
+        dc, dd = _f(msg.get("dc")), _f(msg.get("dd"))
+        if feed == "us" and dc is None:
+            dc, dd = self._day_change(sym, price, t)
         self._update(sym, {
             "s": sym,
             "p": price,
-            "dc": _f(msg.get("dc")),
-            "dd": _f(msg.get("dd")),
-            "t": _f(msg.get("t")),
+            "dc": dc,
+            "dd": dd,
+            "t": t,
             "delayed": False,
             "src": "ws",
         })
+
+    def _day_change(self, sym: str, price: float, t_ms: float | None) -> tuple[float | None, float | None]:
+        """(dc %, dd $) of a US print against the previous regular-session
+        close of the print's own session; (None, None) without one."""
+        kept = self._prev_close.get(sym)
+        if kept is None:
+            return None, None
+        prev, session = kept
+        day = _ny_day(t_ms / 1000.0) if t_ms is not None else datetime.now(timezone.utc).astimezone(cal.NY).date()
+        if day != session:
+            return None, None
+        dd = price - prev
+        return round(dd / prev * 100.0, 4), round(dd, 4)
+
+    def _note_prev_close(self, sym: str, row: dict, ts: float | None, now: datetime | None) -> None:
+        """Keep a US symbol's previous regular-session close from its REST row.
+        A row from today's New York session carries it as previousClose; a row
+        from an earlier session (pre-open, a holiday, a name that has not
+        printed yet today) is itself the last close before today's session."""
+        if ts is None:
+            return
+        today = (now or datetime.now(timezone.utc)).astimezone(cal.NY).date()
+        row_day = _ny_day(ts)
+        if row_day < today:
+            prev = _f(row.get("close"))
+        elif row_day == today:
+            prev = _f(row.get("previousClose"))
+        else:
+            return  # a row dated after today is a clock fault
+        if prev is not None and prev > 0:
+            self._prev_close[sym] = (prev, today)
 
     # ── upstream: REST delayed quotes (VIX + off-hours seed) ─────────────────
 
@@ -647,7 +710,7 @@ class QuoteHub:
         data = r.json()
         return data if isinstance(data, list) else [data]
 
-    def _store_rest_quote(self, row: dict, *, delayed: bool) -> None:
+    def _store_rest_quote(self, row: dict, *, delayed: bool, now: datetime | None = None) -> None:
         code = str(row.get("code", ""))
         sym = code.rsplit(".", 1)[0] if "." in code else code
         if not sym:
@@ -656,6 +719,8 @@ class QuoteHub:
         if price is None:
             return
         ts = _f(row.get("timestamp"))
+        if self._feed_of(sym) == "us":
+            self._note_prev_close(sym, row, ts, now)
         live = self.quotes.get(sym)
         # Never let a 15-min-delayed REST row clobber a fresher WS tick.
         if live and live.get("src") == "ws" and ts is not None and live.get("t"):

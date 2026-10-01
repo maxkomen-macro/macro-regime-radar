@@ -1,8 +1,8 @@
 /**
  * The ticker strip, wired to the live layer (redesign Phase 1, spec §2):
  * three quote cards (SPY, QQQ, US 10Y) and the freshness card that opens the
- * per-source breakdown. SPY + QQQ take the EODHD stream's own day-change
- * figures when a quote is on the board (web/src/live/quotes.ts →
+ * per-source breakdown. SPY + QQQ take the relay's day-change figures (each
+ * US tick against the previous regular-session close) when a quote is on the board (web/src/live/quotes.ts →
  * api/stream.py), and fall back to the 30s DB intraday poll against the prior
  * daily close when the stream is silent. US 10Y stays on the credit endpoint;
  * yields are not on the stream.

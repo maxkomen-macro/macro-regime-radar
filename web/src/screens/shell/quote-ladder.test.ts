@@ -59,7 +59,7 @@ const DAILY = [bar("SPY", PRIOR, 640.1), bar("SPY", LATEST, 645.2), bar("QQQ", P
 const SESSION = [point("SPY", `${LATEST} 15:50:00`, 644.0), point("SPY", `${LATEST} 15:55:00`, 645.2), point("QQQ", `${LATEST} 15:55:00`, 572.9)];
 
 const TAG_15M = { text: "15M", title: "15-minute delayed quote (REST fill)", tone: "amber" };
-const TAG_LAST = { text: "LAST", title: "Last tick; the feed has not sent a day change yet", tone: "muted" };
+const TAG_LAST = { text: "LAST", title: "Last tick; no previous close for this session yet, so no day change", tone: "muted" };
 const TAG_NO_PRICE = { text: "NO PRICE", title: "No stored or live price for this symbol", tone: "muted" };
 const TAG_CLOSE = { text: "CLOSE", title: "Stored close, Sep 14, 2026", tone: "amber" };
 
@@ -98,6 +98,14 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
     // point it falls back to the last stored closes.
     expect(quoteFor(SPY, quotes(quote("SPY", 645.2, 0.79)), [point("SPY", `${LATEST} 15:55:00`, 645.2)], DAILY).series).toEqual([640.1, 645.2]);
     expect(quoteFor(SPY, quotes(quote("SPY", 645.2, 0.79)), undefined, undefined).series).toEqual([]);
+  });
+
+  it("fix/freshness 1: a US trade tick as the relay now serves it (dc and dd against the previous regular close) prints its day change, never LAST", () => {
+    // The relay's quote for SPY at 770.00 against Sep 30's 762.44 close (tests/test_stream_day_change.py).
+    const tick: LiveQuote = { s: "SPY", p: 770.0, dc: 0.9916, dd: 7.56, t: 1_789_400_000_000, delayed: false, src: "ws" };
+    const read = quoteFor(SPY, quotes(tick), SESSION, DAILY);
+    expect(read).toMatchObject({ price: "770.00", change: "+0.99%", changeTone: "pos", via: "stream" });
+    expect(read.tag).toBeUndefined();
   });
 
   it("step 2: a stream price without a day change prints the price with LAST, or 15M when delayed, never a dash", () => {

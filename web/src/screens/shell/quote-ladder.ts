@@ -50,7 +50,7 @@ export interface QuoteLadderOptions {
 }
 
 const DELAYED_TAG: QuoteTag = { text: "15M", title: "15-minute delayed quote (REST fill)", tone: "amber" };
-const LAST_TAG: QuoteTag = { text: "LAST", title: "Last tick; the feed has not sent a day change yet", tone: "muted" };
+const LAST_TAG: QuoteTag = { text: "LAST", title: "Last tick; no previous close for this session yet, so no day change", tone: "muted" };
 const NO_PRICE_TAG: QuoteTag = { text: "NO PRICE", title: "No stored or live price for this symbol", tone: "muted" };
 
 /** The latest session's intraday closes (two or more points), else nothing. */
@@ -84,7 +84,8 @@ export function quoteFor(
   const series = intradaySeries(intradayRows, sym) ?? dailySeries(dailyBars, sym);
 
   if (live?.dc != null) {
-    // Stream quote: the exchange's own day change, marked delayed when it
+    // Stream quote: the relay's day change (EODHD's own on a REST row, the
+    // relay's against the previous regular close on a US tick), marked delayed when it
     // came from the 15-min REST fill rather than a socket tick.
     return {
       symbol: sym,

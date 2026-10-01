@@ -24,7 +24,7 @@
  * The tape is fed by the EODHD relay (web/src/live/quotes.ts → api/stream.py):
  * crypto and FX stream around the clock, US equities during NYSE hours,
  * 15-min-delayed REST rows fill the gaps, and every row states what it is.
- * Every number on the page is a served field (the feed's own day-change
+ * Every number on the page is a served field (the relay's day-change
  * figures, the stored bars' ret_1d / ret_1w / ret_1m, the weekly pipeline's
  * metrics) or a formatted served value; nothing is re-derived in the browser.
  * Hooks are called once here and passed down; SingleName and ChartPanel keep

@@ -15,8 +15,9 @@
  * as-of stamp (M2, `tapeStatusLine`).
  *
  * Every figure is served or a formatted served value: `dc` / `dd` are the
- * feed's own day-change fields (never arithmetic; a quote with a price but no
- * day change prints the dash), 1W / 1M / the sparkline come from the stored
+ * relay's day-change fields (EODHD's own on FX, crypto and REST rows, the
+ * relay's against the previous regular close on a US tick; never arithmetic
+ * here: a quote with a price but no day change prints the dash), 1W / 1M / the sparkline come from the stored
  * daily bars, the as-of stamp from the quote or the newest bar's date.
  * `rowOf` and the cell renderers live at module level so the 2 Hz quote
  * snapshots allocate nothing new per row (G17).
@@ -320,7 +321,7 @@ const lastCell = (r: TapeRowData): ReactNode => {
   );
 };
 
-// The feed's own day change, never arithmetic: a quote with a price but a
+// The relay's day change, never arithmetic here: a quote with a price but a
 // null `dc` prints the dash rather than falling back to the stored return.
 const dayPctCell = (r: TapeRowData): ReactNode => {
   const v = r.quote ? r.quote.dc : storedClose(r)?.ret_1d;

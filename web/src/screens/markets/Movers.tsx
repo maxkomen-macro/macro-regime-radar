@@ -5,7 +5,7 @@
  * research panel (the screen routes it through `?name=`, the watchlist path).
  *
  * The day change, per name, is the first of:
- *   1. the stream's own day change (`dc`) when the relay carries one, stamped
+ *   1. the relay's day change (`dc`, against the previous regular close) when it carries one, stamped
  *      with the quote's as-of (● clock for a live tick, the quote time with
  *      "15m" for a delayed row): the tape's `asOfCell`;
  *   2. the last completed session's close against the one before it, read
