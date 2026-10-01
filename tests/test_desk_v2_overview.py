@@ -312,12 +312,20 @@ PUBLISHED = Path(os.environ.get("DESK_PUBLISHED_DB", Path(__file__).resolve().pa
 def test_on_a_scratch_copy_of_the_published_store_a_null_slope_awaits(install_worker, monkeypatch, tmp_path, axis):
     """Codex's repro, on the row the tile shows since fix/freshness 3a (D2): the published copy's newest row
     (2026-08, Overheating, the Dashboard's label) with one slope NULL."""
+    # Codex R-22: which store this is is read from the file itself, never from the tile under test, so a tile
+    # that stops being ready fails here instead of skipping.
+    from contextlib import closing
+
+    with closing(sqlite3.connect(f"file:{PUBLISHED}?mode=ro", uri=True)) as conn:
+        row = conn.execute("SELECT substr(date, 1, 7), label, growth_trend, inflation_trend FROM regimes ORDER BY date DESC LIMIT 1").fetchone()
+    if row is None or row[:2] != ("2026-08", "Overheating") or row[2] is None or row[3] is None:
+        pytest.skip(f"not the audit's store: its newest regimes row is {row[:2] if row else None}, not ('2026-08', 'Overheating') with both slopes")
+    newest = row[0]
     _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
     _at(monkeypatch, 2026, 9, 18, 21, 0)
     tile = _overview()["tiles"]["regime"]
-    newest = tile["data"]["print"] if tile["status"] == "ready" else None
-    if newest != "2026-08":
-        pytest.skip("not the audit's store")
+    assert tile["status"] == "ready", tile
+    assert tile["data"]["print"] == newest
     assert tile["data"]["label"] == "Overheating" and tile["data"]["odds"] == pytest.approx(0.4246)
     _serve(install_worker, monkeypatch, _without_a_slope(PUBLISHED, tmp_path / "macro_radar.db", axis, None, month=newest), items=ITEMS)
     _regime_awaits(_overview())

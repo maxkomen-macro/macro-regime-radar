@@ -245,7 +245,10 @@ test.describe("recession (checklist 07 E.3)", () => {
     const h2 = page.locator("main h2").first();
     expect(await visibleText(h2)).toMatch(/^Recession odds for this month/);
     const lede = hero(page).locator(".mrr-hero-lede");
-    await expect(lede).toContainText("recession model's own probability");
+    // Codex R-23: the hero calls it the recession model's own score (fix/freshness 4), still set apart from the
+    // classifier's odds.
+    await expect(lede).toContainText("recession model's own score");
+    await expect(lede).toContainText("not the classifier's Recession Risk odds");
 
     // The classifier's label never appears in the hero; the lede's fixed pointer at
     // "the classifier's Recession Risk odds" is carved out when that is the served label.

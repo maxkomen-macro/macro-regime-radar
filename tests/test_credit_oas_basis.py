@@ -119,7 +119,8 @@ def test_every_served_label_maps_to_its_lookback_on_the_stored_database(monkeypa
         basis, frm = s["change_basis"], s["change_from"]
         if basis == "1w":
             gap = (date.fromisoformat(s["date"]) - date.fromisoformat(frm)).days
-            assert 7 <= gap <= db.WEEK_MAX_GAP_DAYS, (s["series_id"], s["date"], frm)
+            # Codex R-24: the stated limit, typed here, never read back from the code under test.
+            assert 7 <= gap <= 10, (s["series_id"], s["date"], frm)
             assert s["change_1w_bps"] == s["change_bps"] and s["history_basis"] == "daily"
         elif basis == "month_end":
             assert len(frm) == 7 and frm < s["date"][:7], (s["series_id"], frm, s["date"])
@@ -203,3 +204,33 @@ def test_r06_without_a_source_watermark_the_month_row_is_read(store):
     assert ten["value_pct"] == pytest.approx(5.0)
     assert (ten["change_basis"], ten["change_from"]) == ("month_end", "2026-08")
     assert ten["history_basis"] == "monthly"
+
+
+# ── Codex round 1 (R-24): the seven-to-ten-day window, asserted on its own ──
+
+@pytest.mark.parametrize(
+    ("case", "daily", "want"),
+    [
+        ("exactly 7 days", {"2026-09-21": 4.96, "2026-09-28": 5.24}, ("1w", "2026-09-21")),
+        ("10 days: the limit", {"2026-09-18": 5.01, "2026-09-28": 5.24}, ("1w", "2026-09-18")),
+        ("11 days: past the limit", {"2026-09-17": 4.94, "2026-09-28": 5.24}, (None, None)),
+        # Labor Day (Mon Sep 7 2026, no bond session): seven days before Mon Sep 14 has no row; Fri Sep 4 is 10 back.
+        ("Labor Day week", {"2026-09-04": 4.70, "2026-09-08": 4.72, "2026-09-11": 4.80, "2026-09-14": 4.85}, ("1w", "2026-09-04")),
+        # Thanksgiving (Thu Nov 27 2025): seven days before Thu Dec 4 has no row; Wed Nov 26 is 8 back, and
+        # Fri Nov 28 is less than seven days back, so it is never the comparison. (A past year: the Desk's reader
+        # refuses rows dated after today, R-05.)
+        ("Thanksgiving week", {"2025-11-26": 4.00, "2025-11-28": 4.02, "2025-12-04": 4.11}, ("1w", "2025-11-26")),
+    ],
+)
+def test_r24_the_week_is_seven_to_ten_calendar_days_back(store, case, daily, want):
+    newest = max(daily)
+    raw = {"DGS10": {f"{newest[:4]}-08-01": 4.75, f"{newest[:7]}-01": daily[newest]}}
+    ten = store(desk={"DGS10": daily}, raw=raw, marks={"fred:DGS10": newest})["DGS10"]
+    assert ten["date"] == newest, case
+    assert (ten["change_basis"], ten["change_from"]) == want, case
+    if want[0] == "1w":
+        gap = (date.fromisoformat(newest) - date.fromisoformat(want[1])).days
+        assert 7 <= gap <= 10, case
+        assert ten["change_bps"] == pytest.approx((daily[newest] - daily[want[1]]) * 100.0), case
+    else:
+        assert ten["change_bps"] is None and ten["change_1w_bps"] is None, case
