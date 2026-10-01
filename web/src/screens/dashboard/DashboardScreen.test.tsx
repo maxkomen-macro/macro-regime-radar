@@ -34,9 +34,12 @@ import type {
 import { fmtDate } from "../../lib/format";
 import { makeClient, renderWithProviders, stubFetch } from "../../test/utils";
 
+/** fix/freshness 7: the relay's VIX quote a test hands the Dashboard (none by default). */
+const liveVix = vi.hoisted(() => ({ quote: undefined as undefined | { s: string; p: number; dc: number | null; dd: number | null; t: number | null; delayed: boolean; src: "ws" | "rest" } }));
 vi.mock("../../live/quotes", () => ({
   LIVE_WINDOW_MS: 120_000,
   useQuotes: () => new Map(),
+  useQuote: (s: string) => (s === "VIX" ? liveVix.quote : undefined),
   useWatch: () => {},
   watch: () => () => {},
   useStreamStatus: () => ({ socket: "closed", feeds: {}, stale: {}, degraded: false, degradedReasons: [], lastBatchAt: null, attempts: 0, everOpened: false }),
@@ -656,6 +659,39 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(buttons[0]).toHaveAttribute("aria-expanded", "false");
     expect(buttons[2]).toHaveAttribute("aria-expanded", "true");
     expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series: high-yield daily observations, investment-grade one value per month (its newest).");
+  });
+
+  it("fix/freshness 7: without a quote the VIX card prints the FRED close by its true date, labeled Close, never the month stamp", async () => {
+    renderDashboard();
+    const kl = await awaitSection("key-levels");
+    await waitFor(() => expect(text(kl)).toContain("16.42"));
+    // The fixture's VIXCLS row is dated to its day (Sep 14), so that is the close's date.
+    expect(text(kl)).toContain("FRED · Close · Sep 14");
+    expect(text(kl)).toContain("VIX · Cboe volatility index · daily close.");
+    expect(kl.querySelector("[data-metric='vix']")?.textContent).toBe("16.42");
+    expect(text(kl)).not.toContain("FRED · EODHD");
+  });
+
+  it("fix/freshness 7: with the relay's VIX quote the card prints the tape's number and the tape's own stamp, and the read-through reads the same value", async () => {
+    const q = { s: "VIX", p: 26.4, dc: 3.1, dd: 0.8, t: Date.UTC(2026, 9, 1, 14, 15), delayed: true, src: "rest" as const };
+    liveVix.quote = q;
+    try {
+      const { asOfCell } = await import("../markets/tape");
+      renderDashboard();
+      const kl = await awaitSection("key-levels");
+      await waitFor(() => expect(kl.querySelector("[data-metric='vix-live']")?.textContent).toBe("26.40"));
+      expect(text(kl)).toContain(`EODHD VIX · ${asOfCell(q).text}`);
+      expect(text(kl)).toContain("VIX · Cboe volatility index · delayed quote.");
+      // The section's sources name EODHD only while a tile reads it.
+      expect(text(kl)).toContain("FRED · EODHD");
+      expect(text(kl)).not.toContain("16.42");
+      const rt = await awaitSection("read-through");
+      await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7%/));
+      fireEvent.click(within(rt).getByRole("button", { name: /Current read-through/ }));
+      expect(text(rt)).toContain("the VIX sits at 26.40 (stressed)");
+    } finally {
+      liveVix.quote = undefined;
+    }
   });
 
   it("read-through disclosures are closed on load; opening shows the two paragraphs and the Methodology link", async () => {

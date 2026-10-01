@@ -278,6 +278,12 @@ export function useQuotes(): ReadonlyMap<string, LiveQuote> {
   return useSyncExternalStore(subscribe, getQuotes);
 }
 
+/** One symbol's quote (fix/freshness 7): re-renders only when that symbol's quote changes, so a large screen can
+ * read the VIX without repainting on every US tick (the snapshot keeps each unchanged entry's identity). */
+export function useQuote(symbol: string): LiveQuote | undefined {
+  return useSyncExternalStore(subscribe, () => quotesSnapshot.get(symbol));
+}
+
 /** Relay + upstream feed status, for honest live/idle labelling. */
 export function useStreamStatus(): StreamStatus {
   return useSyncExternalStore(subscribe, getStatus);

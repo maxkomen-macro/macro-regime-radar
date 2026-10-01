@@ -1,0 +1,128 @@
+{
+ "before-norelay": {
+  "dashboard_card": [
+   {
+    "metric": "vix",
+    "value": "16.04",
+    "card": "VIX16.04VIXThe market's 1-month expectation of S&P 500 volatility, from option prices. Under ~15 is calm; over 30 is stress. \u00b7 Cboe volatility index \u00b7 daily close.FRED \u00b7 Sep 29 \u00b7 1 day behind"
+   }
+  ],
+  "dashboard_readthrough": [],
+  "tape_vix": [
+   [
+    "VIXVIX \u00b7 index",
+    "no quote",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "\u2014"
+   ]
+  ],
+  "desk_vix_tile": [
+   "Vol \u00b7 VIXLive \u00b7 Sep 2916.0VIX 16.0 \u00b7 Sep 29 \u00b7 subdued5.2 pts above 21-day realized (10.8)"
+  ]
+ },
+ "before-variant": {
+  "dashboard_card": [
+   {
+    "metric": "vix",
+    "value": "16.04",
+    "card": "VIX16.04VIXThe market's 1-month expectation of S&P 500 volatility, from option prices. Under ~15 is calm; over 30 is stress. \u00b7 Cboe volatility index \u00b7 daily close.FRED \u00b7 Sep 29 \u00b7 1 day behind"
+   }
+  ],
+  "dashboard_readthrough": [],
+  "tape_vix": [
+   [
+    "VIXVIX \u00b7 index",
+    "18.37",
+    "+14.53%",
+    "+2.33",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "Sep 30, 15:45 ET \u00b7 15m"
+   ]
+  ],
+  "desk_vix_tile": [
+   "Vol \u00b7 VIXLive \u00b7 Sep 2916.0VIX 16.0 \u00b7 Sep 29 \u00b7 subdued5.2 pts above 21-day realized (10.8)"
+  ]
+ },
+ "after-norelay": {
+  "dashboard_card": [
+   {
+    "metric": "vix",
+    "value": "16.04",
+    "card": "VIX16.04VIXThe market's 1-month expectation of S&P 500 volatility, from option prices. Under ~15 is calm; over 30 is stress. \u00b7 Cboe volatility index \u00b7 daily close.FRED \u00b7 Close \u00b7 Sep 29 \u00b7 1 day behind"
+   }
+  ],
+  "dashboard_readthrough": [],
+  "tape_vix": [
+   [
+    "VIXVIX \u00b7 index",
+    "no quote",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "\u2014"
+   ]
+  ],
+  "desk_vix_tile": [
+   "Vol \u00b7 VIXClose \u00b7 Sep 2916.04VIX 16.04 \u00b7 Sep 29 \u00b7 subdued5.2 pts above 21-day realized (10.8)"
+  ]
+ },
+ "after-relay": {
+  "dashboard_card": [
+   {
+    "metric": "vix-live",
+    "value": "16.04",
+    "card": "VIX16.04VIXThe market's 1-month expectation of S&P 500 volatility, from option prices. Under ~15 is calm; over 30 is stress. \u00b7 Cboe volatility index \u00b7 delayed quote.EODHD VIX \u00b7 Sep 29, 16:15 ET \u00b7 15m"
+   }
+  ],
+  "dashboard_readthrough": [],
+  "tape_vix": [
+   [
+    "VIXVIX \u00b7 index",
+    "16.04",
+    "-0.19%",
+    "-0.03",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "Sep 29, 16:15 ET \u00b7 15m"
+   ]
+  ],
+  "desk_vix_tile": [
+   "Vol \u00b7 VIXSep 29, 16:15 ET \u00b7 15m16.04VIX 16.04 \u00b7 subdued5.2 pts above 21-day realized (10.8)"
+  ]
+ },
+ "after-variant": {
+  "dashboard_card": [
+   {
+    "metric": "vix-live",
+    "value": "18.37",
+    "card": "VIX18.37VIXThe market's 1-month expectation of S&P 500 volatility, from option prices. Under ~15 is calm; over 30 is stress. \u00b7 Cboe volatility index \u00b7 delayed quote.EODHD VIX \u00b7 Sep 30, 15:45 ET \u00b7 15m"
+   }
+  ],
+  "dashboard_readthrough": [],
+  "tape_vix": [
+   [
+    "VIXVIX \u00b7 index",
+    "18.37",
+    "+14.53%",
+    "+2.33",
+    "\u2014",
+    "\u2014",
+    "\u2014",
+    "Sep 30, 15:45 ET \u00b7 15m"
+   ]
+  ],
+  "desk_vix_tile": [
+   "Vol \u00b7 VIXSep 30, 15:45 ET \u00b7 15m18.37VIX 18.37 \u00b7 subdued7.5 pts above 21-day realized (10.8), realized to Sep 29"
+  ]
+ },
+ "_readme": "Text each surface printed. before = git archive of b116f584 (port 8611), after = this tree (port 8612), same DB copy. norelay = no relay socket; relay = the earlier replay (VIX row = stored Sep 29 close 16.04, delayed REST, t Sep 29 16:15 ET); variant = the same replay with the VIX row at 18.37, t Sep 30 15:45 ET, delayed REST. Read-through (after, disclosure opened): norelay \"the VIX sits at 16.04 (subdued)\", relay \"16.04 (subdued)\", variant \"18.37 (subdued)\"."
+}

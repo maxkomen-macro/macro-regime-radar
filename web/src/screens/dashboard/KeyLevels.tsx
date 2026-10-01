@@ -21,6 +21,7 @@ import { Caption, MISSING, missingNote, useSnapshotMode } from "../shared/screen
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
 import { rateChange } from "../shared/rate-change";
+import type { VixShown } from "../shared/vix-shown";
 import { DASH } from "./hero-copy";
 
 export interface SeriesLatest {
@@ -34,7 +35,9 @@ export interface KeyLevelsProps {
   recession: UseQueryResult<RecessionMetrics>;
   credit: UseQueryResult<CreditOAS>;
   fedFunds: UseQueryResult<SeriesLatest>;
-  vix: UseQueryResult<SeriesLatest>;
+  /** fix/freshness 7: the VIX the card shows (shared/vix-shown.ts): the tape's quote and stamp, else the stored
+   * close by its true date. Null while neither is on hand. */
+  vixRead?: VixShown | null;
 }
 
 type Tone = "default" | "watch" | "risk" | "clear";
@@ -46,7 +49,7 @@ function recessionTone(label: string | undefined): Tone {
   return "clear";
 }
 
-export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: KeyLevelsProps) {
+export default function KeyLevels({ regime, recession, credit, fedFunds, vixRead = null }: KeyLevelsProps) {
   const r = regime.data;
   const rec = recession.data;
   const ten = credit.data?.series.find((s) => s.label === "UST10Y");
@@ -60,7 +63,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
 
   return (
     <Card as="section" id="key-levels" variant="panel" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Key levels" right="FRED" />
+      <SectionHeader layout="panel" title="Key levels" right={vixRead?.source === "quote" ? "FRED · EODHD" : "FRED"} />
       <div className="mrr-dash-levels">
         <Card variant="tile">
           <StatTile label="Fed funds" value={fedFunds.data ? fmtPct(fedFunds.data.value) : DASH} size="sm" />
@@ -123,9 +126,10 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
           <StatTile
             label="VIX"
             value={
-              vix.data ? (
-                <Metric id="vix" value={vix.data.value}>
-                  {vix.data.value.toFixed(2)}
+              vixRead ? (
+                // The tape's metric id for a quote (vix-live), the stored close's otherwise (vix).
+                <Metric id={vixRead.source === "quote" ? "vix-live" : "vix"} value={vixRead.value}>
+                  {vixRead.text}
                 </Metric>
               ) : (
                 DASH
@@ -133,12 +137,17 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             }
             size="sm"
           />
-          {/* The stored row is month-stamped (FRED daily, B6): the true
-              observation date is the stamp's, never this caption's. */}
+          {/* fix/freshness 7: the tape's delayed quote with the tape's own stamp; without one, the FRED close
+              labeled "Close · <date>" by its true observation date (never the month stamp), keeping the
+              server's freshness state for that series. */}
           <Caption>
-            <Jargon term="VIX">VIX</Jargon> · Cboe volatility index · daily close.
+            <Jargon term="VIX">VIX</Jargon> · Cboe volatility index · {vixRead?.source === "quote" ? "delayed quote" : "daily close"}.
           </Caption>
-          <Stamp block source={SRC.fred} label={report.series("VIXCLS")} />
+          {vixRead?.source === "quote" ? (
+            <Stamp block source="EODHD VIX" asOf={vixRead.stamp} />
+          ) : (
+            <Stamp block source={SRC.fred} label={vixRead ? { ...report.series("VIXCLS"), word: vixRead.stamp } : report.series("VIXCLS")} />
+          )}
         </Card>
 
         <Card variant="tile" className="mrr-level-wide" tone={rec ? (rec.is_inverted ? "risk" : "clear") : "default"}>

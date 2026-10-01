@@ -25,6 +25,7 @@ vi.mock("../dashboard/DashboardScreen", () => ({
 vi.mock("../../live/quotes", () => ({
   LIVE_WINDOW_MS: 120_000,
   useQuotes: () => new Map(),
+  useQuote: () => undefined,
   useWatch: () => {},
   watch: () => () => {},
   useStreamStatus: () => ({ socket: "closed", feeds: {}, stale: {}, degraded: false, degradedReasons: [], lastBatchAt: null, attempts: 0, everOpened: false }),

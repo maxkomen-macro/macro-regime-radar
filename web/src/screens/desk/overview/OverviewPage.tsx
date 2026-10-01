@@ -21,8 +21,8 @@ import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
 import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, StampBadge, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine, FailedLine, FailedScope, useLoadFailed } from "../kit/ui";
-import { useQuotes, type LiveQuote } from "../../../live/quotes";
-import { asOfCell } from "../../markets/tape";
+import { useQuotes } from "../../../live/quotes";
+import { vixShown, type VixShown } from "../../shared/vix-shown";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import { REGIME_TONE } from "../kit/palette";
@@ -158,54 +158,10 @@ function Tile({ label, state, badge, value, tone, sub, unserved }: { label: stri
   );
 }
 
-type VolTile = NonNullable<OverviewTiles["vol"]>;
-
-/** The New York date of an epoch-ms stamp ("2026-09-30"). */
-const nyDay = (ms: number) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
-
-/** One VIX reading as the tile shows it (fix/freshness 3c): the live quote store the Markets tape reads, with the
- * tape's own number and stamp, else the newest stored close, labeled "Close · <date>"; its band by the served
- * edges, and its gap to the S&P's served 21-day realized volatility recomputed against the VIX shown. */
-export interface VixShown {
-  value: number;
-  text: string;
-  source: "quote" | "close";
-  /** The badge: a live tick says Live with its clock; anything else is its stamp. */
-  live: boolean;
-  stamp: string;
-  date: string;
-  band: "calm" | "subdued" | "stressed" | null;
-  gapPts: number | null;
-  realized: number | null;
-  realizedDate: string | null;
-}
-
-export function vixShown(vol: VolTile | undefined, q: LiveQuote | undefined): VixShown | null {
-  const quote = q && fin(q.p) ? q : undefined;
-  if (!quote && !(vol && fin(vol.vix))) return null;
-  const value = quote ? quote.p : (vol!.vix as number);
-  const at = quote ? asOfCell(quote) : null;
-  const edges = vol?.band_edges;
-  const band = edges && fin(edges[0]) && fin(edges[1]) ? (value < edges[0] ? "calm" : value < edges[1] ? "subdued" : "stressed") : quote ? null : (vol?.band ?? null);
-  const realized = vol?.gap && fin(vol.gap.realized_21d) ? vol.gap.realized_21d : null;
-  return {
-    value,
-    // The tape's number for an index row (screens/markets/tape.ts fmtPrice): two decimals.
-    text: value.toFixed(2),
-    source: quote ? "quote" : "close",
-    live: at?.live ?? false,
-    stamp: at ? at.text : `Close · ${dayShort(vol!.date)}`,
-    date: quote && quote.t != null ? nyDay(quote.t) : (vol?.date ?? ""),
-    band,
-    gapPts: realized != null ? value - realized : null,
-    realized,
-    realizedDate: vol?.gap?.date ?? null,
-  };
-}
-
 function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: boolean }) {
   const t = data?.tiles;
-  // fix/freshness 3c: the VIX the Markets tape shows (one quote store), else the stored close.
+  // fix/freshness 3c: the VIX the Markets tape shows (one quote store), else the stored close (^VIX, served);
+  // shared/vix-shown.ts, the same code the Dashboard's VIX card runs (item 7).
   const quotes = useQuotes();
   const vix = vixShown(t?.vol, quotes.get("VIX"));
   // Each tile is its own block (§12.1); the whole answer served awaiting makes every tile unavailable.

@@ -18,11 +18,12 @@ Source of truth: `/tmp/mrr-brief/SYSTEM_BRIEF.md` (read in full for §2, §4–�
 | 4 | Words that overstate or misdescribe | `d1e73a64` | 40 web files, `src/analytics/{chat,intelligence,news,credit,recession}.py`, `src/config.py`, `README.md`, `api/{db,main}.py` (served months only) | `git revert d1e73a64` |
 | 5 | Regime Lab quadrant | `f2104f16` | `web/src/screens/regimelab/QuadrantChart.tsx` (+ test, `regime-history.ts` doc) | `git revert f2104f16` |
 | 6 | Tape names, Day Δ, compact Monitored | `7d267245` | `tape.ts`, `MacroTape.tsx`, Desk `OverviewPage.tsx` + `overview.css`, tests | `git revert 7d267245` |
-| 7 | This report, its screenshots, CLAUDE.md | (last commit on the branch) | `docs/FRESHNESS_REPORT.md`, `docs/freshness-shots/`, `CLAUDE.md` | `git revert <sha>` |
+| 7 | This report, its screenshots, CLAUDE.md | `38a6d890` | `docs/FRESHNESS_REPORT.md`, `docs/freshness-shots/`, `CLAUDE.md` | `git revert 38a6d890` |
+| 8 | Item 7: the Dashboard VIX card on the tape's quote (below) | (newest commit on the branch) | `web/src/screens/shared/vix-shown.ts` (+ test), `web/src/live/quotes.ts`, Dashboard `DashboardScreen.tsx` + `KeyLevels.tsx`, Desk `OverviewPage.tsx` (import only), tests, this report, `docs/freshness-shots/item7/`, `CLAUDE.md` | `git revert <sha>` (web only; nothing on the API) |
 
 - Whole branch, before it is pushed: nothing to undo on `main`; delete the branch (`git branch -D fix/freshness` from another checkout) or reset it (`git reset --hard b116f584`, destructive).
 - Whole branch, after a merge commit lands on `main`: `git revert -m 1 <merge-sha>`.
-- One item after merge: `git revert <sha>` for that item, newest first if reverting several (6 → 1). Items 2 and 3 both add optional fields to response models; reverting the API commit before the web commit that reads them is safe (the web degrades: no change label, chip falls back to the newest date).
+- One item after merge: `git revert <sha>` for that item, newest first if reverting several (8 → 1). Items 2 and 3 both add optional fields to response models; reverting the API commit before the web commit that reads them is safe (the web degrades: no change label, chip falls back to the newest date).
 - Commits 3 and 4 were amended once before this report (an embedded web test still pinned the old chip noun; three captions still said "probability"; the inputs month printed twice). Commit 4 was amended a second time for one Regime Lab test fixture that still mocked "the 12-month recession model". The superseded SHAs (`0a1f7348`, `e7bb2dd9`, `169188fa`, `4d90bb25`, `76e69b9b`, `c9d3a4c6`, `a2fb0d7a`) exist only in the local reflog.
 
 **Deploy order.** API (Render) first, then web (Vercel): the web reads `change_basis`, `inputs_through`, `observation_month`, `odds` and `oldest_behind`, and without them it prints no change label rather than a wrong one, but every new label appears only once the API serves them.
@@ -35,6 +36,7 @@ Source of truth: `/tmp/mrr-brief/SYSTEM_BRIEF.md` (read in full for §2, §4–�
 | `cd web && npx tsc -b --noEmit && npx vitest run && npm run build` | final tree `7d267245` | tsc clean; **vitest 1765 passed (142 files)**; build ✓ |
 | Full pytest (`--ignore tests/test_streamlit_backports.py`, run under `.venv`, Python 3.13) | tree `4d90bb25` (same Python as the final tree; the amend touched only web files and `tests/web/*.tsx`) | **1759 passed, 73 skipped, 10 failed** (below); `tests/test_web_fresh_report.py` and `tests/test_public_posture.py` re-run on the final tree: 21 passed |
 | Desk Playwright e2e (`e2e/desk.spec.ts`, `e2e/desk-usability.spec.ts`, `--workers=1`, fixture Vite `DESK_FIXTURES=1`) | `4d90bb25` (Desk code identical to the final tree) | **83 passed** (also 83/83 at item 3) |
+| Item 7: scoped vitest (`src/screens/dashboard`, `src/screens/shared/vix-shown.test.ts`, `src/screens/desk/overview`, `src/screens/shell`) and the web gate | item-7 tree | scoped **192 passed (18 files)**; tsc clean; **vitest 1773 passed (143 files)** (+8: six in `vix-shown.test.ts`, two in `DashboardScreen.test.tsx`); build ✓; `tests/test_web_fresh_report.py` 3 passed. No Python file changed, so the full pytest and the Desk e2e were not re-run |
 
 The ten pytest failures:
 
@@ -56,6 +58,7 @@ The ten pytest failures:
 | Desk Overview and Desk Regime show the same label and month as the Dashboard | **PASS** | `/api/regime/latest`: Overheating, 2026-08. `/api/desk/overview` tile and `/api/desk/regime` current, before: Goldilocks 2026-07; after: **Overheating 2026-08, odds 0.4246**. Screens: Dashboard "Overheating · Macro regime for Aug 2026"; Desk tile "Live · Aug 2026 data · Overheating · odds 42%"; Desk Regime "Overheating · Aug 2026 data"; sidebar "regime · Aug 2026 data". |
 | The recession value is identical to one decimal on the Dashboard, Recession tab and Desk | **PASS** | Served: app `recession_prob 9.770068…`, Desk `score 0.09770068…` (one float). Printed (`ui-evidence.json`): Dashboard ×2 "9.8%", Recession tab ×4 "9.8%", Desk Overview "9.8%", Desk Regime "9.8%" (before: Desk "10%"). |
 | Desk VIX equals the tape's VIX | **PASS** | With the replayed relay: tape VIX row "16.04 · Sep 29, 16:15 ET · 15m"; Desk tile "16.04", badge "Sep 29, 16:15 ET · 15m" (the tape's own `asOfCell`), gap recomputed 16.04 − 10.8 = "5.2 pts above 21-day realized (10.8)". Without a quote the tile reads the stored close labeled "Close · <date>" (after shot 06). Unit test: `OverviewPage.test.tsx` "the VIX the tile shows". |
+| Dashboard VIX = tape VIX = Desk VIX, same stamp (item 7) | **PASS** | Replayed relay with a VIX row distinct from every stored close (18.37, delayed REST, Sep 30 15:45 ET): Dashboard Key levels `[data-metric=vix-live]` "18.37", stamp "EODHD VIX · Sep 30, 15:45 ET · 15m", read-through "the VIX sits at 18.37 (subdued)"; tape VIX row "18.37 · +14.53% · +2.33 · Sep 30, 15:45 ET · 15m"; Desk tile "18.37", badge "Sep 30, 15:45 ET · 15m", gap "7.5 pts above 21-day realized (10.8)". Before (`b116f584`, same replay): Dashboard "16.04 · FRED · Sep 29" beside the tape's 18.37. With the first replay all three read "16.04 · Sep 29, 16:15 ET · 15m". No quote: Dashboard "16.04 · FRED · Close · Sep 29 · 1 day behind", Desk "Close · Sep 29 · 16.04", tape "no quote". `docs/freshness-shots/item7/vix-evidence.json`; unit: `DashboardScreen.test.tsx` (two `fix/freshness 7` tests), `vix-shown.test.ts` |
 | No "12-month", "twelve-month" or "12m" describes the recession model in web/, src/ or api/ (backtest 12M horizons and Streamlit excluded) | **PASS** | `grep -rniE "12-month|twelve-month|\b12m\b|12 months|twelve months" web/src web/e2e src api` leaves only: the regime quadrant's own trail (now "12 stored months", item 5), Desk sector/macro windows ("Last 12 months", `peak_12m`), seasonality ("twelve months"), the unemployment signal ("+0.3pp vs 12m low"), backtest horizons ("12M=252d"), allocation/LBO/memo internals, and test titles that name other things. None describes the recession model. |
 
 ## Root causes and fixes (file:line at `b116f584`)
@@ -251,14 +254,16 @@ Taken 2026-10-01 between 00:00 and 02:40 ET (after the close, so the US session 
 | Desk Regime | [07](freshness-shots/before/07-desk-regime.png) | [07](freshness-shots/after/07-desk-regime.png) | — |
 | Methodology | [08](freshness-shots/before/08-methodology.png) | [08](freshness-shots/after/08-methodology.png) | sections: [regimes](freshness-shots/after-relay/08-methodology-regimes.png), [models](freshness-shots/after-relay/08-methodology-models.png), [standard vs built](freshness-shots/after-relay/08-methodology-standard.png), [limits](freshness-shots/after-relay/08-methodology-limits.png) |
 
-`after-relay/ui-evidence.json` holds the text each surface printed (the values in the acceptance table).
+| Dashboard VIX card (item 7) | [Dashboard 16.04 beside the tape's 18.37](freshness-shots/item7/before-dashboard-vs-tape-18.37.png) | [no quote](freshness-shots/item7/after-dashboard-no-quote.png) | [Dashboard 18.37](freshness-shots/item7/after-dashboard-quote-18.37.png), [tape 18.37](freshness-shots/item7/after-tape-quote-18.37.png), [Desk 18.37](freshness-shots/item7/after-desk-quote-18.37.png); first replay: [Dashboard 16.04](freshness-shots/item7/after-dashboard-replay-16.04.png) |
+
+`after-relay/ui-evidence.json` holds the text each surface printed (the values in the acceptance table); `item7/vix-evidence.json` the VIX on each surface for item 7.
 
 ## Not fixed, and why
 
 - **Whether EODHD's delayed REST `close` carries post-market prints is unverified.** D1 holds `extended-hours` *ticks*; a REST row newer than the last regular tick still replaces the quote (as before). EODHD's live-delayed page is silent on extended hours. If the live check below shows an after-hours price arriving through REST, the follow-up is to hold a US REST row whose timestamp is outside its session once a regular quote is on the board.
 - **`news.py`'s `REGIME_KEYWORD_MAP` still has a "Deflation" key** (`src/analytics/news.py:58`). It feeds the rule-based significance score; renaming it changes which headlines score as regime-relevant (a rule change, out of scope). Only the prompt text and the odds dict sent to the model were fixed.
 - **The transition count (D4)** is left as is; see below.
-- **Dashboard VIX card** still reads FRED `VIXCLS` (month-stamped `raw_series`, unchanged by this brief). Item 3c covered the Desk tile only.
+- **The two VIX fallbacks are different stored series** (item 7 fixed the card itself). With a quote the Dashboard, the tape and the Desk print one number and one stamp. Without one, the Desk reads ^VIX (`asset_prices`, written by the full refresh) and the Dashboard FRED `VIXCLS` (posted the next day). Both are the Sep 29 close (16.04) on this DB, each labeled with its own date; between a full refresh that stores a new ^VIX close and FRED's posting, the Desk can be one close ahead. Moving the Dashboard to ^VIX needs a stored-close read on the app routes (the Atlas `/series/{id}/latest` reads `raw_series`); not asked.
 - **Three 2s10s definitions** (brief §4 flag 3) remain: month-end `DGS10 − DGS2` (Dashboard, Recession), same-day `desk_series` (Desk Macro), FRED `T10Y2Y` (studies). They agree today; not asked.
 - **`n_training_samples`** still reports the scoring-row count (`recession.py:366`); it equals the training count today. The new `training_n` is the training count and the Methodology reads it.
 - **The brief's CLAUDE.md items (§10 21–26)** were outside the requested range (1–20, 27–28); CLAUDE.md got only this branch's own notes.
@@ -306,7 +311,7 @@ Deploy the API (Render) first, then the web (Vercel). Then, on a regular session
 5. **Thin ETFs (UUP, HYG, CPER).** A REST row may be newer than the last trade; its Day % is EODHD's `change_p`, which should equal the relay's own figure for the same price. If a 15m-stamped row ever shows an after-hours-looking price after 16:00, note it (unverified EODHD behaviour, "Not fixed" above).
 6. **After 16:00 ET (watch until ~16:30).** The board keeps the 16:00 quotes; SPY's last does not follow post-market prints; the tape caption reads "Outside the regular session the board holds the last regular-session quote…".
 7. **Rates.** The strip's "US 10Y" change reads "+N bps 1W" and N equals FRED's DGS10 latest minus the observation 7 days earlier (FRED's CSV); its hover title names both dates; KeyLevels, the TenYearCard and the Markets row print the same N. The TenYearCard sparkline has ~60 daily points.
-8. **One number per concept.** The Dashboard, Regime Lab, Desk Overview tile, Desk Regime page and the Desk sidebar all say the same regime and month (Overheating · Aug 2026 until the September row publishes, around Oct 16–17). The recession figure reads the same to one decimal on the Dashboard (KeyLevels and the summary row), the Recession hero and the Desk (Overview tile, Regime page). The Desk VIX tile shows the tape's VIX value and stamp (the VIX REST poll runs every 60 s in session). The S&P trend tile reads "Close · <date>". "data refreshed" equals the Data Pipeline's last refresh time.
+8. **One number per concept.** The Dashboard, Regime Lab, Desk Overview tile, Desk Regime page and the Desk sidebar all say the same regime and month (Overheating · Aug 2026 until the September row publishes, around Oct 16–17). The recession figure reads the same to one decimal on the Dashboard (KeyLevels and the summary row), the Recession hero and the Desk (Overview tile, Regime page). The Desk VIX tile and the Dashboard's Key levels VIX card show the tape's VIX value and stamp (the VIX REST poll runs every 60 s in session); the Dashboard's Monitored signals "VIX spike" card keeps its monthly signal print (item 7). The S&P trend tile reads "Close · <date>". "data refreshed" equals the Data Pipeline's last refresh time.
 9. **The next full refresh (00:23 UTC / 11:17 UTC).** "data refreshed" moves to the run's time; if a Desk series is left behind, the since-last-close line names it. When the September regimes row publishes, the first session after it shows "regime changed → X" (if the label changes), and only that session.
 10. **Recession tab.** Hero chip "Inputs through Jun 2026 · latest data <date>" (the month moves to Jul once October is scored, from Oct 31); the gauge reads "RECESSION ODDS · <month>"; the sensitivity panel lists each reading's month.
 11. **What's priced.** Rows read "Fed Funds · Aug 2026 average", the others "Sep 2026"; no "weekly pipeline" anywhere.
@@ -318,3 +323,39 @@ Deploy the API (Render) first, then the web (Vercel). Then, on a regular session
 - Python `.venv` from the main checkout (3.13; fastapi 0.141.1, pytest 9.1.1, exchange_calendars 4.13.2); web `npm ci` in the worktree.
 - Every DB read used a read-only connection to the release copy; its sha256 never changed. Scratch copies in the session scratchpad served the before/after APIs.
 - External reads: EODHD's documentation pages (WebSocket message format; the live-delayed endpoint), issuer pages for the five ETFs, and one read-only GET of the deployed API's AAPL 5D candles for the replay. Nothing was written anywhere outside the worktree and the scratchpad.
+
+## Item 7: the Dashboard VIX card reads the tape's quote
+
+Added after the report, under the same rules: one commit (the newest on the branch), not pushed, `data/macro_radar.db` not staged, no server file changed.
+
+**Cause.** The Key levels VIX card (`web/src/screens/dashboard/KeyLevels.tsx:126-128` at `38a6d890`) printed `/series/VIXCLS/latest`, FRED's month-stamped `raw_series` row, which holds the newest stored close (Sep 29's 16.04 on this DB). In session the tape and the Desk tile (item 3c) show the relay's delayed VIX, so the Dashboard was a close behind both. Its stamp already took the true date from `/api/freshness` `series[]` ("FRED · Sep 29"), but the value never followed the quote, and the read-through (`DashboardScreen.tsx:299`) took its band word from that stored close.
+
+**Fix.**
+
+- `web/src/screens/shared/vix-shown.ts` (new): the Desk tile's `vixShown` moved out of `OverviewPage.tsx` with the same behavior, plus `storedVixFromFred`. That function dates the FRED row by the freshness report's true observation date when the date falls in the row's month. Otherwise it knows only the month and labels it "Close · Sep 2026", never a made-up day.
+- `web/src/live/quotes.ts`: `useQuote(symbol)` reads one symbol from the same quote store the tape reads and re-renders only when that symbol's quote changes, so the Dashboard does not repaint on every US tick.
+- Dashboard: `vixRead = vixShown(storedVixFromFred(VIXCLS latest, series[] as_of), useQuote("VIX"))` goes to Key levels. With a quote the card prints the tape's number under the tape's metric id (`vix-live`), the caption says "delayed quote", and the stamp is "EODHD VIX · <the tape's own `asOfCell`>". Without one it prints the stored close under `vix`, the caption says "daily close", and the stamp is "FRED · Close · Sep 29 · 1 day behind" (the server's state word is kept). The section header reads "FRED · EODHD" only while the tile shows the EODHD quote.
+- Desk Overview imports the shared module. Its output is unchanged: the item-3c evidence values reproduce exactly.
+
+**What the card derives from the VIX, and against which value.**
+
+| Derived value | Where | Computed against |
+|---|---|---|
+| Band word (calm < 15 ≤ subdued < 25 ≤ stressed, `VIX_BAND_EDGES`) | Dashboard read-through, "the VIX sits at 18.37 (subdued)" | **the value shown** (before: the stored FRED close) |
+| Percentile | none: the Dashboard card shows no percentile | — |
+| Change | none on the card: the day change is on the tape's VIX row only | — |
+| Gap to 21-day realized volatility | the Desk VIX tile (the Dashboard card has none) | **the value shown** (item 3c; now the same code) |
+| "VIX spike" card under Monitored signals | not derived from the Key levels card | stays on the stored signal print (metric id `vix`, stamped "Signal print Sep 2026"), because it shows the monthly signal's evaluation against its 30 threshold. With a quote the page shows two VIX figures, each labeled: the delayed quote in Key levels and the signal print in Monitored signals |
+
+**Evidence** (`docs/freshness-shots/item7/`, text in `vix-evidence.json`). Both trees served the same DB copy: before was a `git archive` of `b116f584` on port 8611, after was this tree on port 8612. The server relay was off; the browser's `/api/stream/ws` replayed snapshots.
+
+| Setup | Dashboard Key levels | Tape VIX row | Desk VIX tile |
+|---|---|---|---|
+| Before, VIX quote 18.37 (Sep 30 15:45 ET) | 16.04 · FRED · Sep 29 · 1 day behind | 18.37 · Sep 30, 15:45 ET · 15m | 16.0 · Live · Sep 29 |
+| After, no quote | 16.04 · FRED · Close · Sep 29 · 1 day behind | no quote | 16.04 · Close · Sep 29 |
+| After, first replay (VIX = stored Sep 29 close, Sep 29 16:15 ET) | 16.04 · EODHD VIX · Sep 29, 16:15 ET · 15m | 16.04 · Sep 29, 16:15 ET · 15m | 16.04 · Sep 29, 16:15 ET · 15m |
+| After, VIX quote 18.37 (Sep 30 15:45 ET) | **18.37 · EODHD VIX · Sep 30, 15:45 ET · 15m** | **18.37 · Sep 30, 15:45 ET · 15m** | **18.37 · Sep 30, 15:45 ET · 15m**, gap 7.5 pts |
+
+The 18.37 row is a replay variant (the first replay with only the VIX row changed: 18.37, +2.33, Sep 30 15:45 ET, delayed REST). A value no stored close carries shows that the three surfaces read the quote rather than agree by coincidence.
+
+**Rollback.** `git revert <sha>` of this commit restores the card's FRED read and the Desk tile's local copy of `vixShown`. It touches only the web and docs, so it deploys with Vercel alone.

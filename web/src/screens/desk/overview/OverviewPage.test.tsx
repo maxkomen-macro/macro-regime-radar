@@ -261,7 +261,7 @@ describe("the VIX's gap to realized (desk/fill-compute; fix/freshness 3c: agains
 describe("the VIX the tile shows (fix/freshness 3c)", () => {
   const vol = { vix: 15.18, date: "2026-09-23", band: "subdued" as const, band_edges: [15, 25] as [number, number], gap: { date: "2026-09-21", vix: 14.87, realized_21d: 10.47, gap_pts: 4.4 } };
   it("reads the live quote store the Markets tape reads: the tape's number and stamp, the band and the gap against it", async () => {
-    const { vixShown } = await import("./OverviewPage");
+    const { vixShown } = await import("../../shared/vix-shown");
     const { asOfCell } = await import("../../markets/tape");
     // The relay's VIX is a 15-minute-delayed REST row (api/stream.py), 21:15 UTC on Sep 30.
     const q = { s: "VIX", p: 16.42, dc: -1.2, dd: -0.2, t: Date.UTC(2026, 8, 30, 21, 15), delayed: true, src: "rest" as const };
@@ -274,7 +274,7 @@ describe("the VIX the tile shows (fix/freshness 3c)", () => {
     expect(v.gapPts).toBeCloseTo(16.42 - 10.47, 10);
   });
   it("without a quote, the newest stored close, labeled Close · <date>", async () => {
-    const { vixShown } = await import("./OverviewPage");
+    const { vixShown } = await import("../../shared/vix-shown");
     const v = vixShown(vol, undefined)!;
     expect([v.source, v.text, v.stamp, v.live, v.band]).toEqual(["close", "15.18", "Close · Sep 23", false, "subdued"]);
     expect(v.gapPts).toBeCloseTo(15.18 - 10.47, 10);

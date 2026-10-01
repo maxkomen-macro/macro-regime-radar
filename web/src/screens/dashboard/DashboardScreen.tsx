@@ -39,6 +39,8 @@ import { Caption, MISSING, MISSING_ROW, StateNote, useHashScroll } from "../shar
 import { REGIME_INPUT_IDS, SIGNAL_INPUT_IDS, marketSeries } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { rateChange } from "../shared/rate-change";
+import { storedVixFromFred, vixShown } from "../shared/vix-shown";
+import { useQuote } from "../../live/quotes";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
 import TabHero from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
@@ -172,6 +174,9 @@ export default function DashboardScreen() {
   const credit = useCreditOas(90);
   const fedFunds = useSeriesLatest("FEDFUNDS");
   const vix = useSeriesLatest("VIXCLS");
+  // fix/freshness 7: the VIX the tape and the Desk show (shared/vix-shown.ts): the relay's delayed quote with the
+  // tape's stamp, else the FRED close dated by its true observation date (the freshness report's series[]).
+  const vixQuote = useQuote("VIX");
   const freshness = useFreshness();
   const takeaway = useTakeaway();
   const transitions = useTransitions();
@@ -223,6 +228,7 @@ export default function DashboardScreen() {
     }
   }, [bannerStamp]);
   const report = useFreshReport();
+  const vixRead = vixShown(storedVixFromFred(vix.data, report.f?.series?.find((s) => s.id === "VIXCLS")?.as_of), vixQuote);
   const regimeInputs = report.f?.regime?.inputs?.length ? report.f.regime.inputs.map((i) => i.series) : REGIME_INPUT_IDS;
   const macroFresh = report.group(regimeInputs);
   const inCycle = !report.seeded && (macroFresh.tone === "neutral" || macroFresh.tone === "live");
@@ -296,7 +302,6 @@ export default function DashboardScreen() {
       const t = bySignal.get(name)?.threshold;
       return t != null ? t.toFixed(dp) : "its threshold";
     };
-    const vixV = vix.data?.value;
 
     // The composed read-through survives, one click down.
     readThrough = [
@@ -304,8 +309,8 @@ export default function DashboardScreen() {
         recession.data?.yield_curve_spread != null
           ? `${fmtBps(recession.data.yield_curve_spread)} (${fmtPct(bpsToPct(recession.data.yield_curve_spread))})`
           : "—"
-      }, the VIX sits at ${vixV != null ? vixV.toFixed(2) : "—"}${
-        vixV != null ? (vixV < 15 ? " (calm)" : vixV < 25 ? " (subdued)" : " (stressed)") : ""
+      }, the VIX sits at ${vixRead ? vixRead.text : "—"}${
+        vixRead?.band ? ` (${vixRead.band})` : ""
       }, and high-yield spreads run ${hy ? fmtBpsLevel(hy.value_bps) : "—"}${
         hyChange ? ` (${fmtBps(hyChange.bps)} ${hyChange.phrase})` : ""
       }. Growth trend reads ${r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and inflation trend ${
@@ -617,7 +622,7 @@ export default function DashboardScreen() {
       </Card>
 
       {/* ── Key levels (slim row) ───────────────────────────────────── */}
-      <KeyLevels regime={regime} recession={recession} credit={credit} fedFunds={fedFunds} vix={vix} />
+      <KeyLevels regime={regime} recession={recession} credit={credit} fedFunds={fedFunds} vixRead={vixRead} />
 
       {/* ── Bottom row: glance | 10Y | calendar ─────────────────────── */}
       <div className="mrr-dash-bottom">
