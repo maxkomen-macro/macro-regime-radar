@@ -47,11 +47,11 @@ import { useFreshReport } from "../shared/useFreshReport";
 const STAMP_UNDER_HEAD = { marginTop: -8, marginBottom: 10 } as const;
 const RULES_LABEL = referenceLabel("Fixed model rules and thresholds from the model configuration; reference content with no publication cadence.");
 
-const REGIME_DEFS: { name: string; color: string; def: string }[] = [
-  { name: "Goldilocks", color: "var(--r-goldilocks)", def: "Industrial production rising while the CPI level falls over three months: the equity-friendly quadrant." },
-  { name: "Overheating", color: "var(--r-overheating)", def: "Industrial production and the CPI level both rising over three months: real assets lead, duration suffers." },
+export const REGIME_DEFS: { name: string; color: string; def: string }[] = [
+  { name: "Goldilocks", color: "var(--r-goldilocks)", def: "Industrial production rising while the CPI level falls over the last three monthly readings: the equity-friendly quadrant." },
+  { name: "Overheating", color: "var(--r-overheating)", def: "Industrial production and the CPI level both rising over the last three monthly readings: real assets lead, duration suffers." },
   { name: "Stagflation", color: "var(--r-stagflation)", def: "The CPI level rising while industrial production falls: the hardest tape; cash and commodities defend." },
-  { name: "Recession Risk", color: "var(--r-recession)", def: "Industrial production and the CPI level both falling over three months: quality bonds and defensives lead." },
+  { name: "Recession Risk", color: "var(--r-recession)", def: "Industrial production and the CPI level both falling over the last three monthly readings: quality bonds and defensives lead." },
 ];
 
 const SIGNAL_NAMES: Record<string, string> = {

@@ -329,7 +329,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(h1.parentElement?.contains(pill)).toBe(true); // beside the headline
     expect(within(hero()).getByRole("heading", { level: 2 })).toHaveTextContent("A clear lead over Recession Risk at 31% of the same four-way odds.");
     const heroText = text(hero());
-    expect(heroText).toContain("Goldilocks means industrial production rising while the CPI level falls over three months: the equity-friendly quadrant.");
+    expect(heroText).toContain("Goldilocks means industrial production rising while the CPI level falls over the last three monthly readings: the equity-friendly quadrant.");
     expect(heroText).toContain("The call rests on a growth trend of +0.31 and an inflation trend of -0.42; model confidence of 47% is a separate reading of how firmly the classifier holds the call.");
     expect(heroText).toContain("Recession Risk here is the classifier's fourth quadrant; the NBER recession model is a separate reading, shown in the summary.");
     expect(within(hero()).getByRole("button", { name: "model confidence" })).toHaveClass("jargon");

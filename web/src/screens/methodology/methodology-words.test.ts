@@ -4,7 +4,8 @@
  */
 import { describe, expect, it } from "vitest";
 import type { RecessionMetrics } from "../../api/types";
-import { recessionSampleWords, trainingWords } from "./MethodologyScreen";
+import { REGIME_DEFS, recessionSampleWords, trainingWords } from "./MethodologyScreen";
+import { REGIME_MEANING } from "../dashboard/hero-copy";
 
 const SERVED = {
   training_window: { start: "2003-04", end: "2026-09" },
@@ -32,5 +33,13 @@ describe("the recession model's sample in Methodology", () => {
   it("trainingWords reads the same metadata", () => {
     expect(trainingWords(SERVED)).toBe("Trained on April 2003 to September 2026 (n = 281 months), with 20 recession months across two recessions (2008–09, 2020).");
     expect(trainingWords(undefined)).toBe("Trained on the months where all five inputs exist (from April 2003, when the breakevens begin).");
+  });
+});
+
+describe("Codex R-20 follow-up: the regime slope is the last three monthly readings, never three months", () => {
+  it("in Methodology's quadrant definitions and the Dashboard hero's", () => {
+    const defs = [...REGIME_DEFS.map((d) => d.def), ...Object.values(REGIME_MEANING)];
+    for (const d of defs) expect(d, d).not.toMatch(/three months|3 months|3-month/);
+    expect(defs.filter((d) => d.includes("over the last three monthly readings"))).toHaveLength(6);
   });
 });

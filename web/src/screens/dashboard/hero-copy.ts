@@ -33,10 +33,10 @@ export const REGIME_NAMES: Record<string, string> = {
 
 /** The classifier's own definition of each quadrant (Methodology copy). */
 export const REGIME_MEANING: Record<string, string> = {
-  Goldilocks: "industrial production rising while the CPI level falls over three months: the equity-friendly quadrant",
-  Overheating: "industrial production and the CPI level both rising over three months: real assets lead, duration suffers",
+  Goldilocks: "industrial production rising while the CPI level falls over the last three monthly readings: the equity-friendly quadrant",
+  Overheating: "industrial production and the CPI level both rising over the last three monthly readings: real assets lead, duration suffers",
   Stagflation: "the CPI level rising while industrial production falls: the hardest tape, cash and commodities defend",
-  "Recession Risk": "industrial production and the CPI level both falling over three months: quality bonds and defensives lead",
+  "Recession Risk": "industrial production and the CPI level both falling over the last three monthly readings: quality bonds and defensives lead",
 };
 
 export function regimeOdds(r: Regime) {

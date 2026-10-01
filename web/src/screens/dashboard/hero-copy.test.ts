@@ -119,10 +119,10 @@ describe("heroCopy (checklist 03 C.1, decision 4)", () => {
 
   it("lede is the D5 paragraph verbatim, with the dash placeholder when a trend is null", () => {
     expect(heroCopy(regime()).lede).toBe(
-      "Goldilocks means industrial production rising while the CPI level falls over three months: the equity-friendly quadrant. The call rests on a growth trend of +0.31 and an inflation trend of -0.42; model confidence of 47% is a separate reading of how firmly the classifier holds the call.",
+      "Goldilocks means industrial production rising while the CPI level falls over the last three monthly readings: the equity-friendly quadrant. The call rests on a growth trend of +0.31 and an inflation trend of -0.42; model confidence of 47% is a separate reading of how firmly the classifier holds the call.",
     );
     expect(heroCopy(regime({ label: "Overheating", ...odds(0.2, 0.55, 0.15, 0.1) })).lede).toMatch(
-      /^Overheating means industrial production and the CPI level both rising over three months: real assets lead, duration suffers\. The call rests on/,
+      /^Overheating means industrial production and the CPI level both rising over the last three monthly readings: real assets lead, duration suffers\. The call rests on/,
     );
     const noGrowth = heroCopy(regime({ growth_trend: null }));
     expect(noGrowth.lede).toContain(`a growth trend of ${DASH} and an inflation trend of -0.42;`);
