@@ -117,7 +117,7 @@ export function switchesInLast12(rows: Regime[] | undefined): number {
 export interface TrailPoint {
   date: string;
   label: string;
-  /** growth_trend: right = accelerating. */
+  /** growth_trend, the 3-row slope of the industrial-production level: right = rising. */
   x: number;
   /** inflation_trend: up = rising. */
   y: number;
