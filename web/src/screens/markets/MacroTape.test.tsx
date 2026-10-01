@@ -194,11 +194,11 @@ const singlesCell = (symbol: string, label: string) => {
 /** Opens the tape's Details disclosure (the M2 provenance paragraphs). */
 const openDetails = () => fireEvent.click(within(panel()).getByRole("button", { name: /Details/ }));
 
-const WIDE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "30 Sess", "As of"];
+const WIDE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ", "1W %", "1M %", "30 Sess", "As of"];
 const NARROW_HEADERS = ["Symbol · name", "Last", "Day %", "1M %", "As of"];
 /** 1024px: the ladder's first step drops the sparkline only. */
-const W1024_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "As of"];
-const SINGLES_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "As of"];
+const W1024_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ", "1W %", "1M %", "As of"];
+const SINGLES_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ", "As of"];
 const SINGLES_NARROW_HEADERS = ["Symbol · name", "Last", "Day %", "As of"];
 const GROUP_LABELS = ["Equities", "Rates", "Credit", "Dollar & FX", "Metals", "Energy & Industrial", "Crypto", "Volatility"];
 /** 19 on disk (5+2+2+3+2+2+2+1); the checklist's "18" is a miscount, so the count is read from the registry. */
@@ -249,7 +249,7 @@ describe("MacroTape (checklist 05 B.7)", () => {
     expect(headers()).toEqual(NARROW_HEADERS);
     expect(cellsOf("SPY")).toHaveLength(NARROW_HEADERS.length);
     expect(text(screen.getByTestId("tape-dropped-columns"))).toBe(
-      "30 Sess, 1W % and Day Δ$ are hidden at this width · widen the window to read them",
+      "30 Sess, 1W % and Day Δ are hidden at this width · widen the window to read them",
     );
     // The name stays inline under the symbol on the phone set.
     expect(text(cell("SPY", "Symbol · name"))).toContain("S&P 500");
@@ -342,22 +342,22 @@ describe("MacroTape (checklist 05 B.7)", () => {
     expect(text(cell("EURUSD", "1M %"))).toBe(DASH);
   });
 
-  it("Day % and Day Δ$ come from the feed's own figures and never from arithmetic: a price without a day change prints the dash", () => {
+  it("Day % and Day Δ come from the served figures and never from arithmetic here: dollars carry their $, an FX rate prints plain, and a price without a day change prints the dash (fix/freshness 6)", () => {
     renderTape();
     expect(text(cell("SPY", "Day %"))).toBe("+0.42%");
     expect(colorOf(cell("SPY", "Day %"))).toBe("var(--pos)");
-    expect(text(cell("SPY", "Day Δ$"))).toBe("+2.70");
+    expect(text(cell("SPY", "Day Δ"))).toBe("+$2.70");
     expect(text(cell("QQQ", "Day %"))).toBe("-0.35%");
     expect(colorOf(cell("QQQ", "Day %"))).toBe("var(--neg-text)");
-    expect(text(cell("QQQ", "Day Δ$"))).toBe("-2.01");
-    expect(text(cell("EURUSD", "Day Δ$"))).toBe("+0.0013");
+    expect(text(cell("QQQ", "Day Δ"))).toBe("-$2.01");
+    expect(text(cell("EURUSD", "Day Δ"))).toBe("+0.0013");
     // IWM has a price and stored bars but the feed sent no day change: the dash, not ret_1d.
     expect(text(cell("IWM", "Day %"))).toBe(DASH);
-    expect(text(cell("IWM", "Day Δ$"))).toBe(DASH);
+    expect(text(cell("IWM", "Day Δ"))).toBe(DASH);
     expect(text(cell("IWM", "Day %"))).not.toContain("-0.35%");
     // TLT has no quote: the stored close's own ret_1d, and no Δ$.
     expect(text(cell("TLT", "Day %"))).toBe("-0.58%");
-    expect(text(cell("TLT", "Day Δ$"))).toBe(DASH);
+    expect(text(cell("TLT", "Day Δ"))).toBe(DASH);
     expect(text(cell("BTC-USD", "Day %"))).toBe(DASH);
   });
 
@@ -427,13 +427,13 @@ describe("MacroTape (checklist 05 B.7)", () => {
     expect(text(wrap)).toContain("sorted by day move · re-sorts as data updates");
     expect(text(wrap)).toContain(SINGLES_CAPTION);
     expect(text(singlesCell("NVDA", "Day %"))).toBe("+2.10%");
-    expect(text(singlesCell("NVDA", "Day Δ$"))).toBe("+3.79");
+    expect(text(singlesCell("NVDA", "Day Δ"))).toBe("+$3.79");
     expect(text(singlesCell("MSFT", "Last"))).toBe("no quote");
     expect(text(singlesCell("MSFT", "As of"))).toBe(DASH);
     expect(text(singlesCell("NVDA", "Symbol · name"))).toContain("Nvidia");
   });
 
-  it("Single names: the sort meta reads live with US ticks, and the phone set drops Day Δ$", () => {
+  it("Single names: the sort meta reads live with US ticks, and the phone set drops Day Δ", () => {
     const first = renderTape({ live: true });
     expect(byId("single-names")).not.toBeNull();
     expect(text(byId("single-names"))).toContain("sorted by day move · re-sorts live");

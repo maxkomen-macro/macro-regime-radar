@@ -371,6 +371,23 @@ function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
   const levels = useLevels(store);
   const now = new Date();
   const rows = store.positions.filter(isOpen).map((p) => viewOf(p, levels, now));
+  // fix/freshness 6: with nothing kept (and nothing unreadable) the card is one compact line with its link, not a
+  // tall empty panel stretched to the signals' height.
+  if (!rows.length && !store.unreadable.length) {
+    return (
+      <section className="dk-card ov-monitored ov-monitored-empty" aria-labelledby="ov-mon-title" data-empty="">
+        <h2 className="dk-card-title" id="ov-mon-title">
+          Monitored
+        </h2>
+        <p className="ov-mon-empty">
+          No positions are monitored in this browser.{" "}
+          <Link className="dk-link" to={pathTo("position-monitor")}>
+            Add one in Position Monitor →
+          </Link>
+        </p>
+      </section>
+    );
+  }
   return (
     <section className="dk-card ov-monitored" aria-labelledby="ov-mon-title">
       <div className="dk-card-head">

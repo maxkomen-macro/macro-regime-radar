@@ -214,6 +214,21 @@
 .ov-monitored .dk-mon-list {
   margin-top: 4px;
 }
+/* fix/freshness 6: an empty Monitored card is one line, sized to itself, not stretched to the signals' row. */
+.ov-monitored-empty {
+  align-self: start;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 12px;
+  row-gap: 4px;
+}
+.ov-mon-empty {
+  margin: 0;
+  font-size: 14px;
+  line-height: 18px;
+  color: var(--dk-t2);
+}
 .ov-mon-note {
   font-family: var(--dk-mono);
   font-size: 11px;

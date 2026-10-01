@@ -419,9 +419,11 @@ const DAY_PCT: TapeColumn = {
   mono: true,
   render: dayPctCell,
 };
-const DAY_DOLLAR: TapeColumn = {
+// fix/freshness 6: the macro tape mixes dollars, FX rates and index points, so the head says "Day Δ" and each
+// dollar cell carries its own "$" (fmtDayDollar); the single names read the same column.
+const DAY_DELTA: TapeColumn = {
   key: "dd",
-  label: "Day Δ$",
+  label: "Day Δ",
   align: "right",
   mono: true,
   render: dayDollarCell,
@@ -581,14 +583,14 @@ export default function MacroTape({
   const macroFit = useMemo(
     () =>
       fitTapeColumns(
-        [symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, WEEK, MONTH, SPARK, AS_OF],
+        [symbolColumn, LAST, DAY_PCT, DAY_DELTA, WEEK, MONTH, SPARK, AS_OF],
         tapeW,
       ),
     [symbolColumn, tapeW],
   );
   const singlesFit = useMemo(
     () =>
-      fitTapeColumns([symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, AS_OF], tapeW),
+      fitTapeColumns([symbolColumn, LAST, DAY_PCT, DAY_DELTA, AS_OF], tapeW),
     [symbolColumn, tapeW],
   );
   const macroColumns = macroFit.cols;

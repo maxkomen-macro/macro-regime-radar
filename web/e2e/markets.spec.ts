@@ -34,7 +34,7 @@ const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 const SUMMARY_LABELS = ["US 10Y", "Sectors · 1d", "Single names · 1d", "ETFs · 1w", "Dollar", "VIX · delayed", "Priced", "Top surprise"];
 const OPTIONAL_LABELS = new Set(["Single names · 1d", "ETFs · 1w", "Dollar", "VIX · delayed"]);
 /** The tape headers (C.2) at desk width and the phone set (B.7). */
-const TAPE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "30 Sess", "As of"];
+const TAPE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ", "1W %", "1M %", "30 Sess", "As of"];
 const TAPE_HEADERS_NARROW = ["Symbol · name", "Last", "Day %", "1M %", "As of"];
 const GROUP_LABELS = ["Equities", "Rates", "Credit", "Dollar & FX", "Metals", "Energy & Industrial", "Crypto", "Volatility"];
 /** 5+2+2+3+2+2+2+1 rows in tape.ts TAPE_GROUPS (the checklist's "18" is a miscount). */

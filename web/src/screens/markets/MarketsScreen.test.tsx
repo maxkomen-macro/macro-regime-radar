@@ -523,7 +523,8 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(lag?.style.color).toBe("var(--neg)");
     expect(text(ddFor("Dollar"))).toBe("UUP -0.24% 1d · -0.9% 1w");
     // The stored ETFs' one-week leader and laggard, the served ret_1w as the week bars print it.
-    expect(text(ddFor("ETFs · 1w"))).toBe("Silver +3.1% leads · Oil (WTI) -2.4% lags");
+    // fix/freshness 6: the tape names say what each fund holds.
+    expect(text(ddFor("ETFs · 1w"))).toBe("Physical silver +3.1% leads · WTI crude futures -2.4% lags");
     expect(dts()).not.toContain("Single names · 1d");
     expect(text(ddFor("Priced"))).toBe("10Y breakeven 2.19% · 10Y real 1.91%");
     expect(text(ddFor("Top surprise"))).toBe("SPY rose 2.3% on the week; the largest weekly gain since June.");

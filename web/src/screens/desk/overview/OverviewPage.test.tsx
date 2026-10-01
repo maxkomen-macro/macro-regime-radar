@@ -195,7 +195,13 @@ describe("Overview tab", () => {
     localStorage.removeItem(POSITIONS_KEY);
     stubDesk();
     renderOverview();
-    expect(await screen.findByText("No positions are monitored in this browser.")).toBeInTheDocument();
+    expect(await screen.findByText(/No positions are monitored in this browser\./)).toBeInTheDocument();
+    // fix/freshness 6: empty, the card is one compact line with its link, not a tall panel with a button.
+    const empty = screen.getByRole("region", { name: /Monitored/ });
+    expect(empty).toHaveAttribute("data-empty");
+    expect(within(empty).getByRole("link", { name: "Add one in Position Monitor →" })).toHaveAttribute("href", "/desk/position-monitor");
+    expect(within(empty).queryByRole("link", { name: "Act on this → Position Monitor" })).toBeNull();
+    expect(empty.querySelectorAll("p")).toHaveLength(1);
   });
 
   it("with no /overview every tile keeps its label and says Couldn't load · Retry, no number (§14.12)", async () => {
