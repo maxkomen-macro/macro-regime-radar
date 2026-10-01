@@ -460,6 +460,68 @@ export function composeShellStatus(input: ShellStatusInput): ShellStatus {
   };
 }
 
+/* ── Data status entry (fix/freshness 8) ─────────────────────────────────── */
+
+/** The "Data status" dot's tone: the fresh-state tones plus "behind" (a stale
+ * state one cycle behind, painted amber) and "error" (no report, or the data
+ * service down, painted red). A snapshot carries no health dot at all. */
+export type DataStatusTone = "live" | "neutral" | "delayed" | "behind" | "stale" | "unknown" | "error" | "snapshot";
+
+const RANK: Record<DataStatusTone, number> = { live: 0, neutral: 0, snapshot: 0, unknown: 1, delayed: 2, behind: 2, stale: 3, error: 4 };
+
+function lineTone(label: FreshLabel, cycles: number | null | undefined): DataStatusTone {
+  if (label.tone === "stale") return cycles != null && cycles <= 1 ? "behind" : "stale";
+  if (label.tone === "fallback") return "unknown";
+  return label.tone;
+}
+
+/** The newest-behind count among a set of series states (null when none is stale). */
+function cyclesOf(f: Freshness, ids: readonly string[]): number | null {
+  let n: number | null = null;
+  for (const id of ids) {
+    const s = seriesById(f, id);
+    if (s && s.state === "stale" && s.cycles_behind != null) n = Math.max(n ?? 0, s.cycles_behind);
+  }
+  return n;
+}
+
+/**
+ * The sidebar's "● Data status" dot (fix/freshness 8): the worst of the two
+ * lines the strip's status card showed, the markets and the regime's monthly
+ * inputs. A line one cycle behind (markets a session behind) reads amber; a
+ * line further behind keeps the card's warn-hot; no report, or the data
+ * service down, reads red. When both lines are healthy the markets' own tone
+ * shows (a live feed glows). A snapshot has no health dot.
+ */
+/** The markets line's own tone in the Data status vocabulary ("behind" when one session behind), so the line
+ * under the word reads in the dot's colour when the markets are what the dot reports. */
+export function marketsLineTone(status: ShellStatus): DataStatusTone {
+  if (!status.f || status.seededLabel) return "unknown";
+  return lineTone(status.marketLabel, marketSeries(status.f)?.cycles_behind);
+}
+
+export function dataStatusTone(status: ShellStatus): DataStatusTone {
+  const { f, statusWord } = status;
+  if (status.seededLabel || statusWord === "Validated snapshot") return "snapshot";
+  if (statusWord === "Backend unavailable") return "error";
+  if (!f) return status.freshnessError ? "error" : "unknown";
+  const inputs = f.regime?.inputs?.length ? f.regime.inputs.map((i) => i.series) : REGIME_INPUT_IDS;
+  const market = lineTone(status.marketLabel, marketSeries(f)?.cycles_behind);
+  const macro = lineTone(status.macroLabel, cyclesOf(f, inputs));
+  return RANK[macro] > RANK[market] ? macro : market;
+}
+
+/** The line under "Data status": the markets as-of the strip's card showed
+ * ("Markets · Close · Sep 30"), without the live clock (its own leaf). */
+export function marketsAsOfWords(status: ShellStatus): string {
+  const { f, statusWord } = status;
+  if (statusWord === "Validated snapshot") return `Validated snapshot${status.snapshotDate}`;
+  if (statusWord === "Backend unavailable") return "Data service unavailable";
+  if (status.seededLabel) return status.seededLabel.word;
+  if (f) return `Markets · ${labelText(status.marketLabel)}`;
+  return status.freshnessError ? "Markets · As of unknown" : "Markets · reading…";
+}
+
 /* ── Alert feed ──────────────────────────────────────────────────────────── */
 
 export type AlertState = "loading" | "error" | "recent" | "clear" | "none";

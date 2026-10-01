@@ -183,7 +183,7 @@ export default function DashboardScreen() {
   // The glance panel (useMarketDaily, usePriced, useQuotes) and the calendar
   // card (useCalendar, useCalendarRecent) own their hooks; shared query keys
   // keep every endpoint at one request.
-  const { openAlerts } = useShellActions();
+  const { openAlerts, openFreshness } = useShellActions();
 
   // Hash-driven state, mirrored from the panels that own it: the deep-link
   // scroll re-runs once the hash's target is actually visible (D38).
@@ -517,9 +517,23 @@ export default function DashboardScreen() {
           rows={rows}
           status={strip}
           stamp={
-            <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+            // fix/freshness 8: "Data status ›" at the right of the header, beside the as-of stamps, opens the
+            // per-source breakdown the strip's status card used to open.
+            <span style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 12 }}>
               <Stamp source={SRC.classifier} asOf={regime.data ? fmtMonYr(regime.data.date) : null} />
               <Stamp source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
+              <button
+                type="button"
+                className="mrr-fresh-link"
+                data-testid="summary-data-status"
+                onClick={openFreshness}
+                aria-haspopup="dialog"
+                aria-controls="freshness-drawer"
+                title="Data status: each feed, the regime month and the NYSE session"
+                style={{ marginLeft: "auto", fontSize: "var(--fs-meta, 12px)" }}
+              >
+                Data status ›
+              </button>
             </span>
           }
         >

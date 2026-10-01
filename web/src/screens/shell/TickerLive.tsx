@@ -1,7 +1,8 @@
 /**
  * The ticker strip, wired to the live layer (redesign Phase 1, spec §2):
- * three quote cards (SPY, QQQ, US 10Y) and the freshness card that opens the
- * per-source breakdown. SPY + QQQ take the relay's day-change figures (each
+ * four quote cards, SPY and QQQ over US 10Y and US 30Y (fix/freshness 8: the
+ * status card left the strip; the sidebar's "● Data status" carries its
+ * markets as-of and opens the breakdown). SPY + QQQ take the relay's day-change figures (each
  * US tick against the previous regular-session close) when a quote is on the board (web/src/live/quotes.ts →
  * api/stream.py), and fall back to the 30s DB intraday poll against the prior
  * daily close when the stream is silent. US 10Y stays on the credit endpoint;
@@ -23,13 +24,13 @@ import { useCreditOas, useMarketDaily, useMarketIntraday } from "../../api/queri
 import { useQuotes } from "../../live/quotes";
 import { fmtBps, fmtDate, fmtPct } from "../../lib/format";
 import { MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
-import { SRC, Stamp, metricAttrs, quoteStamp } from "../shared/Stamp";
+import { SRC, Stamp, metricAttrs, quoteStamp, type MetricId } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
 import { rateChange } from "../shared/rate-change";
-import FreshnessCard from "./FreshnessCard";
 import QuoteCard, { type QuoteCardProps } from "./QuoteCard";
 import { quoteFor, withFreshTags } from "./quote-ladder";
-import type { ShellStatus } from "./shell-status";
+import type { CreditOAS, CreditSeries } from "../../api/types";
+import type { FreshReport } from "../shared/useFreshReport";
 
 function lastBySymbol<T extends { symbol: string }>(rows: T[] | undefined): Map<string, T> {
   const m = new Map<string, T>();
@@ -37,13 +38,28 @@ function lastBySymbol<T extends { symbol: string }>(rows: T[] | undefined): Map<
   return m;
 }
 
-interface Props {
-  status: ShellStatus;
-  freshnessOpen: boolean;
-  onOpenFreshness: () => void;
+/** A Treasury card from a served rate (the 10Y in series[], the 30Y in its own field): the level, the true 1W
+ * change in bp with both dates in its title, the daily sparkline and the FRED stamp with its days behind. */
+function treasuryCard(symbol: string, words: string, s: CreditSeries, credit: CreditOAS, report: FreshReport, metric?: MetricId): QuoteCardProps {
+  // fix/freshness 2: "1W" only on a true seven-day change; the date is the
+  // newest observation's own, never the month stamp.
+  const chg = rateChange(s);
+  return {
+    symbol,
+    price: fmtPct(s.value_pct),
+    raw: s.value_pct,
+    change: chg ? fmtBps(chg.bps) : undefined,
+    // Direction, not valence: green is "up", red is "down", for yields too.
+    changeTone: chg ? (chg.bps >= 0 ? "pos" : "neg") : undefined,
+    tag: chg ? { text: chg.tag, title: chg.title, tone: "muted" } : undefined,
+    series: s.history.map((h) => h.value),
+    title: `${words} · FRED ${s.series_id} · ${fmtDate(s.date)}`,
+    stamp: <Stamp source={SRC.fred} label={report.series(s.series_id, credit.freshness)} />,
+    valueAttrs: metric ? metricAttrs(metric, s.value_pct) : undefined,
+  };
 }
 
-export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: Props) {
+export default function TickerLive() {
   const quotes = useQuotes();
   const intraday = useMarketIntraday(["SPY", "QQQ"]);
   const daily = useMarketDaily(["SPY", "QQQ"], 45);
@@ -69,37 +85,38 @@ export default function TickerLive({ status, freshnessOpen, onOpenFreshness }: P
     });
 
     const ten = credit.data?.series.find((s) => s.label === "UST10Y");
-    if (ten) {
-      // fix/freshness 2: "1W" only on a true seven-day change; the date is the
-      // newest observation's own, never the month stamp.
-      const chg = rateChange(ten);
-      out.push({
-        symbol: "US 10Y",
-        price: fmtPct(ten.value_pct),
-        raw: ten.value_pct,
-        change: chg ? fmtBps(chg.bps) : undefined,
-        // Direction, not valence: green is "up", red is "down", for yields too.
-        changeTone: chg ? (chg.bps >= 0 ? "pos" : "neg") : undefined,
-        tag: chg ? { text: chg.tag, title: chg.title, tone: "muted" } : undefined,
-        series: ten.history.map((h) => h.value),
-        title: `10-year Treasury yield · FRED ${ten.series_id} · ${fmtDate(ten.date)}`,
-        stamp: <Stamp source={SRC.fred} label={report.series(ten.series_id, credit.data?.freshness)} />,
-        valueAttrs: metricAttrs("ust10y", ten.value_pct),
-      });
+    if (credit.data && ten) {
+      out.push(treasuryCard("US 10Y", "10-year Treasury yield", ten, credit.data, report, "ust10y"));
     } else {
       // CP4: the dash says why when the yield did not load.
       out.push({ symbol: "US 10Y", price: "—", title: credit.isError ? "US 10Y yield unavailable: the data service did not answer." : undefined });
+    }
+
+    // fix/freshness 8: the 30Y is the payload's own field. An older API omits it: the card is hidden rather than
+    // dashed. Served as null (no eligible DGS30 stored), or while the payload is on its way, it dashes like the 10Y.
+    const thirty = credit.data?.ust30y;
+    if (credit.data && thirty) {
+      out.push(treasuryCard("US 30Y", "30-year Treasury yield", thirty, credit.data, report));
+    } else if (!credit.data || thirty === null) {
+      out.push({
+        symbol: "US 30Y",
+        price: "—",
+        title: credit.isError
+          ? "US 30Y yield unavailable: the data service did not answer."
+          : thirty === null
+            ? "US 30Y yield unavailable: no eligible FRED DGS30 observation is stored yet."
+            : undefined,
+      });
     }
 
     return out;
   }, [quotes, intraday.data, daily.data, daily.isLoading, credit.data, credit.isError, unavailable, report]);
 
   return (
-    <div className="mrr-strip" role="region" aria-label="Market strip and data freshness">
+    <div className="mrr-strip" role="region" aria-label="Market strip">
       {cards.map((c) => (
         <QuoteCard key={c.symbol} {...c} />
       ))}
-      <FreshnessCard status={status} open={freshnessOpen} onOpen={onOpenFreshness} />
     </div>
   );
 }

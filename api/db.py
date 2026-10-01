@@ -758,6 +758,23 @@ def _oas_monthly(conn: sqlite3.Connection, series_id: str, days: int, newest_wat
     }
 
 
+def _rate_entry(series_id: str, label: str, read: dict) -> dict:
+    """One served rate or spread: the value in percent and bps, the change with its basis, the history."""
+    return {
+        "series_id": series_id,
+        "label": label,
+        "date": read["date"],
+        "value_pct": read["value"],
+        "value_bps": read["value"] * 100.0,
+        "change_bps": read["change_bps"],
+        "change_basis": read["change_basis"],
+        "change_from": read["change_from"],
+        "change_1w_bps": read["change_bps"] if read["change_basis"] == "1w" else None,
+        "history": [{"date": r["date"], "value": r["value"]} for r in read["history"]],
+        "history_basis": read["history_basis"],
+    }
+
+
 def credit_oas(days: int) -> dict:
     """Latest OAS (pct + bps) with its change and a history window for
     sparklines, for the five BAML series plus the 10Y UST yield.
@@ -766,13 +783,21 @@ def credit_oas(days: int) -> dict:
     true seven-calendar-day change from desk_series (``change_from`` the prior
     observation's date); "month_end" is against the previous month's
     month-stamped row (``change_from`` that month, "YYYY-MM").
-    ``change_1w_bps`` is kept for older readers and is set only on a true week."""
+    ``change_1w_bps`` is kept for older readers and is set only on a true week.
+
+    fix/freshness 8: ``ust30y`` is the 30Y Treasury (FRED DGS30), its own field
+    so no Credit chart draws it, read through the same path and the Desk's
+    eligibility rules as the 10Y. raw_series does not hold DGS30, so its source
+    watermark is the Desk writer's (``desk:DGS30``); without one, or with
+    nothing eligible, the field is null."""
     series_out: list[dict] = []
     as_of: str | None = None
+    ust30y: dict | None = None
     with closing(_connect()) as conn:
         desk = _has_table(conn, "desk_series")
         marks = (
-            {r["source"]: r["last_obs"] for r in conn.execute("SELECT source, last_obs FROM source_watermarks WHERE source LIKE 'fred:%'")}
+            {r["source"]: r["last_obs"] for r in conn.execute(
+                "SELECT source, last_obs FROM source_watermarks WHERE source LIKE 'fred:%' OR source LIKE 'desk:%'")}
             if _has_table(conn, "source_watermarks")
             else {}
         )
@@ -781,24 +806,14 @@ def credit_oas(days: int) -> dict:
             read = (_oas_daily(conn, series_id, days, mark) if desk else None) or _oas_monthly(conn, series_id, days, mark)
             if read is None:
                 continue
-            series_out.append(
-                {
-                    "series_id": series_id,
-                    "label": label,
-                    "date": read["date"],
-                    "value_pct": read["value"],
-                    "value_bps": read["value"] * 100.0,
-                    "change_bps": read["change_bps"],
-                    "change_basis": read["change_basis"],
-                    "change_from": read["change_from"],
-                    "change_1w_bps": read["change_bps"] if read["change_basis"] == "1w" else None,
-                    "history": [{"date": r["date"], "value": r["value"]} for r in read["history"]],
-                    "history_basis": read["history_basis"],
-                }
-            )
+            series_out.append(_rate_entry(series_id, label, read))
             if label != "UST10Y":
                 as_of = max(as_of, read["date"]) if as_of else read["date"]
-    return {"as_of": as_of, "series": series_out}
+        if desk:
+            read30 = _oas_daily(conn, "DGS30", days, marks.get("fred:DGS30") or marks.get("desk:DGS30"))
+            if read30 is not None:
+                ust30y = _rate_entry("DGS30", "UST30Y", read30)
+    return {"as_of": as_of, "series": series_out, "ust30y": ust30y}
 
 
 def watermarks() -> dict | None:

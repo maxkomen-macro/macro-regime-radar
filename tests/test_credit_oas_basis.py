@@ -234,3 +234,53 @@ def test_r24_the_week_is_seven_to_ten_calendar_days_back(store, case, daily, wan
         assert ten["change_bps"] == pytest.approx((daily[newest] - daily[want[1]]) * 100.0), case
     else:
         assert ten["change_bps"] is None and ten["change_1w_bps"] is None, case
+
+
+# ── fix/freshness 8: the 30Y Treasury, its own field on the same path ───────
+
+DGS30_DAILY = {"2026-09-21": 4.88, "2026-09-22": 4.89, "2026-09-25": 5.02, "2026-09-28": 5.06}
+
+
+def _with_desk_mark(path: Path, series_id: str, last_obs: str) -> None:
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO source_watermarks (source, last_obs, status) VALUES (?, ?, 'ok')", (f"desk:{series_id}", last_obs))
+    conn.commit()
+    conn.close()
+
+
+def test_the_30y_is_its_own_field_with_a_true_week(tmp_path, monkeypatch):
+    path = tmp_path / "macro_radar.db"
+    _store(path, desk={"DGS10": DGS10_DAILY, "DGS30": DGS30_DAILY}, raw=RAW, marks=MARKS)
+    _with_desk_mark(path, "DGS30", "2026-09-28")
+    monkeypatch.setattr(db, "DB_PATH", path)
+    out = db.credit_oas(DAYS)
+    assert "DGS30" not in {s["series_id"] for s in out["series"]}  # no Credit chart draws it
+    u = out["ust30y"]
+    assert (u["series_id"], u["label"], u["date"], u["value_pct"]) == ("DGS30", "UST30Y", "2026-09-28", 5.06)
+    assert (u["change_basis"], u["change_from"]) == ("1w", "2026-09-21")
+    assert u["change_bps"] == pytest.approx(18.0) and u["change_1w_bps"] == pytest.approx(18.0)
+    assert u["history_basis"] == "daily" and [h["date"] for h in u["history"]] == sorted(DGS30_DAILY)
+    assert out["as_of"] == "2026-09-29"  # the 30Y, like the 10Y, never dates the credit block
+
+
+def test_the_30y_obeys_the_desks_eligibility_rules(tmp_path, monkeypatch):
+    path = tmp_path / "macro_radar.db"
+    _store(path, desk={"DGS30": DGS30_DAILY}, raw=RAW, marks=MARKS)
+    _with_desk_mark(path, "DGS30", "2026-09-28")
+    _migrate(path, committed_on="2026-09-28")
+    _add_desk_rows(path, "DGS30", {"2026-09-29": 999.0}, run_id="uncommitted", run_as_of="2026-09-29", status="started")
+    monkeypatch.setattr(db, "DB_PATH", path)
+    u = db.credit_oas(DAYS)["ust30y"]
+    assert u["date"] == "2026-09-28" and u["value_pct"] == pytest.approx(5.06)
+    assert all(h["value"] < 100 for h in u["history"])
+
+
+def test_without_a_watermark_or_a_desk_store_the_30y_is_null(tmp_path, monkeypatch):
+    path = tmp_path / "macro_radar.db"
+    _store(path, desk={"DGS30": DGS30_DAILY}, raw=RAW, marks=MARKS)  # no desk:DGS30 watermark
+    monkeypatch.setattr(db, "DB_PATH", path)
+    assert db.credit_oas(DAYS)["ust30y"] is None
+    path2 = tmp_path / "older.db"
+    _store(path2, desk=None, raw=RAW, marks=MARKS)
+    monkeypatch.setattr(db, "DB_PATH", path2)
+    assert db.credit_oas(DAYS)["ust30y"] is None

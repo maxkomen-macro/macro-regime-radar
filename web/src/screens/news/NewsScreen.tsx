@@ -126,7 +126,7 @@ const HERO_ACTIONS: TabHeroAction[] = [
   { label: "Filter headlines", to: "/app/news#feed" },
 ];
 
-const STRIP_SUFFIX = "Open the data freshness breakdown.";
+const STRIP_SUFFIX = "Open the data status breakdown.";
 
 /** The ticker, else the M&A deal-size bucket in the same chip slot (U12). */
 function chipOf(item: NewsItem): string | undefined {

@@ -92,7 +92,7 @@ interface Cp4View {
 const RECESSION_MODEL = /recession model/i;
 const MARKET_SUBJECT = /price|quote|market|close/i;
 const byId = (id: string) => (page: Page) => page.locator(`#${id}`);
-const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
 const nberRow = (page: Page) => page.locator("#regime-summary .mrr-kv-row").filter({ has: page.locator("dt", { hasText: /NBER/i }) });
 
 const VIEWS: Cp4View[] = [

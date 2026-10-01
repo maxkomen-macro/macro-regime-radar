@@ -162,7 +162,7 @@ function streamStrip(status: StreamStatus, quotes: ReadonlyMap<string, LiveQuote
     detail,
     onClick: openFreshness,
     ariaHasPopup: "dialog",
-    ariaLabel: `${title}. ${detail}. Open the data freshness breakdown.`,
+    ariaLabel: `${title}. ${detail}. Open the data status breakdown.`,
   };
 }
 

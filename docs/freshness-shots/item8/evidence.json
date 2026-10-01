@@ -1,0 +1,98 @@
+{
+ "strip_1440": [
+  {
+   "text": "SPY762.63-0.21%EODHD · As of unknown",
+   "x": 218,
+   "y": 108,
+   "w": 594,
+   "h": 54
+  },
+  {
+   "text": "QQQ739.77+0.25%EODHD · As of unknown",
+   "x": 828,
+   "y": 108,
+   "w": 594,
+   "h": 54
+  },
+  {
+   "text": "US 10Y5.24%+28 bps1WFRED · Sep 28 · 2 days behind",
+   "x": 218,
+   "y": 178,
+   "w": 594,
+   "h": 54
+  },
+  {
+   "text": "US 30Y5.56%+27 bps1WFRED · Sep 28 · 2 days behind",
+   "x": 828,
+   "y": 178,
+   "w": 594,
+   "h": 54
+  }
+ ],
+ "strip_1440_titles": [
+  "The live relay is not configured on this server; quotes are stored closes.",
+  "The live relay is not configured on this server; quotes are stored closes.",
+  "10-year Treasury yield · FRED DGS10 · Sep 28, 2026",
+  "Change over one week: Sep 28, 2026 against Sep 21, 2026",
+  "10-year Treasury yield observed 2026-09-28; 2 business day(s) behind the 2026-09-30 print.",
+  "30-year Treasury yield · FRED DGS30 · Sep 28, 2026",
+  "Change over one week: Sep 28, 2026 against Sep 21, 2026",
+  "30Y Treasury observed 2026-09-28; 2 business day(s) behind the 2026-09-30 print."
+ ],
+ "sidebar_footer": "Data statusMarkets · Sep 30 · 1 session behindv0.1.0",
+ "sidebar_dot_tone": "behind",
+ "sidebar_entry_name": "Data statusMarkets · Sep 30 · 1 session behind",
+ "summary_stamp_row": "Classifier · Aug 2026Recession model · Sep 2026Data status ›",
+ "regime_card_chips": [
+  "Macro: Aug 2026 print. Industrial production: Aug 2026 print; CPI (all items): Aug 2026 print; Unemployment rate: Aug 2026 print.",
+  "Signals: Sep 28 · 2 days behind. 10-year Treasury yield: Sep 28 · 2 days behind; 2-year Treasury yield: Sep 28 · 2 days behind; VIX close (CBOE): Sep 29 · 1 day behind; High-yield OAS: Sep 29 · 1 day behind; CPI (all items): Aug 2026 print; Unemployment rate: Aug 2026 print; Industrial production: Aug 2026 print.",
+  "Market: Sep 30 · 1 session behind. Newest stored close 2026-09-30 is 1 session(s) older than the last completed session (2026-10-01)."
+ ],
+ "regime_card_text": "Current regimeOverheating42% oddsA narrow lead over Stagflation at 37% of the same four-way odds.Overheating means industrial production and the CPI level both rising over three months: real assets lead, duration suffers. The call rests on a growth trend of +0.11 and an inflation trend of +0.78; model confidenceHow firmly the model holds its top call — separate from the odds themselves. Low convic",
+ "drawer_title": "Data status",
+ "palette_options": [
+  "Data statusEach feed, the regime month, the NYSE session"
+ ],
+ "strip_1672": [
+  {
+   "text": "SPY762.63-0.21%EODHD · As of unknown",
+   "x": 218,
+   "y": 108,
+   "w": 347,
+   "h": 54
+  },
+  {
+   "text": "QQQ739.77+0.25%EODHD · As of unknown",
+   "x": 581,
+   "y": 108,
+   "w": 347,
+   "h": 54
+  },
+  {
+   "text": "US 10Y5.24%+28 bps1WFRED · Sep 28 · 2 days behind",
+   "x": 944,
+   "y": 108,
+   "w": 347,
+   "h": 54
+  },
+  {
+   "text": "US 30Y5.56%+27 bps1WFRED · Sep 28 · 2 days behind",
+   "x": 1307,
+   "y": 108,
+   "w": 347,
+   "h": 54
+  }
+ ],
+ "strip_1672_titles": [
+  "The live relay is not configured on this server; quotes are stored closes.",
+  "The live relay is not configured on this server; quotes are stored closes.",
+  "10-year Treasury yield · FRED DGS10 · Sep 28, 2026",
+  "Change over one week: Sep 28, 2026 against Sep 21, 2026",
+  "10-year Treasury yield observed 2026-09-28; 2 business day(s) behind the 2026-09-30 print.",
+  "30-year Treasury yield · FRED DGS30 · Sep 28, 2026",
+  "Change over one week: Sep 28, 2026 against Sep 21, 2026",
+  "30Y Treasury observed 2026-09-28; 2 business day(s) behind the 2026-09-30 print."
+ ],
+ "phone_entry": "Data status Markets · Sep 30 · 1 session behind",
+ "phone_drawer": "opened"
+}

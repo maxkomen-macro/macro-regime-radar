@@ -349,7 +349,7 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     const label = button.getAttribute("aria-label") ?? "";
     expect(label.startsWith(`Feed on time. Newest headline ${stamp}. `)).toBe(true);
     expect(label).toContain("Newest stored headline is inside 90 minutes (US business hours).");
-    expect(label.endsWith("Open the data freshness breakdown.")).toBe(true);
+    expect(label.endsWith("Open the data status breakdown.")).toBe(true);
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
   });
 
@@ -415,8 +415,8 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     const button = await awaitStrip();
     expect(button).toHaveAttribute("data-tone", "gray");
     expect(stripTitle(button)).toBe("Reading feed health…");
-    expect(stripDetail(button)).toBe("Opens the data freshness breakdown");
-    expect(button.getAttribute("aria-label") ?? "").toMatch(/^Reading feed health…\. Opens the data freshness breakdown\. .*Open the data freshness breakdown\.$/);
+    expect(stripDetail(button)).toBe("Opens the data status breakdown");
+    expect(button.getAttribute("aria-label") ?? "").toMatch(/^Reading feed health…\. Opens the data status breakdown\. .*Open the data status breakdown\.$/);
     expect(text(hero().querySelector(".mrr-hero-lede"))).toBe("Reading the stored headline feed…");
     // Phase 10 (checklist 10 C #4): the empty tile names the hourly cadence.
     expect(text(headlines())).toContain("Nothing on file; the news pipeline runs hourly (minute 41 UTC) and has not stored headlines yet.");

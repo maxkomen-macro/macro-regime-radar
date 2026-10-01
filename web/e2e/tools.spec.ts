@@ -363,7 +363,7 @@ test.describe("tools (checklist 09 E.3)", () => {
     expect(title).toMatch(/^(?:Rate synced from FRED|FRED rate delayed|FRED rate stale|FRED rate · as of unknown|Rate feed unavailable|Reading the FRED rate…)$/);
     const detail = await contentText(strip(page).locator("small"));
     const tone = (await strip(page).getAttribute("data-tone")) ?? "";
-    expect(await strip(page).getAttribute("aria-label")).toMatch(new RegExp(`^${escapeRe(title)}\\. .*Open the data freshness breakdown\\.$`));
+    expect(await strip(page).getAttribute("aria-label")).toMatch(new RegExp(`^${escapeRe(title)}\\. .*Open the data status breakdown\\.$`));
     note("strip", `${title} · ${detail} · tone ${tone}`);
     if (title === "Rate synced from FRED") expect(tone).toBe("mint");
     else if (/^FRED rate (?:delayed|stale)$/.test(title)) expect(tone).toBe("amber");
@@ -391,7 +391,7 @@ test.describe("tools (checklist 09 E.3)", () => {
     }
 
     await strip(page).click();
-    const drawer = page.getByRole("dialog", { name: "Data freshness" });
+    const drawer = page.getByRole("dialog", { name: "Data status" });
     await expect(drawer).toBeVisible();
     await expect(drawer).toHaveAttribute("aria-labelledby", "freshness-drawer-title");
     await capture(page, "tools--freshness-drawer.png", page.locator("body"));

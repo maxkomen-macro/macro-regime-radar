@@ -160,6 +160,9 @@ export interface CreditSeries {
 export interface CreditOAS {
   as_of: string | null;
   series: CreditSeries[];
+  /** fix/freshness 8: the 30Y Treasury (FRED DGS30 from the Desk store), its own field so no Credit chart draws it.
+   * null when the store holds no eligible DGS30; absent on an older API (the strip then hides the card). */
+  ust30y?: CreditSeries | null;
   /** B3: the five BAML series and DGS10 (FRESHNESS_CONTRACT §6). */
   freshness?: Record<string, SeriesState> | null;
 }

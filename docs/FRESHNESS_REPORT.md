@@ -24,11 +24,12 @@ Source of truth: `/tmp/mrr-brief/SYSTEM_BRIEF.md` (read in full for §2, §4–�
 | 10 | Codex round 1 · B: data (R-05, R-06, R-08, R-09, R-13) | `a13f3a71` | `api/db.py`, `tests/test_credit_oas_basis.py`, `vix-shown.ts`, `recession-copy.ts`, `MethodologyScreen.tsx`, `TenYearCard.tsx`, tests, `CLAUDE.md` | `git revert a13f3a71` |
 | 11 | Codex round 1 · C: wording (R-12, R-14..R-21) | `5ee6b2b7` | 10 web files and their tests | `git revert 5ee6b2b7` (web only) |
 | 12 | Codex round 1 · D: tests (R-22..R-24) | `c96ebfec` | `tests/test_desk_v2_overview.py`, `tests/test_credit_oas_basis.py`, `web/e2e/recession.spec.ts` | `git revert c96ebfec` |
-| 13 | The Codex round 1 section of this report | (newest commit on the branch) | `docs/FRESHNESS_REPORT.md` | `git revert <sha>` |
+| 13 | The Codex round 1 section of this report | `b9070431` | `docs/FRESHNESS_REPORT.md` | `git revert b9070431` |
+| 14 | Item 8: US 30Y in the strip, the status card out, "Data status" (below) | (see the item 8 section) | `api/db.py`, `api/main.py`, the shell (`TickerLive.tsx`, `Sidebar.tsx`, `MobileNav.tsx`, `FreshnessDrawer.tsx`, `AppShell.tsx`, `shell-status.ts`, `FreshnessCard.tsx` deleted), `DashboardScreen.tsx`, `app.css`, tests, e2e specs, `docs/freshness-shots/item8/`, `CLAUDE.md` | `git revert <sha>` |
 
 - Whole branch, before it is pushed: nothing to undo on `main`; delete the branch (`git branch -D fix/freshness` from another checkout) or reset it (`git reset --hard b116f584`, destructive).
 - Whole branch, after a merge commit lands on `main`: `git revert -m 1 <merge-sha>`.
-- One item after merge: `git revert <sha>` for that item, newest first if reverting several (13 → 1). Group B's rates reader and Group A's anchors are API changes; reverting either alone is safe for the web. Items 2 and 3 both add optional fields to response models; reverting the API commit before the web commit that reads them is safe (the web degrades: no change label, chip falls back to the newest date).
+- One item after merge: `git revert <sha>` for that item, newest first if reverting several (14 → 1). Group B's rates reader and Group A's anchors are API changes; reverting either alone is safe for the web. Items 2 and 3 both add optional fields to response models; reverting the API commit before the web commit that reads them is safe (the web degrades: no change label, chip falls back to the newest date).
 - Commits 3 and 4 were amended once before this report (an embedded web test still pinned the old chip noun; three captions still said "probability"; the inputs month printed twice). Commit 4 was amended a second time for one Regime Lab test fixture that still mocked "the 12-month recession model". The superseded SHAs (`0a1f7348`, `e7bb2dd9`, `169188fa`, `4d90bb25`, `76e69b9b`, `c9d3a4c6`, `a2fb0d7a`) exist only in the local reflog.
 
 **Deploy order.** API (Render) first, then web (Vercel): the web reads `change_basis`, `inputs_through`, `observation_month`, `odds` and `oldest_behind`, and without them it prints no change label rather than a wrong one, but every new label appears only once the API serves them.
@@ -427,3 +428,82 @@ File:line is at the group's commit.
 | Full pytest (`--ignore tests/test_streamlit_backports.py`) on `c96ebfec` | **1782 passed, 71 skipped, 6 failed**: exactly the six pre-existing failures (the two `test_asset_history` tests, the audit-store pins `test_desk_v2_regime.py::…[published]` and `test_desk_v2_technicals.py` ×3), each failing identically on `b116f584` with this DB. The timing-flaky `test_generations` test and the two `web/dist` build-race failures of the first run did not recur (the build finished before pytest started). Two fewer skips than the first run (71 vs 73). The release copy's sha256 is unchanged |
 | Desk e2e (`e2e/desk.spec.ts`, `e2e/desk-usability.spec.ts`, `--workers=1`, fixture Vite `DESK_FIXTURES=1`) on `c96ebfec` | **83 passed** |
 | `e2e/recession.spec.ts` test 3 (R-23), against an API from `c96ebfec` on the release copy | **1 passed** |
+
+## Item 8: US 30Y in the strip, the status card out, "Data status"
+
+One commit (the newest on the branch at the time), not pushed, `data/macro_radar.db` not staged. No model, coefficient, threshold or stored history changed; the 30Y is read, not computed. No earlier 30Y message reached this session, so there was nothing to adapt.
+
+### 1. The strip
+
+- **Layout.** Four quote cards of one width: SPY and QQQ over US 10Y and US 30Y, two by two below 1620 px (1440: four 594 px cards on two rows, [strip-1440](freshness-shots/item8/strip-1440.png)). Four across in one row from 1620 px, where the old strip was also one row ([strip-1672](freshness-shots/item8/strip-1672.png), four 347 px cards). One card per row on a phone ([strip-390](freshness-shots/item8/strip-390.png)). The status card (Markets · Macro monthly · Freshness ›) is gone, and `FreshnessCard.tsx` is deleted with its CSS.
+- **US 30Y.** FRED DGS30 from `desk_series` (us30y, daily from 1977-02-15; 12,400 rows on the release copy), read by `api/db.py` `credit_oas` through the same `_oas_daily` path and the Desk's eligibility rules as the 10Y (Codex R-05: committed run, nothing after the as-of or its run's day, finite values). raw_series does not hold DGS30, so the "source watermark" of the R-06 rule is the Desk writer's `desk:DGS30`; with no watermark, or nothing eligible, the field is null. It is served as **its own field, `ust30y`**, beside `series[]`, so no Credit chart draws it. The route adds its state to the response's `freshness` block as `DGS30`: the Desk's FRED daily rule on the bond calendar (`desk_series_states`), dated by the observation served.
+- **The card** reads like the 10Y's: level, true 1W change in bp, the "1W" tag's title naming both dates, a daily sparkline (60 points), and the stamp. On the release copy: **"US 30Y · 5.56% · +27 bps · 1W"**, tag title "Change over one week: Sep 28, 2026 against Sep 21, 2026", card title "30-year Treasury yield · FRED DGS30 · Sep 28, 2026", stamp **"FRED · Sep 28 · 2 days behind"** (the 10Y reads "5.24% · +28 bps · FRED · Sep 28 · 2 days behind").
+- **An older API** omits `ust30y`: the 30Y card is hidden, not dashed ([strip-1440-older-api](freshness-shots/item8/strip-1440-older-api.png): SPY, QQQ, US 10Y against the API built from `c96ebfec`). A served `null` dashes with the title "US 30Y yield unavailable: no eligible FRED DGS30 observation is stored yet."; while the payload loads, both Treasury cards dash as the 10Y always did.
+
+### 2. "Data status"
+
+The breakdown is a drawer (`FreshnessDrawer.tsx`) with no route of its own, so there is no route to keep. Its element id (`freshness-drawer`) and the entry's `data-testid` (`sidebar-freshness`) are unchanged.
+
+| Where | Before | After |
+|---|---|---|
+| Drawer title | Data freshness | **Data status** |
+| Drawer close button | Close data freshness | Close data status |
+| Drawer status line (its accessible name) | Data freshness | Data status |
+| Sidebar footer | ● Stored market data / Close · Sep 30 | **● Data status** / Markets · Sep 30 · 1 session behind |
+| Sidebar footer title | Per-source freshness: each feed, the regime month and the NYSE session | Data status: each feed, the regime month and the NYSE session |
+| Collapsed rail (name and title) | Data freshness: Stored market data | Data status: Markets · Sep 30 · 1 session behind |
+| Phone menu entry | Data freshness Stored market data | ● Data status Markets · Sep 30 · 1 session behind |
+| Markets, News and LBO status strips (accessible name) | … Open the data freshness breakdown. | … Open the data status breakdown. |
+| LBO and News strips while loading | Opens the data freshness breakdown | Opens the data status breakdown |
+| Command palette | (no entry) | **Data status** · "Each feed, the regime month, the NYSE session" (an action, at every width) |
+| Strip region (accessible name) | Market strip and data freshness | Market strip |
+| Dashboard, Model & market summary header | Classifier · Aug 2026 Recession model · Sep 2026 | Classifier · Aug 2026 Recession model · Sep 2026 … **Data status ›** (right) |
+
+Prose that uses freshness as a concept stays as it is: Methodology's "Freshness states", the stamps, `/api/freshness`.
+
+### 3. The entry points
+
+- **The sidebar footer** reads "● Data status" with the markets as-of on the line under it, as one button opening the drawer ([sidebar-footer-1440](freshness-shots/item8/sidebar-footer-1440.png)). **The dot** is the worse of the two lines the removed card showed, the markets and the regime's monthly inputs (`shell-status.ts` `dataStatusTone`):
+  - **amber** for a line one cycle behind (markets a session behind, the case on screen today: newest stored close Sep 30, last completed session Oct 1), or a delayed live feed;
+  - **warn-hot** for a line further behind (the old card's stale colour);
+  - **red** when the freshness report failed or the data service is down;
+  - grey while the report loads or a state is unknown;
+  - no health dot (a ◇ mark) on a snapshot.
+  
+  When both lines are healthy the markets' own tone shows: grey for a close, mint glowing for a live feed. When the markets are one session behind, the markets line is amber too, so line and dot agree; further behind it keeps the warn-hot stale mark.
+- **On a phone** the menu carries the same "● Data status" with the markets as-of beside it, and opens the drawer ([phone-menu-390](freshness-shots/item8/phone-menu-390.png), [phone-drawer-390](freshness-shots/item8/phone-drawer-390.png)). The collapsed rail keeps the dot.
+- **On the Dashboard,** "Data status ›" sits at the right of the Model & market summary card's header, on the row of its as-of stamps ([summary-header-1440](freshness-shots/item8/summary-header-1440.png), [full card](freshness-shots/item8/summary-card-1440.png)). It opens the drawer ([drawer-1440](freshness-shots/item8/drawer-1440.png)). Nothing was added to the Current regime card.
+- **The command palette** has a "Data status" action ([palette-1440](freshness-shots/item8/palette-1440.png)).
+
+### 4. Everything the removed card showed is still on screen
+
+| The card's line | Where it is now | On the release copy |
+|---|---|---|
+| Markets · <as-of> (+ live clock) | The line under "Data status" in the sidebar, the rail's name, the phone menu entry | "Markets · Sep 30 · 1 session behind" |
+| Macro monthly · <print> | The Current regime card's Macro stamp chip ([regime-card-1440](freshness-shots/item8/regime-card-1440.png)), and the drawer | chip title "Macro: Aug 2026 print. Industrial production: Aug 2026 print; CPI (all items): Aug 2026 print; Unemployment rate: Aug 2026 print." |
+| The two dots | The Data status dot (their worse) | amber (`data-tone="behind"`) |
+| Freshness › | The sidebar entry, the phone entry, the rail, the summary card's "Data status ›", the palette | the drawer titled "Data status" |
+
+One difference: the strip ran on Regime Lab, Markets, Credit, News and Tools as well. On those tabs the macro print now appears in the drawer (and in each tab's own stamps), not in a line at the top of the page.
+
+### Tests
+
+- **Strip layout:** `TickerLive.test.tsx` (new). It checks the order SPY, QQQ, US 10Y, US 30Y; four cards and no button; the 30Y card's level, change, both dates, sparkline and stamp; and app.css's four-across, two-by-two and one-per-row rules, with no `.mrr-upd` left.
+- **The hidden-30Y fallback:** `TickerLive.test.tsx` (older API: three cards, no "US 30Y"; a served null: a dash with its reason).
+- **The API:** `tests/test_credit_oas_basis.py` (+3: own field, true week, not in `series[]`, not dating the block; the Desk's rules; null without a watermark or a store) and `tests/test_api.py::test_api_credit_oas_serves_the_30y_as_its_own_field` (the release copy, its `DGS30` state).
+- **The rename:** `AppShell.test.tsx` (the dialog "Data status", its close button and status line, the palette action), `AppShell.iteration.test.tsx` (the sidebar, rail and phone entries named /^Data status/ on every route), and the Markets, News and LBO strip tests.
+- **The sidebar link:** `AppShell.test.tsx` and `AppShell.iteration.test.tsx` ("Data status" over "Markets · …"; the red dot when the report fails), and `data-status.test.ts` (new: the dot's rule case by case, including one session behind as amber and four as warn-hot).
+- **The Dashboard link:** `DashboardScreen.test.tsx` (on the stamps' row, last; opens the drawer; nothing on the regime card).
+- Tests asserting the old card or wording were updated, none deleted. Eleven e2e specs outside the gate (`shell`, `states`, `markets`, `shell-iteration`, `a11y`, `behaviour-iteration`, `news`, `tools`, `dashboard`, `snapshot-empty`, `lib/a11y`) carry the new names and open the drawer from the sidebar. They compile (`playwright test --list`: 241 tests in 11 files) but were not run; they need the live API.
+
+### Gates
+
+| Gate | Result |
+|---|---|
+| Scoped pytest | `tests/test_credit_oas_basis.py` **17 passed**; `tests/test_api.py -k credit` **4 passed**; `tests/test_web_fresh_report.py` and the Desk API import check pass |
+| Web gate (`tsc -b --noEmit`, `vitest run`, `npm run build`) | tsc clean; **vitest 1799 passed (146 files)**; build ✓. A first full run failed one Desk Basket test under a load average of 22 from other sessions; it passed alone (40/40) and in the clean rerun |
+| Desk e2e (`desk.spec.ts`, `desk-usability.spec.ts`, fixture Vite) | **83 passed**. Two shell-only edits came after it, both covered by the shell suites (112 passed): the markets line's amber when one session behind, and the phone entry's label kept on one line |
+
+### Rollback
+
+`git revert <sha>` of this commit restores the three-card strip with its status card, "Data freshness", and the old footer. API and web can be reverted apart: the web hides the 30Y without `ust30y`, and the old web ignores the field.

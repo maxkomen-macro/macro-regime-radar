@@ -67,6 +67,8 @@ const dailyBar = (symbol: string, date: string, close: number) => ({ symbol, dat
 const creditOas = {
   as_of: DAILY,
   series: [{ series_id: "DGS10", label: "UST10Y", date: DAILY, value_pct: 4.12, value_bps: 412, change_bps: 5, change_basis: "1w", change_from: daysAgo(7), change_1w_bps: 5, history_basis: "daily", history: [{ date: daysAgo(2), value: 4.07 }, { date: DAILY, value: 4.12 }] }],
+  // fix/freshness 8: the 30Y is the payload's own field.
+  ust30y: { series_id: "DGS30", label: "UST30Y", date: DAILY, value_pct: 4.71, value_bps: 471, change_bps: 9, change_basis: "1w", change_from: daysAgo(7), change_1w_bps: 9, history_basis: "daily", history: [{ date: daysAgo(2), value: 4.62 }, { date: DAILY, value: 4.71 }] },
 };
 
 function renderShell(route = "/app/dashboard") {
@@ -168,17 +170,22 @@ describe("AppShell", () => {
     expect(document.querySelector(".avatar")).toBeNull();
     expect(header.textContent).not.toMatch(/\bJA\b/);
 
-    // Strip: three quote cards and the freshness card trigger.
-    const strip = screen.getByRole("region", { name: "Market strip and data freshness" });
-    for (const symbol of ["SPY", "QQQ", "US 10Y"]) {
-      expect(within(strip).getByText(new RegExp(`^${symbol}$`, "i"))).toBeInTheDocument();
-    }
-    await waitFor(() => expect(strip.textContent).toMatch(/4\.12%/));
-    const fresh = within(strip).getByRole("button", { name: /^Freshness/ });
-    expect(fresh).toHaveAttribute("aria-haspopup", "dialog");
-    expect(fresh).toHaveAttribute("aria-expanded", "false");
-    expect(fresh).toHaveAttribute("aria-controls", "freshness-drawer");
-    await waitFor(() => expect(strip.textContent).toMatch(/Macro monthly/));
+    // Strip (fix/freshness 8): four quote cards, SPY and QQQ then US 10Y and US 30Y, and no status card.
+    const strip = screen.getByRole("region", { name: "Market strip" });
+    await waitFor(() => expect(strip.textContent).toMatch(/4\.71%/));
+    const cards = [...strip.querySelectorAll(".mrr-quote")];
+    expect(cards).toHaveLength(4);
+    cards.forEach((c, i) => expect(c.textContent).toMatch(new RegExp(`^${["SPY", "QQQ", "US 10Y", "US 30Y"][i]}`)));
+    expect(strip.textContent).toMatch(/4\.12%/);
+    expect(strip.children).toHaveLength(4);
+    expect(within(strip).queryByRole("button")).toBeNull();
+    expect(strip.textContent).not.toMatch(/Freshness|Macro monthly|Markets ·/);
+    // The sidebar footer is the way in: "● Data status" over the markets as-of.
+    const entry = within(aside).getByTestId("sidebar-freshness");
+    expect(entry).toHaveAttribute("aria-haspopup", "dialog");
+    expect(entry).toHaveAttribute("aria-expanded", "false");
+    expect(entry).toHaveAttribute("aria-controls", "freshness-drawer");
+    await waitFor(() => expect(entry.textContent).toMatch(/^Data statusMarkets · /));
 
     // The tab title.
     await waitFor(() => expect(document.title).toBe("Dashboard · Macro Regime Radar"));
@@ -192,12 +199,12 @@ describe("AppShell", () => {
     await waitFor(() => expect(document.title).toBe("Credit · Macro Regime Radar"));
   });
 
-  it("the freshness card opens the per-source breakdown and Escape closes it", async () => {
+  it("the sidebar's Data status entry opens the per-source breakdown and Escape closes it", async () => {
     renderShell();
     await screen.findByTestId("dashboard-screen");
-    const strip = screen.getByRole("region", { name: "Market strip and data freshness" });
-    await waitFor(() => expect(strip.textContent).toMatch(/Macro monthly/));
-    const fresh = within(strip).getByRole("button", { name: /^Freshness/ });
+    const aside = screen.getByRole("complementary", { name: "Sidebar" });
+    const fresh = within(aside).getByTestId("sidebar-freshness");
+    await waitFor(() => expect(fresh.textContent).toMatch(/Markets · /));
     expect(screen.queryByRole("dialog")).toBeNull();
 
     // A real click focuses the button first; jsdom's synthetic click does not,
@@ -205,7 +212,7 @@ describe("AppShell", () => {
     // return has nowhere to go.
     fresh.focus();
     fireEvent.click(fresh);
-    const dialog = await screen.findByRole("dialog", { name: "Data freshness" });
+    const dialog = await screen.findByRole("dialog", { name: "Data status" });
     expect(dialog).toHaveAttribute("id", "freshness-drawer");
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(fresh).toHaveAttribute("aria-expanded", "true");
@@ -213,8 +220,8 @@ describe("AppShell", () => {
     expect(within(dialog).getByText("Stored daily closes")).toBeInTheDocument();
     expect(within(dialog).getByText("Intraday bars (SPY, QQQ)")).toBeInTheDocument();
     expect(within(dialog).getByText("Regime classifier")).toBeInTheDocument();
-    expect(within(dialog).getByRole("status", { name: "Data freshness" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Close data freshness" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("status", { name: "Data status" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Close data status" })).toBeInTheDocument();
     expect(dialog.textContent).toMatch(/after hours/);
 
     fireEvent.keyDown(document, { key: "Escape" });
@@ -222,6 +229,19 @@ describe("AppShell", () => {
     expect(document.getElementById("shell-content")).not.toHaveAttribute("inert");
     expect(fresh).toHaveAttribute("aria-expanded", "false");
     await waitFor(() => expect(document.activeElement).toBe(fresh));
+  });
+
+  it("the command palette's Data status action opens the same drawer", async () => {
+    renderShell();
+    await screen.findByTestId("dashboard-screen");
+    fireEvent.click(within(screen.getByRole("banner")).getByRole("button", { name: /Jump to/ }));
+    const palette = await screen.findByRole("dialog", { name: /Jump to/i });
+    fireEvent.change(within(palette).getByRole("combobox"), { target: { value: "data status" } });
+    fireEvent.click(within(palette).getByRole("option", { name: /Data status/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Data status" });
+    expect(dialog).toHaveAttribute("id", "freshness-drawer");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Data status" })).toBeNull());
   });
 });
 
@@ -325,9 +345,10 @@ describe("AppShell without the transitional regime pill (checklist 10 B.8)", () 
     });
     const first = renderShell();
     await screen.findByTestId("dashboard-screen");
-    const strip = screen.getByRole("region", { name: "Market strip and data freshness" });
-    await waitFor(() => expect(strip.textContent).toContain("Data service unavailable"));
-    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("Data service unavailable");
+    // fix/freshness 8: the status words left the strip for the sidebar's "Data status"; its dot reads red.
+    const side1 = screen.getByRole("complementary", { name: "Sidebar" });
+    await waitFor(() => expect(side1.textContent).toContain("Data service unavailable"));
+    expect(side1.querySelector(".mrr-dot")).toHaveAttribute("data-tone", "error");
     first.unmount();
 
     stubFetch({
@@ -341,14 +362,13 @@ describe("AppShell without the transitional regime pill (checklist 10 B.8)", () 
     });
     renderShell();
     await screen.findByTestId("dashboard-screen");
-    const strip2 = screen.getByRole("region", { name: "Market strip and data freshness" });
-    await waitFor(() => expect(strip2.textContent).toContain("Freshness unavailable · retrying"));
-    // Iteration 1 step 6 (A3): with no freshness report the market line says its as-of is unknown
-    // (never a healthy word), and the footer names market data without a judgement.
-    expect(strip2.textContent).toContain("Markets · As of unknown");
-    expect(strip2.textContent).not.toContain("Data service unavailable");
-    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("Stored market data");
-    expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toContain("As of unknown");
+    // Iteration 1 step 6 (A3): with no freshness report the market line says its as-of is unknown (never a
+    // healthy word); the card's red "Freshness unavailable" line is the dot's worst status (fix/freshness 8).
+    const side2 = screen.getByRole("complementary", { name: "Sidebar" });
+    await waitFor(() => expect(side2.textContent).toContain("Markets · As of unknown"));
+    expect(side2.textContent).toContain("Data status");
+    expect(side2.textContent).not.toContain("Data service unavailable");
+    expect(side2.querySelector(".mrr-dot")).toHaveAttribute("data-tone", "error");
     await waitFor(() => expect(lastContext()?.key_metrics?.regime).toBe("Goldilocks"));
   });
 });

@@ -43,7 +43,7 @@ async function open(page: Page, route = "/app/dashboard"): Promise<void> {
 }
 
 const header = (page: Page) => page.locator("header").first();
-const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
 const glanceGroup = (page: Page) => page.locator("#markets-glance").getByRole("group", { name: "Asset class" });
 const glanceOption = (page: Page, label: string | RegExp) => glanceGroup(page).getByRole("button", { name: label });
 

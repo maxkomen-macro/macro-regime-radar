@@ -668,6 +668,9 @@ class CreditSeries(BaseModel):
 class CreditOAS(BaseModel):
     as_of: str | None
     series: list[CreditSeries]
+    # fix/freshness 8: the 30Y Treasury (FRED DGS30 from desk_series), its own field so no Credit chart draws
+    # it; null when the store holds no eligible DGS30. An older API omits it.
+    ust30y: CreditSeries | None = None
     # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
     # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
     freshness: dict[str, Any] | None = None
@@ -1370,7 +1373,14 @@ def api_credit_oas(
     payload = _guarded(lambda: db.credit_oas(days))
     if not payload["series"]:
         raise HTTPException(status_code=404, detail="No credit series data available.")
-    return CreditOAS(**payload, freshness=_freshness_block(CREDIT_INPUTS + ["DGS10"]))
+    block = _freshness_block(CREDIT_INPUTS + ["DGS10"])
+    ust30y = payload.get("ust30y")
+    if ust30y is not None and "status" not in block:
+        # fix/freshness 8: the 30Y is judged like the Desk's DGS30 row (the FRED daily rule on the bond calendar),
+        # dated by the observation it serves; /api/freshness carries no desk rows.
+        spec = {"id": "DGS30", **freshness_mod.DESK_REFRESH_SERIES["DGS30"]}
+        block["DGS30"] = freshness_mod.desk_series_states(stored={"DGS30": ust30y["date"]}, specs=[spec], watermarks=_guarded(db.watermarks))[0]
+    return CreditOAS(**payload, freshness=block)
 
 
 @api.get("/recession/probability", response_model=RecessionMetrics)

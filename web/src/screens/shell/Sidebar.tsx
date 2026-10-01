@@ -14,9 +14,13 @@
  * footer and scrolls inside it (S1, app.css); a control beside the wordmark
  * collapses the sidebar to `SidebarRail` (S3; state in sidebar-state.ts,
  * Ctrl/⌘+\ in AppShell); and the footer's status line is a button that opens
- * the freshness drawer, the entry point on the routes without the strip (S4).
- * Step 6 (A3): the footer's stamp and dot read the market chip's §5 word
- * from /api/freshness, never a stamp aged in the browser.
+ * the Data status drawer, the entry point on every route (S4).
+ * Step 6 (A3): the footer's stamp and dot read the §5 words from
+ * /api/freshness, never a stamp aged in the browser.
+ *
+ * fix/freshness 8: the strip's status card is gone; the footer reads
+ * "● Data status", its dot the worst of the card's two lines
+ * (shell-status.ts dataStatusTone), with the markets as-of under it.
  */
 
 import type { MouseEvent, RefObject } from "react";
@@ -25,7 +29,7 @@ import { useQuotes } from "../../live/quotes";
 import { METHODOLOGY_SLUG, TABS } from "./sections";
 import { MethodologyIcon, MountainMark, NavIcon } from "./nav-icons";
 import Watchlist from "./watchlist/Watchlist";
-import { etClock, footerWords, newestTickMs, type ShellStatus } from "./shell-status";
+import { dataStatusTone, etClock, marketsAsOfWords, marketsLineTone, newestTickMs, type ShellStatus } from "./shell-status";
 import { sidebarShortcutLabel } from "./sidebar-state";
 
 /** Injected by vite.config.ts `define` from package.json; guarded for any
@@ -91,47 +95,41 @@ export function SidebarToggle({
   );
 }
 
-/** The stamp under the footer word (Iteration 1 step 6, A3): the market
- * chip's §5 word from /api/freshness (live_quotes during the session, else
- * the stored daily close), its muted tail on the next line, and the newest
- * tick's ET clock only while live_quotes reads live. A seeded snapshot reads
- * "Snapshot · as of …". Its own component so the 2 Hz quote store repaints
- * only this leaf. Spans, not divs: it sits in a button. */
-function FooterStamp({ status }: { status: ShellStatus }) {
+/** The line under "Data status" (fix/freshness 8): the markets as-of the
+ * strip's status card showed ("Markets · Close · Sep 30"), with the newest
+ * tick's ET clock only while live_quotes reads live. Its own component so the
+ * 2 Hz quote store repaints only this leaf. A span: it sits in a button. */
+function MarketsAsOf({ status }: { status: ShellStatus }) {
   const quotes = useQuotes();
   const l = status.seededLabel ?? status.marketLabel;
-  const tick = l.tone === "live" ? newestTickMs(quotes) : null;
-  const line2 = l.muted ?? (tick != null ? etClock(tick) : null);
+  const tick = status.f && !status.seededLabel && l.tone === "live" ? newestTickMs(quotes) : null;
   return (
-    <span className="mrr-side-stamp" data-tone={l.tone} data-stale={l.stale ? "true" : undefined}>
-      {status.f || status.seededLabel ? l.word : status.freshnessError ? "As of unknown" : "Reading freshness…"}
-      {line2 && (status.f || status.seededLabel) ? (
-        <>
-          <br />
-          {line2}
-        </>
-      ) : null}
+    <span
+      className="mrr-side-stamp"
+      data-tone={l.tone}
+      data-stale={l.stale ? "true" : undefined}
+      data-behind={marketsLineTone(status) === "behind" ? "true" : undefined}
+    >
+      {marketsAsOfWords(status)}
+      {tick != null ? ` · ${etClock(tick)}` : null}
     </span>
   );
 }
 
 /**
- * The footer dot, coloured by the market chip's §5 tone (fresh-state.ts):
- * only a live `live_quotes` state glows and pulses; unknown is grey, never a
- * health dot; a seeded snapshot has no health dot at all.
+ * The "Data status" dot (fix/freshness 8): the worst of the strip card's two
+ * lines (markets, the macro monthly inputs); only a live feed glows; a
+ * snapshot has no health dot, the rail keeping a neutral mark so its button
+ * is never empty.
  */
-function StatusDot({ status }: { status: ShellStatus }) {
-  // A seeded snapshot has no health dot at all (§5); the rail keeps a
-  // neutral mark so its button is never empty.
-  if (status.seededLabel) return <span className="mrr-side-snapmark" aria-hidden="true">◇</span>;
-  const l = status.f ? status.marketLabel : null;
-  const tone = l?.tone ?? "unknown";
-  const word = l?.word ?? (status.freshnessError ? "As of unknown" : "reading the freshness report");
+export function StatusDot({ status }: { status: ShellStatus }) {
+  const tone = dataStatusTone(status);
+  if (tone === "snapshot") return <span className="mrr-side-snapmark" aria-hidden="true">◇</span>;
   return (
     <span
       className={tone === "live" && !status.seeded ? "mrr-dot mrr-live-dot" : "mrr-dot"}
       data-tone={tone}
-      title={l?.reason ? `Market data: ${word} · ${l.reason}` : `Market data: ${word}`}
+      aria-hidden="true"
     />
   );
 }
@@ -149,8 +147,9 @@ function openFrom(e: MouseEvent<HTMLButtonElement>, onOpen: () => void) {
   onOpen();
 }
 
-/** The footer's status line and stamp as one button (S4): the freshness
- * drawer is reachable from every route, the strip-less ones included. */
+/** The footer's "● Data status" line and the markets as-of as one button
+ * (S4; fix/freshness 8): the Data status drawer is reachable from every
+ * route. */
 function SidebarFreshness({ status, open, onOpen }: FreshnessEntryProps) {
   return (
     <button
@@ -161,14 +160,13 @@ function SidebarFreshness({ status, open, onOpen }: FreshnessEntryProps) {
       aria-haspopup="dialog"
       aria-expanded={open}
       aria-controls="freshness-drawer"
-      title="Per-source freshness: each feed, the regime month and the NYSE session"
+      title="Data status: each feed, the regime month and the NYSE session"
     >
-      <span className="sr-only">Data freshness: </span>
       <span className="mrr-side-status">
         <StatusDot status={status} />
-        {footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}
+        Data status
       </span>
-      <FooterStamp status={status} />
+      <MarketsAsOf status={status} />
     </button>
   );
 }
@@ -222,7 +220,7 @@ export default function Sidebar({ activeSlug, status, onToggle, toggleRef, fresh
 }
 
 /** The collapsed sidebar (S3): a 56px rail with the toggle on top and the
- * freshness entry, reduced to its status dot, at the bottom. */
+ * Data status entry, reduced to its dot, at the bottom. */
 export function SidebarRail({
   status,
   onToggle,
@@ -241,8 +239,8 @@ export function SidebarRail({
         aria-haspopup="dialog"
         aria-expanded={freshnessOpen}
         aria-controls="freshness-drawer"
-        aria-label={`Data freshness: ${footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}`}
-        title={`Data freshness: ${footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}`}
+        aria-label={`Data status: ${marketsAsOfWords(status)}`}
+        title={`Data status: ${marketsAsOfWords(status)}`}
       >
         <StatusDot status={status} />
       </button>

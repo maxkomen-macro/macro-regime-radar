@@ -56,7 +56,7 @@ async function open(page: Page, route: string, ms = 900): Promise<void> {
 }
 
 const header = (page: Page) => page.locator("header").first();
-const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
 const active = (page: Page) => page.evaluate(readActiveElement, 0);
 const activeType = (page: Page) => page.evaluate(() => (document.activeElement instanceof HTMLInputElement ? document.activeElement.type : ""));
 const inertShell = (page: Page) => page.locator("#shell-content").getAttribute("inert");
@@ -465,7 +465,7 @@ test("drawers and palette: focus on open, Tab contained, Escape closes and retur
   const fresh = page.locator("#freshness-drawer");
   await expect(fresh).toBeVisible();
   await expect(fresh).toHaveAttribute("aria-modal", "true");
-  await expect(fresh.getByRole("button", { name: "Close data freshness" })).toBeFocused();
+  await expect(fresh.getByRole("button", { name: "Close data status" })).toBeFocused();
   expect(await inertShell(page)).not.toBeNull();
   await expectContained(page, fresh, 6);
   await page.keyboard.press("Escape");

@@ -58,7 +58,7 @@ export const RUN_UNAVAILABLE_HEADLINE = "Deal model unavailable";
 export const LOADING_HEADLINE = "Running the default deal…";
 export const NOT_VIABLE_HEADLINE = "The default deal is not viable at this rate";
 
-export const STRIP_SUFFIX = "Open the data freshness breakdown.";
+export const STRIP_SUFFIX = "Open the data status breakdown.";
 
 export type LboHeroState = "ready" | "not-viable" | "loading" | "rate-error" | "run-error";
 
@@ -290,7 +290,7 @@ export function lboStrip(defaults: DefaultsLike, snapshot = false, f?: Freshness
     return { tone: "gray", title: "Rate feed unavailable", detail: `The stated ${FALLBACK_RATE.toFixed(2)}% rate is in use` };
   }
   if (defaults.isLoading || !defaults.data) {
-    return { tone: "gray", title: "Reading the FRED rate…", detail: "Opens the data freshness breakdown" };
+    return { tone: "gray", title: "Reading the FRED rate…", detail: "Opens the data status breakdown" };
   }
   const stamp = stampOf(defaults.data);
   if (!stamp) {

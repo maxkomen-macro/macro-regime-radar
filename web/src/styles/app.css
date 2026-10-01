@@ -850,15 +850,23 @@ main .mrr-scroll {
 /* The dot coloured from the live_quotes series state when /api/freshness
    carries series[] (fresh-state.ts tones): only "live" glows and pulses. */
 .mrr-dot[data-tone="delayed"],
+.mrr-dot[data-tone="behind"],
 .mrr-dot[data-tone="neutral"],
 .mrr-dot[data-tone="stale"],
 .mrr-dot[data-tone="fallback"],
-.mrr-dot[data-tone="unknown"] {
+.mrr-dot[data-tone="unknown"],
+.mrr-dot[data-tone="error"] {
   box-shadow: none;
   animation: none;
 }
-.mrr-dot[data-tone="delayed"] {
+/* fix/freshness 8: the "Data status" dot (shell-status.ts dataStatusTone): a
+   line one cycle behind reads amber like a delay; no report reads red. */
+.mrr-dot[data-tone="delayed"],
+.mrr-dot[data-tone="behind"] {
   background: var(--amber, #f5b52e);
+}
+.mrr-dot[data-tone="error"] {
+  background: var(--neg, #f0503f);
 }
 .mrr-dot[data-tone="neutral"] {
   background: var(--text-3, var(--text-muted));
@@ -1094,15 +1102,17 @@ main .mrr-scroll {
   }
 }
 
-/* Ticker strip: three 54px quote cards and the freshness card. */
+/* Ticker strip: four 54px quote cards of one width, SPY and QQQ then US 10Y
+   and US 30Y (fix/freshness 8: the status card left the strip for the
+   sidebar's "● Data status"). One row on a wide desk, two by two below 1620,
+   one per row on a phone. */
 .mrr-strip {
   display: grid;
-  grid-template-columns: 325px 332px 332px minmax(0, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--gap-col, 16px);
   margin-bottom: var(--gap-panel, 14px);
 }
-.mrr-quote,
-.mrr-upd {
+.mrr-quote {
   height: var(--strip-h, 54px);
   border-radius: var(--r-strip, 10px);
   border: 1px solid var(--line);
@@ -1280,44 +1290,6 @@ main .mrr-scroll {
   line-height: 1.5;
   color: var(--text-3);
 }
-.mrr-upd {
-  justify-content: space-between;
-  padding: 0 28px 0 24px;
-  gap: 12px;
-}
-.mrr-upd-lines {
-  min-width: 0;
-}
-.mrr-upd small {
-  display: block;
-  font-size: 12px;
-  color: var(--text-3, var(--text-muted));
-  line-height: 1.35;
-}
-.mrr-upd small.mrr-upd-macro {
-  color: var(--text-2);
-}
-.mrr-upd em {
-  font-style: normal;
-  font-size: var(--fs-kv, 13.5px);
-  color: var(--text);
-}
-.mrr-upd-dot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  margin-right: 8px;
-  vertical-align: 1px;
-}
-/* A3 (Iteration 1 step 6): every freshness line is the server's §5 word, so
-   a line can run longer than the old stamp; each card line stays one
-   rendered line (G4) and the full words sit in its title and the drawer. */
-.mrr-upd small {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 /* The footer stamp of a stale stored close, and a stale number (the §5
    "mark on the number itself"): warm ink and a dotted rule under it. */
 /* A seeded snapshot's footer mark (Sidebar.tsx StatusDot): no health dot. */
@@ -1332,6 +1304,10 @@ main .mrr-scroll {
 }
 .mrr-side-stamp[data-stale="true"] {
   color: var(--warn-hot, #e67e22);
+}
+/* fix/freshness 8: markets one session behind read amber, the Data status dot's colour. */
+.mrr-side-stamp[data-stale="true"][data-behind="true"] {
+  color: var(--amber, #f5b52e);
 }
 .mrr-qslots .v[data-stale="true"],
 .mrr-stale-num {
@@ -2562,11 +2538,10 @@ button.mrr-mover:hover {
 
 /* ── Responsive (spec §2; `.98` upper bounds like useBreakpoint.ts) ─────── */
 
-/* Below 1620 the strip goes two-up: its four desk tracks (325 / 332 / 332 /
-   1fr) need 1037px plus about 323px for the freshness card's two lines, so
-   at 1440 the freshness column was 156px (the lines wrapped word by word)
-   and at 1280 it was 0px (the card spilled past the viewport). 1672 keeps
-   the four columns (Phase 10 verifier, QUESTIONS 116). */
+/* Below 1620 the strip goes two by two: SPY and QQQ over US 10Y and US 30Y,
+   four cards of one width (fix/freshness 8). The four-across row needs about
+   1360px of main column for ~330px cards, which 1672 keeps (Phase 10
+   verifier, QUESTIONS 116). */
 @media (max-width: 1619.98px) {
   .mrr-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2720,19 +2695,11 @@ button.mrr-mover:hover {
    docks into a full-width bottom bar. */
 @media (max-width: 767.98px) {
   /* Strip one card per row (Iteration 1, S2): two columns left ~167px cards
-     at 390 that wrapped unevenly, and the US 10Y card stretched to the
-     freshness card beside it. One per row keeps every quote card 54px on the
-     one-row slot grid; the freshness card takes its own row and its height. */
+     at 390 that wrapped unevenly. One per row keeps every quote card 54px on
+     the one-row slot grid. */
   .mrr-strip {
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
-  }
-  .mrr-upd {
-    height: auto;
-    min-height: var(--strip-h, 54px);
-    padding: 8px 12px;
-    flex-wrap: wrap;
-    gap: 6px 12px;
   }
   .mrr-number {
     min-height: 40px;

@@ -379,7 +379,7 @@ const M4_H = 941;
 const M4_CASES = [1672, 1440, 1280, 1024, 768, 390].flatMap((width) =>
   width >= 1024 ? [{ width, collapsed: false }, { width, collapsed: true }] : [{ width, collapsed: false }],
 );
-const M4_STRIP = "Market strip and data freshness";
+const M4_STRIP = "Market strip";
 
 interface DrawerOffender {
   selector: string;
@@ -542,7 +542,7 @@ async function openFreshnessFromStrip(page: Page): Promise<{ opener: Locator; vi
   const menu = page.locator("button[aria-controls='mobile-nav-list']");
   await expect(menu, "no strip card and no sidebar: the MobileNav menu is the way in").toBeVisible();
   await menu.click();
-  const opener = page.locator("#mobile-nav-list").getByRole("button", { name: /^Data freshness/ });
+  const opener = page.locator("#mobile-nav-list").getByRole("button", { name: /^Data status/ });
   await expect(opener).toHaveCount(1);
   await opener.click();
   return { opener, via: "the MobileNav Data freshness entry (no strip card on screen)" };
@@ -550,7 +550,7 @@ async function openFreshnessFromStrip(page: Page): Promise<{ opener: Locator; vi
 
 /** The M4 checks on an open drawer, then Escape and the focus return. One line per failed condition. */
 async function checkFreshnessDrawer(page: Page, opener: Locator, via: string, tag: string): Promise<string[]> {
-  const drawer = page.getByRole("dialog", { name: "Data freshness" });
+  const drawer = page.getByRole("dialog", { name: "Data status" });
   await expect(drawer, `the drawer opens from ${via}`).toBeVisible();
   await expect(drawer).toHaveAttribute("id", "freshness-drawer");
   // Let the report fill it: the feeds table is its widest block.

@@ -661,6 +661,24 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series: high-yield daily observations, investment-grade one value per month (its newest).");
   });
 
+  it("fix/freshness 8: the summary card's header carries Data status › beside its as-of stamps, opening the breakdown", async () => {
+    const openFreshness = vi.fn();
+    renderDashboard({ actions: { openFreshness } });
+    const card = await awaitSection("regime-summary");
+    const stamps = card.querySelector(".mrr-summary-stamp") as HTMLElement;
+    const link = within(stamps).getByRole("button", { name: "Data status ›" });
+    expect(link).toHaveAttribute("aria-haspopup", "dialog");
+    expect(link).toHaveAttribute("aria-controls", "freshness-drawer");
+    // At the right of the header: the stamps' row, after both stamps.
+    const kids = [...(stamps.firstElementChild as HTMLElement).children];
+    expect(kids[kids.length - 1]).toBe(link);
+    expect(kids.filter((k) => k.hasAttribute("data-stamp")).length).toBe(2);
+    fireEvent.click(link);
+    expect(openFreshness).toHaveBeenCalledTimes(1);
+    // Nothing on the Current regime card.
+    expect(within(byId("regime-hero") as HTMLElement).queryByRole("button", { name: /Data status/ })).toBeNull();
+  });
+
   it("Codex R-08: an older API serves no history_basis, so the 10Y card says stored history, never daily closes", async () => {
     const legacy: CreditOAS = { ...CREDIT, series: CREDIT.series.map(({ history_basis: _drop, ...rest }) => rest as CreditSeries) };
     stubFetch(routes({ "/api/credit/oas": () => legacy }));

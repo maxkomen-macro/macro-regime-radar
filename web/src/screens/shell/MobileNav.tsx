@@ -10,8 +10,8 @@
  * list ends with "Jump to a section" (the palette) and a collapsed Watchlist
  * disclosure so the saved watchlist exists at every width (checklist I.18).
  *
- * Iteration 1 (S4): "Data freshness" closes the open list, the phone twin of
- * the sidebar's freshness entry (last, so the existing Tab order is kept). It
+ * Iteration 1 (S4): "Data status" (fix/freshness 8; was "Data freshness")
+ * closes the open list, the phone twin of the sidebar's Data status entry (last, so the existing Tab order is kept). It
  * leaves the list open, so the drawer's focus return lands back on it.
  */
 
@@ -20,8 +20,8 @@ import { Link, useLocation } from "react-router-dom";
 import Disclosure from "../shared/Disclosure";
 import { METHODOLOGY_SLUG, TABS } from "./sections";
 import { NavIcon } from "./nav-icons";
-import { footerWords, type ShellStatus } from "./shell-status";
-import { Wordmark } from "./Sidebar";
+import { marketsAsOfWords, type ShellStatus } from "./shell-status";
+import { StatusDot, Wordmark } from "./Sidebar";
 import Watchlist from "./watchlist/Watchlist";
 
 /** Saved-symbol count for the disclosure title, read straight from the
@@ -172,11 +172,14 @@ export default function MobileNav({
                 onOpenFreshness();
               }}
             >
-              Data freshness
+              <span style={{ whiteSpace: "nowrap" }}>
+                {status ? <StatusDot status={status} /> : null}
+                Data status
+              </span>
               {status ? (
                 <>
                   {" "}
-                  <span className="mrr-mnav-hint">{footerWords(status.statusWord, status.liveFeeds, status.seededLabel ?? status.marketLabel)}</span>
+                  <span className="mrr-mnav-hint">{marketsAsOfWords(status)}</span>
                 </>
               ) : null}
             </button>

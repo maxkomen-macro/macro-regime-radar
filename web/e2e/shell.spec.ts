@@ -20,7 +20,7 @@ async function open(page: Page, route = "/app/dashboard"): Promise<void> {
 const primaryNav = (page: Page) => page.getByRole("navigation", { name: "Primary" });
 /** The top bar is a <header>; e2e/lib/harvest.ts keys its overlay probes on the same element. */
 const header = (page: Page) => page.locator("header").first();
-const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
 
 /** True when the element's top edge sits inside the viewport. */
 async function inView(page: Page, id: string): Promise<boolean> {
@@ -143,26 +143,29 @@ test.describe("shell (checklist E)", () => {
     await expect(chip).toHaveAttribute("aria-expanded", "false");
   });
 
-  test("the freshness card opens the per-source breakdown and Escape closes it", async ({ page }) => {
+  test("the sidebar's Data status opens the per-source breakdown and Escape closes it", async ({ page }) => {
     await open(page);
     const card = strip(page);
     await expect(card).toBeVisible();
-    for (const symbol of ["SPY", "QQQ", "US 10Y"]) {
+    // fix/freshness 8: four quote cards (the 30Y once the API serves it), no status card.
+    for (const symbol of ["SPY", "QQQ", "US 10Y", "US 30Y"]) {
       await expect(card.getByText(symbol, { exact: true }).first()).toBeVisible();
     }
-    await expect(card).toContainText(/Macro monthly/);
-    const trigger = card.getByRole("button", { name: /^Freshness/ });
+    await expect(card).not.toContainText(/Macro monthly|Freshness/);
+    const trigger = page.locator("#mrr-sidebar").getByTestId("sidebar-freshness");
+    await expect(trigger).toContainText(/^Data status/);
+    await expect(trigger).toContainText(/Markets · /);
     await expect(trigger).toHaveAttribute("aria-haspopup", "dialog");
     await expect(trigger).toHaveAttribute("aria-controls", "freshness-drawer");
     await trigger.click();
-    const drawer = page.getByRole("dialog", { name: "Data freshness" });
+    const drawer = page.getByRole("dialog", { name: "Data status" });
     await expect(drawer).toBeVisible();
     await expect(drawer).toHaveAttribute("id", "freshness-drawer");
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(drawer).toContainText(/Stored daily closes|market_daily/);
     await expect(drawer).toContainText(/Regime classifier|regime/);
     await expect(drawer).toContainText(/NYSE/);
-    await expect(drawer.getByRole("status", { name: "Data freshness" })).toBeVisible();
+    await expect(drawer.getByRole("status", { name: "Data status" })).toBeVisible();
     expect(await page.locator("#shell-content").getAttribute("inert")).not.toBeNull();
     await page.keyboard.press("Escape");
     await expect(drawer).toBeHidden();

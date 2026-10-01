@@ -45,8 +45,8 @@ const FUNDAMENTALS = ["Market cap", "P/E · TTM", "Fwd P/E", "Beta", "Div yield"
   // than only in the payload.
   "EPS · TTM", "P/B", "Revenue growth", "52W change"];
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
-/** Strip title (B.2) → the freshness card's first line (FreshnessCard.tsx). Iteration 1 step 6
- * (A3): the card prints the server's §5 word for the market series, whatever the relay's
+/** Strip title (B.2) → the markets line under the sidebar's "Data status" (fix/freshness 8; the strip's
+ * status card until then). Iteration 1 step 6 (A3): it prints the server's §5 word for the market series, whatever the relay's
  * connection word, so every title pairs with "Markets · <§5 word>" or the shell's
  * service-down and snapshot words. */
 const MARKET_WORD = /^(?:Markets · (?:Live|Delayed \d+ min|Close · [A-Z][a-z]{2} \d{2}|[A-Z][a-z]{2} \d{2} · \d+ sessions? behind|As of unknown|Snapshot · as of \S+|reading…)|Data service unavailable|Validated snapshot)/;
@@ -80,7 +80,8 @@ const research = (page: Page) => page.locator("#single-name-research");
 const tape = (page: Page) => page.locator("#watchlist");
 /** The macro tape's own table: since Iteration 1 (M3b) the single names table sits in the same panel, under it. */
 const macroTable = (page: Page) => page.locator("#watchlist table").first();
-const freshnessCard = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+/** fix/freshness 8: the markets line the strip's card showed now sits under the sidebar's "Data status". */
+const marketsLine = (page: Page) => page.locator("#mrr-sidebar [data-testid='sidebar-freshness'] .mrr-side-stamp");
 const heatTiles = (page: Page) => page.locator("#sector-heatmap [style*='var(--r-tile)']");
 const note = (type: string, description: string) => test.info().annotations.push({ type, description });
 
@@ -253,14 +254,14 @@ test.describe("markets (checklist 05 E.3)", () => {
     await expect(strip).toHaveCount(1);
     const title = await contentText(strip.locator(".mrr-status-title"));
     expect(Object.keys(CARD_LINE), `strip title ${title}`).toContain(title);
-    expect(await strip.getAttribute("aria-label")).toMatch(/\. Open the data freshness breakdown\.$/);
+    expect(await strip.getAttribute("aria-label")).toMatch(/\. Open the data status breakdown\.$/);
     expect(await strip.getAttribute("aria-label")).toMatch(new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\. `));
-    const cardLine = await visibleText(freshnessCard(page).locator(".mrr-upd-lines small").first());
+    const cardLine = await visibleText(marketsLine(page));
     expect(cardLine, `card "${cardLine}" vs strip "${title}"`).toMatch(CARD_LINE[title]);
     note("strip-title", `${title} ⇔ ${cardLine}`);
 
     await strip.click();
-    const drawer = page.getByRole("dialog", { name: "Data freshness" });
+    const drawer = page.getByRole("dialog", { name: "Data status" });
     await expect(drawer).toBeVisible();
     await expect(drawer).toHaveAttribute("id", "freshness-drawer");
     await expect(drawer).toHaveAttribute("aria-labelledby", "freshness-drawer-title");

@@ -114,7 +114,7 @@ function renderShell(route = "/app/dashboard") {
 }
 
 const toggle = () => screen.getByTestId("sidebar-toggle");
-const stripRegion = () => screen.queryByRole("region", { name: "Market strip and data freshness" });
+const stripRegion = () => screen.queryByRole("region", { name: "Market strip" });
 /** Shell nav links (anything linking to an /app/ route outside <main>). */
 const shellNavLinks = () => Array.from(document.querySelectorAll("a[href^='/app/']")).filter((a) => !a.closest("main"));
 const stored = () => {
@@ -360,11 +360,14 @@ describe("S4 strip presence by route", () => {
       renderShell(`/app/${slug}`);
       await screen.findByTestId("screen");
       if (present) {
-        const strip = await screen.findByRole("region", { name: "Market strip and data freshness" });
-        expect(within(strip).getByRole("button", { name: /^Freshness/ })).toBeInTheDocument();
+        const strip = await screen.findByRole("region", { name: "Market strip" });
+        // fix/freshness 8: the strip is quote cards only; its status card moved to the sidebar's "Data status".
+        // This stub is an older API (no ust30y), so the 30Y card is hidden: SPY, QQQ, US 10Y.
+        await waitFor(() => expect(strip.querySelectorAll(".mrr-quote")).toHaveLength(3));
+        expect(within(strip).queryByRole("button", { name: /Freshness|Data status/ })).toBeNull();
       } else {
         // Let the shell's freshness query resolve (the sidebar footer states it) before asserting absence.
-        await waitFor(() => expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toMatch(/market data/i));
+        await waitFor(() => expect(screen.getByRole("complementary", { name: "Sidebar" }).textContent).toMatch(/Markets · /));
         await new Promise((r) => setTimeout(r, 30));
         expect(stripRegion()).toBeNull();
         expect(document.querySelector(".mrr-strip, .mrr-quote, .mrr-upd")).toBeNull();
@@ -383,19 +386,19 @@ describe("S4 sidebar freshness entry opens the freshness drawer", () => {
       expect(sidebar).not.toBeNull();
       const entry = within(sidebar).getByTestId("sidebar-freshness");
       expect(entry.tagName).toBe("BUTTON");
-      expect(entry).toHaveAccessibleName(/^Data freshness/);
-      // The existing footer text stays: the status words and the version.
+      expect(entry).toHaveAccessibleName(/^Data status/);
+      // fix/freshness 8: "● Data status" over the markets as-of, and the version.
       expect(sidebar.textContent).toMatch(/v\d+\.\d+\.\d+/);
-      expect(sidebar.textContent).toMatch(/market data/i);
-      expect(screen.queryByRole("dialog", { name: "Data freshness" })).toBeNull();
+      await waitFor(() => expect(entry.textContent).toMatch(/^Data statusMarkets · /));
+      expect(screen.queryByRole("dialog", { name: "Data status" })).toBeNull();
 
       entry.focus();
       fireEvent.click(entry);
-      const dialog = await screen.findByRole("dialog", { name: "Data freshness" });
+      const dialog = await screen.findByRole("dialog", { name: "Data status" });
       expect(dialog).toHaveAttribute("id", "freshness-drawer");
       expect(within(dialog).getByText("Stored daily closes")).toBeInTheDocument();
       fireEvent.keyDown(document, { key: "Escape" });
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Data freshness" })).toBeNull());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Data status" })).toBeNull());
     });
   }
 
@@ -406,17 +409,17 @@ describe("S4 sidebar freshness entry opens the freshness drawer", () => {
       await screen.findByTestId("screen");
       const rail = await screen.findByTestId("sidebar-rail");
       const entry = within(rail).getByTestId("sidebar-freshness");
-      expect(entry).toHaveAccessibleName(/^Data freshness/);
+      expect(entry).toHaveAccessibleName(/^Data status/);
       fireEvent.click(entry);
-      const dialog = await screen.findByRole("dialog", { name: "Data freshness" });
+      const dialog = await screen.findByRole("dialog", { name: "Data status" });
       expect(dialog).toHaveAttribute("id", "freshness-drawer");
       fireEvent.keyDown(document, { key: "Escape" });
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Data freshness" })).toBeNull());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Data status" })).toBeNull());
       r.unmount();
     }
   });
 
-  it("below 860 px the open MobileNav menu has a Data freshness button that opens the drawer", async () => {
+  it("below 860 px the open MobileNav menu has a Data status button that opens the drawer", async () => {
     compactShell();
     for (const slug of ["dashboard", "recession", METHODOLOGY_SLUG]) {
       const r = renderShell(`/app/${slug}`);
@@ -424,12 +427,12 @@ describe("S4 sidebar freshness entry opens the freshness drawer", () => {
       const nav = screen.getByRole("navigation", { name: "Primary" });
       fireEvent.click(within(nav).getByRole("button", { name: /^Menu/ }));
       const list = document.getElementById("mobile-nav-list") as HTMLElement;
-      const entry = within(list).getByRole("button", { name: /^Data freshness/ });
+      const entry = within(list).getByRole("button", { name: /^Data status/ });
       fireEvent.click(entry);
-      const dialog = await screen.findByRole("dialog", { name: "Data freshness" });
+      const dialog = await screen.findByRole("dialog", { name: "Data status" });
       expect(dialog).toHaveAttribute("id", "freshness-drawer");
       fireEvent.keyDown(document, { key: "Escape" });
-      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Data freshness" })).toBeNull());
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "Data status" })).toBeNull());
       r.unmount();
     }
   });
@@ -485,7 +488,7 @@ describe("A3 stored-close notice (FRESHNESS_CONTRACT §5)", () => {
     expect(screen.queryByTestId("stored-close-notice")).toBeNull();
   });
 
-  it("a seeded report reads Snapshot · as of on the card and the footer, with no line and no health dot", async () => {
+  it("a seeded report reads Snapshot · as of in the footer (the strip's card is gone), with no line and no health dot", async () => {
     stubFetch({
       "/api/regime/latest": () => regime,
       "/api/freshness": () => ({ ...behind, seeded: true, generated_at: "2026-09-10T06:06:01Z" }),
@@ -497,13 +500,15 @@ describe("A3 stored-close notice (FRESHNESS_CONTRACT §5)", () => {
     });
     renderShell("/app/dashboard");
     await screen.findByTestId("screen");
-    const strip = await screen.findByRole("region", { name: "Market strip and data freshness" });
-    await waitFor(() => expect(strip.querySelector(".mrr-upd-lines")?.textContent).toContain("Snapshot · as of Sep 10"));
+    const strip = await screen.findByRole("region", { name: "Market strip" });
     const sidebar = screen.getByRole("complementary", { name: "Sidebar" });
-    expect(sidebar.textContent).toContain("Snapshot · as of Sep 10");
-    // No health dot at all on a seeded snapshot (§5): not in the footer, not on the card lines.
+    await waitFor(() => expect(sidebar.textContent).toContain("Snapshot · as of Sep 10"));
+    // fix/freshness 8: the strip carries quote cards only (their own stamps read the snapshot), no status card.
+    expect(strip.querySelector(".mrr-upd")).toBeNull();
+    expect(strip.textContent).not.toMatch(/Markets ·|Macro monthly|Freshness/);
+    // No health dot at all on a seeded snapshot (§5): the footer's "Data status" keeps a neutral mark.
     expect(sidebar.querySelector(".mrr-dot")).toBeNull();
-    expect(strip.querySelector(".mrr-upd-dot")).toBeNull();
+    expect(sidebar.querySelector(".mrr-side-snapmark")).not.toBeNull();
     expect(document.querySelector(".mrr-live-dot")).toBeNull();
     expect(screen.queryByTestId("stored-close-notice")).toBeNull();
   });

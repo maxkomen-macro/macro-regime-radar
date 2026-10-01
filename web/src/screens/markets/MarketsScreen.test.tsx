@@ -587,7 +587,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(button).toHaveAttribute("data-tone", tone);
     expect(stripTitle(button)).toBe(title);
     expect(stripDetail(button)).toMatch(detail);
-    expect(button.getAttribute("aria-label")).toBe(`${title}. ${stripDetail(button)}. Open the data freshness breakdown.`);
+    expect(button.getAttribute("aria-label")).toBe(`${title}. ${stripDetail(button)}. Open the data status breakdown.`);
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
   });
 
