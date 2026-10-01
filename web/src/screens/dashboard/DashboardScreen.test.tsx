@@ -604,8 +604,8 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(t).toContain("VIX · Cboe volatility index · daily close.");
     expect(t).toContain("+0.31");
     expect(t).toContain("-0.42");
-    expect(t).toContain("3-month slope of the industrial-production level; its sign feeds the regime call, and the odds use it z-scored against its history.");
-    expect(t).toContain("3-month slope of the CPI level; its sign feeds the regime call, and the odds use it z-scored against its history.");
+    expect(t).toContain("Slope of the industrial-production level over the last three monthly readings; its sign feeds the regime call, and the odds use it z-scored against its history.");
+    expect(t).toContain("Slope of the CPI level over the last three monthly readings; its sign feeds the regime call, and the odds use it z-scored against its history.");
     await waitFor(() => expect(text(kl)).toContain("+52 bps"));
     expect(text(kl)).toContain(`The 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the 61st percentile of the model's monthly history. Below 0 is an inversion, the classic pre-recession shape.`);
     expect(text(kl)).toContain("13.7%");
@@ -730,7 +730,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     const paragraphs = [...panel.querySelectorAll("p")].map((p) => text(p));
     expect(paragraphs).toHaveLength(2);
     expect(paragraphs[0]).toBe(
-      `The drivers on file: the 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the VIX sits at 16.42 (subdued), and high-yield spreads run 294 bps (+4 bps on the week). Growth trend reads +0.31 and inflation trend -0.42; both are 3-month slopes of the index levels, z-scored against their history for the odds.`,
+      `The drivers on file: the 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the VIX sits at 16.42 (subdued), and high-yield spreads run 294 bps (+4 bps on the week). Growth trend reads +0.31 and inflation trend -0.42; both are slopes of the index levels over the last three monthly readings, z-scored against their history for the odds.`,
     );
     expect(paragraphs[1]).toBe(
       "What would change the read: a CPI print above 4.00% YoY trips Inflation pressure, a 2s10s close below 0.00% trips Curve inversion risk, and a VIX close above 30.00 trips the vol signal. None of the 5 monitored signals is triggered; 1 sits in Watch.",
@@ -740,7 +740,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(method).toHaveAttribute("aria-expanded", "true");
     const link = within(rt).getByRole("link", { name: /Full methodology/ });
     expect(link).toHaveAttribute("href", "/app/methodology");
-    expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("The regime is set by the signs of the 3-month slopes of the industrial-production and CPI levels");
+    expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("The regime is set by the signs of the slopes of the industrial-production and CPI levels over the last three monthly readings");
     expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("Nothing on this screen is re-derived in the browser.");
   });
 

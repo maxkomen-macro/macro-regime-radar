@@ -30,6 +30,8 @@ import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
 
 /** The null-value glyph the result line prints (U+2014), never an em-dash aside. */
 const DASH = "—";
+export const SCENARIO_CAPTION = "Hypothetical score of these inputs under the fitted coefficients and scaler.";
+export const SCENARIO_UNTOUCHED = "Untouched, they hold the latest readings, which the headline scores about three months later.";
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -295,11 +297,11 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                       {scenario.data.baseline_prob != null ? fmtProb(scenario.data.baseline_prob, "percent", 1) : `${DASH}%`}
                     </div>
                   )}
-                  {/* X19 caption (RecessionScreen.tsx:573-578 before Phase 7), verbatim. */}
+                  {/* Codex R-14: a hypothetical score, never a forecast of the headline; the second sentence holds only
+                      while the sliders are untouched (inputs null: every field still equals the seed). */}
                   <Caption>
-                    The headline scores inputs lagged three months; fitted and scored on the same history (in-sample). These sliders score the latest readings as if
-                    they were the model&apos;s inputs, so the starting position sits near, not on, the headline: roughly what the headline will score in three
-                    months. Same fitted coefficients, same scaler.
+                    {SCENARIO_CAPTION}
+                    {inputs == null ? ` ${SCENARIO_UNTOUCHED}` : null}
                   </Caption>
                 </>
               ) : (

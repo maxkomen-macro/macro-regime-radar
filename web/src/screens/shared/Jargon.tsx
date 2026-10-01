@@ -6,7 +6,7 @@ import { useEffect, useId, useRef, useState } from "react";
 
 const DEFS: Record<string, string> = {
   regime:
-    "One of four quadrants the classifier calls from two signs: whether the industrial-production level and the CPI level rose over the last three months. Goldilocks (production up, CPI down), Overheating (both up), Stagflation (CPI up, production down), Recession Risk (both down).",
+    "One of four quadrants the classifier calls from two signs: whether the industrial-production level and the CPI level rose over the last three monthly readings. Goldilocks (production up, CPI down), Overheating (both up), Stagflation (CPI up, production down), Recession Risk (both down).",
   "model odds":
     "The classifier's odds for each regime: a strength score from the two trends, not a fitted probability. The four sum to 100%, and the label's odds lead by construction.",
   conviction:
@@ -19,7 +19,7 @@ const DEFS: Record<string, string> = {
   "high-yield":
     "Bonds rated below investment grade (BB and lower). Their spread over Treasuries is a fast gauge of credit stress.",
   "z-score":
-    "How unusual a reading is versus its full history, in standard deviations. ±2 is notable, ±3 is rare.",
+    "How unusual a reading is versus its own history, in standard deviations. ±2 is notable, ±3 is rare.",
   divergence:
     "Whether the recession model and market risk pricing agree. Aligned = they tell one story; a material divergence requires judgment about which read to weight.",
   NBER: "The National Bureau of Economic Research — the committee that dates official US recessions; the model trains on its dates.",
@@ -61,6 +61,9 @@ const DEFS: Record<string, string> = {
     "The curve of portfolios offering the highest expected return at each level of risk; anything below the curve is leaving return on the table.",
   "transition matrix":
     "Historical odds of moving from one state to another over a fixed horizon, counted from the stored monthly history.",
+  // Codex R-18: the regime matrix is not counted (fix/freshness D4); the counted definition above stays for credit states.
+  "regime transition matrix":
+    "Odds of moving from one regime to another over a fixed horizon. For the four regimes these are hand-set priors typed into the code, not counted from the stored history.",
   "risk parity":
     "Weights sized so each asset contributes equal risk; bonds get more capital than stocks because they move less.",
   "Black-Litterman":

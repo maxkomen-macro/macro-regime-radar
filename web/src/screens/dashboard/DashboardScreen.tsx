@@ -315,7 +315,7 @@ export default function DashboardScreen() {
         hyChange ? ` (${fmtBps(hyChange.bps)} ${hyChange.phrase})` : ""
       }. Growth trend reads ${r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and inflation trend ${
         r.inflation_trend != null ? fmtSigned(r.inflation_trend) : "—"
-      }; both are 3-month slopes of the index levels, z-scored against their history for the odds.`,
+      }; both are slopes of the index levels over the last three monthly readings, z-scored against their history for the odds.`,
       `What would change the read: a CPI print above ${thr("cpi_hot")}% YoY trips Inflation pressure, a 2s10s close below ${thr("yield_curve_inversion")}% trips Curve inversion risk, and a VIX close above ${thr("vix_spike")} trips the vol signal. ` +
         (triggered.length > 0
           ? `${triggered.length} of the ${reporting.length} monitored signals ${triggered.length === 1 ? "is" : "are"} currently triggered.`
@@ -660,7 +660,7 @@ export default function DashboardScreen() {
           <Disclosure title="Method and provenance" right="reference" style={{ marginTop: 6 }}>
             <Card>
               <p className="mrr-prose" style={{ ...errStyle, fontSize: "var(--fs-body-s)", lineHeight: 1.6, margin: 0 }}>
-                The regime is set by the signs of the 3-month slopes of the industrial-production and CPI levels, run
+                The regime is set by the signs of the slopes of the industrial-production and CPI levels over the last three monthly readings, run
                 monthly on FRED data; a softmax over the slopes' z-scores gives the four odds, which sum to 100%, and the
                 header badge shows the dominant stored odds (a strength score, not a fitted probability). The five monitored signals compare the latest print against fixed thresholds and are
                 scored server-side; the recession model is a logistic regression trained on NBER dates. Nothing on this

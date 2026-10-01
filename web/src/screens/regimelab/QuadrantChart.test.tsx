@@ -223,3 +223,48 @@ describe("fix/freshness 5: each axis on its own scale, colours, labels and toolt
   });
 });
 
+
+describe("Codex R-21: month labels clear the axis-scale labels", () => {
+  /** An estimated box from the rendered attributes alone: a mono glyph is 0.6 em, a line one em tall. */
+  const boxOf = (t: Element, fontPx: number) => {
+    const x = Number(t.getAttribute("x"));
+    const y = Number(t.getAttribute("y"));
+    const w = (t.textContent ?? "").length * fontPx * 0.6;
+    const anchor = t.getAttribute("text-anchor") ?? "start";
+    const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
+    return { x0, x1: x0 + w, y0: y - fontPx, y1: y };
+  };
+  const overlap = (a: ReturnType<typeof boxOf>, b: ReturnType<typeof boxOf>) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+
+  it("Codex's case: an earlier point at (1, 1) and the current one at (0.5, 0.2) on the 400 × 330 plane", () => {
+    const points = [
+      { date: "2026-07-01", label: "Overheating" as RegimeLabel, x: 1, y: 1 },
+      { date: "2026-08-01", label: "Overheating" as RegimeLabel, x: 0.5, y: 0.2 },
+    ];
+    render(<QuadrantChart points={points} current={regime({ date: "2026-08-01", label: "Overheating", growth_trend: 0.5, inflation_trend: 0.2 })} />);
+    const scale = [...(svg()?.querySelectorAll("[data-role='scale'] text") ?? [])];
+    expect(scale.map((t) => t.textContent)).toEqual(["+1.12", "−1.12", "+1.12", "−1.12"]);
+    const labels = [...(svg()?.querySelectorAll("text[data-label]") ?? [])];
+    expect(labels.map((t) => t.textContent)).toContain("Aug 2026");
+    for (const l of labels) {
+      const lb = boxOf(l, l.getAttribute("data-label") === "latest" ? 11 : 10);
+      for (const s of scale) expect(overlap(lb, boxOf(s, 9)), `${l.textContent} vs ${s.textContent}`).toBe(false);
+    }
+  });
+
+  it("across the stored trail, no month label covers a scale label", () => {
+    const pts: Point[] = [
+      ["2026-01-01", "Stagflation", -0.3, 0.9],
+      ["2026-02-01", "Overheating", 0.45, 0.05],
+      ["2026-03-01", "Goldilocks", 0.4, -0.02],
+      ["2026-04-01", "Recession Risk", -0.02, -0.6],
+      ["2026-05-01", "Overheating", 0.05, 0.85],
+    ].map(([date, label, x, y]) => ({ date: date as string, label: label as RegimeLabel, x: x as number, y: y as number }));
+    render(<QuadrantChart points={pts} current={regime({ date: "2026-05-01", label: "Overheating", growth_trend: 0.05, inflation_trend: 0.85 })} />);
+    const scale = [...(svg()?.querySelectorAll("[data-role='scale'] text") ?? [])];
+    for (const l of svg()?.querySelectorAll("text[data-label]") ?? []) {
+      const lb = boxOf(l, l.getAttribute("data-label") === "latest" ? 11 : 10);
+      for (const s of scale) expect(overlap(lb, boxOf(s, 9)), `${l.textContent} vs ${s.textContent}`).toBe(false);
+    }
+  });
+});

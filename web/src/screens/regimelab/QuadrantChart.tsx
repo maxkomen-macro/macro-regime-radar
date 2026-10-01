@@ -130,6 +130,31 @@ type Box = { x0: number; x1: number; y0: number; y1: number };
 const clear = (a: Box, b: Box) => a.x1 <= b.x0 || b.x1 <= a.x0 || a.y1 <= b.y0 || b.y1 <= a.y0;
 const inside = (a: Box, g: Plane) => a.x0 >= g.l + 1 && a.x1 <= g.r - 1 && a.y0 >= g.t + 1 && a.y1 <= g.b - 1;
 
+interface ScaleLabel {
+  x: number;
+  y: number;
+  anchor: "start" | "end";
+  text: string;
+}
+
+/** Each axis's own scale at its ends (index points a month): what the plane prints, and (Codex R-21) the boxes the
+ * month labels must clear. */
+function scaleLabels(g: Plane, sx: number, sy: number): ScaleLabel[] {
+  return [
+    { x: g.r - 2, y: g.oy - 4, anchor: "end", text: signedSlope(sx) },
+    { x: g.l + 2, y: g.oy - 4, anchor: "start", text: signedSlope(-sx) },
+    { x: g.ox + 4, y: g.t + 9, anchor: "start", text: signedSlope(sy) },
+    { x: g.ox + 4, y: g.b - 3, anchor: "start", text: signedSlope(-sy) },
+  ];
+}
+
+/** A scale label's box: TICK's 9 px mono face, ≈ 5.6 px a glyph, padded like the month labels' boxes. */
+function scaleBox(l: ScaleLabel): Box {
+  const tw = l.text.length * 5.6;
+  const x0 = l.anchor === "end" ? l.x - tw : l.x;
+  return { x0: x0 - 1, x1: x0 + tw + 1, y0: l.y - 9, y1: l.y + 3 };
+}
+
 interface Placed {
   i: number;
   x: number;
@@ -142,11 +167,11 @@ interface Placed {
 /**
  * Month labels for the start, each change and the latest month, each placed at the first of eight spots around
  * its dot whose box (estimated from the mono glyph width) stays inside the plot and clears every dot, the
- * quadrant names and the labels already placed. Priority: the latest month, then the start, then the changes
+ * quadrant names, the axis-scale labels (Codex R-21) and the labels already placed. Priority: the latest month, then the start, then the changes
  * newest first. A label with no free spot is left off (the dot's tooltip still names it); the latest month
  * always prints, at its first spot inside the plot.
  */
-function placeLabels(points: TrailPoint[], at: (p: TrailPoint) => [number, number], g: Plane): Placed[] {
+function placeLabels(points: TrailPoint[], at: (p: TrailPoint) => [number, number], g: Plane, scale: readonly ScaleLabel[] = []): Placed[] {
   const n = points.length;
   const dots: Box[] = points.map((p, i) => {
     const [x, y] = at(p);
@@ -160,6 +185,7 @@ function placeLabels(points: TrailPoint[], at: (p: TrailPoint) => [number, numbe
     const y = q.top ? g.t + 16 : g.b - 9;
     return { x0: x - 2, x1: x + tw + 2, y0: y - 12, y1: y + 3 };
   });
+  const scaleBoxes = scale.map(scaleBox);
   const order = labelledIndices(points).sort((a, b) => (a === n - 1 ? -1 : b === n - 1 ? 1 : a === 0 ? -1 : b === 0 ? 1 : b - a));
   const placed: Placed[] = [];
   const taken: Box[] = [];
@@ -188,7 +214,8 @@ function placeLabels(points: TrailPoint[], at: (p: TrailPoint) => [number, numbe
       return { x0: x0 - 1, x1: x0 + tw + 1, y0: ly - th + 1, y1: ly + 3 };
     };
     const others = dots.filter((_, k) => k !== i);
-    const fits = (b: Box) => inside(b, g) && others.every((o) => clear(b, o)) && names.every((o) => clear(b, o)) && taken.every((o) => clear(b, o));
+    const fits = (b: Box) =>
+      inside(b, g) && others.every((o) => clear(b, o)) && names.every((o) => clear(b, o)) && scaleBoxes.every((o) => clear(b, o)) && taken.every((o) => clear(b, o));
     let spot = spots.find((s) => fits(boxOf(s)));
     if (!spot && current) spot = spots.find((s) => inside(boxOf(s), g)) ?? spots[0];
     if (!spot) continue;
@@ -231,7 +258,8 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
     const px = (p: Pick<TrailPoint, "x">) => round1(g.ox + (g.hw * p.x) / sx);
     const py = (p: Pick<TrailPoint, "y">) => round1(g.oy - (g.hh * p.y) / sy);
     const at = (p: TrailPoint): [number, number] => [px(p), py(p)];
-    const labels = n >= 1 ? placeLabels(plotted, at, g) : [];
+    const scale = scaleLabels(g, sx, sy);
+    const labels = n >= 1 ? placeLabels(plotted, at, g, scale) : [];
     // Fade oldest → newest: the trail's segments and the dots both.
     const segOpacity = (k: number) => round2(0.12 + 0.5 * (n > 2 ? k / (n - 2) : 1));
     const dotOpacity = (k: number) => round2(0.35 + 0.55 * (faded.length > 1 ? k / (faded.length - 1) : 1));
@@ -278,18 +306,11 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
         {/* Each axis's own scale, at its ends (index points a month). */}
         {n >= 1 ? (
           <g data-role="scale">
-            <text x={g.r - 2} y={g.oy - 4} textAnchor="end" fill={AXIS_FILL} style={TICK}>
-              {signedSlope(sx)}
-            </text>
-            <text x={g.l + 2} y={g.oy - 4} fill={AXIS_FILL} style={TICK}>
-              {signedSlope(-sx)}
-            </text>
-            <text x={g.ox + 4} y={g.t + 9} fill={AXIS_FILL} style={TICK}>
-              {signedSlope(sy)}
-            </text>
-            <text x={g.ox + 4} y={g.b - 3} fill={AXIS_FILL} style={TICK}>
-              {signedSlope(-sy)}
-            </text>
+            {scale.map((l) => (
+              <text key={`${l.x},${l.y}`} x={l.x} y={l.y} textAnchor={l.anchor} fill={AXIS_FILL} style={TICK}>
+                {l.text}
+              </text>
+            ))}
           </g>
         ) : null}
         <text x={g.r} y={h - 16} textAnchor="end" fill={AXIS_FILL} style={AXIS}>

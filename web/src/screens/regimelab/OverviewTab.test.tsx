@@ -224,6 +224,11 @@ describe("OverviewTab (checklist 04 B.4 to B.6)", () => {
     expect(details).toHaveAttribute("aria-expanded", "true");
     expect(text(section)).toContain("These odds are hand-set priors typed into the code, not counted from the stored classifier history: a transition matrix, not a forecast model. The exits beside them are counted from the stored history.");
     expect(within(section).getByRole("button", { name: "transition matrix" })).toHaveClass("jargon");
+    // Codex R-18: the tooltip beside the priors says priors, never "counted from the stored monthly history".
+    fireEvent.focus(within(section).getByRole("button", { name: "transition matrix" }));
+    const tip = document.querySelector("[role='tooltip']")?.textContent ?? "";
+    expect(tip).toContain("hand-set priors typed into the code");
+    expect(tip).not.toContain("counted from the stored monthly history");
     expect(text(section)).not.toMatch(/vs 3 mo ago/i);
     expect(section.querySelectorAll(".mrr-meter-row [style*='58px']")).toHaveLength(0);
     // Served colours never paint the rows.

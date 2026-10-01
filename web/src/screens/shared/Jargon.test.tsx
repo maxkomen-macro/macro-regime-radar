@@ -60,3 +60,25 @@ describe("Jargon tooltip (WCAG 1.4.13)", () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+describe("Codex round 1: definitions that match the calculation", () => {
+  const tipFor = (term: string): string => {
+    const { unmount } = render(<Jargon term={term}>{term}</Jargon>);
+    fireEvent.focus(screen.getByRole("button", { name: term }));
+    const text = screen.getByRole("tooltip").textContent ?? "";
+    unmount();
+    return text;
+  };
+  it("R-15: the z-score is measured against a reading's own history, not its full history (the surprises use a rolling window)", () => {
+    expect(tipFor("z-score")).toBe("How unusual a reading is versus its own history, in standard deviations. ±2 is notable, ±3 is rare.");
+  });
+  it("R-20: the regime's slopes run over the last three monthly readings", () => {
+    const t = tipFor("regime");
+    expect(t).toContain("rose over the last three monthly readings");
+    expect(t).not.toContain("three months");
+  });
+  it("R-18: the regime matrix is hand-set priors; the counted definition stays for credit states", () => {
+    expect(tipFor("regime transition matrix")).toContain("hand-set priors typed into the code, not counted from the stored history");
+    expect(tipFor("transition matrix")).toContain("counted from the stored monthly history");
+  });
+});

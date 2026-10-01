@@ -521,7 +521,7 @@ export default function MarketsScreen() {
           }.`;
   const why = usLive
     ? "Day moves are measured against each name's previous regular-session close. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence."
-    : "Outside the regular session the board holds the last regular-session quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
+    : "Outside the regular session the board shows the latest delayed quote with its timestamp; live-feed trades outside the session never move it. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
   // A3 (Iteration 1 step 6): the tape reads the server's live_quotes state
   // and the candles its market_daily state (§5 words: "Live", "Delayed 15
   // min", "Close · Sep 18", "Sep 14 · 4 sessions behind"). The weekly pricing

@@ -295,7 +295,7 @@ export function TransitionsSection({
         <Disclosure variant="quiet" title="Details" style={{ marginTop: 6 }}>
           <Caption style={{ marginTop: 0 }}>
             These odds are hand-set priors typed into the code, not counted from the stored classifier history: a{" "}
-            <Jargon term="transition matrix">transition matrix</Jargon>, not a forecast model. The exits beside them are counted from the stored history.
+            <Jargon term="regime transition matrix">transition matrix</Jargon>, not a forecast model. The exits beside them are counted from the stored history.
           </Caption>
         </Disclosure>
       ) : null}

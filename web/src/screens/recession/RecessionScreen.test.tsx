@@ -147,7 +147,7 @@ const CHART_CAPTION_MORE = "Inputs lagged three months; fitted and scored on the
 const SUMMARY_LABELS = ["Recession odds · this month", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
 const THRESHOLDS_TITLE = "Reference levels used in the desk read. Not model thresholds and not alert rules; none are served by the API.";
-const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession odds above";
+const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a separate classifier from the recession model above";
 /** Iteration 1 E2: the fifth input is named for what recession.py computes. */
 const BREAKEVEN = "10Y − 5Y breakeven spread";
 const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", BREAKEVEN];
@@ -168,8 +168,10 @@ const SENS_LEAD = "Move the model's five inputs and watch 11.6% respond.";
 /** X3: the unchanged scenario is named as a scenario, beside the model's own reading. */
 const SCENARIO_EYEBROW = "Scenario at current readings · inputs unchanged";
 const INCOMPLETE = "The model's current inputs are incomplete in this snapshot; nothing honest to seed the sliders with.";
+/** Codex R-14: a hypothetical score; the second sentence only while the sliders are untouched. */
 const SCENARIO_CAPTION =
-  "The headline scores inputs lagged three months; fitted and scored on the same history (in-sample). These sliders score the latest readings as if they were the model's inputs, so the starting position sits near, not on, the headline: roughly what the headline will score in three months. Same fitted coefficients, same scaler.";
+  "Hypothetical score of these inputs under the fitted coefficients and scaler. Untouched, they hold the latest readings, which the headline scores about three months later.";
+const SCENARIO_CAPTION_TOUCHED = "Hypothetical score of these inputs under the fitted coefficients and scaler.";
 const SLIDER_LABELS = ["Yield curve 2s10s", "Unemployment rate", "HY credit spread", "Industrial production YoY", BREAKEVEN];
 const SEEDED_VALUETEXT = ["+35 bps", "4.1%", "270 bps", "1.0%", "0.0pp"];
 const COEF_ORDER = ["HY credit spread", "Unemployment rate", "Yield curve (2s10s)", BREAKEVEN, "Industrial production YoY"];
@@ -826,6 +828,10 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(scenarioBadge())).toBe("High Risk");
     expect(scenarioBadge()).toHaveAttribute("data-tone", "alert");
     expect(text(sensitivity())).toContain("+37.4pp vs the model's headline 11.6%");
+    // Codex R-14: once a slider moves, the inputs are no longer the latest readings: no "Untouched" sentence.
+    expect(text(sensitivity())).toContain(SCENARIO_CAPTION_TOUCHED);
+    expect(text(sensitivity())).not.toContain("Untouched, they hold the latest readings");
+    expect(text(sensitivity())).not.toContain("will score");
     expect(text(sensitivity())).not.toContain("-1.2pp");
     expect(text(modelFigure())).toContain("11.6%");
 

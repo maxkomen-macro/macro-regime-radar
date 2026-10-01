@@ -82,7 +82,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vixRead
             size="sm"
           />
           <Caption>
-            3-month slope of the industrial-production level; its sign feeds the regime call, and the odds use it{" "}
+            Slope of the industrial-production level over the last three monthly readings; its sign feeds the regime call, and the odds use it{" "}
             <Jargon term="z-score">z-scored</Jargon> against its history.
           </Caption>
           {classifierStamp}
@@ -96,7 +96,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vixRead
             size="sm"
           />
           <Caption>
-            3-month slope of the CPI level; its sign feeds the regime call, and the odds use it{" "}
+            Slope of the CPI level over the last three monthly readings; its sign feeds the regime call, and the odds use it{" "}
             <Jargon term="z-score">z-scored</Jargon> against its history.
           </Caption>
           {classifierStamp}

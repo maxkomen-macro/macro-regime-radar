@@ -78,8 +78,8 @@ describe("Regime words", () => {
   });
   it("spells the flip from the served threshold and operator, never a typed one (§5)", () => {
     const p = { threshold_mom: -0.0039, operator: "<=" as const, flips_to: "Goldilocks", first_effective_month: "2026-11" };
-    expect(flipWords("cpi", p)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
-    expect(flipWords("indpro", { ...p, threshold_mom: -0.0002, flips_to: "Stagflation" })).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", p)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026).");
+    expect(flipWords("indpro", { ...p, threshold_mom: -0.0002, flips_to: "Stagflation" })).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026).");
   });
   it("Codex R-05: published rows and upcoming prints apart, each print against its own month", () => {
     // fix/freshness 3a (D2): the API's answer on the audit's store now reads from the newest row, the August Overheating
@@ -97,10 +97,10 @@ describe("Regime words", () => {
     expect(publishedPrintWords("cpi", aug.cpi as never)).toBe("the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising");
     expect(publishedPrintWords("indpro", aug.indpro as never)).toBe("the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising");
     expect(publishedTail(aug as never)).toBe(
-      ", the label from Oct 2026: the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising; the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising.",
+      " (event studies tag sessions with it from Oct 2026): the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising; the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising.",
     );
     expect(np.cpi.reference_month).toBe("2026-09");
-    expect(flipWords("cpi", np.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", np.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026).");
     expect([momSigned(-0.0012), momSigned(0.00396)]).toEqual(["−0.12%", "+0.40%"]);
     // A series that has already printed the upcoming month (the row waits on the other): said as printed.
     const printed = { printed_mom: 0.00396, printed_direction: "rising" as const, from_direction: "falling" as const, reference_month: "2026-09" };
@@ -115,14 +115,17 @@ describe("Regime words", () => {
   });
   it("`>` flips a falling axis to rising (v3 §9.3)", () => {
     const p = { threshold_mom: 0.004, operator: ">" as const, flips_to: "Overheating", first_effective_month: "2026-11" };
-    expect(flipWords("cpi", p)).toBe("a print > 0.4% m/m flips inflation to rising → Overheating, effective from the Nov 2026 label.");
-    expect(flipWords("indpro", { ...p, threshold_mom: -0.001, flips_to: "Goldilocks" })).toBe("a print > −0.1% m/m flips growth to rising → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", p)).toBe("a print > 0.4% m/m flips inflation to rising → Overheating; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026).");
+    expect(flipWords("indpro", { ...p, threshold_mom: -0.001, flips_to: "Goldilocks" })).toBe("a print > −0.1% m/m flips growth to rising → Goldilocks; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026).");
   });
   it("prints the served precision, and nothing without a threshold; a flip not evaluable names no regime", () => {
     const p = { threshold_mom: 0.0015, operator: "<=" as const, flips_to: "Goldilocks", first_effective_month: "2026-11" };
-    expect(flipWords("cpi", p)).toBe("a print ≤ 0.15% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", p)).toBe("a print ≤ 0.15% m/m flips inflation to falling → Goldilocks; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026).");
     expect(flipWords("cpi", { ...p, threshold_mom: null })).toBeNull();
-    expect(flipWords("cpi", { ...p, flips_to: null })).toBe("a print ≤ 0.15% m/m flips inflation to falling, effective from the Nov 2026 label.");
+    // Codex R-12: the regime shown changes when the print publishes; first_effective_month is only the tagging month.
+    expect(flipWords("cpi", p)).toContain("it updates the regime shown as soon as it publishes");
+    expect(flipWords("cpi", { ...p, first_effective_month: null } as never)).toBe("a print ≤ 0.15% m/m flips inflation to falling → Goldilocks; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later.");
+    expect(flipWords("cpi", { ...p, flips_to: null })).toBe("a print ≤ 0.15% m/m flips inflation to falling; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026).");
     expect([mom(0.00003), mom(0.002), mom(0)]).toEqual(["0.003", "0.2", "0"]);
   });
   it("colors by §1.3's jobs: red is only for down numbers", () => {
@@ -248,7 +251,7 @@ describe("Regime tab", () => {
     expect(card.querySelector(".rg-next-row")).toBeNull();
     expect(card).not.toHaveTextContent("Already published");
     expect(card).toHaveTextContent(
-      /Next CPI\s*Oct 14\s*Sep 2026 print · a print ≤ −0\.39% m\/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label\. Assumes growth stays rising; the Sep 2026 INDPRO print is not out yet\./,
+      /Next CPI\s*Oct 14\s*Sep 2026 print · a print ≤ −0\.39% m\/m flips inflation to falling → Goldilocks; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later \(Nov 2026\)\. Assumes growth stays rising; the Sep 2026 INDPRO print is not out yet\./,
     );
     // §5: the calendar has no INDPRO release, so its date says so.
     expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · Sep 2026 print · a print ≤ −0\.02% m\/m flips growth to falling → Stagflation/);

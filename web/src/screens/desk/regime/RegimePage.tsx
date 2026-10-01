@@ -413,9 +413,13 @@ export function mom(x: number): string {
 
 /**
  * §5: "a print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
- * <falling|rising> → <flips_to>, effective from the <first_effective_month>
- * label." `<=` flips a rising axis to falling, `>` a falling axis to rising
- * (v3 §9.3); the operator prints as ≤ or >. Null without a threshold.
+ * <falling|rising> → <flips_to>; it updates the regime shown as soon as it
+ * publishes, and event studies tag sessions with it two months later
+ * (<first_effective_month>)." Codex R-12: since D2 the page shows the newest
+ * stored row, so a print changes the regime shown when it publishes; the
+ * served `first_effective_month` is only the event-study tagging month (the
+ * engine's K−2). `<=` flips a rising axis to falling, `>` a falling axis to
+ * rising (v3 §9.3); the operator prints as ≤ or >. Null without a threshold.
  */
 export function flipWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "threshold_mom" | "operator" | "flips_to" | "first_effective_month">): string | null {
   if (!fin(p.threshold_mom) || (p.operator !== "<=" && p.operator !== ">")) return null;
@@ -424,7 +428,7 @@ export function flipWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "thresho
   const to = p.operator === "<=" ? "falling" : "rising";
   const when = monthYear(p.first_effective_month);
   const flips = typeof p.flips_to === "string" && p.flips_to ? ` → ${p.flips_to}` : "";
-  return `a print ${p.operator === "<=" ? "≤" : ">"} ${x < 0 ? "−" : ""}${mom(x)}% m/m flips ${what} to ${to}${flips}${when ? `, effective from the ${when} label` : ""}.`;
+  return `a print ${p.operator === "<=" ? "≤" : ">"} ${x < 0 ? "−" : ""}${mom(x)}% m/m flips ${what} to ${to}${flips}; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later${when ? ` (${when})` : ""}.`;
 }
 
 /** The date's color: the regime it would flip to, with red read as caution (D12: red is for down and negative numbers only). */
@@ -466,10 +470,11 @@ export function publishedPrintWords(kind: "cpi" | "indpro", p: PublishedPrint | 
   return `the ${monthYear(p.reference_month)} ${SERIES_NAME[kind]} print${move} ${!from ? `left ${what} ${to}` : to === from ? `kept ${what} ${to}` : `flipped ${what} to ${to}`}`;
 }
 
-/** Codex R-05: what follows a published row's label: the month it governs from and the prints that made it. */
+/** Codex R-05: what follows a published row's label: the month event studies tag sessions with it from (Codex R-12:
+ * not when it is shown, which is as soon as it publishes) and the prints that made it. */
 export function publishedTail(row: PublishedRow): string {
   const prints = [publishedPrintWords("cpi", row.cpi), publishedPrintWords("indpro", row.indpro)].filter(Boolean);
-  const from = monthYear(row.first_effective_month) ? `, the label from ${monthYear(row.first_effective_month)}` : "";
+  const from = monthYear(row.first_effective_month) ? ` (event studies tag sessions with it from ${monthYear(row.first_effective_month)})` : "";
   return `${from}${prints.length ? `: ${prints.join("; ")}` : ""}.`;
 }
 

@@ -71,7 +71,7 @@ const STRIP_TARGET = "/app/recession#model";
 const STRIP_SUFFIX = "Opens the model inputs";
 
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
-const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession odds above";
+const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a separate classifier from the recession model above";
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
 const THRESHOLDS_TITLE = "Reference levels used in the desk read. Not model thresholds and not alert rules; none are served by the API.";
 
