@@ -451,8 +451,14 @@ for _w in ("1y", "60d"):
 BASKET_POINT = obj(date=DATE, close=null(NUM), ma50=null(NUM), ma200=null(NUM), rsi=null(NUM), drawdown=null(NUM))
 COMPARE_POINT = obj(date=DATE, basket=null(NUM), qqq=null(NUM), spy=null(NUM), rs_qqq=null(NUM), rs_qqq_ma50=null(NUM),
                     rs_spy=null(NUM), rs_spy_ma50=null(NUM))
+# desk/cap-weight: where a cap-weighted basket's weights came from; null for typed weights.
+CAP_WEIGHTS = obj(
+    provider=STR, source=STR, as_of=DATE, start=DATE,
+    legs=Arr(obj(symbol=STR, shares_outstanding=NUM, as_of=DATE, close_start=NUM, value_start=NUM, weight_start=FRAC), min=1),
+)
 BASKET_PRICE = obj(
-    method=E("hold", "monthly"), notional=NUM, provider=STR, source=STR, freq=Const("daily"),
+    method=E("hold", "monthly"), weighting=E("target", "cap"), cap_weights=null(CAP_WEIGHTS),
+    notional=NUM, provider=STR, source=STR, freq=Const("daily"),
     prices_as_of=DATE, history_from=DATE, start=DATE, start_kind=E("first_close", "history", "gap"),
     start_binding=Arr(STR, min=1), start_is_first_close=BOOL, start_gap_session=null(DATE),
     end=DATE, sessions=INT, missing_sessions=Arr(DATE), rebalances=INT, total_return=NUM,
@@ -485,7 +491,8 @@ BASKET_PRICE = obj(
 LOOSE_SPAN = obj(start=null(DATE), end=null(DATE), n=INT)
 HEDGE_ETF = E("SMH", "SOXX", "QQQ", "XLK", "IGV", "XLU", "SPY", "IWM")
 BASKET_HEDGE = obj(
-    method=E("hold", "monthly"), notional=NUM, provider=STR, source=STR, freq=Const("daily"),
+    method=E("hold", "monthly"), weighting=E("target", "cap"), cap_weights=null(CAP_WEIGHTS),
+    notional=NUM, provider=STR, source=STR, freq=Const("daily"),
     prices_as_of=DATE, start=DATE, ranked_by=E("r2_1y", "r2_60d"), excluded=Arr(obj(symbol=STR, n=INT, reason=STR)),
     etfs=Arr(obj(
         symbol=HEDGE_ETF, label=STR, rank=INT, basis=null(E("1y", "60d")),
@@ -510,6 +517,15 @@ INSTRUMENTS = obj(instruments=Arr(obj(
 )), excluded=Arr(obj(symbol=STR, reason=STR)))  # Codex R-08: an instrument whose stored rows could not be read, and why
 
 
+# ── §12.18 GET /basket/shares (desk/cap-weight) ─────────────────────────────
+
+BASKET_SHARES = obj(
+    provider=STR, source=STR, counts_as_of=DATE,
+    counts=Arr(obj(symbol=STR, shares_outstanding=NUM, as_of=DATE, source=STR), min=1),
+    excluded=Arr(obj(symbol=STR, reason=STR)),
+)
+
+
 # ── The routes ──────────────────────────────────────────────────────────────
 
 # The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books,
@@ -528,6 +544,7 @@ ROUTES: dict[str, Obj] = {
     "/basket/price": BASKET_PRICE,  # desk/books
     "/basket/hedge": BASKET_HEDGE,  # desk/books
     "/instruments": INSTRUMENTS,  # desk/usability (§12.17)
+    "/basket/shares": BASKET_SHARES,  # desk/cap-weight (§12.18)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons

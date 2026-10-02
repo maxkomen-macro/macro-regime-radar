@@ -347,6 +347,13 @@ def _desk_etf(ctx: dict) -> dict:
     return desk_etf(ctx)
 
 
+def _desk_share_counts(ctx: dict) -> dict:
+    """desk/cap-weight: the stored share counts Basket & Hedge's cap weight reads (api/desk_basket.py)."""
+    from api.desk_basket import desk_share_counts
+
+    return desk_share_counts(ctx)
+
+
 def _desk_pipeline(ctx: dict) -> dict:
     """The Desk v2 /pipeline item (api/desk_pipeline.py): every Data Pipeline
     row's dates, provider, feeds and note, and the watermarks its statuses read."""
@@ -383,6 +390,8 @@ ITEMS = [
     ("desk_pipeline", _desk_pipeline),
     # desk/fill-etf: the Sectors, Technicals and Macro tabs' ETF blocks, one item (api/desk_items_etf.py)
     ("desk_etf", _desk_etf),
+    # desk/cap-weight: the preset baskets' share counts, for Basket & Hedge's cap weight
+    ("desk_share_counts", _desk_share_counts),
 ]
 
 

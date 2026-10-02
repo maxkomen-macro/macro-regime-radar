@@ -15,18 +15,31 @@ the database; the answer is computed on request because the basket is the
 visitor's, and it rides in the §12.0 envelope with the generation the request
 arrived on, like every Desk route.
 
-`price_answer` and `hedge_answer` are pure over the fetched histories, so the
-fixture script (scripts/desk_basket_fixture.py) and the tests call them
-directly. Heavy imports are lazy.
+desk/cap-weight: `weighting=cap` weights the basket by market value at its
+start (src/desk/basket.py) from the share counts the full refresh stores
+(`share_counts`, src/market_data/share_counts.py), read through the worker
+item `desk_share_counts` of the request's generation, never from Yahoo. The
+legs are then tickers alone. `GET /api/desk/basket/shares` lists the stored
+counts, so the page knows which baskets can be cap-weighted (§12.18). A
+database without the table answers both awaiting, with the reason; a name
+without a stored count is refused naming it.
+
+`price_answer` and `hedge_answer` are pure over the fetched histories (and,
+for cap weight, the counts), so the fixture script
+(scripts/desk_basket_fixture.py) and the tests call them directly. Heavy
+imports are lazy.
 """
 
 from __future__ import annotations
 
+import logging
 import math
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Mapping
 
 from api import desk_envelope as env
+
+log = logging.getLogger("mrr.desk")
 
 # The two benchmarks every basket is read against (§12.15), key → (ticker, label).
 BENCHMARKS: dict[str, tuple[str, str]] = {"qqq": ("QQQ", "Nasdaq 100 (QQQ)"), "spy": ("SPY", "S&P 500 (SPY)")}
@@ -43,12 +56,15 @@ MAX_NOTIONAL = 1e12
 PROVIDER = "EODHD"
 SOURCE = "EODHD daily bars, split- and dividend-adjusted"
 FETCH_WORKERS = 4
-PARAMS = ("legs", "method", "notional")
+PARAMS = ("legs", "method", "notional", "weighting")
+WEIGHTINGS = ("target", "cap")
+DEFAULT_WEIGHTING = "target"
 
 
-def parse_params(params: list[tuple[str, str]]) -> tuple[list[tuple[str, float]], str, float]:
-    """The request's legs (canonical ticker, weight in percent), method and
-    notional, or `Unsupported` naming what is wrong (§12.0: never a silent drop)."""
+def parse_params(params: list[tuple[str, str]]) -> tuple[list[tuple[str, float | None]], str, float, str]:
+    """The request's legs (canonical ticker, weight in percent; None for a
+    cap-weighted basket, whose legs are tickers alone), method, notional and
+    weighting, or `Unsupported` naming what is wrong (§12.0: never a silent drop)."""
     from api.providers.symbols import SymbolError, parse
     from src.desk import basket as bk
 
@@ -60,13 +76,21 @@ def parse_params(params: list[tuple[str, str]]) -> tuple[list[tuple[str, float]]
     if repeated:
         raise env.Unsupported(f"The {' and '.join(repeated)} parameter is given more than once.")
     q = dict(params)
+    weighting = q.get("weighting", DEFAULT_WEIGHTING)
+    if weighting not in WEIGHTINGS:
+        raise env.Unsupported(f"The weighting {weighting!r} is not target or cap.")
+    cap = weighting == "cap"
     raw = (q.get("legs") or "").strip()
     if not raw:
-        raise env.Unsupported("A basket needs its legs: legs=TICKER:weight,… with the weights in percent.")
-    legs: list[tuple[str, float]] = []
+        raise env.Unsupported("A cap-weighted basket needs its legs: legs=TICKER,TICKER,… with no weights." if cap else
+                              "A basket needs its legs: legs=TICKER:weight,… with the weights in percent.")
+    legs: list[tuple[str, float | None]] = []
     for part in raw.split(","):
         sym, sep, w = part.partition(":")
-        if not sep:
+        if cap and sep:
+            raise env.Unsupported(f"A cap-weighted basket takes its weights from market value: give the leg "
+                                  f"{part.strip()!r} as its ticker alone.")
+        if not sep and not cap:
             raise env.Unsupported(f"The leg {part.strip()!r} has no weight; write it TICKER:weight.")
         try:
             inst = parse(sym)
@@ -74,20 +98,23 @@ def parse_params(params: list[tuple[str, str]]) -> tuple[list[tuple[str, float]]
             raise env.Unsupported(str(exc)) from exc
         if inst.exchange != "US" or inst.kind != "equity":
             raise env.Unsupported(f"{sym.strip().upper()} is not a US listing; a basket holds US-listed stocks and ETFs.")
-        try:
-            weight = float(w)
-        except ValueError:
-            raise env.Unsupported(f"The weight of {inst.canonical} is not a number.") from None
-        if not (math.isfinite(weight) and 0 < weight <= 100):
-            raise env.Unsupported(f"The weight of {inst.canonical} is not above 0% and at most 100%.")
+        weight: float | None = None
+        if not cap:
+            try:
+                weight = float(w)
+            except ValueError:
+                raise env.Unsupported(f"The weight of {inst.canonical} is not a number.") from None
+            if not (math.isfinite(weight) and 0 < weight <= 100):
+                raise env.Unsupported(f"The weight of {inst.canonical} is not above 0% and at most 100%.")
         if any(s == inst.canonical for s, _ in legs):
             raise env.Unsupported(f"{inst.canonical} is in the basket twice.")
         legs.append((inst.canonical, weight))
     if len(legs) > MAX_LEGS:
         raise env.Unsupported(f"A basket holds at most {MAX_LEGS} names; this one has {len(legs)}.")
-    total = sum(w for _, w in legs)
-    if abs(total - 100.0) > 1e-6:
-        raise env.Unsupported(f"The weights add to {total:.10g}%, not 100%.")
+    if not cap:
+        total = sum(w for _, w in legs if w is not None)
+        if abs(total - 100.0) > 1e-6:
+            raise env.Unsupported(f"The weights add to {total:.10g}%, not 100%.")
     method = q.get("method", bk.DEFAULT_METHOD)
     if method not in bk.METHODS:
         raise env.Unsupported(f"The method {method!r} is not hold or monthly.")
@@ -97,7 +124,7 @@ def parse_params(params: list[tuple[str, str]]) -> tuple[list[tuple[str, float]]
         raise env.Unsupported("The notional is not a number.") from None
     if not (math.isfinite(notional) and 0 < notional <= MAX_NOTIONAL):
         raise env.Unsupported("The notional is not above $0 and at most $1 trillion.")
-    return legs, method, notional
+    return legs, method, notional, weighting
 
 
 UNADJUSTED = "no adjusted close from the provider"
@@ -182,11 +209,47 @@ def _f(x: Any) -> float | None:
     return float(x) if isinstance(x, (int, float)) and math.isfinite(x) else None
 
 
-def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], method: str, notional: float, *,
-                 provider: str = PROVIDER, source: str = SOURCE) -> dict:
+def _priced(histories: Mapping[str, Any], legs: list[tuple[str, float | None]], method: str, notional: float,
+            counts: Mapping[str, Mapping[str, Any]] | None, sessions: list[str]) -> dict:
+    """The engine's basket: at the legs' weights, or, given the stored counts (desk/cap-weight), cap-weighted."""
+    from src.desk import basket as bk
+
+    names = {s: histories[s] for s, _ in legs}
+    try:
+        if counts is not None:
+            return bk.price_basket(names, None, method, notional, sessions=sessions,
+                                   shares_outstanding={s: counts[s]["shares_outstanding"] for s in names if s in counts})
+        return bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional, sessions=sessions)
+    except bk.BasketError as exc:
+        raise env.Unsupported(str(exc)) from exc
+
+
+def cap_block(priced: Mapping[str, Any], counts: Mapping[str, Mapping[str, Any]] | None) -> dict | None:
+    """§12.15's `cap_weights` (desk/cap-weight): where the weights came from, for the label "Cap-weighted:
+    market value at the start, current share counts (<provider>, as of <as_of>)": the provider in words, the
+    oldest read among the basket's names, the session the market values are taken on, and per name its
+    count, its read date, its close there, its market value and its weight. None for typed weights."""
+    if counts is None:
+        return None
+    legs = priced["legs"]
+    return {
+        "provider": counts_provider(counts[l["symbol"]] for l in legs),
+        "source": COUNTS_SOURCE,
+        "as_of": min(counts[l["symbol"]]["as_of"] for l in legs),
+        "start": priced["start"],
+        "legs": [{"symbol": l["symbol"], "shares_outstanding": l["shares_outstanding"], "as_of": counts[l["symbol"]]["as_of"],
+                  "close_start": l["price_start"], "value_start": l["value_start"], "weight_start": l["target_weight"]}
+                 for l in legs],
+    }
+
+
+def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float | None]], method: str, notional: float, *,
+                 provider: str = PROVIDER, source: str = SOURCE, counts: Mapping[str, Mapping[str, Any]] | None = None) -> dict:
     """§12.15's payload from the fetched histories: the legs' and the two
     benchmarks' (keyed by ticker). `provider` and `source` name where the
-    closes came from (the fixture script prices Yahoo's and says so)."""
+    closes came from (the fixture script prices Yahoo's and says so).
+    `counts` (desk/cap-weight): the stored share counts by ticker, for a
+    cap-weighted basket; None weights it at the legs' weights."""
     import pandas as pd
 
     from src.desk import basket as bk
@@ -194,10 +257,7 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
 
     names = {s: histories[s] for s, _ in legs}
     sessions = calendar_for(histories)
-    try:
-        priced = bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional, sessions=sessions)
-    except bk.BasketError as exc:
-        raise env.Unsupported(str(exc)) from exc
+    priced = _priced(histories, legs, method, notional, counts, sessions)
     level = dict(zip(priced["dates"], priced["index"]))
     raw = pd.Series(priced["index"], index=pd.DatetimeIndex(priced["dates"]))
     t = tech.level_technicals(raw, spec=tech.PRICE_SPEC, ranges=CHART_RANGES, extras=True)
@@ -224,6 +284,8 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
         benchmarks[k] = row
     return {
         "method": method,
+        "weighting": priced["weighting"],
+        "cap_weights": cap_block(priced, counts),
         "notional": notional,
         "provider": provider,
         "source": source,
@@ -252,18 +314,15 @@ def price_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
     }
 
 
-def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], method: str, notional: float, *,
-                 provider: str = PROVIDER, source: str = SOURCE) -> dict:
+def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float | None]], method: str, notional: float, *,
+                 provider: str = PROVIDER, source: str = SOURCE, counts: Mapping[str, Mapping[str, Any]] | None = None) -> dict:
     """§12.16's payload: the ETFs ranked by how well each fits the basket's
-    daily returns, the top pick, and the linear stress test."""
+    daily returns, the top pick, and the linear stress test, for the basket
+    at the legs' weights or, given `counts`, cap-weighted (desk/cap-weight)."""
     from src.desk import basket as bk
 
-    names = {s: histories[s] for s, _ in legs}
     sessions = calendar_for(histories)
-    try:
-        priced = bk.price_basket(names, {s: w / 100.0 for s, w in legs}, method, notional, sessions=sessions)
-    except bk.BasketError as exc:
-        raise env.Unsupported(str(exc)) from exc
+    priced = _priced(histories, legs, method, notional, counts, sessions)
     level = dict(zip(priced["dates"], priced["index"]))
     etf_levels = {sym: dict(zip(histories[sym].dates, histories[sym].close)) for sym in HEDGE_ETFS}
     # Every fit reads data up to the basket's own last session, never the ETFs' later closes (Codex R-01).
@@ -275,6 +334,8 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
     shocks = {sym: etf_levels[sym] for sym in STRESS_SHOCKS}
     return {
         "method": method,
+        "weighting": priced["weighting"],
+        "cap_weights": cap_block(priced, counts),
         "notional": notional,
         "provider": provider,
         "source": source,
@@ -292,16 +353,137 @@ def hedge_answer(histories: Mapping[str, Any], legs: list[tuple[str, float]], me
     }
 
 
-def _symbols(legs: list[tuple[str, float]], extra: list[str]) -> list[str]:
+def _symbols(legs: list[tuple[str, float | None]], extra: list[str]) -> list[str]:
     held = [s for s, _ in legs]
     return held + [s for s in extra if s not in held]
 
 
 def price(params: list[tuple[str, str]]) -> dict:
-    legs, method, notional = parse_params(params)
-    return price_answer(fetch(_symbols(legs, [sym for sym, _ in BENCHMARKS.values()])), legs, method, notional)
+    legs, method, notional, weighting = parse_params(params)
+    counts = cap_counts([s for s, _ in legs]) if weighting == "cap" else None
+    return price_answer(fetch(_symbols(legs, [sym for sym, _ in BENCHMARKS.values()])), legs, method, notional, counts=counts)
 
 
 def hedge(params: list[tuple[str, str]]) -> dict:
-    legs, method, notional = parse_params(params)
-    return hedge_answer(fetch(_symbols(legs, list(HEDGE_ETFS))), legs, method, notional)
+    legs, method, notional, weighting = parse_params(params)
+    counts = cap_counts([s for s, _ in legs]) if weighting == "cap" else None
+    return hedge_answer(fetch(_symbols(legs, list(HEDGE_ETFS))), legs, method, notional, counts=counts)
+
+
+# ── desk/cap-weight: the stored share counts ────────────────────────────────
+
+COUNTS_TABLE = "share_counts"
+COUNTS_SOURCE = "Yahoo's shares outstanding, read by the full refresh and checked against Yahoo's market cap"
+COUNTS_NOT_STORED = "share counts are not stored in this database yet; the next full refresh reads them from Yahoo"
+COUNTS_EMPTY = "no share count is stored yet; the next full refresh reads them from Yahoo"
+COUNTS_UNREADABLE = "the stored share counts could not be read; the next full refresh stores them again"
+# The providers the table's `source` names, in words (src/market_data/share_counts.SOURCE is "yfinance").
+PROVIDER_WORDS = {"yfinance": "Yahoo", "eodhd": "EODHD"}
+
+
+def counts_provider(rows) -> str:
+    """The providers of some stored counts, in words ("Yahoo")."""
+    return ", ".join(sorted({PROVIDER_WORDS.get(r["source"], r["source"]) for r in rows}))
+
+
+def _count_problem(symbol: Any, shares: Any, as_of: Any, source: Any, today: str) -> str | None:
+    """Why one stored count cannot be read, or None: a symbol, a count that is a positive number, a YYYY-MM-DD
+    read date no later than today in New York, and a source."""
+    import re
+    from datetime import date as _date
+
+    if not isinstance(symbol, str) or not symbol.strip():
+        return "it names no symbol"
+    if isinstance(shares, bool) or not isinstance(shares, (int, float)) or not math.isfinite(shares) or shares <= 0:
+        return f"its count {shares!r} is not a positive number"
+    try:
+        if not isinstance(as_of, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", as_of) or _date.fromisoformat(as_of).isoformat() != as_of:
+            raise ValueError
+    except ValueError:
+        return f"its read date {as_of!r} is not a YYYY-MM-DD date"
+    if as_of > today:
+        return f"its read date {as_of} is after today ({today})"
+    if not isinstance(source, str) or not source.strip():
+        return "it names no source"
+    return None
+
+
+def desk_share_counts(ctx: dict) -> dict:
+    """The worker item `desk_share_counts` (desk/cap-weight): every stored
+    share count in the generation's file, each row checked on its own; a row
+    that fails is set aside in `excluded` with why. A file without the table,
+    one whose table cannot be read, or one with no row that passes answers
+    `stored: False` with the reason: a value, never an error, so an old
+    database never holds a generation back."""
+    import sqlite3
+    from datetime import datetime, timezone
+
+    from api import db
+    from api.calendar import NY
+    from src.analytics import dbpath
+
+    def none(reason: str, excluded: list | None = None) -> dict:
+        return {"stored": False, "reason": reason, "counts": {}, "excluded": excluded or []}
+
+    today = datetime.now(timezone.utc).astimezone(NY).date().isoformat()
+    conn = dbpath.connect_ro(db.DB_PATH)
+    try:
+        if not conn.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (COUNTS_TABLE,)).fetchone():
+            return none(COUNTS_NOT_STORED)
+        try:
+            rows = conn.execute(f"SELECT symbol, shares_outstanding, as_of, source FROM {COUNTS_TABLE} ORDER BY symbol").fetchall()
+        except sqlite3.Error as exc:
+            log.warning("desk: share counts not read: %s", exc)
+            return none(COUNTS_UNREADABLE)
+    finally:
+        conn.close()
+    counts: dict[str, dict] = {}
+    excluded: list[dict] = []
+    for sym, shares, as_of, source in rows:
+        problem = _count_problem(sym, shares, as_of, source, today)
+        if problem:
+            excluded.append({"symbol": str(sym), "reason": f"set aside: {problem}"})
+            continue
+        counts[sym] = {"shares_outstanding": float(shares), "as_of": as_of, "source": source}
+    if not counts:
+        return none(COUNTS_EMPTY, excluded)
+    return {"stored": True, "reason": None, "counts": counts, "excluded": excluded}
+
+
+def stored_counts() -> dict:
+    """The request's generation's `desk_share_counts` item (a lookup, never a read of the file)."""
+    from api.worker import get_worker
+
+    return get_worker().result("desk_share_counts")
+
+
+def cap_counts(symbols: list[str]) -> dict[str, dict]:
+    """The stored counts a cap-weighted basket reads: awaiting, with the reason, when the generation holds
+    none; 422 `unsupported` naming every name without one."""
+    item = stored_counts()
+    if not item["stored"]:
+        raise env.Awaiting(f"Awaiting refresh: cap weight reads stored share counts, and {item['reason']}.")
+    missing = [s for s in symbols if s not in item["counts"]]
+    if missing:
+        raise env.Unsupported(f"Cap weight needs a stored share count for every name: {', '.join(missing)} "
+                              f"{'has' if len(missing) == 1 else 'have'} none. The full refresh stores counts for "
+                              "the preset baskets' names.")
+    return {s: item["counts"][s] for s in symbols}
+
+
+def shares(params: list[tuple[str, str]]) -> dict:
+    """§12.18 (desk/cap-weight): the stored share counts, so the page knows which baskets can be cap-weighted."""
+    if params:
+        raise env.Unsupported(f"There is no {' or '.join(sorted({k for k, _ in params}))} parameter.")
+    item = stored_counts()
+    if not item["stored"]:
+        raise env.Awaiting(f"Awaiting refresh: {item['reason']}.")
+    counts = item["counts"]
+    return {
+        "provider": counts_provider(counts.values()),
+        "source": COUNTS_SOURCE,
+        # the oldest read (a payload's top-level `as_of` is the envelope's, §12.0)
+        "counts_as_of": min(c["as_of"] for c in counts.values()),
+        "counts": [{"symbol": s, **c} for s, c in counts.items()],
+        "excluded": item["excluded"],
+    }

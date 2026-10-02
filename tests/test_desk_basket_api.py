@@ -328,3 +328,185 @@ def test_a_symbol_with_no_adjusted_close_at_all_is_refused():
     with pytest.raises(env.Refused) as ei:
         desk_basket.history_of({"bars": [{"ts": "2026-09-24T00:00:00Z", "close": 10.0, "adjusted": False}]}, "RAW")
     assert ei.value.status == 502 and "no adjusted closes" in ei.value.message
+
+
+# ── desk/cap-weight: weighting=cap from the stored share counts ─────────────
+
+COUNTS = {"NVDA": 24_147_000_000, "AVGO": 4_773_629_865, "CRWV": 458_871_690}
+
+
+def _counts_store(path, rows=None, *, table=True, extra=()):
+    """A tiny file holding the share_counts table as the full refresh writes it (rows read 2026-09-24), or no
+    table at all. With `extra` rows, as a hand might add them, the table is one without the step's CHECK."""
+    from src.market_data import share_counts as sc
+
+    with sqlite3.connect(path) as c:
+        c.execute("CREATE TABLE t (x)")
+        if table and extra:
+            c.execute("CREATE TABLE share_counts (symbol TEXT PRIMARY KEY, shares_outstanding REAL, as_of TEXT, source TEXT)")
+        if table:
+            sc.write_counts(c, COUNTS if rows is None else rows, "2026-09-24")
+            c.executemany("INSERT INTO share_counts VALUES (?, ?, ?, ?)", extra)
+    return path
+
+
+@pytest.fixture()
+def served_counts(tmp_path, monkeypatch, install_worker):
+    """start(...) serves the share counts item over a file built by _counts_store, with the mocked provider."""
+    def start(rows=None, **kw):
+        f = _counts_store(tmp_path / "counts.db", rows, **kw)
+        monkeypatch.setattr(db, "DB_PATH", f)
+        db.reset_connections_for_tests()
+        w = install_worker(worker_mod.AnalyticsWorker(items=[("desk_share_counts", desk_basket.desk_share_counts)], poll_s=0.05, preload=False))
+        w.start(serving=True)
+        assert w.wait_published(timeout=30)
+        monkeypatch.setattr(market, "daily_bars", _bars)
+        return w
+
+    return start
+
+
+def test_a_cap_weighted_basket_is_weighted_by_market_value_at_its_start(served_counts):
+    served_counts()
+    r = price(legs="NVDA,AVGO,CRWV", weighting="cap", method="hold", notional="1000000")
+    body = dc.check_response("/basket/price", r)
+    d = body["data"]
+    assert d["weighting"] == "cap" and d["start"] == SESSIONS[120]  # CRWV's first close sets the start
+    cw = d["cap_weights"]
+    assert cw["provider"] == "Yahoo" and cw["as_of"] == "2026-09-24" and cw["start"] == SESSIONS[120]
+    # Each weight is its count × its close on the start over the sum.
+    closes = {s: float(UNIVERSE[s][1][120]) for s in COUNTS}
+    mv = {s: COUNTS[s] * closes[s] for s in COUNTS}
+    want = {s: mv[s] / sum(mv.values()) for s in COUNTS}
+    assert {l["symbol"]: l["target_weight"] for l in d["legs"]} == pytest.approx(want)
+    for l in cw["legs"]:
+        s = l["symbol"]
+        assert (l["shares_outstanding"], l["as_of"]) == (COUNTS[s], "2026-09-24")
+        assert (l["close_start"], l["value_start"], l["weight_start"]) == pytest.approx((closes[s], mv[s], want[s]))
+    # The index is the three companies' market value over the start's.
+    end_mv = sum(COUNTS[s] * float(UNIVERSE[s][1][-1]) for s in COUNTS)
+    assert d["total_return"] == pytest.approx(end_mv / sum(mv.values()) - 1)
+    # The same names at typed weights are another basket, and say so.
+    t = price(legs="NVDA:40,AVGO:35,CRWV:25").json()["data"]
+    assert t["weighting"] == "target" and t["cap_weights"] is None and t["total_return"] != pytest.approx(d["total_return"])
+
+
+def test_a_cap_weighted_hedge_reads_the_same_counts_and_says_so(served_counts):
+    served_counts()
+    r = hedge(legs="NVDA,AVGO,CRWV", weighting="cap", notional="2000000")
+    d = dc.check_response("/basket/hedge", r)["data"]
+    assert d["weighting"] == "cap" and d["cap_weights"]["as_of"] == "2026-09-24"
+    assert d["etfs"][0]["short_usd"] == pytest.approx(d["etfs"][0]["hedge_ratio"] * 2e6)
+
+
+def test_monthly_cap_weight_resets_on_each_months_first_session_and_matches_held(served_counts):
+    served_counts()
+    held = price(legs="NVDA,AVGO,CRWV", weighting="cap", method="hold").json()["data"]
+    monthly = price(legs="NVDA,AVGO,CRWV", weighting="cap", method="monthly").json()["data"]
+    months = sorted({d[:7] for d in SESSIONS[120:]})
+    assert held["rebalances"] == 1 and monthly["rebalances"] == len(months)  # the start, then each later month's first session
+    assert monthly["total_return"] == pytest.approx(held["total_return"], rel=1e-10)
+
+
+def test_a_name_without_a_stored_count_is_refused_naming_it(served_counts):
+    served_counts()
+    r = price(legs="NVDA,NBIS,AVGO,SMH", weighting="cap")
+    body = dc.check_response("/basket/price", r)
+    assert r.status_code == 422 and body["error"]["code"] == "unsupported"
+    assert body["error"]["message"] == ("Cap weight needs a stored share count for every name: NBIS, SMH have none. "
+                                        "The full refresh stores counts for the preset baskets' names.")
+
+
+@pytest.mark.parametrize("q, words", [
+    ({"legs": "NVDA:50,AVGO:50", "weighting": "cap"}, "give the leg 'NVDA:50' as its ticker alone"),
+    ({"legs": "NVDA,AVGO", "weighting": "equal"}, "The weighting 'equal' is not target or cap."),
+    ({"legs": "NVDA,AVGO"}, "has no weight"),
+    ({"weighting": "cap"}, "A cap-weighted basket needs its legs"),
+    ({"legs": "NVDA,NVDA", "weighting": "cap"}, "twice"),
+])
+def test_a_cap_request_that_cannot_be_priced_is_422_naming_what(served_counts, q, words):
+    served_counts()
+    r = price(**q)
+    assert r.status_code == 422 and words in dc.check_response("/basket/price", r)["error"]["message"]
+
+
+def test_an_old_database_without_the_table_serves_and_says_cap_weight_awaits_the_refresh(served_counts):
+    """A file the share-count step has not reached: /basket/shares and a cap request answer awaiting with the
+    reason; the basket at its own weights is priced as before."""
+    served_counts(table=False)
+    r = client.get("/api/desk/basket/shares")
+    body = dc.check_response("/basket/shares", r)
+    assert r.status_code == 200 and body["status"] == "awaiting" and body["unavailable"] == {
+        "reason": "Awaiting refresh: share counts are not stored in this database yet; the next full refresh reads them from Yahoo.",
+        "until": None}
+    r = price(legs="NVDA,AVGO", weighting="cap")
+    body = dc.check_response("/basket/price", r)
+    assert body["status"] == "awaiting" and body["unavailable"]["reason"] == (
+        "Awaiting refresh: cap weight reads stored share counts, and share counts are not stored in this database yet; "
+        "the next full refresh reads them from Yahoo.")
+    assert hedge(legs="NVDA,AVGO", weighting="cap").json()["status"] == "awaiting"
+    ready = price(legs="NVDA:50,AVGO:50")
+    assert dc.check_response("/basket/price", ready)["status"] == "ready" and ready.json()["data"]["weighting"] == "target"
+
+
+def test_an_empty_table_awaits_too(served_counts):
+    served_counts(rows={})
+    body = client.get("/api/desk/basket/shares").json()
+    assert body["status"] == "awaiting" and body["unavailable"]["reason"] == (
+        "Awaiting refresh: no share count is stored yet; the next full refresh reads them from Yahoo.")
+
+
+def test_basket_shares_lists_the_stored_counts_and_sets_a_bad_row_aside(served_counts):
+    """Each row is read on its own: a count that is not positive, a read date after today, a malformed date and
+    a row with no source are set aside with why, and every other count stands."""
+    served_counts(extra=[("ZERO", 0, "2026-09-24", "yfinance"), ("LATE", 1e9, "2099-01-01", "yfinance"),
+                         ("BADD", 1e9, "Sep 24", "yfinance"), ("NOSRC", 1e9, "2026-09-23", "")])
+    r = client.get("/api/desk/basket/shares")
+    d = dc.check_response("/basket/shares", r)["data"]
+    assert d["provider"] == "Yahoo" and d["counts_as_of"] == "2026-09-24" and d["source"] == desk_basket.COUNTS_SOURCE
+    assert d["counts"] == [{"symbol": s, "shares_outstanding": float(COUNTS[s]), "as_of": "2026-09-24", "source": "yfinance"}
+                           for s in sorted(COUNTS)]
+    assert {e["symbol"]: e["reason"] for e in d["excluded"]} == {
+        "BADD": "set aside: its read date 'Sep 24' is not a YYYY-MM-DD date",
+        "LATE": "set aside: its read date 2099-01-01 is after today (" + __import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc).astimezone(__import__("api.calendar", fromlist=["NY"]).NY).date().isoformat() + ")",
+        "NOSRC": "set aside: it names no source",
+        "ZERO": "set aside: its count 0.0 is not a positive number",
+    }
+    # A set-aside name is a name without a count.
+    r = price(legs="NVDA,ZERO", weighting="cap")
+    assert r.status_code == 422 and "ZERO has none" in r.json()["error"]["message"]
+    assert client.get("/api/desk/basket/shares", params={"symbols": "NVDA"}).status_code == 422
+
+
+def test_the_hedge_ranking_follows_the_chosen_weights():
+    """X moves exactly with SMH and Y exactly with XLU, three times as volatile. At equal weight Y's swings
+    dominate the basket and XLU fits it best; cap-weighted, X is 99% of the basket and SMH fits it best. The
+    hedge ratio, the short and the stress follow the ranking."""
+    from src.desk import basket as bk
+
+    rng = np.random.default_rng(29)
+    n = len(SESSIONS)
+    rets = {sym: rng.normal(0, 0.01, n) for sym in desk_basket.HEDGE_ETFS}
+    rets["XLU"] = rng.normal(0, 0.03, n)
+    for r in rets.values():
+        r[0] = 0.0
+
+    def hist(r):
+        return bk.History(tuple(SESSIONS), tuple(50.0 * np.cumprod(1 + r)), tuple([1e9] * n))
+
+    histories = {sym: hist(r) for sym, r in rets.items()}
+    histories["X"], histories["Y"] = hist(rets["SMH"]), hist(rets["XLU"])
+    equal = desk_basket.hedge_answer(histories, [("X", 50.0), ("Y", 50.0)], "hold", 1e6)
+    counts = {"X": {"shares_outstanding": 1e10, "as_of": "2026-09-24", "source": "yfinance"},
+              "Y": {"shares_outstanding": 1e8, "as_of": "2026-09-24", "source": "yfinance"}}
+    cap = desk_basket.hedge_answer(histories, [("X", None), ("Y", None)], "hold", 1e6, counts=counts)
+    assert equal["top"] == "XLU" and cap["top"] == "SMH"
+    # At equal weight both names show (XLU first, SMH second); cap-weighted, Y's 1% leaves XLU with almost nothing.
+    assert [e["symbol"] for e in equal["etfs"]][:2] == ["XLU", "SMH"]
+    assert next(e for e in cap["etfs"] if e["symbol"] == "XLU")["r2_1y"] < 0.05
+    top_cap = cap["etfs"][0]
+    assert top_cap["r2_1y"] > 0.97 and top_cap["hedge_ratio"] == pytest.approx(0.99, abs=0.02)
+    # Both start at 50: X's weight is 1e10 / (1e10 + 1e8).
+    assert cap["cap_weights"]["legs"][0]["weight_start"] == pytest.approx(1e10 / 1.01e10) and equal["cap_weights"] is None
+    assert all(s["hedge"] == "SMH" for s in cap["stress"]) and all(s["hedge"] == "XLU" for s in equal["stress"])

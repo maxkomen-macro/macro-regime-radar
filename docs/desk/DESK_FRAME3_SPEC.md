@@ -71,6 +71,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
+| Basket & Hedge: cap weight, each name's market value at the basket's start from the stored share counts; the preset's default, Equal-weight beside it | LIVE (§12.15 `weighting=cap`, §12.18; desk/cap-weight) for a basket whose every name has a stored count (the preset baskets' names); any other basket, or a database the full refresh has not reached, shows it unavailable with the reason and is priced at its own weights | share counts come from Yahoo through the full refresh: this EODHD plan carries no fundamentals |
 | Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
 | Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | short interest, open interest and 13F holdings not ingested |
 | Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | no basket index series is stored for the engine to run on |
@@ -1202,7 +1203,7 @@ still runs on the Client view (S-32).
 `/study/catalog`, `/study/events`, `/ledger`, `/regime`, `/technicals`,
 `/macro`, `/pipeline`, since desk/fill-etf `/sectors` (§12.14), and Basket
 & Hedge's `/basket/price` and `/basket/hedge` (§12.15, §12.16, desk/books), and the stock search's `/instruments` (§12.17,
-desk/usability).
+desk/usability), and Basket & Hedge's stored share counts, `/basket/shares` (§12.18, desk/cap-weight).
 Two text exceptions: `/study/events` with `Accept: text/csv` (§12.4) and
 `/pipeline/ddl` (`text/plain; charset=utf-8`). The deferred resources of
 §12.13 (`/vol`, `/positions`, `/basket/:id`, `/hedge`) are GET-only stubs
@@ -1926,7 +1927,12 @@ others (422 `unsupported` naming what is wrong): `legs` = `TICKER:weight,…`,
 US-listed stocks and ETFs, weights in percent, each above 0 and at most 100,
 adding to 100 (within 1e-6), at most 25 names, none twice; `method` = `hold`
 (default) | `monthly`; `notional` in dollars, above 0 and at most 1e12
-(default 1000000). Prices: `api/providers/market.daily_bars`, EODHD's daily
+(default 1000000); `weighting` = `target` (default: the legs' weights) |
+`cap` (desk/cap-weight: each name weighted by its market value at the start,
+from the share counts the full refresh stores, §12.18; the legs are then
+tickers alone, `legs=NVDA,AVGO,…`, and a leg with a weight is refused; a name
+without a stored count is 422 `unsupported` naming it; a database without
+the counts answers awaiting, with the reason). The API never calls Yahoo. Prices: `api/providers/market.daily_bars`, EODHD's daily
 bars (`/api/market/candles/{SYM}?range=2Y`): two years, split- and
 dividend-adjusted closes with volume, completed New York sessions only,
 cached per ticker per session. Every series sits on the XNYS calendar
@@ -1941,6 +1947,8 @@ ceiling. No block envelopes.
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
 | `method` | `"hold"` \| `"monthly"` | required | — | — | A: the request's |
+| `weighting` | `"target"` \| `"cap"` | required | — | — | A: the request's (desk/cap-weight) |
+| `cap_weights` | `{provider, source, as_of, start, legs: [{symbol, shares_outstanding, as_of, close_start, value_start, weight_start}]}` | required, nullable | shares; USD; fraction | `as_of`: the oldest read among the names | S `share_counts` (§12.18) and N `price_basket`: each name's weight at `start` is its share count × its adjusted close there over the basket's sum (`value_start`, `weight_start`, equal to `legs[].target_weight`), then held; monthly, reset to cap weights at each later month's first index session, which with one set of counts changes no holding; null for `target`. The page's label: "Cap-weighted: market value at the start, current share counts (<provider>, as of <as_of>)" |
 | `notional` | number | required | USD | — | A |
 | `provider`, `source` | string | required | — | — | A: `"EODHD"`, and the source in words |
 | `freq` | `"daily"` | required | — | — | A |
@@ -1953,10 +1961,10 @@ ceiling. No block envelopes.
 | `start_gap_session` | date | required, nullable | — | — | N: for a gap, the session before `start` |
 | `end`, `sessions` | date, integer | required | — | — | N: the last index session; how many index sessions |
 | `missing_sessions` | date[] | required | — | — | N: sessions after `start` on which some name has no close; they are not index sessions, never filled |
-| `rebalances` | integer | required | — | — | N: 1 for `hold`; for `monthly` the start plus each completed month (its last XNYS session no later than `end`, the final session included), at the basket's last index session that month |
+| `rebalances` | integer | required | — | — | N: 1 for `hold`; for `monthly` the start plus each completed month (its last XNYS session no later than `end`, the final session included), at the basket's last index session that month; for a cap-weighted `monthly` basket the start plus each later month's first index session |
 | `total_return` | number | required | fraction | `start` to `end` | N |
 | `excluded` | `[{symbol, n, reason}]` | required | sessions | — | S: closes left out of the answer (Codex R-07): a bar EODHD served without an adjusted close is never priced from its raw close; a symbol with none at all is refused (`provider`, 502) |
-| `legs[]` | `{symbol, target_weight, weight_now, first_close, price_end, return, contribution, dollars, adv_usd, adv_window, adv_missing, days_to_trade}` | required | fractions; USD; days | — | N `price_basket`: `contribution` sums to `total_return`; `adv_usd` the mean of unadjusted close × volume over the trailing 20 XNYS sessions ending at `end`, null unless every one of them has a dollar volume (Codex R-05; `adv_missing` counts those without, `adv_window` names the 20 and `n` the valid); `days_to_trade` = `target_weight × notional / (0.20 × adv_usd)` |
+| `legs[]` | `{symbol, target_weight, weight_now, first_close, price_end, return, contribution, dollars, adv_usd, adv_window, adv_missing, days_to_trade}` | required | fractions; USD; days | — | N `price_basket`: `contribution` sums to `total_return`; `adv_usd` the mean of unadjusted close × volume over the trailing 20 XNYS sessions ending at `end`, null unless every one of them has a dollar volume (Codex R-05; `adv_missing` counts those without, `adv_window` names the 20 and `n` the valid); `days_to_trade` = `target_weight × notional / (0.20 × adv_usd)`; for a cap-weighted basket `target_weight` is the weight at `start` and `dollars` are a basket bought at the last close, its market-value weight there × `notional` (desk/cap-weight) |
 | `concentration` | `{top3_share, top3, effective_n, avg_pairwise_corr, corr_window}` | required | fraction; names | at `end` | N: weights at the last close; `effective_n` = 1 / Σ w²; the mean pairwise Pearson correlation of the names' one-session returns over the last 252 sessions every name has one (all when fewer, null under 60) |
 | `liquidity` | `{participation: 0.2, adv_sessions: 20, basket_days, binding, missing, reason}` | required | days | — | N: the largest `days_to_trade` and its name; null, with `missing` and `reason`, when any leg has no ADV (Codex R-04) |
 | `index` | object | required | index points | `index.date` · daily | E `src/desk/technicals.level_technicals`, the function `/technicals` reads (§12.7), over the index aligned to the XNYS calendar: `price`, `date`, `chg_1d` (+`_dates`), `ret_1y` (+`_dates`), `ma50`, `ma200` (+`_window`), `vs_ma50`, `vs_ma200`, `trend`, `cross`, as §12.7 defines them; and `crosses[]` (every golden and death cross), `rsi` + `rsi_date` (RSI(14) by §12.13's rule), `drawdown` `{now, peak_date, peak, max, max_date, max_peak_date, since}` (close over its running peak − 1), `realized_vol_21d` + `realized_vol_window` (sample standard deviation of the last 21 daily log returns × √252, null when any of the 22 closes is missing) |
@@ -1966,7 +1974,7 @@ ceiling. No block envelopes.
 
 ### 12.16 `GET /basket/hedge` (desk/books)
 
-The same parameters, refusals, prices and envelope as §12.15. The ETFs are
+The same parameters (`weighting` included), refusals, prices and envelope as §12.15. The ETFs are
 fitted to the basket's index by least squares on daily simple returns
 between consecutive sessions both have a close (`src/desk/basket.regression`),
 over the last 252 (1y) and 60 (60d) of them, each window complete or not
@@ -1977,7 +1985,7 @@ R-01). The one-year R² ranks them (the 60-day one when no ETF has a year:
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
 |---|---|---|---|---|---|
-| `method`, `notional`, `provider`, `source`, `freq`, `prices_as_of`, `start` | as §12.15 | required | — | — | A, N |
+| `method`, `weighting`, `cap_weights`, `notional`, `provider`, `source`, `freq`, `prices_as_of`, `start` | as §12.15 | required (`cap_weights` nullable) | — | — | A, N, S |
 | `ranked_by` | `"r2_1y"` \| `"r2_60d"` | required | — | — | N |
 | `excluded` | as §12.15 | required | — | — | S |
 | `etfs[]` | exactly the eight, ranked: `{symbol, label, rank, basis, r2_1y, r2_60d, beta_1y, beta_60d, hedge_ratio, short_usd, basket_vol, residual_vol, vol_reduction, window_1y, window_60d, reason}` | required | R² fraction; beta; USD; annualized vol fractions | own windows | N `hedge_rows`: symbols SMH SOXX QQQ XLK IGV XLU SPY IWM (A: fixed, with their names); `hedge_ratio` = beta = cov / var of the ETF; `short_usd` = beta × notional; `basket_vol` and `residual_vol` = sample sd × √252 of the basket's returns and of basket − beta × ETF; `vol_reduction` = 1 − residual / basket (= 1 − √(1 − R²)); ties keep the list's order; `reason` when no window is complete |
@@ -2000,6 +2008,25 @@ parameters; any is refused 422 `unsupported`.
 | `instruments[].kind` | `"etf"` \| `"index"` | required | — | — | A |
 | `instruments[].first`, `last` | date | required | — | daily · `asset_prices` | S: the first and last stored session on or before the generation's as-of |
 | `instruments[].source` | `"asset_prices"` | required | — | — | A |
+
+### 12.18 `GET /basket/shares` (desk/cap-weight)
+
+The share counts the full refresh stores for every preset basket's names
+(`share_counts`, `src/market_data/share_counts.py`): Yahoo's shares
+outstanding, each checked against Yahoo's market cap in US dollars (an ADR
+in ADR units, a multi-class company's listed class), so the page knows which
+baskets it can cap-weight. A worker item (`desk_share_counts`), rebuilt with
+every generation; the API never calls Yahoo. No parameters; any is refused
+422 `unsupported`. A database without the table, or with no readable row,
+answers awaiting: "Awaiting refresh: share counts are not stored in this
+database yet; the next full refresh reads them from Yahoo."
+
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `provider`, `source` | string | required | — | — | A: `"Yahoo"`, and the source in words |
+| `counts_as_of` | date | required | — | the oldest read | S (a payload's top-level `as_of` would be the envelope's) |
+| `counts[]` | `{symbol, shares_outstanding, as_of, source}` | required, at least one | shares, in the unit of the listing's price | `as_of`: the New York date the full refresh read it | S `share_counts`, each row checked on its own |
+| `excluded[]` | `{symbol, reason}` | required, may be empty | — | — | S: a stored row set aside (a count that is not a positive number, a read date that is malformed or after today, no source), with why |
 
 ## 13. Build order, engine scope and acceptance
 

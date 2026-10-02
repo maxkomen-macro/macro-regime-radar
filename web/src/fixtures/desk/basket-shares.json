@@ -1,0 +1,68 @@
+{
+ "provider": "Yahoo",
+ "source": "Yahoo's shares outstanding, read by the full refresh and checked against Yahoo's market cap",
+ "counts_as_of": "2026-10-01",
+ "counts": [
+  {
+   "symbol": "AMD",
+   "shares_outstanding": 1632475042.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "ANET",
+   "shares_outstanding": 1261224648.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "AVGO",
+   "shares_outstanding": 4773629865.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "CEG",
+   "shares_outstanding": 354307379.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "CRWV",
+   "shares_outstanding": 458871690.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "MU",
+   "shares_outstanding": 1129393151.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "NBIS",
+   "shares_outstanding": 238400165.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "NVDA",
+   "shares_outstanding": 24147000000.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "TSM",
+   "shares_outstanding": 5186474013.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  },
+  {
+   "symbol": "VRT",
+   "shares_outstanding": 384988173.0,
+   "as_of": "2026-10-01",
+   "source": "yfinance"
+  }
+ ],
+ "excluded": []
+}

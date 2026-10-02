@@ -119,6 +119,14 @@ def desk_basket_hedge(request: Request) -> Response:
     return _response(env.answer("/basket/hedge", lambda: desk_basket.hedge(list(request.query_params.multi_items()))))
 
 
+@router.get("/basket/shares")
+def desk_basket_shares(request: Request) -> Response:
+    """§12.18 (desk/cap-weight): the stored share counts, so the page knows which baskets can be cap-weighted."""
+    from api import desk_basket
+
+    return _response(env.answer("/basket/shares", lambda: desk_basket.shares(list(request.query_params.multi_items()))))
+
+
 @router.get("/basket/{basket_id}")
 def desk_basket(basket_id: str) -> Response:
     return _response(env.deferred("/basket"))
