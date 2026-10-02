@@ -16,7 +16,27 @@ import { droppedOf } from "../data/schema";
 import { targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
+
+/**
+ * desk/pdf-polish item 6: the hover on "Edge vs a normal period", the owner's two sentences, the target read from
+ * the study (the S&P for the presets that target it): the range under it is the interval on the median's excess
+ * over the baseline (api/desk_v2.py horizons ci_lo/ci_hi; src/desk/event_study.py horizon_stats), and Reliable
+ * needs that interval on one side of zero (judge_exclusion, verdict_v1).
+ */
+export function edgeDef(target: string | null | undefined): string {
+  const who = !target ? "the target" : target === "S&P 500" ? "the S&P" : `the ${target}`;
+  return `How much better or worse than a typical period of the same length ${who} did after these events. The verdict is Reliable only if the whole range sits on one side of zero.`;
+}
+
+/** "Edge vs a normal period", its §1.4 lowercase "vs" inside the uppercase label, carrying its hover. */
+function EdgeLabel({ target }: { target: string | null | undefined }) {
+  return (
+    <Term def={edgeDef(target)}>
+      Edge <span className="dk-lc">vs</span> a normal period
+    </Term>
+  );
+}
 
 /** The rail with no answer: its section labels, and why there is nothing under them (§1.7). A served
  * study, Too few included, is scored (v4 B-02) and gets the whole rail. */
@@ -29,9 +49,9 @@ export function RailPlaceholder() {
   if (unserved)
     return (
       <>
-        {["Verdict", "By regime · a month later", "Last five events", "Range vs normal"].map((l) => (
+        {["Verdict", "By regime · a month later", "Last five events", "Edge vs a normal period"].map((l) => (
           <div key={l} className="es-rail-empty">
-            <p className="dk-stat-label">{defineTerms(l)}</p>
+            <p className="dk-stat-label">{l.startsWith("Edge") ? <EdgeLabel target={null} /> : defineTerms(l)}</p>
           </div>
         ))}
         <UnservedLine block={unserved} />
@@ -43,9 +63,7 @@ export function RailPlaceholder() {
         "Verdict",
         "By regime · a month later",
         "Last five events",
-        <>
-          Range <span className="dk-lc">vs</span> normal
-        </>,
+        <EdgeLabel key="edge" target={null} />,
       ].map((l, i) => (
         <div key={i} className="es-rail-empty">
           <p className="dk-stat-label">{defineTerms(l)}</p>
@@ -192,12 +210,13 @@ export default function StudyRail({
       <DroppedNote n={droppedOf(study, "last_events")} one="event" />
 
       <div className="es-range-head">
+        {/* desk/pdf-polish 6: "Edge vs a normal period · 90% range", the level the engine's one (§14.3,
+            `verdict_confidence`), said in words; there is no control for another. */}
         <p className="dk-stat-label">
-          Range <span className="dk-lc">vs</span> normal
-        </p>
-        {/* §14.3: the engine's one level, said in words (`verdict_confidence`); there is no control for another. */}
-        <p className="es-conf-word" data-testid="es-conf">
-          {fin(study.verdict_confidence) ? `${Math.round(study.verdict_confidence * 100)}% interval` : "the engine's interval"}
+          <EdgeLabel target={target} /> ·{" "}
+          <span className="es-conf-word" data-testid="es-conf">
+            {fin(study.verdict_confidence) ? `${Math.round(study.verdict_confidence * 100)}% range` : "the engine's range"}
+          </span>
         </p>
       </div>
       {horizons ? (

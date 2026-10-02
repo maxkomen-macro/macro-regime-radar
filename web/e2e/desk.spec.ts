@@ -404,7 +404,8 @@ test.describe("desk v2", () => {
     expect(text.trim().split("\n")).toHaveLength(19);
     // §14.3: the engine's one level, in words; no confidence control.
     await expect(page.getByRole("group", { name: "Confidence" })).toHaveCount(0);
-    await expect(page.getByTestId("es-conf")).toHaveText("90% interval");
+    // desk/pdf-polish 6: "Edge vs a normal period · 90% range".
+    await expect(page.getByTestId("es-conf")).toHaveText("90% range");
     expect(calls.some((c) => c.includes("confidence"))).toBe(false);
     await expect(page).not.toHaveURL(/confidence/);
     // "Act on this" carries the question to the Position Monitor.

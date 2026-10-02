@@ -6,6 +6,7 @@
  * export and import, fewer than 10 events is one sentence and two fixes, and
  * Advanced opens the events, the resampling detail, the rules and the provenance.
  */
+import { edgeDef } from "./StudyRail";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes, useLocation } from "react-router-dom";
@@ -166,10 +167,24 @@ describe("Event Study tab", () => {
     expect(within(rail).getByTestId("es-tagged")).toHaveTextContent("Events are tagged with the label known at the time: a month's print governs two months later.");
     expect(rail).toHaveTextContent("Apr 16, 2025Overheating+12.0%");
     expect(rail).toHaveTextContent("−1.6 to +4.1 pts");
-    // §14.3: the engine's one level, in words; no chip for another.
-    expect(within(rail).getByTestId("es-conf")).toHaveTextContent("90% interval");
+    // §14.3: the engine's one level, in words; no chip for another. desk/pdf-polish 6: the owner's label and hover,
+    // the target read from the study (this preset's is the S&P).
+    expect(within(rail).getByTestId("es-conf")).toHaveTextContent("90% range");
+    const head = rail.querySelector(".es-range-head .dk-stat-label")!;
+    expect(head.textContent).toBe("Edge vs a normal period · 90% range");
+    const edge = within(rail).getByText(/^Edge/);
+    expect(edge).toHaveClass("dk-term");
+    expect(edge.getAttribute("data-def")).toBe("How much better or worse than a typical period of the same length the S&P did after these events. The verdict is Reliable only if the whole range sits on one side of zero.");
+    expect(rail).not.toHaveTextContent(/Range vs normal|90% interval\b(?! on)/);
     expect(within(rail).queryByRole("group", { name: "Confidence" })).toBeNull();
     expect(rail).not.toHaveTextContent("All four include zero");
+  });
+
+  it("desk/pdf-polish 6: the edge hover names the study's own target, the S&P for an S&P study", () => {
+    const rule = "The verdict is Reliable only if the whole range sits on one side of zero.";
+    expect(edgeDef("S&P 500")).toBe(`How much better or worse than a typical period of the same length the S&P did after these events. ${rule}`);
+    expect(edgeDef("10Y Treasury")).toBe(`How much better or worse than a typical period of the same length the 10Y Treasury did after these events. ${rule}`);
+    expect(edgeDef(null)).toBe(`How much better or worse than a typical period of the same length the target did after these events. ${rule}`);
   });
 
   it("the slots show the served question; a changed slot is your own and Run writes the address", async () => {
@@ -387,7 +402,7 @@ describe("a study with a block missing (Codex R-10)", () => {
     expect(answer()).toHaveTextContent(/Events\s*18\s*count awaiting refresh/);
     expect(answer()).toHaveTextContent(/Up a month later\s*Awaiting refresh/);
     expect(answer()).toHaveTextContent(/Median at a month\s*Awaiting refresh/);
-    expect(rail()).toHaveTextContent(/Range vs normal\s*90% interval\s*Awaiting refresh/);
+    expect(rail()).toHaveTextContent(/Edge vs a normal period · 90% range\s*Awaiting refresh/);
     expect(rail()).toHaveTextContent(/By regime · a month later.*Goldilocks/);
   });
 
