@@ -33,7 +33,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   logret: { forms: ["log returns", "log return"], text: "A log return is the natural log of the price ratio; for moves this size it is close to the percent change." },
   corr: { forms: ["60-day correlation", "Correlation", "correlation", "Corr"], text: "Correlation runs from −1 to +1: how closely two assets' daily returns move together, here over the last 60 sessions." },
   breadth: { forms: ["Breadth", "breadth"], text: "Breadth is how much of the market joins a move; here, how many sector ETFs sit above their 50-day and 200-day averages, and the average stock against the index." },
-  baseline: { forms: ["Vs normal", "vs normal", "a normal stretch"], text: "Normal is the study's baseline: the same horizon's move over every evaluable session of its sample, not only after events." },
+  baseline: { forms: ["a normal stretch"], text: "Normal is the study's baseline: the same horizon's move over every evaluable session of its sample, not only after events." },
+  // Codex R-05: the served excess median (api/desk_v2.py vs_normal: 100 × (median − baseline_median) of log moves, bp as served).
+  vsnormal: { forms: ["Vs normal", "vs normal"], text: "Vs normal is the difference between the events' median log return and the same horizon's median from every evaluable session, times 100, or in basis points for a yield or spread." },
   blocks: { forms: ["overlap blocks"], text: "Events whose outcome windows overlap form one block and are resampled together, so one market episode counts once." },
   interval: { forms: ["90% interval"], text: "The range the median's excess over normal falls in on 90% of resampled histories." },
   odds: { forms: ["odds", "Odds"], text: "Regime odds are a strength score from the two trends, how far each slope sits from its own history, not a fitted probability." },
@@ -121,7 +123,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-times": { forms: [], text: "Times is how often the signal fired in its sample with a complete 20-session outcome from its entry." },
   "col-up-month": { forms: [], text: "Up a month later is the share of those times the target was higher 20 sessions after entry." },
   "col-median": { forms: [], text: "Median is the middle move of the target over the 20 sessions from each firing's entry." },
-  "col-vs-normal": { forms: [], text: "Vs normal is that median less the median 20-session move from every evaluable session of the sample, in percentage points, or bp for a yield." },
+  "col-vs-normal": { forms: [], text: "Vs normal is that median less the median 20-session move over every evaluable session of the sample, in log returns times 100, or basis points for a yield or spread." },
   "col-verdict": { forms: [], text: "Verdict is the 20-session result by the scoring rule: Reliable, Suggestive, No edge or Too few." },
   "col-now-firing": { forms: [], text: "Now says whether the signal is firing on the last session and for how many days, is quiet, or is stale because an input is behind." },
   // Position Monitor (positions/monitor.ts, positions/store.ts).

@@ -315,7 +315,7 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
           {/* The row's own excess over its own baseline (§1.9), never a universal normal month. */}
           {ok(row.vs_normal) && vsNormalText(row.vs_normal, row.target_unit ?? undefined) ? (
             <>
-              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["baseline"]}>vs normal</Term>)
+              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["vsnormal", "baseline"]}>vs normal</Term>)
             </>
           ) : null}
         </>

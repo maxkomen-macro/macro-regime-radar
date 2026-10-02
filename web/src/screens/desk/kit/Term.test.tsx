@@ -29,6 +29,17 @@ describe("hover definitions (desk/usability item 11, §14.11)", () => {
     }
   });
 
+  it("Codex R-05: vs normal is the difference of median log returns times 100, or basis points for a yield or spread", () => {
+    // api/desk_v2.py vs_normal: 100 × (median − baseline_median) for a log unit, the bp difference for bp.
+    for (const id of ["vsnormal", "col-vs-normal"]) {
+      expect(GLOSSARY[id].text, id).toMatch(/log returns?\b.*\btimes 100\b/);
+      expect(GLOSSARY[id].text, id).toMatch(/basis points for a yield or spread/);
+      expect(GLOSSARY[id].text, id).not.toMatch(/percentage points/);
+    }
+    expect(termsIn("+0.4 pts vs normal")).toEqual(["vsnormal"]);
+    expect(termsIn("against a normal stretch")).toEqual(["baseline"]);
+  });
+
   it("each definition is one plain sentence", () => {
     for (const [id, t] of Object.entries(GLOSSARY)) {
       expect(t.text.endsWith("."), id).toBe(true);

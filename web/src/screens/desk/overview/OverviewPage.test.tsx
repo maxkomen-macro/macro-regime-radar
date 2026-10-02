@@ -13,6 +13,7 @@ import type { OverviewResponse } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import { activeSignalsWords, monthsBetween, recessionLag, recessionWords, regimeSub, sinceItems, trendSub, trendWords } from "./OverviewPage";
+import { GLOSSARY } from "../kit/glossary";
 import { writtenId } from "../kit/Term";
 import positions from "../../../fixtures/desk/positions.json";
 import { FIXTURE_META } from "../../../fixtures/desk";
@@ -186,6 +187,9 @@ describe("Overview tab", () => {
     const row = within(card).getAllByRole("listitem")[0];
     expect(row.textContent?.replace(/\s+/g, " ")).toContain("20-day median +12.5 bp (+6 bp vs normal)");
     expect(row.querySelector('[title="log return, ×100"]')).toBeNull();
+    // Codex R-05: "vs normal" says what the difference is, then what normal is.
+    const term = [...row.querySelectorAll(".dk-term")].find((t) => t.textContent === "vs normal");
+    expect(term?.getAttribute("data-def")).toBe(`${GLOSSARY.vsnormal.text}\n${GLOSSARY.baseline.text}`);
   });
 
   it("lists the active signals as served, each with its sentence and verdict", async () => {
