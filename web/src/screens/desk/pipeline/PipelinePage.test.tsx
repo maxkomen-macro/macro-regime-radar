@@ -45,8 +45,8 @@ afterEach(() => {
 });
 
 describe("Pipeline words", () => {
-  it("dates the refresh in UTC", () => {
-    expect(refreshWords("2026-09-22T00:23:00Z")).toBe("Sep 22, 00:23 UTC");
+  it("dates the refresh in New York time, its day included (desk/pdf-polish item 2b)", () => {
+    expect(refreshWords("2026-09-22T00:23:00Z")).toBe("Sep 21, 8:23 PM ET");
     expect(refreshWords(null)).toBe("");
   });
   it("finds a series by name, id or note, and opens its group", () => {
@@ -83,7 +83,7 @@ describe("Data Pipeline tab", () => {
     renderTab();
     // The audit's §1: the last full run checked the store at 15:52 UTC on Sep 24; no validation.json was published
     // with that store, so the verdict is null and reads "unknown" (§12.9, S-01; Codex R-24).
-    expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 24, 15:52 UTC · validation unknown");
+    expect(await screen.findByTestId("pl-badge")).toHaveTextContent("Last full refresh Sep 24, 11:52 AM ET · validation unknown");
     expect(await screen.findByRole("heading", { level: 1, name: "Where every number comes from" })).toBeInTheDocument();
     const inv = screen.getByRole("region", { name: /Series inventory/ });
     await waitFor(() => expect(inv).toHaveTextContent("46 series · grouped · generated from the registry"));

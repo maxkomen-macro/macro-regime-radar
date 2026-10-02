@@ -21,6 +21,7 @@ import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import { PRESET, SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
 import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
+import { GLOSSARY } from "../kit/glossary";
 
 const BASKETS = (sample as { baskets: SavedBasket[] }).baskets;
 
@@ -160,6 +161,25 @@ describe("Basket & Hedge tab", () => {
     expect(within(step3).getAllByTestId("dk-live")[0]).toHaveTextContent("Live · Yahoo · prices Sep 22");
     // R-09: the stress footnote names its window.
     expect(within(step3).getByRole("region", { name: /^Stress test/ })).toHaveTextContent("Betas fitted on the 252 sessions from Sep 22, 2025 to Sep 23, 2026 (one year)");
+  });
+
+  it("Codex R-08 (desk/pdf-polish): each ETF row shows the window its hedge comes from, 1Y or 60D, and the definitions say the rule", async () => {
+    seed();
+    const legsKey = "NVDA:22,AVGO:16,VRT:14,CRWV:12,ANET:12,CEG:12,SMCI:12|hold|1000000";
+    const base = (basketHedge as { answers: Record<string, { etfs: Record<string, unknown>[] }> }).answers[legsKey];
+    // A 60-return fit where the year's is not available, and a row with neither (src/desk/basket.py hedge_rows).
+    const etfs = base.etfs.map((e, i) => (i === 1 ? { ...e, basis: "60d", r2_1y: null, beta_1y: null } : i === 2 ? { ...e, basis: null, hedge_ratio: null, short_usd: null, residual_vol: null, vol_reduction: null } : e));
+    stubDesk({ "/api/desk/basket/hedge": () => ({ ...base, etfs }) });
+    renderTab();
+    await loaded();
+    const card = await screen.findByRole("region", { name: /^Hedge with an ETF/ });
+    await waitFor(() => expect(card.querySelector("table.bh-etf-table")).not.toBeNull());
+    const fit = (sym: string) => within(card).getByRole("rowheader", { name: new RegExp(`^${sym}`) }).closest("tr")!.querySelectorAll("td")[2].textContent;
+    expect(fit(String(etfs[0].symbol))).toBe("1Y");
+    expect(fit(String(etfs[1].symbol))).toBe("60D");
+    expect(fit(String(etfs[2].symbol))).toBe("—");
+    expect(GLOSSARY["col-fit"].text).toMatch(/1Y, the last 252 daily returns both have, or 60D, the last 60 when 1Y has no fit/);
+    expect(GLOSSARY.hedgeratio.text).toMatch(/over the last 252 daily returns both have, else the last 60\.$/);
   });
 
   it("Codex R-10: Save refuses a leg at 0%, which the API would refuse", async () => {

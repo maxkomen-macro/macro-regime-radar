@@ -277,18 +277,19 @@ describe("seededLabel", () => {
 });
 
 describe("storedCloseLine", () => {
-  it("states the stored close and the missing one when market_daily is stale", () => {
+  it("states the most recent stored close when market_daily is stale (desk/pdf-polish item 1)", () => {
     const f = freshnessWith([
       s({ id: "DGS10", state: "close", as_of: "2026-09-17", cycles_behind: 0 }),
       s({ id: "market_daily", kind: "market", cadence: "daily", state: "stale", as_of: "2026-09-14", cycles_behind: 4 }),
     ]);
-    expect(storedCloseLine(f)).toBe("The newest stored close is Sep 14; the Sep 18 close is not stored yet.");
+    expect(storedCloseLine(f)).toBe("Most recent stored close: Sep 14");
   });
 
-  it("zero-pads both dates", () => {
+  it("zero-pads the date, and no longer names the close that is due", () => {
     const f = freshnessWith([s({ id: "market_daily", kind: "market", cadence: "daily", state: "stale", as_of: "2026-09-03", cycles_behind: 1 })]);
     f.session = { ...SESSION, last_completed_session: "2026-09-04" };
-    expect(storedCloseLine(f)).toBe("The newest stored close is Sep 03; the Sep 04 close is not stored yet.");
+    expect(storedCloseLine(f)).toBe("Most recent stored close: Sep 03");
+    expect(storedCloseLine(f)).not.toContain("Sep 04");
   });
 
   it("is null when market_daily is close, absent, or there is no report", () => {
@@ -408,9 +409,9 @@ describe("marketSeries (§5: live_quotes in session, the stored close otherwise)
 });
 
 describe("storedCloseShort, referenceLabel, stampLabel", () => {
-  it("the phone line carries both dates, and is null exactly when the full line is", () => {
+  it("the phone line is the full line (desk/pdf-polish item 1), and is null exactly when the full line is", () => {
     const f = freshnessWith([s({ id: "market_daily", kind: "market", cadence: "daily", state: "stale", as_of: "2026-09-14", cycles_behind: 4 })]);
-    expect(storedCloseShort(f)).toBe("Stored close Sep 14; Sep 18 not stored yet.");
+    expect(storedCloseShort(f)).toBe("Most recent stored close: Sep 14");
     expect(storedCloseShort(freshnessWith([s({ id: "market_daily", kind: "market", cadence: "daily", state: "close", as_of: "2026-09-18" })]))).toBeNull();
     expect(storedCloseShort(undefined)).toBeNull();
   });

@@ -6,6 +6,7 @@
  * hand-checked 3-asset grid), and Awaiting refresh with the labels kept when
  * /macro fails.
  */
+import { GLOSSARY } from "../kit/glossary";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
@@ -112,6 +113,10 @@ describe("Macro tab", () => {
     expect(card).toHaveTextContent(/Today\s*\+0\.44\s*SPY vs TLT · Sep 23\s*A year ago\s*\+0\.04\s*Sep 23, 2025\s*Flipped\s*Jan 2026\s*to positive on Jan 7, 2026/);
     expect(card).toHaveTextContent("60 daily log returns to Sep 23 · SPY vs TLT, adjusted closes · Yahoo");
     expect(card).not.toHaveTextContent(/hedging|was working|Read for the desk/);
+    // desk/pdf-polish 5: the owner's line, right under the title.
+    const note = card.querySelector(".mc-sb-note");
+    expect(note?.textContent).toBe("TLT is a long-term Treasury bond ETF; its price falls when yields rise.");
+    expect(note?.previousElementSibling).toHaveClass("dk-card-head");
   });
   it("a stock–bond window with a missing close says why, with no number (no forward fill)", async () => {
     const reason = "fewer than 60 complete daily return pairs in the window to 2026-09-23";
@@ -260,13 +265,21 @@ describe("Macro tab", () => {
     expect(wrap).toHaveAttribute("tabindex", "0");
     expect(within(wrap).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]);
     expect(within(wrap).getAllByRole("rowheader").map((h) => h.textContent).slice(0, 3)).toEqual(["SPYS&P 500", "QQQNasdaq 100", "IWMSmall caps"]);
-    expect(within(wrap).getByRole("columnheader", { name: "TLT" })).toHaveAttribute("title", "20+ year Treasuries");
+    // desk/pdf-polish 7: each column head carries its asset's definition in place of the served name as a title.
+    const tlt = within(wrap).getByRole("columnheader", { name: "TLT" });
+    expect(tlt).not.toHaveAttribute("title");
+    expect(tlt.querySelector(".dk-term")?.getAttribute("data-def")).toBe(GLOSSARY["mx-TLT"].text);
+    expect(tlt.querySelector(".dk-term")).toHaveAttribute("tabindex", "0");
+    for (const h of within(wrap).getAllByRole("columnheader")) expect(h.querySelector(".dk-term")?.getAttribute("data-def"), h.textContent ?? "").toBe(GLOSSARY[`mx-${h.textContent}`].text);
   });
   it("chart band labels and the peak label keep the colors passed to them (M-5)", async () => {
     renderTab();
     const sb = await screen.findByRole("region", { name: /Do bonds still hedge/ });
     await waitFor(() => expect(sb.querySelectorAll(".dk-chart-band")).toHaveLength(2));
     expect([...sb.querySelectorAll<SVGTextElement>(".dk-chart-band")].map((t) => t.style.fill)).toEqual(["#e8b447", "#26dca0"]);
+    // Codex R-13: the bands say what the sign means, not whether a hedge works.
+    expect([...sb.querySelectorAll(".dk-chart-band")].map((t) => t.textContent)).toEqual(["positive correlation: bonds move with stocks", "negative correlation: bonds offset stocks"]);
+    expect([...sb.querySelectorAll(".dk-chart-band")].map((t) => t.textContent).join(" ")).not.toMatch(/hedge/i);
     const credit = screen.getByRole("region", { name: /^Credit/ });
     expect(credit.querySelector<SVGTextElement>(".dk-chart-point")?.style.fill).toBe("#8b929e");
   });

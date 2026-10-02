@@ -16,7 +16,31 @@ import { droppedOf } from "../data/schema";
 import { targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
+
+/**
+ * desk/pdf-polish item 6, reworded by the owner for Codex R-09: the hover on "Edge vs a normal period" says, in
+ * neutral words, what the edge is: the median's excess over the baseline (src/desk/event_study.py horizon_stats
+ * `delta`; the range under it is its interval, api/desk_v2.py horizons ci_lo/ci_hi), the target read from the study
+ * (the S&P for the presets that target it), in the target's unit: a log move ×100 (kit/units.ts LOG_TIP, the
+ * owner's "percent"), bp for a yield or spread (api/desk_v2.py vs_normal, display_unit).
+ */
+export function edgeDef(target: string | null | undefined): string {
+  const who = !target ? "the target" : target === "S&P 500" ? "the S&P" : `the ${target}`;
+  return `The difference between ${who}'s median move after these events and its median over a typical period of the same length, in ${who}'s unit (log returns ×100 for prices, basis points for yields and spreads).`;
+}
+
+/** Codex R-04: an outcome column says where its outcomes count from (kit/glossary.ts `entry`, `entry-rule`). */
+const ENTRY = ["entry", "entry-rule"] as const;
+
+/** "Edge vs a normal period", its §1.4 lowercase "vs" inside the uppercase label, carrying its hover. */
+function EdgeLabel({ target }: { target: string | null | undefined }) {
+  return (
+    <Term def={edgeDef(target)}>
+      Edge <span className="dk-lc">vs</span> a normal period
+    </Term>
+  );
+}
 
 /** The rail with no answer: its section labels, and why there is nothing under them (§1.7). A served
  * study, Too few included, is scored (v4 B-02) and gets the whole rail. */
@@ -29,9 +53,9 @@ export function RailPlaceholder() {
   if (unserved)
     return (
       <>
-        {["Verdict", "By regime · a month later", "Last five events", "Range vs normal"].map((l) => (
+        {["Verdict", "By regime · a month later", "Last five events", "Edge vs a normal period"].map((l) => (
           <div key={l} className="es-rail-empty">
-            <p className="dk-stat-label">{defineTerms(l)}</p>
+            <p className="dk-stat-label">{l.startsWith("Edge") ? <EdgeLabel target={null} /> : defineTerms(l)}</p>
           </div>
         ))}
         <UnservedLine block={unserved} />
@@ -43,9 +67,7 @@ export function RailPlaceholder() {
         "Verdict",
         "By regime · a month later",
         "Last five events",
-        <>
-          Range <span className="dk-lc">vs</span> normal
-        </>,
+        <EdgeLabel key="edge" target={null} />,
       ].map((l, i) => (
         <div key={i} className="es-rail-empty">
           <p className="dk-stat-label">{defineTerms(l)}</p>
@@ -119,11 +141,20 @@ export default function StudyRail({
       {byRegime ? (
       <table className="es-table">
         <thead>
+          {/* desk/pdf-polish 7: every column head carries its definition. */}
           <tr>
-            <th scope="col">Regime</th>
-            <th scope="col">N</th>
-            <th scope="col">Up</th>
-            <th scope="col">Median</th>
+            <th scope="col">
+              <Term ids={["col-es-regime"]}>Regime</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-es-n", ...ENTRY]}>N</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-es-up", ...ENTRY]}>Up</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-es-median", ...ENTRY]}>Median</Term>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -192,12 +223,13 @@ export default function StudyRail({
       <DroppedNote n={droppedOf(study, "last_events")} one="event" />
 
       <div className="es-range-head">
+        {/* desk/pdf-polish 6: "Edge vs a normal period · 90% range", the level the engine's one (§14.3,
+            `verdict_confidence`), said in words; there is no control for another. */}
         <p className="dk-stat-label">
-          Range <span className="dk-lc">vs</span> normal
-        </p>
-        {/* §14.3: the engine's one level, said in words (`verdict_confidence`); there is no control for another. */}
-        <p className="es-conf-word" data-testid="es-conf">
-          {fin(study.verdict_confidence) ? `${Math.round(study.verdict_confidence * 100)}% interval` : "the engine's interval"}
+          <EdgeLabel target={target} /> ·{" "}
+          <span className="es-conf-word" data-testid="es-conf">
+            {fin(study.verdict_confidence) ? `${Math.round(study.verdict_confidence * 100)}% range` : "the engine's range"}
+          </span>
         </p>
       </div>
       {horizons ? (

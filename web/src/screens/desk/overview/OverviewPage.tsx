@@ -19,7 +19,7 @@ import type { LedgerRow, OverviewResponse, OverviewTiles, SinceLastClose } from 
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
+import { bandWord, capitalize, dayLong, dayShort, etTime, isFiniteNumber as fin, monthLong, monthYear, num, numberWord, pctPlain, rowWords, year } from "../kit/format";
 import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, StampBadge, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine, FailedLine, FailedScope, useLoadFailed } from "../kit/ui";
 import { useQuotes } from "../../../live/quotes";
 import { vixShown, type VixShown } from "../../shared/vix-shown";
@@ -33,26 +33,28 @@ import { moveText, tipOf, vsNormalText } from "../kit/units";
 import "./overview.css";
 import { Term, defineTerms } from "../kit/Term";
 
-/** The since-last-close items (§2), in the spec's order. A vol change that
- * rounds to 0.0 reads "unchanged". */
+/** The since-last-close items (§2), in the spec's order, each a phrase of its own that starts with a capital
+ * (desk/pdf-polish item 2b). A vol change that rounds to 0.0 reads "unchanged". The regime and the refresh are
+ * one item, the owner's: "Regime changed → <label> (Data refreshed <h:mm AM/PM> ET)", "Regime unchanged (Data
+ * refreshed …)"; either part not served is left out, and the refresh stands alone without the regime. */
 export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?: string }[] {
   const out: { key: string; text: string; tag?: string }[] = [];
   // §2, §12.1: each new fire with (new); each signal still firing with its `firing_day`.
-  for (const f of s.new_fires ?? []) out.push({ key: `new-${f.slug}`, text: `${f.short || f.label} fired`, tag: "(new)" });
-  for (const f of s.still_firing ?? []) out.push({ key: `still-${f.slug}`, text: `${f.short || f.label} still firing${fin(f.firing_day) ? `, day ${f.firing_day}` : ""}` });
+  for (const f of s.new_fires ?? []) out.push({ key: `new-${f.slug}`, text: capitalize(`${f.short || f.label} fired`), tag: "(new)" });
+  for (const f of s.still_firing ?? []) out.push({ key: `still-${f.slug}`, text: capitalize(`${f.short || f.label} still firing${fin(f.firing_day) ? `, day ${f.firing_day}` : ""}`) });
   // Codex R-16: a fire the boundary could not read is said, never left out as if nothing fired.
   const lostFires = droppedOf(s, "new_fires") + droppedOf(s, "still_firing");
   if (lostFires) out.push({ key: "lost", text: `${lostFires} ${lostFires === 1 ? "fire" : "fires"} could not be read` });
   const v = s.vol_change_pts;
   if (fin(v)) {
     const dir = v >= 0.05 ? "up" : v <= -0.05 ? "down" : "unchanged";
-    out.push({ key: "vol", text: `vol ${dir}${dir === "unchanged" ? "" : ` ${Math.abs(v).toFixed(1)} pts`}` });
+    out.push({ key: "vol", text: `Vol ${dir}${dir === "unchanged" ? "" : ` ${Math.abs(v).toFixed(1)} pts`}` });
   }
-  // Whether the regime changed is said only when it was served (Codex G1-9).
-  if (s.regime_changed === true) out.push({ key: "regime", text: s.regime_to ? `regime changed → ${s.regime_to}` : "regime changed" });
-  else if (s.regime_changed === false) out.push({ key: "regime", text: "regime unchanged" });
-  const at = utcTime(s.refreshed_at_utc);
-  if (at) out.push({ key: "refresh", text: `data refreshed ${at}` });
+  // Whether the regime changed is said only when it was served (Codex G1-9); every Desk time is New York's.
+  const regime = s.regime_changed === true ? (s.regime_to ? `Regime changed → ${s.regime_to}` : "Regime changed") : s.regime_changed === false ? "Regime unchanged" : null;
+  const at = etTime(s.refreshed_at_utc);
+  if (regime) out.push({ key: "regime", text: at ? `${regime} (Data refreshed ${at})` : regime });
+  else if (at) out.push({ key: "refresh", text: `Data refreshed ${at}` });
   // fix/freshness 3d: the refresh time is the last run's; a series that run left behind is named on its own.
   const b = s.oldest_behind;
   if (b && b.series) out.push({ key: "behind", text: b.observation_date && dayShort(b.observation_date) ? `${b.series} behind, through ${dayShort(b.observation_date)}` : `${b.series} not stored` });
@@ -100,9 +102,10 @@ function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefine
 }
 
 
-/** The regime tile's sub-line (fix/freshness 3a): "Growth rising, inflation rising · odds 42% · rule-based"; a part not served is left out. */
+/** The regime tile's sub-line: the two directions only, "Growth rising, inflation rising" (desk/pdf-polish item 2c:
+ * no odds, no "rule-based"); nothing when either is not served. */
 export function regimeSub(r: NonNullable<OverviewTiles["regime"]>): string {
-  return [r.growth && r.inflation ? `Growth ${r.growth}, inflation ${r.inflation}` : null, fin(r.odds) ? `odds ${pctPlain(r.odds)}` : null, "rule-based"].filter(Boolean).join(" · ");
+  return r.growth && r.inflation ? `Growth ${r.growth}, inflation ${r.inflation}` : "";
 }
 
 /** "Above 50 & 200", from the served state (§2, §12.1); a mixed state reads its two flags. */
@@ -123,12 +126,50 @@ export function trendSub(tr: TrendTile): string {
   return [since ? `since ${since}` : null, cross].filter(Boolean).join(" · ");
 }
 
-/** The recession tile's sub-line (§2): "<band> · score for <probability_month> · inputs through <inputs_through>". */
-export function recessionWords(r: RecessionTile): string {
-  // A month and its year never part across lines.
-  const scored = monthYear(r.probability_month).replace(" ", "\u00a0");
+/** "2026-06" and "2026-09" → 3: the calendar months from the first to the second; null unless both are months. */
+export function monthsBetween(from: string | null | undefined, to: string | null | undefined): number | null {
+  const a = typeof from === "string" ? /^(\d{4})-(\d{2})/.exec(from) : null;
+  const b = typeof to === "string" ? /^(\d{4})-(\d{2})/.exec(to) : null;
+  if (!a || !b) return null;
+  return (Number(b[1]) - Number(a[1])) * 12 + (Number(b[2]) - Number(a[2]));
+}
+
+/** "based on Jun 2026 data": the month the scored inputs come from, as the Recession tab's chip names it
+ * ("Inputs through Jun 2026"); "" when it is not served. A month and its year never part across lines. */
+function basedOn(r: RecessionTile): string {
   const through = monthYear(r.inputs_through).replace(" ", "\u00a0");
-  return [bandWord(r.band) || null, scored ? `score for ${scored}` : null, through ? `inputs through ${through}` : null].filter(Boolean).join(" · ");
+  return through ? `based on ${through} data` : "";
+}
+
+/** The recession tile's sub-line (desk/pdf-polish item 2d): "<band> · based on <inputs_through> data". */
+export function recessionWords(r: RecessionTile): string {
+  return [bandWord(r.band) || null, basedOn(r) || null].filter(Boolean).join(" · ");
+}
+
+/** The hover on "based on <month> data" (item 2d), both months and the gap read from the served answer, never
+ * typed: "The recession model reads data from three months earlier, so September's score uses June's readings."
+ * The recession tab says the same: "scored from inputs three months old". Null unless both months are served
+ * and the inputs come first. */
+export function recessionLag(r: RecessionTile): string | null {
+  const gap = monthsBetween(r.inputs_through, r.probability_month);
+  const scored = monthLong(r.probability_month);
+  const inputs = monthLong(r.inputs_through);
+  if (gap == null || gap < 1 || !scored || !inputs) return null;
+  return `The recession model reads data from ${numberWord(gap)} month${gap === 1 ? "" : "s"} earlier, so ${scored}'s score uses ${inputs}'s readings.`;
+}
+
+/** The recession tile's sub-line, its month carrying the hover (item 2d). */
+function RecessionSub({ r }: { r: RecessionTile }) {
+  const band = bandWord(r.band);
+  const based = basedOn(r);
+  const lag = recessionLag(r);
+  return (
+    <>
+      {band}
+      {band && based ? " · " : null}
+      {based ? lag ? <Term def={lag}>{based}</Term> : based : null}
+    </>
+  );
 }
 
 type TileState = "ready" | "loading" | "awaiting";
@@ -182,10 +223,11 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         value={t?.regime?.label}
         // §1.3's exception (v2 D-36): the tile carries its regime's color.
         tone={t?.regime ? REGIME_TONE[t.regime.label] : undefined}
-        // fix/freshness 3a (D2): the newest stored row, the label and month the Dashboard shows, with its odds.
-        sub={t?.regime ? regimeSub(t.regime) : null}
+        // fix/freshness 3a (D2): the newest stored row, the label and month the Dashboard shows; desk/pdf-polish 2c:
+        // under it only the two directions.
+        sub={t?.regime ? regimeSub(t.regime) || null : null}
       />
-      <Tile label="Recession · logistic model" unserved={off.recession} state={state(t?.recession && fin(t.recession.score) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.score) ? pctPlain(t.recession.score, 1) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
+      <Tile label="Recession · logistic model" unserved={off.recession} state={state(t?.recession && fin(t.recession.score) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.score) ? pctPlain(t.recession.score, 1) : null} sub={t?.recession ? <RecessionSub r={t.recession} /> : null} />
       <Tile
         label="S&P 500 · trend"
         unserved={off.trend}
@@ -205,8 +247,9 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         sub={
           vix ? (
             <>
-              {/* §2: "VIX <level> · <stamp> · <band>", then the gap to the S&P's 21-day realized volatility, against the VIX shown. */}
-              {[`VIX ${vix.text}`, vix.source === "quote" ? null : dayShort(vix.date) || null, vix.band].filter(Boolean).join(" · ")}
+              {/* §2: "VIX <level> · <stamp>" (desk/pdf-polish 2e: no band word), then the gap to the S&P's 21-day
+                  realized volatility, against the VIX shown. */}
+              {[`VIX ${vix.text}`, vix.source === "quote" ? null : dayShort(vix.date) || null].filter(Boolean).join(" · ")}
               <span className="ov-vol-gap">{gapWords(vix)}</span>
             </>
           ) : null
@@ -223,6 +266,23 @@ export function gapWords(v: Pick<VixShown, "gapPts" | "realized" | "realizedDate
   const side = v.gapPts >= 0 ? "above" : "below";
   const on = v.realizedDate && v.realizedDate !== v.date && dayShort(v.realizedDate) ? `, realized to ${dayShort(v.realizedDate)}` : "";
   return `${num(Math.abs(v.gapPts))} pts ${side} 21-day realized (${num(v.realized)})${on}`;
+}
+
+/**
+ * The Active signals card's date (desk/pdf-polish 2f; Codex R-01): the data's, never the generation's staging date
+ * (`as_of`). The earliest session the shown studies were evaluated on (`evaluated_on`), so "backtested through" is
+ * true of every row; with no row dated, "data through" the S&P's newest stored close (the trend tile's `date`);
+ * else nothing.
+ */
+export function activeSignalsWords(d: OverviewResponse | undefined): string {
+  const rows = Array.isArray(d?.active_signals) ? d.active_signals : [];
+  const days = rows
+    .map((r) => r.evaluated_on)
+    .filter((x): x is string => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x) && !!dayShort(x))
+    .sort();
+  if (days.length) return `backtested through ${dayShort(days[0])}`;
+  const close = d?.tiles?.trend?.date;
+  return typeof close === "string" && dayShort(close) ? `data through ${dayShort(close)}` : "";
 }
 
 /** One active signal's sentence (§2). */
@@ -255,7 +315,7 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
           {/* The row's own excess over its own baseline (§1.9), never a universal normal month. */}
           {ok(row.vs_normal) && vsNormalText(row.vs_normal, row.target_unit ?? undefined) ? (
             <>
-              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["baseline"]}>vs normal</Term>)
+              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["vsnormal", "baseline"]}>vs normal</Term>)
             </>
           ) : null}
         </>
@@ -269,15 +329,19 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
   // Codex R-16: "nothing is firing" is said only when every row was read.
   const lost = droppedOf(data, "active_signals");
   const unserved = useUnserved();
-  if (unserved) return <UnservedCard headingId="ov-active-title" className="ov-active" title="Active signals" sub="what fired, how it has played out before" block={unserved} />;
+  if (unserved) return <UnservedCard headingId="ov-active-title" className="ov-active" title="Active signals" block={unserved} />;
+  // desk/pdf-polish 2f: the small text dates the data the studies read (Codex R-01); each row keeps its own start year.
+  const through = activeSignalsWords(data);
   return (
     <section className="dk-card ov-active" aria-labelledby="ov-active-title">
       <div className="dk-card-head">
         <h2 className="dk-card-title" id="ov-active-title">
           Active signals
-          <span className="dk-card-sub" data-mono>
-            what fired, how it has played out before{data ? ` · engine as of ${dayShort(data.as_of)}` : ""}
-          </span>
+          {through ? (
+            <span className="dk-card-sub" data-mono>
+              {through}
+            </span>
+          ) : null}
         </h2>
       </div>
       <div className="dk-card-body" aria-busy={!data && !failed}>
@@ -350,7 +414,7 @@ function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
         <h2 className="dk-card-title" id="ov-mon-title">
           Monitored
           <span className="dk-card-sub" data-mono>
-            how far each is from being wrong · live
+            your positions vs. their exit levels
           </span>
         </h2>
       </div>
@@ -410,7 +474,9 @@ export default function OverviewPage({ page }: { page: DeskPage }) {
   const unserved = unavailableOf(q.error);
   return (
     <div className="ov">
-      <PageTitle page={page} />
+      {/* desk/pdf-polish 2a: no line under the title on Overview (the page keeps its purpose line for the
+          sidebar's data; it is not printed here). */}
+      <PageTitle page={{ ...page, blurb: "" }} />
       <StartHere pathTo={pathTo} />
       <Unserved block={unserved}>
         {/* §14.12: the line, the tiles and the active signals read /overview; the monitored rows read this browser's store. */}

@@ -14,6 +14,7 @@ import VerdictDefinitions from "../kit/VerdictDefinitions";
 import { Awaiting, DroppedNote, VerdictWord, FailedScope, LoadingLine } from "../kit/ui";
 import { apiParams, type Ask } from "./question";
 import { moveText, tipOf } from "../kit/units";
+import { Term } from "../kit/Term";
 
 /** A horizon's resampling, in words: "Monte Carlo · 10,000 draws · 18 blocks · 14.6% adverse"; a horizon with no interval says why. */
 export function resamplingWords(h: Pick<StudyHorizon, "method" | "draws" | "n_blocks" | "adverse_share" | "reason">): string {
@@ -36,13 +37,23 @@ export default function EngineDetail({ id, study, ask }: { id: string; study: St
           {list ? (
             <table className="es-table es-wide">
               <thead>
+                {/* desk/pdf-polish 7: every column head carries its definition. */}
                 <tr>
-                  <th scope="col">Event</th>
-                  <th scope="col">Regime</th>
-                  <th scope="col">1 week</th>
-                  <th scope="col">2 weeks</th>
-                  <th scope="col">1 month</th>
-                  <th scope="col">3 months</th>
+                  {(
+                    [
+                      ["col-es-event", "Event"],
+                      ["col-es-regime", "Regime"],
+                      ["col-es-h5", "1 week"],
+                      ["col-es-h10", "2 weeks"],
+                      ["col-es-h20", "1 month"],
+                      ["col-es-h60", "3 months"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <th key={id} scope="col">
+                      {/* Codex R-04: the four moves count from each event's entry, and say how entry is set. */}
+                      <Term ids={id.startsWith("col-es-h") ? [id, "entry", "entry-rule"] : [id]}>{label}</Term>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

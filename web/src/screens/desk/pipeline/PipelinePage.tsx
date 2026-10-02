@@ -24,6 +24,10 @@ import { apiParams, askFromSearch, readLastStudy } from "../event-study/question
 import { saveServed } from "../kit/download";
 import { SnowflakeSyncCard } from "../prototypes/SnowflakeSyncCard";
 import { PipelineBadge } from "./badge";
+import { Term } from "../kit/Term";
+
+/** What "current" allows for each kind of row (Codex R-06; kit/glossary.ts cites the freshness code). */
+const LAG_RULES = ["col-pl-lag-close", "col-pl-lag-daily", "col-pl-lag-monthly"] as const;
 import "./pipeline.css";
 
 /** The six steps a number takes (§11), fixed copy. */
@@ -111,13 +115,23 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
           <div className="pl-rows" role="region" aria-label={`${g.name} series`} tabIndex={0}>
             <table className="pl-table">
               <thead>
+                {/* desk/pdf-polish 7: every column head carries its definition. */}
                 <tr>
-                  <th scope="col">Series</th>
-                  <th scope="col">ID</th>
-                  <th scope="col">From</th>
-                  <th scope="col">As of</th>
-                  <th scope="col">Feeds</th>
-                  <th scope="col">Status</th>
+                  {(
+                    [
+                      ["col-pl-series", "Series"],
+                      ["col-pl-id", "ID"],
+                      ["col-pl-from", "From"],
+                      ["col-pl-asof", "As of"],
+                      ["col-pl-feeds", "Feeds"],
+                      ["col-pl-status", "Status"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <th key={id} scope="col">
+                      {/* Codex R-06: Status also states each store's allowed publication lag. */}
+                      <Term ids={id === "col-pl-status" ? [id, ...LAG_RULES] : [id]}>{label}</Term>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>

@@ -330,6 +330,13 @@ test.describe("desk usability", () => {
       await open(page, `/desk/${p.slug}`);
       const title = page.locator(".dk-title").first();
       const line = title.locator(".dk-title-sub");
+      // desk/pdf-polish item 2a: the owner took Overview's line out; its title stands alone.
+      if (p.slug === "overview") {
+        await expect(line, p.slug).toHaveCount(0);
+        const primaries = page.locator('.dk-main :is(a, button):is([data-kind="light"], [data-kind="primary"]):visible:not([data-prototype] *)');
+        await expect(primaries, `${p.slug}: primary actions`).toHaveCount(1);
+        continue;
+      }
       await expect(line, p.slug).toBeVisible();
       const [h1Box, lineBox] = await Promise.all([title.locator("h1").boundingBox(), line.boundingBox()]);
       // Under the title, not beside it.
@@ -456,7 +463,8 @@ test.describe("desk usability", () => {
     await hover("/desk/macro", "2s10s", "curve");
     await hover("/desk/macro", "HY spread", "oas");
     await hover("/desk/technicals", "Momentum · RSI", "rsi");
-    await hover("/desk/technicals", "21-day realized vol", "realized");
+    // desk/pdf-polish 3c: the S&P's page has no Risk card; a stock's page keeps it.
+    await hover("/desk/technicals?symbol=NVDA", "21-day realized vol", "realized");
     await hover("/desk/signal-ledger", "2s10s +2σ steepening", "sigma");
     await hover("/desk/regime", "VIX avg", "vix");
     await hover("/desk/overview", "Vol · VIX", "vix");
@@ -466,10 +474,109 @@ test.describe("desk usability", () => {
     await hover("/desk/basket-hedge", "Effective names", "effn");
     await hover("/desk/basket-hedge", "days to trade", "adv");
     await hover("/desk/basket-hedge", "Hedge ratio", "hedgeratio");
-    await hover("/desk/basket-hedge", "Beta 1Y", "beta");
+    // desk/pdf-polish 7: each column head its own window's sentence (252 daily returns), not the generic beta's.
+    await hover("/desk/basket-hedge", "Beta 1Y", "col-beta1y");
+    await hover("/desk/basket-hedge", "Vol cut", "col-vol-cut");
+    await hover("/desk/signal-ledger", "Vs normal", "col-vs-normal");
+    await hover("/desk/macro", "TLT", "mx-TLT");
     // The Event Study's Move slot explains σ with the same sentence.
     await open(page, "/desk/event-study");
     await expect(page.locator(".es-tip").first()).toHaveAttribute("data-tip", GLOSSARY.sigma.text);
+  });
+
+  test("desk/pdf-polish item 7: a column head's definition shows on keyboard focus and on a tap, and goes on Escape or a tap elsewhere", async ({ page, browser, baseURL }) => {
+    await open(page, "/desk/signal-ledger");
+    const head = page.locator("thead abbr.dk-term", { hasText: "Times" });
+    await expect(head).toHaveAttribute("tabindex", "0");
+    // Tab from the column head before it lands on this one: a Tab stop of its own, its sentence shown.
+    await page.locator("thead abbr.dk-term", { hasText: "Last fired" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(head).toBeFocused();
+    // Codex R-04: an outcome column's sentence, then where its outcomes count from.
+    await expect(page.getByTestId("dk-term-tip").locator("p")).toHaveText([GLOSSARY["col-times"].text, GLOSSARY.entry.text, GLOSSARY["entry-rule"].text]);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("dk-term-tip")).toHaveCount(0);
+    // A phone: a tap shows the sentence, the finger lifting keeps it, a tap elsewhere hides it.
+    const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: "dark" });
+    const p = await phone.newPage();
+    await open(p, "/desk/signal-ledger");
+    await p.locator("thead abbr.dk-term", { hasText: "Vs normal" }).tap();
+    const vsNormal = [GLOSSARY["col-vs-normal"].text, GLOSSARY.entry.text, GLOSSARY["entry-rule"].text];
+    await expect(p.getByTestId("dk-term-tip").locator("p")).toHaveText(vsNormal);
+    await p.waitForTimeout(300);
+    await expect(p.getByTestId("dk-term-tip").locator("p")).toHaveText(vsNormal);
+    await p.getByRole("heading", { level: 1 }).tap();
+    await expect(p.getByTestId("dk-term-tip")).toHaveCount(0);
+    await phone.close();
+  });
+
+  test("Codex R-10, R-11, R-14: on a 390 px phone a tapped definition opens no row, and its tip stays inside the window, scrolling when taller and following a resize", async ({ browser, baseURL }) => {
+    const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: "dark" });
+    const p = await phone.newPage();
+    const tip = p.getByTestId("dk-term-tip");
+    // Inside the window by its 8 px margin; a tip of three or more sentences takes its full width (300 px, or the
+    // window less the margins), wherever its term sits.
+    const inside = async (w: number, h: number, full = true) => {
+      const box = (await tip.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(8);
+      expect(box.x + box.width).toBeLessThanOrEqual(w - 8 + 0.5);
+      expect(box.y).toBeGreaterThanOrEqual(8 - 0.5);
+      expect(box.y + box.height).toBeLessThanOrEqual(h - 8 + 0.5);
+      if (full) expect(box.width).toBeGreaterThanOrEqual(Math.min(300, w - 16) - 1);
+    };
+    // R-10: a Ledger row's title is a term; a tap on it shows the sentence and leaves the row closed.
+    await open(p, "/desk/signal-ledger");
+    await expect(p.getByRole("main").getByTestId("dk-loading")).toHaveCount(0);
+    const row = p.locator("tbody tr[tabindex]", { has: p.locator("abbr.dk-term", { hasText: "2s10s +2σ steepening" }) });
+    await row.locator("abbr.dk-term").tap();
+    await expect(tip).toContainText(GLOSSARY.curve.text);
+    await p.waitForTimeout(300);
+    await expect(p).toHaveURL(/\/desk\/signal-ledger/);
+    await inside(390, 844, false);
+    // The rightmost head: its tip keeps its full width, inside the window.
+    await p.locator("thead abbr.dk-term", { hasText: "Now" }).tap();
+    await expect(tip).toContainText(GLOSSARY["col-now-firing"].text);
+    await inside(390, 844);
+    await p.getByRole("heading", { level: 1 }).tap();
+    await expect(tip).toHaveCount(0);
+    // A tap elsewhere in the row still opens it.
+    await row.locator("td").first().tap();
+    await expect(p).toHaveURL(/\/desk\/event-study/);
+    // R-14: an open tip is placed again when the window changes size (here, 844 → 600 px tall), inside the new window.
+    await open(p, "/desk/data-pipeline?group=credit");
+    await expect(p.getByRole("main").getByTestId("dk-loading")).toHaveCount(0);
+    const statusHead = p.locator("thead abbr.dk-term", { hasText: "Status" });
+    await statusHead.tap();
+    await expect(tip).toBeVisible();
+    await inside(390, 844);
+    await p.setViewportSize({ width: 390, height: 600 });
+    const headTop = (await statusHead.boundingBox())!.y;
+    expect(headTop).toBeLessThan(600);
+    await expect(tip).toBeVisible();
+    await expect
+      .poll(async () => {
+        const b = (await tip.boundingBox())!;
+        return b.y >= 8 - 0.5 && b.y + b.height <= 600 - 8 + 0.5;
+      })
+      .toBe(true);
+    await inside(390, 600);
+    // R-11: the Data Pipeline's Status head holds four sentences; in a short window they are clamped and scroll.
+    await p.setViewportSize({ width: 390, height: 360 });
+    await open(p, "/desk/data-pipeline?group=credit");
+    await expect(p.getByRole("main").getByTestId("dk-loading")).toHaveCount(0);
+    await p.locator("thead abbr.dk-term", { hasText: "Status" }).tap();
+    await expect(tip.locator("p")).toHaveText(["col-pl-status", "col-pl-lag-close", "col-pl-lag-daily", "col-pl-lag-monthly"].map((id) => GLOSSARY[id].text));
+    await inside(390, 360);
+    const body = tip.locator(".dk-term-tip-body");
+    const sized = await body.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, overflow: getComputedStyle(el).overflowY }));
+    expect(sized.overflow).toBe("auto");
+    expect(sized.scroll).toBeGreaterThan(sized.client);
+    // A finger dragging inside the tip scrolls it; the tip stays.
+    await body.evaluate((el) => el.scrollBy(0, 60));
+    await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect(tip).toBeVisible();
+    await inside(390, 360);
+    await phone.close();
   });
 
   test("item 12: one endpoint forced to fail: its cards say Couldn't load · Retry, the rest renders, Retry recovers", async ({ page }) => {

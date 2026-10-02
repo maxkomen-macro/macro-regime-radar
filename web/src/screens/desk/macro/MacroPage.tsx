@@ -23,8 +23,9 @@ import { DESK_ACCENTS } from "../kit/palette";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { matrixProblem } from "./matrix";
+import { GLOSSARY } from "../kit/glossary";
 import "./macro.css";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -234,6 +235,9 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
 
 type StockBondBlock = NonNullable<MacroResponse["stock_bond"]>;
 
+/** desk/pdf-polish 5: the line under "Do bonds still hedge stocks?". */
+export const TLT_NOTE = "TLT is a long-term Treasury bond ETF; its price falls when yields rise.";
+
 /** "SPY vs TLT": the served pair. */
 const pair = (sb: StockBondBlock) => `${sb.stock?.etf ?? "SPY"} vs ${sb.bond?.etf ?? "TLT"}`;
 
@@ -259,6 +263,8 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-sb" aria-busy={quiet}>
       <CardHead id="mc-sb" title="Do bonds still hedge stocks?" sub="60-day correlation of daily returns, one year" />
+      {/* desk/pdf-polish 5: what the bond side is, under the title, the owner's words. */}
+      <p className="mc-sb-note">{TLT_NOTE}</p>
       <LoadingLine busy={quiet} />
       {sb ? (
         <>
@@ -292,9 +298,10 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
               ]}
               grid={false}
               zero
+              // Codex R-13: each band says what its sign of correlation means, never whether a hedge works.
               bands={[
-                { from: 0, to: 1, fill: "rgba(232, 180, 71, 0.10)", label: "bonds move WITH stocks · no hedge", labelColor: DESK_ACCENTS.amber },
-                { from: -1, to: 0, fill: "rgba(38, 220, 160, 0.08)", label: "bonds move AGAINST stocks · hedge works", labelColor: DESK_ACCENTS.green, labelAt: "bottom" },
+                { from: 0, to: 1, fill: "rgba(232, 180, 71, 0.10)", label: "positive correlation: bonds move with stocks", labelColor: DESK_ACCENTS.amber },
+                { from: -1, to: 0, fill: "rgba(38, 220, 160, 0.08)", label: "negative correlation: bonds offset stocks", labelColor: DESK_ACCENTS.green, labelAt: "bottom" },
               ]}
               series={[{ key: "corr", values: series.map((p) => (fin(p.corr) ? p.corr : null)), color: DESK_ACCENTS.blue, width: 2 }]}
               endDot="corr"
@@ -531,9 +538,11 @@ function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
               <thead>
                 <tr>
                   <td />
+                  {/* desk/pdf-polish 7: each asset's column head carries its definition (the served name stays its title
+                      only where no definition is written). */}
                   {grid.assets.map((a, j) => (
-                    <th key={a} scope="col" title={name(j) || undefined} data-nodata={noData.has(a) || undefined}>
-                      {a}
+                    <th key={a} scope="col" title={GLOSSARY[`mx-${a}`] ? undefined : name(j) || undefined} data-nodata={noData.has(a) || undefined}>
+                      <Term ids={[`mx-${a}`]}>{a}</Term>
                     </th>
                   ))}
                 </tr>

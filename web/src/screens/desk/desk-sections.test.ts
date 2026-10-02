@@ -29,6 +29,7 @@ describe("the Desk's pages (§14.6)", () => {
   it("Codex R-17: Data Pipeline names the VIX tile's source as the relay's delayed quote", () => {
     const blurb = DESK_PAGES.find((p) => p.slug === "data-pipeline")?.blurb ?? "";
     expect(blurb).toContain("Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote");
-    expect(blurb).toContain("the VIX tile's band and gap against that quote");
+    // desk/pdf-polish item 2e: the tile no longer prints a band word, so the line names only the gap.
+    expect(blurb).toContain("the VIX tile's gap against that quote");
   });
 });

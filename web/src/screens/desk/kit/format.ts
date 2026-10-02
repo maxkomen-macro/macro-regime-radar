@@ -45,6 +45,13 @@ export function pctPlain(frac: number, digits = 0): string {
   return isFiniteNumber(frac) ? `${num(frac * 100, digits)}%` : NOT_SERVED;
 }
 
+/** The options card's sentence on its 25-delta skew, illustrative or served: "Puts are 6.8 vol points richer than
+ * calls.", "cheaper" below zero (desk/pdf-polish 3a and its follow-up: the same words in both states). */
+export function putsVsCalls(skewPts: number): string {
+  if (!isFiniteNumber(skewPts)) return NOT_SERVED;
+  return `Puts are ${num(Math.abs(skewPts))} vol points ${skewPts < 0 ? "cheaper" : "richer"} than calls.`;
+}
+
 /** Points, signed: 1.4 → "+1.4 pts". */
 export function pts(x: number, digits = 1): string {
   return isFiniteNumber(x) ? `${signed(x, digits)} pts` : NOT_SERVED;
@@ -121,13 +128,28 @@ export function year(iso: string | null | undefined): string {
   return p ? String(p.y) : "";
 }
 
-/** "2026-09-22T00:23:00Z" → "00:23 UTC"; "" for a malformed stamp. */
-export function utcTime(iso: string | null | undefined): string {
-  const d = new Date(iso ?? "");
-  if (Number.isNaN(d.getTime())) return "";
-  const hh = String(d.getUTCHours()).padStart(2, "0");
-  const mm = String(d.getUTCMinutes()).padStart(2, "0");
-  return `${hh}:${mm} UTC`;
+const NY_CLOCK = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+
+/** A stamp's New York date and 12-hour clock, or null for a malformed one. */
+function nyClock(iso: string | null | undefined): { y: number; m: number; d: number; clock: string } | null {
+  const at = new Date(iso ?? "");
+  if (Number.isNaN(at.getTime())) return null;
+  const p: Record<string, string> = {};
+  for (const part of NY_CLOCK.formatToParts(at)) p[part.type] = part.value;
+  return { y: Number(p.year), m: Number(p.month), d: Number(p.day), clock: `${p.hour}:${p.minute} ${p.dayPeriod.toUpperCase()}` };
+}
+
+/** "2026-10-01T17:27:07Z" → "1:27 PM ET" (desk/pdf-polish item 2b: every Desk time in New York time, EDT or EST
+ * as the date falls); "" for a malformed stamp. */
+export function etTime(iso: string | null | undefined): string {
+  const c = nyClock(iso);
+  return c ? `${c.clock} ET` : "";
+}
+
+/** "2026-09-22T00:23:00Z" → "Sep 21, 8:23 PM ET": the New York day and clock (the day can be the UTC day before). */
+export function etDayTime(iso: string | null | undefined): string {
+  const c = nyClock(iso);
+  return c ? `${MONTHS[c.m - 1]} ${c.d}, ${c.clock} ET` : "";
 }
 
 const WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve"];

@@ -209,6 +209,37 @@
   margin-top: auto;
   padding-top: 8px;
 }
+/* desk/pdf-polish 3b: the Signals card's key, collapsed under "Signal key ▸" (the kit's Advanced control), its
+   entries laid out as the options card's Advanced panel lists its assumptions (prototypes.css .pr-assume). */
+.te-key {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.te-key > div {
+  display: grid;
+  grid-template-columns: 124px minmax(0, 1fr);
+  gap: 10px;
+}
+.te-key dt {
+  font-family: var(--dk-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  color: var(--dk-t4);
+  padding-top: 2px;
+}
+.te-key dt .dk-pill {
+  text-transform: none;
+  letter-spacing: normal;
+}
+.te-key dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--dk-t2);
+}
 
 /* MACD card */
 .te-macd .dk-chart {

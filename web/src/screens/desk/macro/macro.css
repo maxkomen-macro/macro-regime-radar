@@ -50,6 +50,13 @@
 .mc-sub-h {
   margin-top: 8.5px;
 }
+/* desk/pdf-polish 5: the line under "Do bonds still hedge stocks?", what TLT is. */
+.mc-sb-note {
+  margin-top: 2px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--dk-t3);
+}
 .mc-axis {
   display: flex;
   justify-content: space-between;
