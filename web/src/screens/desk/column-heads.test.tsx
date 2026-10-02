@@ -183,7 +183,7 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
       ["From", "col-pl-from"],
       ["As of", "col-pl-asof"],
       ["Feeds", "col-pl-feeds"],
-      ["Status", "col-pl-status"],
+      ["Status", ["col-pl-status", "col-pl-lag-close", "col-pl-lag-daily", "col-pl-lag-monthly"]],
     ]);
   });
 

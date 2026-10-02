@@ -40,6 +40,16 @@ describe("hover definitions (desk/usability item 11, §14.11)", () => {
     expect(termsIn("against a normal stretch")).toEqual(["baseline"]);
   });
 
+  it("Codex R-06: current means within the series' allowed publication lag, and the lag rules are the freshness code's", () => {
+    expect(GLOSSARY["col-pl-status"].text).toMatch(/within the series' allowed publication lag/);
+    // api/freshness.py assess: the last completed session, or the one before until 06:00 UTC (2 AM EDT, 1 AM EST).
+    expect(GLOSSARY["col-pl-lag-close"].text).toMatch(/last completed session's, or the one before until 2 AM ET \(1 AM in winter\)/);
+    // DAILY_TOLERANCE = 3 on the bond calendar for rates and spreads; DESK_SLOW_PUBLICATION: WTI 8.
+    expect(GLOSSARY["col-pl-lag-daily"].text).toMatch(/three business days .* bond calendar for rates and spreads; weekly WTI within eight/);
+    // SERIES_REGISTRY: CPI's release day the 15th, unemployment the first Friday.
+    expect(GLOSSARY["col-pl-lag-monthly"].text).toMatch(/the 15th for CPI and the first Friday for unemployment/);
+  });
+
   it("each definition is one plain sentence", () => {
     for (const [id, t] of Object.entries(GLOSSARY)) {
       expect(t.text.endsWith("."), id).toBe(true);

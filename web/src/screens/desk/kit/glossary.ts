@@ -160,7 +160,13 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-pl-from": { forms: [], text: "From is the first observation stored." },
   "col-pl-asof": { forms: [], text: "As of is the newest observation stored." },
   "col-pl-feeds": { forms: [], text: "Feeds are the Desk tabs whose served values read this series." },
-  "col-pl-status": { forms: [], text: "Status is current when the newest observation stored is the one due on the series' own schedule, stale when it is behind, and missing otherwise." },
+  "col-pl-status": { forms: [], text: "Status is current when the newest stored observation is within the series' allowed publication lag, stale when further behind, and missing when nothing is stored or its date is unknown." },
+  // Codex R-06: each store's lag rule (api/desk_pipeline.py statuses; api/freshness.py assess's asset_prices verdict with
+  // its 06:00 UTC grace, desk_series_states and fred_series_state with DAILY_TOLERANCE 3, DESK_SLOW_PUBLICATION's WTI 8,
+  // _expected_month_for's release days in SERIES_REGISTRY).
+  "col-pl-lag-close": { forms: [], text: "The newest S&P 500, Russell 2000, VIX, gold or ETF close is current if it is the last completed session's, or the one before until 2 AM ET (1 AM in winter)." },
+  "col-pl-lag-daily": { forms: [], text: "Every other daily series is current within three business days of the previous business day's print, on the bond calendar for rates and spreads; weekly WTI within eight." },
+  "col-pl-lag-monthly": { forms: [], text: "A monthly series is current when it holds the newest month whose usual release day has passed, such as the 15th for CPI and the first Friday for unemployment." },
 };
 
 interface Form {
