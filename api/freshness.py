@@ -66,6 +66,32 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
 # FRED daily: current within 3 business days of the newest print due (FRED posts a day or more after the
 # close; owner's item 7, desk/fill-compute: "a FRED daily series 1–3 business days behind is current").
 DAILY_TOLERANCE = 3
+# desk/cap-weight: the preset baskets' share counts, read from Yahoo by every full refresh. A count is a
+# quarterly figure read again each day, so the stored reads are current while the oldest is at most a
+# week old, and stale after. A per-series state only: never an `sla` feed, never in `overall`, never
+# judged by validate_db (the table is advisory there).
+SHARE_COUNTS_TOLERANCE_DAYS = 7
+SHARE_COUNTS_LABEL = "Share counts (stored)"
+SHARE_COUNTS_MISSING = "Share counts are not stored in this database yet; the next full refresh reads them from Yahoo."
+SHARE_COUNTS_NONE_READABLE = ("No stored share count can be read (the basket sets each aside, with why); the next full refresh "
+                              "reads them from Yahoo again.")
+# The code points of Python's str.isspace(), the whitespace str.strip() removes (pinned to it by
+# tests/test_validate_db.py), for SQLite's trim(): round 2, R2-04, SQLite's one-argument trim() removes spaces only,
+# so a tab-only source read as stored here and as none to the basket's reader.
+STRIP_WHITESPACE = (9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198,
+                    8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288)
+_BLANK = "char(" + ", ".join(map(str, STRIP_WHITESPACE)) + ")"
+# desk/cap-weight (Codex R-05): a stored share-count row the basket reads (api/desk_basket._count_problem), in SQL,
+# bound to a New York date (`?`): a symbol that is not blank (as str.strip() reads it), a count that is a positive
+# finite number, a YYYY-MM-DD read date no later than that date (SQLite's date() normalizes '2026-02-30', so
+# `date(d) = d` holds only for a real day), and a source that is not blank. Never NULL, so `NOT (...)` counts
+# exactly the rows the basket sets aside (scripts/validate_db.py).
+SHARE_COUNTS_READABLE_SQL = (
+    f"(typeof(symbol) = 'text' AND trim(symbol, {_BLANK}) <> '' "
+    "AND typeof(shares_outstanding) IN ('real', 'integer') AND shares_outstanding > 0 AND shares_outstanding < 1e308 "
+    "AND typeof(as_of) = 'text' AND COALESCE(date(as_of) = as_of, 0) AND as_of <= ? "
+    f"AND typeof(source) = 'text' AND trim(source, {_BLANK}) <> '')"
+)
 
 
 def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, state: str, *, delay_min: int | None = None,
@@ -73,6 +99,35 @@ def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, sta
     return {"id": sid, "label": label, "kind": kind, "cadence": cadence, "as_of": as_of, "state": state,
             "delay_min": delay_min, "cycles_behind": cycles_behind, "stale": state == "stale",
             "discontinued": discontinued, "reason": reason}
+
+
+def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | None = None, stored_rows: int | None = None) -> dict:
+    """desk/cap-weight: the state of the stored share counts, dated by the
+    oldest read among the rows the basket reads (`share_counts_as_of`, the New
+    York date the full refresh read it; Codex R-05: never a row it sets aside,
+    such as one dated after today). `cycles_behind` counts the days since the
+    read beyond the day before today; the state is stale once the oldest read
+    is more than SHARE_COUNTS_TOLERANCE_DAYS old. With rows stored
+    (`stored_rows`) but none the basket reads, or a read dated after today,
+    the counts are unavailable (`unknown`), never current."""
+    d = _parse_date(as_of)
+    if d is None:
+        return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", None, "unknown",
+                      reason=SHARE_COUNTS_NONE_READABLE if stored_rows else SHARE_COUNTS_MISSING)
+    if d > today_ny:
+        return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", d.isoformat(), "unknown",
+                      reason=f"The stored share counts are dated {d.isoformat()}, after today ({today_ny.isoformat()}); the basket "
+                             "sets such a count aside until the next full refresh reads it again.")
+    age = (today_ny - d).days
+    detail = (watermark or {}).get("detail")
+    src = f" Last read: {detail}." if detail else ""
+    state = "close" if age <= SHARE_COUNTS_TOLERANCE_DAYS else "stale"
+    reason = (f"The preset baskets' share counts were read from Yahoo on {d.isoformat()}; every full refresh reads them again."
+              if state == "close" else
+              f"The oldest stored share count was read from Yahoo on {d.isoformat()}, {age} days ago; the full refresh "
+              "reads them each day.") + src
+    return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", d.isoformat(), state, cycles_behind=max(0, age - 1),
+                  reason=reason)
 
 
 def _expected_month_for(meta: dict, today: date) -> date:
@@ -580,6 +635,11 @@ def assess(
         else:
             series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "stale", cycles_behind=ap_cycles,
                                  reason=f"Allocation's price histories end {ap_str}, {ap_cycles} session(s) older than the last completed session ({exp_md.isoformat()})." + ap_src))
+    # desk/cap-weight: present only when the caller reports the oldest stored read (api/db.freshness, validate_db)
+    if "share_counts_as_of" in db_fresh:
+        series.append(share_counts_state(db_fresh.get("share_counts_as_of"), today_ny=today_ny,
+                                         watermark=(watermarks or {}).get("share_counts"),
+                                         stored_rows=db_fresh.get("share_counts_rows")))
     if relay:
         feeds = relay.get("feeds", {})
         us, vix = feeds.get("us"), feeds.get("vix")

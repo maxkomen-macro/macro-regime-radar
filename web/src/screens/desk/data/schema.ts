@@ -315,6 +315,17 @@ const basketPoint = o({ date: "s!", close: "n", ma50: "n", ma200: "n", rsi: "n",
 const comparePoint = o({ date: "s!", basket: "n", qqq: "n", spy: "n", rs_qqq: "n", rs_qqq_ma50: "n", rs_spy: "n", rs_spy_ma50: "n" });
 const compareRange = o({ base_date: "s?", points: l(comparePoint) });
 const loose = o({ start: "s?", end: "s?", n: "n" });
+// desk/cap-weight: a cap-weighted basket's weights, and where they came from (null for typed weights).
+const capWeights = o(
+  {
+    provider: "s",
+    source: "s",
+    as_of: "s",
+    start: "s",
+    legs: l(o({ symbol: "s!", shares_outstanding: "n", as_of: "s", close_start: "n", value_start: "n", weight_start: "n" })),
+  },
+  { nul: true },
+);
 const benchmark = o({
   symbol: "s!",
   label: "s!",
@@ -681,6 +692,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/basket/price": o({
     ...envelope,
     method: e(["hold", "monthly"]),
+    weighting: e(["target", "cap"]),
+    cap_weights: capWeights,
     notional: "n",
     provider: "s",
     source: "s",
@@ -731,6 +744,8 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
   "/basket/hedge": o({
     ...envelope,
     method: e(["hold", "monthly"]),
+    weighting: e(["target", "cap"]),
+    cap_weights: capWeights,
     notional: "n",
     provider: "s",
     source: "s",
@@ -778,6 +793,15 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         hedged_move: "n",
       }),
     ),
+  }),
+  // §12.18 (desk/cap-weight): the stored share counts; a row without its symbol or date is dropped.
+  "/basket/shares": o({
+    ...envelope,
+    provider: "s",
+    source: "s",
+    counts_as_of: "s",
+    counts: l(o({ symbol: "s!", shares_outstanding: "n", as_of: "s!", source: "s" })),
+    excluded: l(o({ symbol: "s!", reason: "s" })),
   }),
   "/pipeline": o({
     ...envelope,

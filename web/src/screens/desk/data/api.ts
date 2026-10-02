@@ -31,7 +31,8 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
-import type { BasketHedgeResponse, BasketPriceResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketParams } from "../basket/weights";
+import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 // `import.meta.env` is Vite's; the e2e specs load this module in Node through the kit (kit/ui reads DeskApiError
 // here since desk/usability §14.12), where it is undefined, so the read is guarded.
@@ -290,9 +291,14 @@ export const useStudyCatalog = () => useDesk<StudyCatalogResponse>("/study/catal
 /** §12.3: the events behind a study (the Advanced panel). */
 export const useStudyEvents = (params: Params) => useDesk<StudyEventsResponse>("/study/events", params);
 
+/** §12.18 (desk/cap-weight): the share counts the full refresh stores, so Basket & Hedge knows which baskets it
+ * can cap-weight; awaiting, with the reason, on a database the refresh has not reached. */
+export const useBasketShares = () => useDesk<BasketSharesResponse>("/basket/shares");
+
 /** §12.15: a basket kept in this browser, priced by the API from EODHD's daily bars. `legs` is
- * `TICKER:weight,…` in percent (the saved weights' digits); asked only for a saved basket. */
-export function useBasketPrice(params: { legs: string; method: string; notional: string } | null) {
+ * `TICKER:weight,…` in percent (the saved weights' digits), or the tickers alone for a cap-weighted
+ * basket; asked only for a saved basket. */
+export function useBasketPrice(params: BasketParams | null) {
   return current(
     useQuery<BasketPriceResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/price", params],
@@ -305,7 +311,7 @@ export function useBasketPrice(params: { legs: string; method: string; notional:
 }
 
 /** §12.16: the ETF hedge for the same saved basket, ranked by fit, and the linear stress test. */
-export function useBasketHedge(params: { legs: string; method: string; notional: string } | null) {
+export function useBasketHedge(params: BasketParams | null) {
   return current(
     useQuery<BasketHedgeResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/hedge", params],

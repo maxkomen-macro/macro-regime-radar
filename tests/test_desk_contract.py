@@ -28,7 +28,8 @@ FIXTURES = WEB_SRC / "fixtures" / "desk"
 LIVE = ("/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/regime", "/technicals", "/macro", "/pipeline",
         "/sectors",  # /sectors served since desk/fill-etf (§12.14)
         "/basket/price", "/basket/hedge",  # desk/books
-        "/instruments")  # desk/usability (§12.17)
+        "/instruments",  # desk/usability (§12.17)
+        "/basket/shares")  # desk/cap-weight (§12.18)
 
 
 def test_the_contract_covers_every_enveloped_route():
@@ -250,7 +251,8 @@ FIXTURE_FILES = {"/overview": "overview.json", "/study": "study.json", "/study/c
                  "/technicals": "technicals.json", "/macro": "macro.json", "/pipeline": "pipeline.json",
                  "/sectors": "sectors.json",  # desk/fill-etf
                  "/basket/price": "basket-price.json", "/basket/hedge": "basket-hedge.json",  # desk/books
-                 "/instruments": "instruments.json"}  # desk/usability
+                 "/instruments": "instruments.json",  # desk/usability
+                 "/basket/shares": "basket-shares.json"}  # desk/cap-weight
 
 
 def _wire(route: str, payload: dict) -> dict:

@@ -64,7 +64,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-name": { forms: [], text: "Name is the company or fund the ticker belongs to." },
   "col-now": { forms: [], text: "Now is each name's weight at the last close: its shares times its price, over the basket's value, so it drifts as prices move." },
   "col-since": { forms: [], text: "Since start is each name's own price change from the basket's start to the last close, on adjusted closes." },
-  "col-weight": { forms: [], text: "Weight is the share of the basket you set for each name; the basket is priced once the weights add up to 100%." },
+  // desk/cap-weight, round 4: one definition, true whether the basket is weighted as typed or by market cap (the head
+  // reads "Weight" or "At start"; src/desk/basket.py target weights or shares_outstanding).
+  "col-weight": { forms: [], text: "Each name's weight at the start: the share you type, which must add up to 100%, or, cap-weighted, its stored share count times its close that day, over the basket's sum." },
   // Basket & Hedge · against the Nasdaq and the S&P (api/desk_basket.py, src/desk/basket.py regression).
   "col-against": { forms: [], text: "Against names the benchmark ETF the basket is measured with: QQQ for the Nasdaq 100, SPY for the S&P 500." },
   "col-beta1y": { forms: [], text: "Beta 1Y is how much the basket's daily return moves for a 1% move in the benchmark's, fitted on the last 252 daily returns both have." },
@@ -74,7 +76,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   // Basket & Hedge · liquidity.
   "col-liq-name": { forms: [], text: "Each name in the basket, by its ticker." },
   "col-adv": { forms: [], text: "The name's average daily dollar volume, its unadjusted close times the shares traded, over the last 20 sessions." },
-  "col-at-target": { forms: [], text: "The dollars the name holds at its target weight of the basket's notional." },
+  // desk/cap-weight, round 4: one definition under both weightings (the head reads "At target" or "At cap weight"): a
+  // cap-weighted basket is bought at the last close's market values (src/desk/basket.py `buy`).
+  "col-at-target": { forms: [], text: "The dollars the name holds in the basket bought at the last close: the notional times its weight, the target you set or, cap-weighted, its share of the basket's market value there." },
   "col-days20": { forms: [], text: "How many sessions trading those dollars takes at 20% of the name's 20-day average dollar volume." },
   // Basket & Hedge · hedge with an ETF, and the stress test.
   "col-etf": { forms: [], text: "The ETF tested as the basket's hedge: SMH, SOXX, QQQ, XLK, IGV, XLU, SPY or IWM." },

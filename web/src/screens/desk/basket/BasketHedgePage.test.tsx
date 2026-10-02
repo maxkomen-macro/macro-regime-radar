@@ -15,8 +15,8 @@ import { Route, Routes, useLocation } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import sample from "../../../fixtures/desk/baskets.json";
 import { renderWithProviders } from "../../../test/utils";
-import { deskError, stubDesk } from "../../../test/desk";
-import { deskFixture } from "../../../fixtures/desk";
+import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
+import { basketKey, deskFixture } from "../../../fixtures/desk";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import { PRESET, SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
@@ -58,8 +58,9 @@ afterEach(() => {
 
 const basketCard = () => screen.getByRole("region", { name: "Basket" });
 const optionsCard = () => screen.getByRole("region", { name: /^Hedge with options/ });
+/** The basket card once its legs are on screen: typed weights, or a cap-weighted basket's weights (desk/cap-weight). */
 const loaded = async () => {
-  await waitFor(() => expect(within(basketCard()).getByLabelText("Weight of NVDA, percent")).toBeInTheDocument());
+  await waitFor(() => expect(within(basketCard()).queryByLabelText("Weight of NVDA, percent") ?? within(basketCard()).queryByLabelText("Cap weight of NVDA at the start")).not.toBeNull());
   return basketCard();
 };
 
@@ -341,19 +342,95 @@ describe("Basket & Hedge tab", () => {
     expect(b).toHaveTextContent("This browser's storage is full; nothing was saved.");
   });
 
-  it("a browser with no basket store starts with the AI Infrastructure 10 preset, priced (desk/books)", async () => {
+  it("a browser with no basket store starts with the AI Infrastructure 10 preset, cap-weighted and priced; equal weight is one click away (desk/books, desk/cap-weight)", async () => {
     const { calls } = stubDesk();
     renderTab();
     const b = await loaded();
     expect(within(b).getByLabelText("Basket")).toHaveDisplayValue("AI Infrastructure 10");
     expect(b).toHaveTextContent("10 names · saved in this browser");
-    for (const s of ["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]) expect(within(b).getByLabelText(`Weight of ${s}, percent`)).toHaveValue("10");
     expect(within(b).getByLabelText("Notional, dollars")).toHaveValue("1,000,000");
     expect(within(b).getByLabelText("Method")).toHaveDisplayValue("Buy-and-hold");
+    // Cap-weighted: the control is pressed, nothing is typed, nothing to normalize.
+    expect(within(b).getByRole("button", { name: "Cap-weight" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(b).queryByRole("button", { name: "Normalize to 100%" })).toBeNull();
+    expect(within(b).queryByLabelText("Weight of NVDA, percent")).toBeNull();
+    // The weights column shows each name's market value at the start over the basket's, as served (§12.15).
+    const capW: Record<string, string> = { NVDA: "55.1%", AVGO: "16.8%", AMD: "3.5%", TSM: "17.8%", MU: "2.1%", ANET: "2.0%", VRT: "0.6%", CEG: "1.5%", CRWV: "0.4%", NBIS: "0.1%" };
+    await waitFor(() => expect(within(b).getByLabelText("Cap weight of NVDA at the start")).toHaveTextContent("55.1%"));
+    for (const [s, w] of Object.entries(capW)) expect(within(b).getByLabelText(`Cap weight of ${s} at the start`)).toHaveTextContent(w);
+    expect(b).toHaveTextContent("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026)");
+    expect(b).toHaveTextContent("AI Infrastructure 10 holds 10 names, cap-weighted, the largest NVDA at 55% at the start, bought and held, $1,000,000: up 155.8% since Mar 28, 2025");
+    expect(b).toHaveTextContent("bought at each company's market value at the start; held, with dividends reinvested across it, it stays cap-weighted");
     const step = await screen.findByRole("region", { name: /^How the basket trades/ });
-    await waitFor(() => expect(within(step).getByRole("region", { name: /^Basket index/ })).toHaveTextContent("since Mar 28, 2025"));
-    expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000");
+    const index = within(step).getByRole("region", { name: /^Basket index/ });
+    await waitFor(() => expect(index).toHaveTextContent("Up 155.8% since Mar 28, 2025"));
+    expect(index).toHaveTextContent("base 100 on Mar 28 · cap-weighted · buy-and-hold");
+    expect(index).toHaveTextContent("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026). Bought at each company's market value at the start and held");
+    expect(calls).toContain("GET /api/desk/basket/shares");
+    expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&notional=1000000&weighting=cap");
+    expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&notional=1000000&weighting=cap");
     expect(stored()).toHaveLength(1);
+    expect(stored()[0].weighting).toBe("cap");
+    // Send to Position Monitor records the cap weights last served: the market values at the last close.
+    await waitFor(() => expect(stored()[0].cap_weights?.prices_as_of).toBe("2026-09-23"));
+    expect(stored()[0].cap_weights?.as_of).toBe("2026-10-01");
+    expect(stored()[0].cap_weights?.weights.NVDA).toBeCloseTo(0.446, 3);
+    // Equal weight, one click away: typed weights at 10% each, unsaved until Save, then priced at them.
+    fireEvent.click(within(b).getByRole("button", { name: "Equal-weight" }));
+    for (const s of Object.keys(capW)) expect(within(b).getByLabelText(`Weight of ${s}, percent`)).toHaveValue("10");
+    expect(within(b).getByRole("button", { name: "Cap-weight" })).toHaveAttribute("aria-pressed", "false");
+    expect(b).toHaveTextContent("unsaved changes");
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    await waitFor(() => expect(index).toHaveTextContent("Up 346.5% since Mar 28, 2025"));
+    expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000");
+    expect(stored()[0].weighting).toBeUndefined();
+    // And back: Cap-weight, saved, is priced cap-weighted again.
+    fireEvent.click(within(b).getByRole("button", { name: "Cap-weight" }));
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    await waitFor(() => expect(index).toHaveTextContent("Up 155.8% since Mar 28, 2025"));
+    expect(stored()[0].weighting).toBe("cap");
+  });
+
+  it("round 2: when the API refuses to cap-weight the preset, it is priced at its typed weights and says why, never unpriced", async () => {
+    const words = "cap weight cannot tell whether NVDA's close as traded moved 25% against its adjusted close on 2026-03-03 for a split or for a dividend, so it cannot weight this basket by market value";
+    const answers = { price: (basketPrice as { answers: Record<string, unknown> }).answers, hedge: (basketHedge as { answers: Record<string, unknown> }).answers };
+    const refuse = (route: "price" | "hedge") => (url: URL) =>
+      url.searchParams.get("weighting") === "cap" ? { status: 422, body: { error: "unsupported", message: words } } : answers[route][basketKey(url)];
+    const { calls } = stubDesk({ "/api/desk/basket/price": refuse("price"), "/api/desk/basket/hedge": refuse("hedge") });
+    renderTab();
+    const b = await loaded();
+    const index = await screen.findByRole("region", { name: /^Basket index/ });
+    await waitFor(() => expect(index).toHaveTextContent("Up 346.5% since Mar 28, 2025"));
+    expect(b).toHaveTextContent(`Cap weight is unavailable. C${words.slice(1)}.`);
+    expect(within(b).getByRole("button", { name: "Cap-weight" })).toBeDisabled();
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("10");
+    expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000");
+    // The choice is kept: the saved basket stays cap-weighted, and no cap weights are recorded for it.
+    expect(stored()[0].weighting).toBe("cap");
+    expect(stored()[0].cap_weights).toBeUndefined();
+    // Round 3 (R3-01): the address says the basket is priced at its typed weights, and Send to Position Monitor carries
+    // it, so Position Monitor records the weights shown here.
+    const address = () => new URLSearchParams((screen.getByTestId("loc").textContent ?? "").split("?")[1] ?? "");
+    await waitFor(() => expect([address().get("basket"), address().get("weighting")]).toEqual(["local-1", "target"]));
+    expect(screen.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?basket=local-1&weighting=target");
+    // Round 3 (R3-03): asked again on request: refused again here, so still priced at its typed weights.
+    const capAsked = () => calls.filter((c) => c.startsWith("GET /api/desk/basket/price") && c.endsWith("weighting=cap")).length;
+    const before = capAsked();
+    fireEvent.click(within(b).getByRole("button", { name: "Try cap weight again" }));
+    await waitFor(() => expect(capAsked()).toBe(before + 1));
+    await waitFor(() => expect(within(b).getByRole("button", { name: "Try cap weight again" })).toBeInTheDocument());
+    await waitFor(() => expect(index).toHaveTextContent("Up 346.5% since Mar 28, 2025"));
+  });
+
+  it("Codex R-02: an answer with the same dates as the stored cap weights and other weights replaces them, so Position Monitor records what the page shows", async () => {
+    // A snapshot an earlier answer left, with the fixture answer's dates (close Sep 23, counts read Oct 1) and other weights.
+    const old = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: Object.fromEntries(PRESET.legs.map((l) => [l.symbol, 0.1])), received_at: 1 };
+    seed([{ ...PRESET, cap_weights: old }]);
+    renderTab();
+    await loaded();
+    await waitFor(() => expect(stored()[0].cap_weights?.weights.NVDA).toBeCloseTo(0.446, 3));
+    expect(stored()[0].cap_weights?.received_at).toBeGreaterThan(1);
+    expect(stored()[0]).toMatchObject({ id: PRESET.id, name: PRESET.name, weighting: "cap", saved_at: PRESET.saved_at });
   });
 
   it("with no basket saved, says so and starts one with + New basket, named", async () => {
@@ -439,9 +516,14 @@ describe("Basket & Hedge tab", () => {
     renderTab("/desk/basket-hedge?add=orcl");
     const b = await loaded();
     await waitFor(() => expect(within(b).getByLabelText("Weight of ORCL, percent")).toBeInTheDocument());
-    // The preset's weights were equal, so all eleven are.
+    // The preset is cap-weighted, and ORCL has no stored share count: cap weight is unavailable for the eleven, which
+    // are priced at their typed weights, equal (the basket's choice of cap weight is kept for when ORCL is dropped).
     expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("9.1");
-    expect(b).toHaveTextContent("ORCL added; the 11 names are at equal weight. Save to price it.");
+    expect(b).toHaveTextContent("ORCL added; the 11 names are at equal weight. ORCL has no stored share count, so cap weight is unavailable for this basket. Save to price it.");
+    // The control says why it cannot cap-weight this basket (desk/cap-weight).
+    expect(within(b).getByRole("button", { name: "Cap-weight" })).toBeDisabled();
+    expect(within(b).getByRole("button", { name: "Cap-weight" }).closest("[data-unserved]")).not.toBeNull();
+    expect(b).toHaveTextContent("Cap weight is unavailable. It needs a stored share count for every name: ORCL has none (counts are stored for the preset baskets' names).");
     expect(b).toHaveTextContent("unsaved changes");
     expect(calls).toContain("GET /api/market/candles/ORCL?range=2Y");
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toBe("/desk/basket-hedge?basket=local-1"));
@@ -648,14 +730,16 @@ describe("Positioning (PROTOTYPE, §1.0.3): drawn for the AI Infrastructure 10 p
     await loaded();
     const c = await screen.findByRole("region", { name: /^Positioning/ });
     expect(c).toHaveAttribute("data-prototype", "positioning");
-    expect(c).toHaveTextContent(/Short interest\s*4\.8%\s*of float, weighted over all 10 names/);
-    expect(c).toHaveTextContent(/Days to cover\s*1\.7\s*weighted over all 10 names/);
+    // desk/cap-weight: the preset is cap-weighted, so the figures weight each name by what the basket holds at the
+    // last close (the served market-value weights).
+    await waitFor(() => expect(c).toHaveTextContent(/Short interest\s*1\.3%\s*of float, weighted over all 10 names/));
+    expect(c).toHaveTextContent(/Days to cover\s*0\.9\s*weighted over all 10 names/);
     expect(c).toHaveTextContent(/Crowded\s*4 of 10\s*names with data/);
     const rows = within(within(c).getByRole("table")).getAllByRole("row").slice(1);
     expect(rows.map((r) => r.querySelector("th")?.firstChild?.textContent)).toEqual(["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]);
-    expect(rows[0]).toHaveTextContent(/NVDA\s*NVIDIA\s*10%\s*1\.1%\s*0\.6\s*0\.78\s*Crowded long/);
-    expect(rows[8]).toHaveTextContent(/CRWV\s*CoreWeave\s*10%\s*18\.3%\s*2\.4\s*1\.36\s*Crowded short/);
-    expect(rows[9]).toHaveTextContent(/NBIS\s*Nebius\s*10%\s*15\.9%\s*2\.8\s*1\.24\s*Crowded short/);
+    expect(rows[0]).toHaveTextContent(/NVDA\s*NVIDIA\s*44\.6%\s*1\.1%\s*0\.6\s*0\.78\s*Crowded long/);
+    expect(rows[8]).toHaveTextContent(/CRWV\s*CoreWeave\s*0\.3%\s*18\.3%\s*2\.4\s*1\.36\s*Crowded short/);
+    expect(rows[9]).toHaveTextContent(/NBIS\s*Nebius\s*0\.4%\s*15\.9%\s*2\.8\s*1\.24\s*Crowded short/);
     expect(c).not.toHaveTextContent("no data");
     expect(within(c).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Weight", "Short int. (illustrative)", "Days to cover (illustrative)", "Put/call OI (illustrative)", "Crowding"]);
     expect(within(c).queryByTestId("dk-live")).toBeNull();
@@ -755,4 +839,76 @@ describe("Codex R-01: Positioning never prints NaN or counts a name without data
       expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
       expect(c.textContent).not.toMatch(/NaN|\d%\s*of float|names with data/);
     });
+});
+
+describe("Cap weight (desk/cap-weight)", () => {
+  const TEN = ["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"];
+
+  it("on a database without share counts, the preset is priced at its typed weights and Cap-weight is unavailable with the served reason", async () => {
+    const reason = "Awaiting refresh: share counts are not stored in this database yet; the next full refresh reads them from Yahoo.";
+    const { calls } = stubDesk({ "/api/desk/basket/shares": deskAwaiting(reason) });
+    renderTab();
+    const b = await loaded();
+    // The weights it is priced at, typed: 10% each, once the counts have answered that there are none.
+    await waitFor(() => expect(within(b).getByLabelText("Weight of NVDA, percent")).toBeInTheDocument());
+    for (const s of TEN) expect(within(b).getByLabelText(`Weight of ${s}, percent`)).toHaveValue("10");
+    const capBtn = within(b).getByRole("button", { name: "Cap-weight" });
+    expect(capBtn).toBeDisabled();
+    expect(capBtn.closest("[data-unserved]")).not.toBeNull();
+    expect(b).toHaveTextContent(`Cap weight is unavailable. ${reason}`);
+    await waitFor(() =>
+      expect(b).toHaveTextContent("AI Infrastructure 10 holds 10 names, 10% each (cap weight is unavailable), bought and held, $1,000,000: up 346.5% since Mar 28, 2025"),
+    );
+    // Every step is served: the index and the hedge, at equal weight; nothing is asked cap-weighted.
+    const step = screen.getByRole("region", { name: /^How the basket trades/ });
+    await waitFor(() => expect(within(step).getByRole("region", { name: /^Basket index/ })).toHaveTextContent("Up 346.5% since Mar 28, 2025"));
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Hedge with an ETF/ })).toHaveTextContent("SMH fits the basket best (R² 0.74 over a year)"));
+    expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000");
+    expect(calls.some((c) => c.includes("weighting=cap"))).toBe(false);
+    // The choice is kept: the saved basket stays cap-weighted for when the counts arrive.
+    expect(stored()[0].weighting).toBe("cap");
+  });
+
+  it("a custom ticker without a stored share count disables cap weight for that basket, with the reason; without it, Cap-weight is one click", async () => {
+    seed(); // the fixture tests' sample basket: SMCI has no stored count
+    const { calls } = stubDesk();
+    renderTab();
+    const b = await loaded();
+    const capBtn = () => within(b).getByRole("button", { name: "Cap-weight" });
+    expect(capBtn()).toBeDisabled();
+    expect(b).toHaveTextContent("Cap weight is unavailable. It needs a stored share count for every name: SMCI has none (counts are stored for the preset baskets' names).");
+    // Priced at its typed weights.
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Basket index/ })).toHaveTextContent("Up 113.8% since Mar 28, 2025"));
+    // Drop SMCI: every name left has a count, so Cap-weight acts; the typed weights are kept, scaled to 100%, unsaved.
+    fireEvent.click(within(b).getByRole("button", { name: "Drop SMCI" }));
+    expect(capBtn()).toBeEnabled();
+    expect(capBtn()).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(capBtn());
+    expect(capBtn()).toHaveAttribute("aria-pressed", "true");
+    expect(within(b).getByLabelText("Cap weight of NVDA at the start")).toHaveTextContent("—");
+    expect(b).toHaveTextContent("Save computes the cap weights from each name's market value at the start.");
+    expect(b).toHaveTextContent("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026)");
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    await waitFor(() => expect(stored()[0].weighting).toBe("cap"));
+    // 22, 16, 14, 12, 12 and 12 (88%) scaled to 100% at a tenth: kept for when Cap-weight is turned off.
+    expect(stored()[0].legs.map((l) => [l.symbol, l.weight])).toEqual([["NVDA", "25"], ["AVGO", "18.2"], ["VRT", "15.9"], ["CRWV", "13.7"], ["ANET", "13.6"], ["CEG", "13.6"]]);
+    // Cap-weight is a toggle: off again, the typed weights are back.
+    fireEvent.click(capBtn());
+    expect(capBtn()).toHaveAttribute("aria-pressed", "false");
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("25");
+    // The six names cap-weighted have no fixture answer; the request is the cap one, and its refusal is shown in words.
+    await waitFor(() => expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CVRT%2CCRWV%2CANET%2CCEG&method=hold&notional=1000000&weighting=cap"));
+  });
+
+  it("typing a weight where cap weight is unavailable makes the basket one of typed weights", async () => {
+    stubDesk({ "/api/desk/basket/shares": deskAwaiting("Awaiting refresh: none stored.") });
+    renderTab();
+    const b = await loaded();
+    await waitFor(() => expect(within(b).getByLabelText("Weight of NVDA, percent")).toBeInTheDocument());
+    fireEvent.change(within(b).getByLabelText("Weight of NVDA, percent"), { target: { value: "19" } });
+    fireEvent.change(within(b).getByLabelText("Weight of AVGO, percent"), { target: { value: "1" } });
+    fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
+    await waitFor(() => expect(stored()[0].legs[0].weight).toBe("19"));
+    expect(stored()[0].weighting).toBeUndefined();
+  });
 });

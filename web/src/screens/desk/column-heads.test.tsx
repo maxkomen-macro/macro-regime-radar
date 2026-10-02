@@ -65,6 +65,29 @@ function expectHeads(table: Element | null, expected: [string, string | readonly
 const fromEntry = (id: string) => [id, "entry", "entry-rule"] as const;
 
 describe("every Desk column head carries its definition (desk/pdf-polish item 7)", () => {
+  it("Basket & Hedge cap-weighted (desk/cap-weight): the weights column and liquidity's dollars carry the one definition true under both weightings", async () => {
+    // A first visit: the AI Infrastructure 10 preset, cap-weighted.
+    renderAt("/desk/basket-hedge");
+    const basket = await screen.findByRole("region", { name: "Basket" });
+    await waitFor(() => expect(basket.querySelector("thead.bh-legs-thead")).not.toBeNull());
+    await waitFor(() => expect(within(basket).getByLabelText("Cap weight of NVDA at the start")).toHaveTextContent("55.1%"));
+    expectHeads(basket.querySelector("table.bh-table"), [
+      ["Ticker", "col-ticker"],
+      ["Name", "col-name"],
+      ["Now", "col-now"],
+      ["Since start", "col-since"],
+      ["At start", "col-weight"],
+    ]);
+    const liquidity = await screen.findByRole("region", { name: /^Liquidity/ });
+    await waitFor(() => expect(liquidity.querySelector("table.bh-liq-table")).not.toBeNull());
+    expectHeads(liquidity.querySelector("table.bh-liq-table"), [
+      ["Name", "col-liq-name"],
+      ["20-day avg $ volume", "col-adv"],
+      ["At cap weight", "col-at-target"],
+      ["Days at 20%", "col-days20"],
+    ]);
+  });
+
   it("Basket & Hedge: the legs, against the Nasdaq and the S&P, liquidity, hedge with an ETF, the stress test", async () => {
     localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify((sample as { baskets: unknown[] }).baskets));
     renderAt("/desk/basket-hedge");
