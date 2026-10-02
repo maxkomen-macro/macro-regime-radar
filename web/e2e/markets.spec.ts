@@ -482,7 +482,10 @@ test.describe("markets (checklist 05 E.3)", () => {
     expect(colHeaders).toContain("level");
     expect(colHeaders).toContain("mom");
     for (const h of lower(await section.locator("th").allTextContents())) expect(h).not.toMatch(/^1w\b|1y range/);
-    expect(lower(await section.locator("th[scope='row']").allTextContents())).toEqual(expect.arrayContaining(["fed funds", "sofr"]));
+    // fix/freshness 4: each row names its observation month ("Fed Funds · Aug 2026 average", "SOFR · Sep 2026").
+    const rowHeads = lower(await section.locator("th[scope='row']").allTextContents());
+    expect(rowHeads.some((h) => /^fed funds · [a-z]{3} \d{4} average$/.test(h)), rowHeads.join(" | ")).toBe(true);
+    expect(rowHeads.some((h) => /^sofr · [a-z]{3} \d{4}$/.test(h)), rowHeads.join(" | ")).toBe(true);
     for (const level of await section.locator("tbody td:nth-child(2)").allInnerTexts()) expect(clean(level)).toMatch(/^-?\d+\.\d\d%$/);
     await section.getByRole("link", { name: /Methodology/ }).click();
     await expect(page).toHaveURL(/\/app\/methodology#data$/);

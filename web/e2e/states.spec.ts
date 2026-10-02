@@ -111,7 +111,8 @@ async function expectPhoneDataStatus(page: Page, words: string | RegExp, tone: s
   await page.locator("button[aria-controls='mobile-nav-list']").click();
   const entry = page.locator("#mobile-nav-list").getByTestId("sidebar-freshness");
   await expect(entry).toBeVisible();
-  await expect(entry).toContainText(/^Data status/);
+  // A snapshot's entry starts with its ◇ mark (no health dot), then the words.
+  await expect(entry).toContainText(/^◇?Data status/);
   await expect(entry).toContainText(words, { timeout: 20_000 });
   if (tone) await expect(entry.locator(".mrr-dot")).toHaveAttribute("data-tone", tone);
   else {
