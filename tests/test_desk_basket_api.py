@@ -350,6 +350,33 @@ def _counts_store(path, rows=None, *, table=True, extra=()):
     return path
 
 
+def test_codex_r05_the_freshness_dates_the_counts_by_the_rows_the_basket_reads(tmp_path, monkeypatch):
+    """Codex R-05: /api/freshness's share-count state reads only the rows the basket reads: a row dated after today,
+    which the basket sets aside, never dates it, and with every row set aside the counts read as unavailable."""
+    from datetime import date
+
+    from api import freshness as fr
+
+    f = _counts_store(tmp_path / "fresh.db", extra=[("ZZZ", 1e9, "2099-01-01", "yfinance")])
+    with sqlite3.connect(f) as c:
+        for t in ("regimes(date)", "signals(date)", "market_daily(date)", "market_intraday(ts)", "news_feed(published_at)", "raw_series(date)"):
+            c.execute(f"CREATE TABLE {t}")
+    monkeypatch.setattr(db, "DB_PATH", f)
+    db.reset_connections_for_tests()
+    try:
+        out = db._freshness_uncached()
+        assert out["share_counts_as_of"] == "2026-09-24" and out["share_counts_rows"] == len(COUNTS) + 1
+        with sqlite3.connect(f) as c:
+            c.execute("UPDATE share_counts SET as_of = '2099-01-01'")
+        db.reset_connections_for_tests()
+        out = db._freshness_uncached()
+        assert out["share_counts_as_of"] is None and out["share_counts_rows"] == len(COUNTS) + 1
+        st = fr.share_counts_state(out["share_counts_as_of"], today_ny=date(2026, 10, 2), stored_rows=out["share_counts_rows"])
+        assert st["state"] == "unknown" and st["reason"] == fr.SHARE_COUNTS_NONE_READABLE
+    finally:
+        db.reset_connections_for_tests()
+
+
 @pytest.fixture()
 def served_counts(tmp_path, monkeypatch, install_worker):
     """start(...) serves the share counts item over a file built by _counts_store, with the mocked provider."""

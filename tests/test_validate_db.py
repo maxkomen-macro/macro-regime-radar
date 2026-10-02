@@ -1386,3 +1386,38 @@ def test_the_share_counts_state_is_reported_never_judged(tmp_path):
                                                 now=NOW)["series"] if s["id"] == "share_counts")
     assert st["state"] == "stale" and st["as_of"] == "2026-08-01" and st["cycles_behind"] == 34
     assert all(r["feed"] != "share_counts" for r in rep["sla_all"])
+
+
+def test_codex_r05_a_count_dated_after_today_is_never_read_as_current(tmp_path):
+    """Codex R-05: the basket sets aside a count dated after today (api/desk_basket._count_problem), so the counts'
+    state is dated by the counts it reads: one it reads dates the state, and with every row set aside the counts are
+    unavailable, never current. A read dated after today, handed to the state directly, is unavailable too."""
+    from datetime import date
+
+    st = v.freshness_mod.share_counts_state("2099-01-01", today_ny=date(2026, 10, 2))
+    assert st["state"] == "unknown" and not st["stale"] and "after today" in st["reason"]
+
+    def state(fresh):
+        return next(s for s in v.freshness_mod.assess(db_fresh=fresh, series_latest=[], relay=None, bootstrap=None, now=NOW)["series"]
+                    if s["id"] == "share_counts")
+
+    cur = _with_counts(_make_path(tmp_path, "cur.db"), as_of="2026-09-04")
+    conn = sqlite3.connect(cur)
+    conn.execute("INSERT INTO share_counts VALUES ('MU', 1e9, '2099-01-01', 'yfinance')")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, None, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert rep["current"]["fresh"]["share_counts_as_of"] == "2026-09-04"
+    assert any("1 row(s) the API sets aside" in w for w in rep["warnings"])
+    assert state(rep["current"]["fresh"])["state"] == "close"
+    conn = sqlite3.connect(cur)
+    conn.execute("UPDATE share_counts SET as_of = '2099-01-01'")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, None, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    fresh = rep["current"]["fresh"]
+    assert fresh["share_counts_as_of"] is None and fresh["share_counts_rows"] == 3
+    st = state(fresh)
+    assert st["state"] == "unknown" and st["as_of"] is None and st["reason"] == v.freshness_mod.SHARE_COUNTS_NONE_READABLE

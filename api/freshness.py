@@ -73,6 +73,18 @@ DAILY_TOLERANCE = 3
 SHARE_COUNTS_TOLERANCE_DAYS = 7
 SHARE_COUNTS_LABEL = "Share counts (stored)"
 SHARE_COUNTS_MISSING = "Share counts are not stored in this database yet; the next full refresh reads them from Yahoo."
+SHARE_COUNTS_NONE_READABLE = ("No stored share count can be read (the basket sets each aside, with why); the next full refresh "
+                              "reads them from Yahoo again.")
+# desk/cap-weight (Codex R-05): a stored share-count row the basket reads (api/desk_basket._count_problem), in SQL,
+# bound to a New York date (`?`): a symbol, a count that is a positive finite number, a YYYY-MM-DD read date no
+# later than that date (SQLite's date() normalizes '2026-02-30', so `date(d) = d` holds only for a real day), and a
+# source. Never NULL, so `NOT (...)` counts exactly the rows the basket sets aside (scripts/validate_db.py).
+SHARE_COUNTS_READABLE_SQL = (
+    "(typeof(symbol) = 'text' AND trim(symbol) <> '' "
+    "AND typeof(shares_outstanding) IN ('real', 'integer') AND shares_outstanding > 0 AND shares_outstanding < 1e308 "
+    "AND typeof(as_of) = 'text' AND COALESCE(date(as_of) = as_of, 0) AND as_of <= ? "
+    "AND typeof(source) = 'text' AND trim(source) <> '')"
+)
 
 
 def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, state: str, *, delay_min: int | None = None,
@@ -82,15 +94,23 @@ def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, sta
             "discontinued": discontinued, "reason": reason}
 
 
-def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | None = None) -> dict:
+def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | None = None, stored_rows: int | None = None) -> dict:
     """desk/cap-weight: the state of the stored share counts, dated by the
-    oldest read (`share_counts_as_of`, the New York date the full refresh read
-    it). `cycles_behind` counts the days since the read beyond the day before
-    today; the state is stale once the oldest read is more than
-    SHARE_COUNTS_TOLERANCE_DAYS old."""
+    oldest read among the rows the basket reads (`share_counts_as_of`, the New
+    York date the full refresh read it; Codex R-05: never a row it sets aside,
+    such as one dated after today). `cycles_behind` counts the days since the
+    read beyond the day before today; the state is stale once the oldest read
+    is more than SHARE_COUNTS_TOLERANCE_DAYS old. With rows stored
+    (`stored_rows`) but none the basket reads, or a read dated after today,
+    the counts are unavailable (`unknown`), never current."""
     d = _parse_date(as_of)
     if d is None:
-        return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", None, "unknown", reason=SHARE_COUNTS_MISSING)
+        return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", None, "unknown",
+                      reason=SHARE_COUNTS_NONE_READABLE if stored_rows else SHARE_COUNTS_MISSING)
+    if d > today_ny:
+        return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", d.isoformat(), "unknown",
+                      reason=f"The stored share counts are dated {d.isoformat()}, after today ({today_ny.isoformat()}); the basket "
+                             "sets such a count aside until the next full refresh reads it again.")
     age = (today_ny - d).days
     detail = (watermark or {}).get("detail")
     src = f" Last read: {detail}." if detail else ""
@@ -611,7 +631,8 @@ def assess(
     # desk/cap-weight: present only when the caller reports the oldest stored read (api/db.freshness, validate_db)
     if "share_counts_as_of" in db_fresh:
         series.append(share_counts_state(db_fresh.get("share_counts_as_of"), today_ny=today_ny,
-                                         watermark=(watermarks or {}).get("share_counts")))
+                                         watermark=(watermarks or {}).get("share_counts"),
+                                         stored_rows=db_fresh.get("share_counts_rows")))
     if relay:
         feeds = relay.get("feeds", {})
         us, vix = feeds.get("us"), feeds.get("vix")

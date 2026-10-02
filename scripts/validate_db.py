@@ -281,12 +281,10 @@ def _advisory(out: dict, name: str, query):
 
 
 # desk/cap-weight: share_counts rows the API sets aside on read (api/desk_basket.desk_share_counts): no symbol, a
-# count that is not a positive number, a read date that is not a YYYY-MM-DD calendar date or is after the run's
-# New York date (the `?`), or no source.
-SHARE_COUNTS_UNREADABLE = ("SELECT COUNT(*) FROM share_counts WHERE typeof(symbol) <> 'text' OR trim(symbol) = '' "
-                           "OR typeof(shares_outstanding) NOT IN ('real', 'integer') OR shares_outstanding <= 0 "
-                           "OR NOT (typeof(as_of) = 'text' AND COALESCE(date(as_of) = as_of, 0)) OR as_of > ? "
-                           "OR typeof(source) <> 'text' OR trim(source) = ''")
+# count that is not a positive finite number, a read date that is not a YYYY-MM-DD calendar date or is after the
+# run's New York date (the `?`), or no source; the rows the API reads are api/freshness's one predicate (Codex R-05).
+SHARE_COUNTS_UNREADABLE = f"SELECT COUNT(*) FROM share_counts WHERE NOT {freshness_mod.SHARE_COUNTS_READABLE_SQL}"
+SHARE_COUNTS_OLDEST_READ = f"SELECT MIN(as_of) FROM share_counts WHERE {freshness_mod.SHARE_COUNTS_READABLE_SQL}"
 
 
 def inspect(path: Path, as_of: str | None = None) -> dict:
@@ -362,13 +360,17 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
             "asset_prices_date": None,
             "desk_series_date": None,
             "desk_series_latest": None,
-            # desk/cap-weight: the oldest stored share-count read (api/freshness reports its state, never judged)
+            # desk/cap-weight: the oldest share-count read among the rows the API reads, and how many rows are
+            # stored (api/freshness reports their state, never judged; Codex R-05: a row the API sets aside, one
+            # dated after the run's day among them, never dates them)
             "share_counts_as_of": None,
+            "share_counts_rows": 0,
         }
         if "share_counts" in out["tables"]:
-            out["fresh"]["share_counts_as_of"] = _advisory(out, "share_counts oldest read", lambda: conn.execute(
-                "SELECT MIN(as_of) FROM share_counts").fetchone()[0])
             cut_sc = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()
+            out["fresh"]["share_counts_as_of"] = _advisory(out, "share_counts oldest read", lambda: conn.execute(
+                SHARE_COUNTS_OLDEST_READ, (cut_sc,)).fetchone()[0])
+            out["fresh"]["share_counts_rows"] = out["tables"]["share_counts"]["rows"]
             out["share_counts_unreadable"] = _advisory(out, "share_counts unreadable rows", lambda: int(conn.execute(
                 SHARE_COUNTS_UNREADABLE, (cut_sc,)).fetchone()[0]))
         if "asset_prices" in out["tables"]:
