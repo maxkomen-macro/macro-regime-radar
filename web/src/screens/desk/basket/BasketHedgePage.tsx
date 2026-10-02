@@ -13,16 +13,25 @@
  * "Positioning", per name, and "Event study on this basket", as an Event
  * Study answer.
  * Send to Position Monitor carries the basket as a manual subject (§9).
+ *
+ * desk/cap-weight: Cap-weight, beside Equal-weight, weights the basket by
+ * each name's market value at its start (§12.15 `weighting=cap`) from the
+ * share counts the full refresh stores (§12.18, `useBasketShares`); the preset
+ * is cap-weighted by default. The weights column then shows the resulting
+ * weights, read only. A basket with a name that has no stored count, or a
+ * database without counts, shows the control unavailable with the reason, and
+ * a saved cap-weighted basket is then priced at its typed weights (equal).
  */
 
 import { useEffect, useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
-import { useBasketHedge, useBasketPrice } from "../data/api";
+import { useBasketHedge, useBasketPrice, useBasketShares } from "../data/api";
+import type { BasketParams } from "./weights";
 import { useSearchParams } from "react-router-dom";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { dayShort, pct, pctPlain } from "../kit/format";
 import type { BasketPriceResponse } from "../data/types";
-import { asOfMismatch, basketLead } from "./trades";
+import { asOfMismatch, basketLead, capLabel } from "./trades";
 import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
 import { InstrumentSearch } from "../kit/InstrumentSearch";
 import { Term, defineTerms } from "../kit/Term";
@@ -36,41 +45,57 @@ import {
   DEFAULT_NOTIONAL,
   METHOD_WORDS,
   addLeg,
+  capAvailability,
+  capRefusalOf,
+  refusalLapsed,
   methodOf,
   notionalOf,
   notionalText,
   parseNotional,
   seedPreset,
+  upgradeSeededPreset,
   saveRefusal,
   savedLegs,
+  shareCountsOf,
   equalWeight,
   exportSaved,
   importSaved,
+  heldBasket,
   legsKey,
   newBasketId,
   normalize,
   parseTicker,
   parseWeight,
+  priceParams,
   readSaved,
   removeSaved,
   sumsToHundred,
   toWork,
   totalText,
   unreadableSaved,
+  weightingOf,
   writeAllSaved,
   writeSaved,
+  writeSnapshot,
+  type CapAvailability,
+  type CapRefusal,
+  type CapSnapshot,
   type Method,
   type SaveResult,
   type SavedBasket,
+  type ShareCounts,
+  type Weighting,
   type WorkLeg,
 } from "./weights";
 import "./basket.css";
 
-/** What /basket/price is asked for a saved basket (§12.15): its legs as saved, the method, the notional;
- * null until the basket has legs whose weights add to exactly 100%. */
-export function priceParams(b: SavedBasket | null): { legs: string; method: string; notional: string } | null {
-  if (!b || !b.legs.length || !sumsToHundred(b.legs)) return null;
-  return { legs: legsKey(b.legs), method: methodOf(b), notional: String(notionalOf(b)) };
+/** Whether two lists of legs name the same tickers in the same order. */
+const sameNames = (a: readonly { symbol: string }[], b: readonly { symbol: string }[]) => a.length === b.length && a.every((l, i) => l.symbol === b[i].symbol);
+
+/** A cap-weighted answer's start weights by ticker, when it answers for exactly these names in this order (§12.15). */
+function servedCapWeights(p: BasketPriceResponse | undefined, symbols: readonly string[] | undefined): Record<string, number> | null {
+  if (!p || p.weighting !== "cap" || !p.legs || !symbols || p.legs.length !== symbols.length || p.legs.some((l, i) => l.symbol !== symbols[i])) return null;
+  return Object.fromEntries(p.legs.filter((l) => finite(l.target_weight)).map((l) => [l.symbol, l.target_weight as number]));
 }
 
 /** A total as printed: its exact digits ("100%", "96.5%", "99.97%"), so the words never say 100% of
@@ -90,8 +115,36 @@ function liveOf(p: BasketPriceResponse | undefined): Live | null {
 }
 const finite = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 
-function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; onChange: (legs: WorkLeg[]) => void; onAdd: (symbol: string) => Promise<string>; empty: ReactNode; live: Live | null }) {
+function Legs({
+  legs,
+  onChange,
+  onAdd,
+  empty,
+  live,
+  weighting,
+  cap,
+  onCap,
+  onEqual,
+  served,
+  onRetryCap,
+}: {
+  legs: WorkLeg[] | null;
+  onChange: (legs: WorkLeg[]) => void;
+  onAdd: (symbol: string) => Promise<string>;
+  empty: ReactNode;
+  live: Live | null;
+  /** desk/cap-weight: how the legs are weighted, whether these names can be cap-weighted, the two tools, and the
+   * served weights at the start for a cap-weighted basket (null until its answer is for these names). */
+  weighting: Weighting;
+  cap: CapAvailability;
+  onCap: () => void;
+  onEqual: () => void;
+  served: Record<string, number> | null;
+  /** Round 3 (R3-03): when the API refused these names, asks cap weight again. */
+  onRetryCap?: () => void;
+}) {
   const uid = useId();
+  const capped = weighting === "cap";
   const [ticker, setTicker] = useState("");
   const [note, setNote] = useState("");
   const [checking, setChecking] = useState(false);
@@ -113,17 +166,32 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
     <div className="bh-legs">
       <div className="bh-legs-head">
         <p>
-          <span className="dk-stat-label">Legs</span> <span className="bh-hint">type a weight, or × to drop a name</span>
+          <span className="dk-stat-label">Legs</span> <span className="bh-hint">{capped ? "weights are market values at the start; × to drop a name" : "type a weight, or × to drop a name"}</span>
         </p>
         {/* §14.13: a tool with no legs to act on is not shown. */}
         {legs?.length ? (
           <div className="bh-legs-tools">
-            <button type="button" className="dk-btn" onClick={() => onChange(equalWeight(legs))}>
+            {/* desk/cap-weight: unavailable, the control is disabled inside its reason's scope (§1.0.2, [data-unserved]). */}
+            {cap.state === "unavailable" ? (
+              <span className="bh-cap-off" data-unserved="cap-weight">
+                <button type="button" className="dk-btn" disabled aria-pressed={false} aria-describedby={`${uid}-capwhy`}>
+                  Cap-weight
+                </button>
+              </span>
+            ) : (
+              <button type="button" className="dk-btn" aria-pressed={capped} onClick={onCap}>
+                Cap-weight
+              </button>
+            )}
+            <button type="button" className="dk-btn" onClick={onEqual}>
               Equal-weight
             </button>
-            <button type="button" className="dk-btn" onClick={() => onChange(normalize(legs))}>
-              Normalize to 100%
-            </button>
+            {/* §14.13: cap weights are not typed, so there is nothing to normalize. */}
+            {capped ? null : (
+              <button type="button" className="dk-btn" onClick={() => onChange(normalize(legs))}>
+                Normalize to 100%
+              </button>
+            )}
           </div>
         ) : null}
       </div>
@@ -150,7 +218,8 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
                 </>
               ) : null}
               <th scope="col" className="bh-w-h">
-                <Term ids={["col-weight"]}>Weight</Term>
+                {/* desk/cap-weight: a cap-weighted basket's column is its weights at the start, served */}
+                <Term ids={["col-weight"]}>{capped ? "At start" : "Weight"}</Term>
               </th>
               <th scope="col">
                 <span className="dk-sr">Drop</span>
@@ -175,15 +244,24 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
                     </>
                   ) : null}
                   <td className="bh-w">
-                    <input
-                      className="bh-input"
-                      inputMode="decimal"
-                      aria-label={`Weight of ${l.symbol}, percent`}
-                      aria-invalid={bad || undefined}
-                      value={l.weight}
-                      onChange={(e) => onChange(legs.map((x, j) => (j === i ? { ...x, weight: e.target.value } : x)))}
-                    />
-                    <span aria-hidden="true">%</span>
+                    {capped ? (
+                      // desk/cap-weight: the resulting weight at the start, served; "—" until the answer is for these names.
+                      <span className="bh-capw" data-testid="bh-capw" aria-label={`Cap weight of ${l.symbol} at the start`} title="market value at the start over the basket's">
+                        {served && finite(served[l.symbol]) ? pctPlain(served[l.symbol], 1) : "—"}
+                      </span>
+                    ) : (
+                      <>
+                        <input
+                          className="bh-input"
+                          inputMode="decimal"
+                          aria-label={`Weight of ${l.symbol}, percent`}
+                          aria-invalid={bad || undefined}
+                          value={l.weight}
+                          onChange={(e) => onChange(legs.map((x, j) => (j === i ? { ...x, weight: e.target.value } : x)))}
+                        />
+                        <span aria-hidden="true">%</span>
+                      </>
+                    )}
                   </td>
                   <td className="bh-x">
                     <button type="button" className="bh-drop" aria-label={`Drop ${l.symbol}`} onClick={() => onChange(legs.filter((_, j) => j !== i))}>
@@ -228,11 +306,29 @@ function Legs({ legs, onChange, onAdd, empty, live }: { legs: WorkLeg[] | null; 
             />
             <span className="bh-add-hint">any US-listed name</span>
           </form>
-          <p className="bh-total">
-            total <b data-off={(tot != null && tot !== "100") || undefined}>{tot == null ? "—" : totalWords(tot)}</b>
-          </p>
+          {capped && cap.state === "ok" ? (
+            <p className="bh-total bh-cap-label">{capLabel(cap.provider, cap.as_of)}</p>
+          ) : (
+            <p className="bh-total">
+              total <b data-off={(tot != null && tot !== "100") || undefined}>{tot == null ? "—" : totalWords(tot)}</b>
+            </p>
+          )}
         </div>
       ) : null}
+      {legs?.length && cap.state === "unavailable" ? (
+        <p className="bh-why bh-cap-why" id={`${uid}-capwhy`} data-unserved="cap-weight">
+          {cap.reason}
+          {onRetryCap ? (
+            <>
+              {" "}
+              <button type="button" className="dk-link" onClick={onRetryCap}>
+                Try cap weight again
+              </button>
+            </>
+          ) : null}
+        </p>
+      ) : null}
+      {capped && cap.state === "ok" && legs?.length && !served ? <p className="bh-hint bh-cap-hint">Save computes the cap weights from each name&apos;s market value at the start.</p> : null}
       <p className="bh-note" role="status">
         {note}
       </p>
@@ -252,6 +348,9 @@ function BasketCard({
   pendingAdd,
   onAddDone,
   priced,
+  counts,
+  refused,
+  onRetryCap,
 }: {
   basketId: string | null;
   saved: SavedBasket[];
@@ -263,6 +362,12 @@ function BasketCard({
   onAddDone: () => void;
   /** The saved basket's price answer, for the lead and the legs' live columns. */
   priced?: BasketPriceResponse;
+  /** desk/cap-weight: the stored share counts (§12.18), for whether a basket can be cap-weighted. */
+  counts: ShareCounts;
+  /** Round 2: the names the API refused to cap-weight, and why (the basket is then priced at its typed weights). */
+  refused: CapRefusal | null;
+  /** Round 3 (R3-03): asks cap weight again for refused names. */
+  onRetryCap: () => void;
 }) {
   const uid = useId();
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -271,6 +376,7 @@ function BasketCard({
   const [work, setWork] = useState<WorkLeg[] | null>(null);
   const [methodWork, setMethodWork] = useState<Method | null>(null);
   const [notionalWork, setNotionalWork] = useState<string | null>(null);
+  const [weightingWork, setWeightingWork] = useState<Weighting | null>(null);
   const [status, setStatus] = useState("");
   const [naming, setNaming] = useState<"new" | "rename" | null>(null);
   const [draft, setDraft] = useState("");
@@ -280,6 +386,7 @@ function BasketCard({
     setWork(null);
     setMethodWork(null);
     setNotionalWork(null);
+    setWeightingWork(null);
     setStatus("");
     setNaming(null);
     setConfirmDelete(false);
@@ -290,23 +397,68 @@ function BasketCard({
   const method = methodWork ?? methodOf(local);
   const notionalTyped = notionalWork ?? notionalText(notionalOf(local));
   const notional = parseNotional(notionalTyped);
+  // desk/cap-weight: how the legs are weighted, and whether these names can be cap-weighted (every one with a count).
+  const weighting = weightingWork ?? weightingOf(local);
+  const cap = capAvailability((legs ?? []).map((l) => l.symbol), counts, refused);
+  // How the legs are shown and priced: cap-weighted only while every name has a stored count; otherwise the typed
+  // weights the basket is priced at (the choice itself is kept, so the counts' arrival makes it cap-weighted again).
+  const shown: Weighting = weighting === "cap" && cap.state !== "unavailable" ? "cap" : "target";
+  const weightingRef = useRef<Weighting>(weighting);
+  weightingRef.current = weighting;
+  const countsRef = useRef<ShareCounts>(counts);
+  countsRef.current = counts;
+  const served = shown === "cap" ? servedCapWeights(priced, legs?.map((l) => l.symbol)) : null;
   const tot = legs ? totalText(legs) : null;
-  const dirty = !!local && ((!!work && !!base && legsKey(work) !== legsKey(base)) || method !== methodOf(local) || notional !== notionalOf(local));
+  const dirty =
+    !!local && ((!!work && !!base && legsKey(work) !== legsKey(base)) || method !== methodOf(local) || notional !== notionalOf(local) || weighting !== weightingOf(local));
+  /** desk/cap-weight: Cap-weight is a toggle. On, the basket is weighted by market value at the start and its typed
+   * weights are kept as they are (scaled to 100% when they do not add to it, so they stay a basket the API prices);
+   * off again, the typed weights are back. */
+  const toCap = () => {
+    if (!legs) return;
+    if (weighting === "cap") {
+      setWeightingWork("target");
+      return setStatus("");
+    }
+    setWeightingWork("cap");
+    if (!sumsToHundred(legs)) setWork(normalize(legs));
+    setStatus(weightingOf(local) === "cap" ? "" : "Cap-weighted: each name at its market value at the start. Save to price it.");
+  };
+  const toEqual = () => {
+    if (!legs) return;
+    setWeightingWork("target");
+    setWork(equalWeight(legs));
+    setStatus("");
+  };
   const save = () => {
     if (!legs || !local) return;
     if (!legs.length) return setStatus("Add a ticker to save the basket.");
-    if (tot !== "100") return setStatus(tot == null ? "A weight is not a number; fix it to save." : `The weights add to ${totalWords(tot)}; normalize them to 100% to save.`);
+    // A cap-weighted basket's typed weights are its equal-weight fallback; the market values weight it (desk/cap-weight).
+    if (weighting !== "cap" && tot !== "100") return setStatus(tot == null ? "A weight is not a number; fix it to save." : `The weights add to ${totalWords(tot)}; normalize them to 100% to save.`);
     // Codex R-10: the API prices only positive weights (and at most 25 names); Save refuses what it would refuse.
     const refused = saveRefusal(legs);
     if (refused) return setStatus(refused);
     if (notional == null) return setStatus("The notional is not a dollar amount above $0; fix it to save.");
     // Each weight saved as the exact decimal typed, so the basket adds to exactly 100% when read back (Codex R-20).
-    const r = writeSaved({ id: local.id, name: local.name, legs: savedLegs(legs), saved_at: new Date().toISOString(), method, notional });
+    // A cap-weighted basket keeps the cap weights last served for it while its names are unchanged (desk/cap-weight).
+    const legsSaved = savedLegs(weighting === "cap" && !sumsToHundred(legs) ? normalize(legs) : legs);
+    const snapshot = weighting === "cap" && local.cap_weights && sameNames(legsSaved, local.legs) ? local.cap_weights : undefined;
+    const r = writeSaved({
+      id: local.id,
+      name: local.name,
+      legs: legsSaved,
+      saved_at: new Date().toISOString(),
+      method,
+      notional,
+      ...(weighting === "cap" ? { weighting: "cap" as const } : {}),
+      ...(snapshot ? { cap_weights: snapshot } : {}),
+    });
     if (r !== "ok") return setStatus(STORAGE_WORDS[r]);
     onSaved();
     setWork(null);
     setMethodWork(null);
     setNotionalWork(null);
+    setWeightingWork(null);
     setStatus("Saved in this browser; priced below.");
   };
   const remove = () => {
@@ -358,14 +510,30 @@ function BasketCard({
     if (current.some((l) => l.symbol === symbol)) return `${symbol} is already in the basket.`;
     const next = addLeg(current, symbol);
     setWork(next.legs);
-    const words = `${symbol} added; the ${next.legs.length} names are at equal weight.`;
+    // desk/cap-weight: the basket's weighting is the analyst's choice and an add never changes it; the note says what
+    // applies. With every name counted it stays cap-weighted; with a name uncounted, cap weight is unavailable (the
+    // control says why) and the basket is priced at its typed weights, now equal.
+    const cnt = countsRef.current;
+    const avail = capAvailability(next.legs.map((l) => l.symbol), cnt);
+    const equal = `${symbol} added; the ${next.legs.length} names are at equal weight.`;
+    const words =
+      weightingRef.current !== "cap"
+        ? equal
+        : avail.state === "ok"
+          ? `${symbol} added; the basket stays cap-weighted.`
+          : avail.state === "loading"
+            ? `${symbol} added; the basket stays cap-weighted if ${symbol} has a stored share count.`
+            : cnt.state === "ready" && !(symbol in cnt.dates)
+              ? `${equal} ${symbol} has no stored share count, so cap weight is unavailable for this basket.`
+              : equal;
     const unchecked = check.state === "unchecked" ? ` Not checked (${said(check.words)}); the price says whether it is listed.` : "";
     return `${words}${unchecked} Save to price it.`;
   };
   // `?add=XYZ` (Technicals' link): the ticker joins the open basket as unsaved work; with no basket, a new one holds it.
   const adding = useRef(false);
   useEffect(() => {
-    if (!pendingAdd || adding.current) return;
+    // desk/cap-weight: whether the name keeps a cap-weighted basket so needs the stored counts, so the add waits for them.
+    if (!pendingAdd || adding.current || counts.state === "loading") return;
     const t = parseTicker(pendingAdd);
     if (!t) {
       onAddDone();
@@ -389,7 +557,7 @@ function BasketCard({
       onAddDone();
     });
     // addTicker reads the basket's own state; the effect runs once per asked ticker.
-  }, [pendingAdd, local?.id, saved.length]);
+  }, [pendingAdd, local?.id, saved.length, counts.state]);
   const download = () => {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([exportSaved(saved)], { type: "application/json" }));
@@ -528,7 +696,7 @@ function BasketCard({
         </div>
       }
     >
-      {local ? <p className="bh-lead">{basketLead(local, methodOf(local), notionalOf(local), priced)}</p> : null}
+      {local ? <p className="bh-lead">{basketLead(local, methodOf(local), notionalOf(local), priced, weightingOf(local))}</p> : null}
       {local ? (
         <div className="bh-settings">
           <label className="bh-field">
@@ -550,10 +718,38 @@ function BasketCard({
               </select>
             </span>
           </label>
-          <p className="bh-settings-hint">{method === "monthly" ? "back to the target weights at each month's last session" : "share counts fixed at the start; weights drift with price"}</p>
+          <p className="bh-settings-hint">
+            {shown === "cap"
+              ? method === "monthly"
+                ? "reset to cap weights on each month's first session; with one set of share counts, the same as held"
+                : "bought at each company's market value at the start; held, with dividends reinvested across it, it stays cap-weighted"
+              : method === "monthly"
+                ? "back to the target weights at each month's last session"
+                : "share counts fixed at the start; weights drift with price"}
+          </p>
         </div>
       ) : null}
-      <Legs key={basketId ?? ""} legs={legs} onChange={(l) => setWork(l)} onAdd={addTicker} empty={empty} live={liveOf(priced)} />
+      <Legs
+        key={basketId ?? ""}
+        legs={legs}
+        // A cap-weighted basket's typed weights are scaled back to 100% when a name is dropped (desk/cap-weight), so
+        // they stay a basket the API prices; typing weights where cap weight is unavailable makes the basket one of
+        // typed weights.
+        onChange={(l) => {
+          if (shown === "cap") return setWork(sumsToHundred(l) ? l : normalize(l));
+          if (weighting === "cap") setWeightingWork("target");
+          setWork(l);
+        }}
+        onAdd={addTicker}
+        empty={empty}
+        live={liveOf(priced)}
+        weighting={shown}
+        cap={cap}
+        onCap={toCap}
+        onEqual={toEqual}
+        served={served}
+        onRetryCap={refused && refused.names === (legs ?? []).map((l) => l.symbol).join(",") ? onRetryCap : undefined}
+      />
       {unreadable ? (
         <p className="bh-why">
           {unreadable === 1 ? "1 saved basket" : `${unreadable} saved baskets`} could not be read; kept in this browser, and in an export, not shown.
@@ -583,9 +779,18 @@ function StepOne({ children }: { children: ReactNode }) {
 }
 
 /** Step 2 (§10): how the saved basket trades, or why it is not priced yet. */
-function StepTwo({ local, q, state, range, setRange, names }: { local: SavedBasket | null; q: ReturnType<typeof useBasketPrice>; state: "loading" | "awaiting" | "ready"; range: BasketRange; setRange: (r: BasketRange) => void; names: Record<string, string | null> }) {
+function StepTwo({ local, params, q, state, range, setRange, names }: { local: SavedBasket | null; params: BasketParams | null; q: ReturnType<typeof useBasketPrice>; state: "loading" | "awaiting" | "ready"; range: BasketRange; setRange: (r: BasketRange) => void; names: Record<string, string | null> }) {
   const hid = useId();
-  const why = !local ? "Open or start a basket to price it." : !local.legs.length ? "Add a ticker and save the basket to price it." : !sumsToHundred(local.legs) ? "Save the basket with its weights at exactly 100% to price it." : null;
+  // desk/cap-weight: a cap-weighted basket waits for the stored share counts before it is asked.
+  const why = !local
+    ? "Open or start a basket to price it."
+    : !local.legs.length
+      ? "Add a ticker and save the basket to price it."
+      : params
+        ? null
+        : weightingOf(local) === "cap" && sumsToHundred(local.legs)
+          ? "Reading the stored share counts…"
+          : "Save the basket with its weights at exactly 100% to price it.";
   return (
     <section className="bh-step" aria-labelledby={hid}>
       <div className="bh-step-head">
@@ -618,9 +823,9 @@ function StepTwo({ local, q, state, range, setRange, names }: { local: SavedBask
 }
 
 /** Step 3 (§10): hedge it; the ETF hedge and the stress test for the saved basket, then the options slot. */
-function StepThree({ local, q, priceAsOf }: { local: SavedBasket | null; q: ReturnType<typeof useBasketHedge>; priceAsOf: string | null | undefined }) {
+function StepThree({ local, params, q, priceAsOf, optionsBasket }: { local: SavedBasket | null; params: BasketParams | null; q: ReturnType<typeof useBasketHedge>; priceAsOf: string | null | undefined; optionsBasket: SavedBasket | null }) {
   const hid = useId();
-  const priced = !!priceParams(local);
+  const priced = !!params;
   const state = q.data ? "ready" : q.isError || !priced ? "awaiting" : "loading";
   return (
     <section className="bh-step" aria-labelledby={hid}>
@@ -633,7 +838,9 @@ function StepThree({ local, q, priceAsOf }: { local: SavedBasket | null; q: Retu
         </h2>
         {q.data ? <LiveBadge className="bh-step-badge" parts={[q.data.provider ?? null, q.data.prices_as_of ? `prices ${dayShort(q.data.prices_as_of)}` : null]} /> : null}
       </div>
-      {!priced ? <p className="bh-why">A saved basket at exactly 100% is hedged here.</p> : null}
+      {!priced ? (
+        <p className="bh-why">{local && weightingOf(local) === "cap" && local.legs.length && sumsToHundred(local.legs) ? "Reading the stored share counts…" : "A saved basket at exactly 100% is hedged here."}</p>
+      ) : null}
       {asOfMismatch(priceAsOf, q.data?.prices_as_of) ? (
         <p className="bh-why bh-mismatch" role="status">
           {asOfMismatch(priceAsOf, q.data?.prices_as_of)}
@@ -647,11 +854,11 @@ function StepThree({ local, q, priceAsOf }: { local: SavedBasket | null; q: Retu
           </button>
         </p>
       ) : null}
-      <BasketHedgeStep h={q.data} state={state} basket={local} />
+      <BasketHedgeStep h={q.data} state={state} basket={optionsBasket} />
       {/* §10, §1.0.3: Positioning and the event study, PROTOTYPE cards for the saved basket (none when none is open). */}
       {local?.legs.length ? (
         <div className="pr-below">
-          <PositioningCard basket={local} />
+          <PositioningCard basket={local} held={optionsBasket ?? local} />
           <BasketStudyCard basket={local} />
         </div>
       ) : null}
@@ -664,6 +871,8 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   // A browser with no basket store at all starts with the preset (desk/books).
   const [saved, setSaved] = useState<SavedBasket[]>(() => {
     seedPreset();
+    // desk/cap-weight: the preset desk/books seeded, untouched, takes the new default (cap weight) where it stands.
+    upgradeSeededPreset();
     return readSaved();
   });
   const [unreadable, setUnreadable] = useState(() => unreadableSaved().length);
@@ -727,20 +936,76 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
       { replace: true },
     );
   const local = saved.find((b) => b.id === basketId) ?? null;
-  const pq = useBasketPrice(priceParams(local));
-  const hq = useBasketHedge(priceParams(local));
+  // desk/cap-weight: the stored share counts decide whether the saved basket is asked cap-weighted (§12.18).
+  const sharesQ = useBasketShares();
+  const counts = shareCountsOf(sharesQ);
+  // Round 2: the API refuses cap weight for a basket whose closes it cannot place or that lacks a close on its start or
+  // last close (R2-02, R2-03). That basket is then priced at its typed weights and says why, as one without stored
+  // counts is: unavailable means priced at the typed weights, never unpriced.
+  const [refused, setRefused] = useState<CapRefusal | null>(null);
+  const params = priceParams(local, local ? capAvailability(local.legs.map((l) => l.symbol), counts, refused) : undefined);
+  const pq = useBasketPrice(params);
+  const hq = useBasketHedge(params);
+  useEffect(() => {
+    const r = params?.weighting === "cap" ? capRefusalOf(pq.error ?? hq.error, params.legs, Date.now()) : null;
+    if (r) setRefused(r);
+  }, [params?.weighting, params?.legs, pq.error, hq.error]);
+  // Round 3 (R3-03): the refusal lapses when an answer from another generation arrives after it (the data changed),
+  // and the analyst can ask again at once (`retryCap`, under the reason).
+  useEffect(() => {
+    if (refused && refusalLapsed(refused, [sharesQ, pq, hq])) setRefused(null);
+  }, [refused, sharesQ.data, sharesQ.dataUpdatedAt, pq.data, pq.dataUpdatedAt, hq.data, hq.dataUpdatedAt]);
+  const retryCap = () => setRefused(null);
+  // Round 3 (R3-01): a cap-weighted basket priced at its typed weights (cap weight unavailable: no stored counts, or
+  // refused) says so in the address, so Send to Position Monitor records the weights the page shows, never cap weights
+  // served for it earlier.
+  const typedFallback = !!local && weightingOf(local) === "cap" && !!params && params.weighting !== "cap";
+  useEffect(() => {
+    if ((search.get("weighting") === "target") === typedFallback) return;
+    setSearch(
+      (prev) => {
+        const q = new URLSearchParams(prev);
+        if (typedFallback) q.set("weighting", "target");
+        else q.delete("weighting");
+        return q;
+      },
+      { replace: true },
+    );
+  }, [typedFallback, search, setSearch]);
   const [range, setRange] = useState<BasketRange>("1y");
   const priced = pq.data;
   const state = pq.data ? "ready" : pq.isError ? "awaiting" : "loading";
   const names = Object.fromEntries((local?.legs ?? []).map((l) => [l.symbol, l.name]));
+  // Send to Position Monitor records a cap-weighted basket at the cap weights last served for it (§9, §10): each
+  // name's weight at the last close, kept on the saved basket when an answer for exactly its names arrives.
+  const receivedAt = pq.dataUpdatedAt;
+  useEffect(() => {
+    if (!local || weightingOf(local) !== "cap" || priced?.weighting !== "cap" || !priced.legs || !priced.cap_weights || !priced.prices_as_of) return;
+    if (!sameNames(priced.legs, local.legs) || !priced.legs.every((l) => finite(l.weight_now))) return;
+    const snap: CapSnapshot = {
+      as_of: priced.cap_weights.as_of,
+      prices_as_of: priced.prices_as_of,
+      weights: Object.fromEntries(priced.legs.map((l) => [l.symbol, l.weight_now as number])),
+      // Codex R-02: when this browser received the answer, so one with the same dates and other weights replaces.
+      received_at: receivedAt,
+    };
+    // Only a newer answer replaces what is stored, so two windows of this browser never rewrite each other's snapshot
+    // on every storage event; and the write reads the basket again and changes only its snapshot (Codex R-03), so an
+    // answer for a basket another window has since edited never writes that edit back.
+    if (writeSnapshot(local.id, snap)) refresh();
+    // refresh reads the store again; the effect then finds the snapshot current and writes nothing.
+  }, [local, priced, receivedAt]);
+  // The options PROTOTYPE sizes its single-name puts by the weights the basket holds: for a cap-weighted basket, the
+  // served weights at the last close (§1.0.3; its outputs stay illustrative).
+  const optionsBasket = local ? heldBasket(local, priced) : null;
   return (
     <div className="bh">
       <PageTitle page={page} badge={priced ? <LiveBadge boxed parts={[priced.provider ?? null, dayShort(priced.prices_as_of) || null]} /> : <NotServedBadge boxed />} />
       <StepOne>
-        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} priced={pq.data} />
+        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} priced={pq.data} counts={counts} refused={refused} onRetryCap={retryCap} />
       </StepOne>
-      <StepTwo local={local} q={pq} state={state} range={range} setRange={setRange} names={names} />
-      <StepThree local={local} q={hq} priceAsOf={pq.data?.prices_as_of} />
+      <StepTwo local={local} params={params} q={pq} state={state} range={range} setRange={setRange} names={names} />
+      <StepThree local={local} params={params} q={hq} priceAsOf={pq.data?.prices_as_of} optionsBasket={optionsBasket} />
     </div>
   );
 }

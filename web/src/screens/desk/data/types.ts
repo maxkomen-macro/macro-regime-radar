@@ -921,6 +921,30 @@ export interface SectorsResponse extends Envelope {
 // ── §12.15 /basket/price (desk/books) ─────────────────────────────────────
 
 export type BasketMethod = "hold" | "monthly";
+/** desk/cap-weight: the legs' own weights (`target`), or market value at the start from stored share counts (`cap`). */
+export type BasketWeighting = "target" | "cap";
+
+/** §12.15 (desk/cap-weight): where a cap-weighted basket's weights came from; null for typed weights. */
+export interface CapWeights {
+  /** The counts' provider in words ("Yahoo"), for the label. */
+  provider: string;
+  source: string;
+  /** The oldest read among the basket's names (the New York date the full refresh read it). */
+  as_of: string;
+  /** The session the market values are taken on: the basket's start. */
+  start: string;
+  legs: { symbol: string; shares_outstanding: number | null; as_of: string; close_start: number | null; value_start: number | null; weight_start: number | null }[];
+}
+
+/** §12.18 (desk/cap-weight): the share counts the full refresh stores for the preset baskets' names. */
+export interface BasketSharesResponse extends Envelope {
+  provider?: string;
+  source?: string;
+  /** The oldest read among the stored counts. */
+  counts_as_of?: string;
+  counts?: { symbol: string; shares_outstanding: number | null; as_of: string; source: string }[];
+  excluded?: { symbol: string; reason: string }[];
+}
 
 /** A basket leg priced: weights and returns are fractions; dollars are USD. */
 export interface BasketLegPriced {
@@ -1005,6 +1029,9 @@ export interface BasketIndex {
 
 export interface BasketPriceResponse extends Envelope {
   method?: BasketMethod;
+  /** desk/cap-weight: how the basket is weighted, and for a cap-weighted one where the weights came from. */
+  weighting?: BasketWeighting;
+  cap_weights?: CapWeights | null;
   notional: number | null;
   /** Where the closes came from ("EODHD"), for the badge; `source` says it in full. */
   provider?: string;
@@ -1084,6 +1111,8 @@ export interface StressRow {
 
 export interface BasketHedgeResponse extends Envelope {
   method?: BasketMethod;
+  weighting?: BasketWeighting;
+  cap_weights?: CapWeights | null;
   notional: number | null;
   provider?: string;
   source?: string;

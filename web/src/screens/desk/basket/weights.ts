@@ -5,6 +5,12 @@
  * are the analyst's input, so the page may tidy them (equal-weight, normalize
  * to 100%); nothing about the basket itself is computed here: the API prices
  * a saved basket (§12.15). Pure except the storage helpers, which never throw.
+ *
+ * desk/cap-weight: a basket may instead be cap-weighted (`weighting: "cap"`):
+ * the API weights each name by its market value at the start from the share
+ * counts the full refresh stores (§12.15, §12.18), so its typed weights are
+ * kept at equal weight, the fallback and one click away. A cap-weighted
+ * basket needs a stored count for every name (`capAvailability`).
  */
 
 export interface WorkLeg {
@@ -16,6 +22,22 @@ export interface WorkLeg {
 }
 
 export type Method = "hold" | "monthly";
+/** desk/cap-weight: the typed weights (`target`), or market value at the start (`cap`). */
+export type Weighting = "target" | "cap";
+
+/** The cap weights last served for a saved cap-weighted basket (§12.15): each name's market-value weight at the
+ * last close, what Send to Position Monitor records (§9). Written by the page when an answer arrives. */
+export interface CapSnapshot {
+  /** The share counts' oldest read. */
+  as_of: string;
+  /** The close the weights are taken on. */
+  prices_as_of: string;
+  /** Fractions, by ticker. */
+  weights: Record<string, number>;
+  /** When this browser received the answer (ms since 1970; Codex R-02): orders two answers that carry the same dates. A
+   * snapshot written before it existed has none and reads as the oldest. */
+  received_at?: number;
+}
 
 export interface SavedBasket {
   id: string;
@@ -28,6 +50,10 @@ export interface SavedBasket {
   method?: Method;
   /** Dollars (desk/books); an older save without it is $1,000,000. */
   notional?: number;
+  /** desk/cap-weight: "cap" when weighted by market value; an older save without it has typed weights. */
+  weighting?: Weighting;
+  /** desk/cap-weight: the cap weights last served (a cap-weighted basket only). */
+  cap_weights?: CapSnapshot;
 }
 
 export const SAVED_BASKETS_KEY = "mrr.desk.baskets.v1";
@@ -36,9 +62,11 @@ export const DEFAULT_NOTIONAL = 1_000_000;
 export const METHOD_WORDS: Record<Method, string> = { hold: "Buy-and-hold", monthly: "Monthly rebalance" };
 export const methodOf = (b: Pick<SavedBasket, "method"> | null | undefined): Method => (b?.method === "monthly" ? "monthly" : DEFAULT_METHOD);
 export const notionalOf = (b: Pick<SavedBasket, "notional"> | null | undefined): number => (typeof b?.notional === "number" && Number.isFinite(b.notional) && b.notional > 0 ? b.notional : DEFAULT_NOTIONAL);
+export const weightingOf = (b: Pick<SavedBasket, "weighting"> | null | undefined): Weighting => (b?.weighting === "cap" ? "cap" : "target");
 
-/** The basket this browser starts with when it has none stored (desk/books): ten AI infrastructure names at equal
- * weight, bought and held, $1,000,000. Written once, when the store is absent; a deleted preset is not written back. */
+/** The basket this browser starts with when it has none stored (desk/books): ten AI infrastructure names, bought and
+ * held, $1,000,000; cap-weighted since desk/cap-weight, like the S&P and the Nasdaq it is read against, with its
+ * typed weights at 10% each (Equal-weight). Written once, when the store is absent; a deleted preset is not written back. */
 export const PRESET: SavedBasket = {
   id: "local-1",
   name: "AI Infrastructure 10",
@@ -57,6 +85,7 @@ export const PRESET: SavedBasket = {
   saved_at: "2026-09-27T00:00:00Z",
   method: "hold",
   notional: DEFAULT_NOTIONAL,
+  weighting: "cap",
 };
 
 /** A notional as typed ("1,000,000", "$2.5m" is not one): dollars above 0 and at most $1 trillion, or null. */
@@ -223,6 +252,135 @@ export function normalize(legs: readonly WorkLeg[]): WorkLeg[] {
   return legs.map((l, i) => ({ ...l, weight: w[i] }));
 }
 
+// ── desk/cap-weight: whether a basket can be cap-weighted ──────────────────
+
+/** The stored share counts as the page reads them (§12.18): the tickers with a count, the provider in words and
+ * each count's read date; or why there are none (an awaiting answer's reason, or a failed request's words). */
+export type ShareCounts =
+  | { state: "loading" }
+  | { state: "ready"; provider: string; dates: Record<string, string> }
+  | { state: "unavailable"; reason: string };
+
+export type CapAvailability = { state: "ok"; provider: string; as_of: string } | { state: "loading" } | { state: "unavailable"; reason: string };
+
+/** "CRWV", "CRWV and NBIS", "CRWV, NBIS and SMCI". */
+function listOf(items: readonly string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** desk/cap-weight, round 2: a cap-weighted basket the API refused to weight by market value (its closes cannot be
+ * placed, R2-02, or one is missing on its start or last close, R2-03; or a count gone since the counts were read): the
+ * names it was asked for, as the request lists them, and the API's words. */
+export interface CapRefusal {
+  names: string;
+  reason: string;
+  /** Round 3 (R3-03): the generation the refusal was answered on (null when it named none), and when it arrived. */
+  generation: string | null;
+  at: number;
+}
+
+/** The refusal a failed cap-weighted request carries (a 422 `unsupported` whose words are about cap weight), as the
+ * page says it, received at `at`; null for any other failure, which the page shows as it is. */
+export function capRefusalOf(
+  e: { status?: number; body?: { error?: string } | null; message?: string; generationId?: string | null } | null | undefined,
+  names: string,
+  at: number,
+): CapRefusal | null {
+  if (!e || e.status !== 422 || e.body?.error !== "unsupported" || !e.message || !/^cap weight/i.test(e.message)) return null;
+  const words = e.message.charAt(0).toUpperCase() + e.message.slice(1);
+  return { names, reason: /[.!?]$/.test(words) ? words : `${words}.`, generation: e.generationId ?? null, at };
+}
+
+/** Round 3 (R3-03): a refusal holds for the generation it was answered on. It lapses once an answer received after it
+ * comes from another generation (the stored data it was refused on has changed), so cap weight is asked again; one
+ * received before it, or from the same generation, never lapses it, so a refused basket is not asked in a loop. */
+export function refusalLapsed(refused: CapRefusal, answers: readonly { data?: { generation_id?: unknown } | null; dataUpdatedAt: number }[]): boolean {
+  if (!refused.generation) return false;
+  return answers.some((a) => !!a.data && a.dataUpdatedAt > refused.at && typeof a.data.generation_id === "string" && a.data.generation_id !== refused.generation);
+}
+
+/** Whether a basket of these names can be cap-weighted: every name needs a stored share count (§12.18), and the API
+ * must not have refused these names (`refused`, round 2). When it can, the counts' provider and their oldest read, for
+ * the label; when it cannot, why, in words. */
+export function capAvailability(symbols: readonly string[], counts: ShareCounts, refused?: CapRefusal | null): CapAvailability {
+  if (refused && refused.names === symbols.join(",")) return { state: "unavailable", reason: `Cap weight is unavailable. ${refused.reason}` };
+  if (counts.state === "loading") return { state: "loading" };
+  if (counts.state === "unavailable") return { state: "unavailable", reason: `Cap weight is unavailable. ${counts.reason}` };
+  if (!symbols.length) return { state: "unavailable", reason: "Cap weight is unavailable. The basket holds no name yet." };
+  const missing = symbols.filter((s) => !(s in counts.dates));
+  if (missing.length)
+    return {
+      state: "unavailable",
+      reason: `Cap weight is unavailable. It needs a stored share count for every name: ${listOf(missing)} ${missing.length === 1 ? "has" : "have"} none (counts are stored for the preset baskets' names).`,
+    };
+  return { state: "ok", provider: counts.provider, as_of: symbols.map((s) => counts.dates[s]).sort()[0] };
+}
+
+/** A basket request (§12.15): its legs, method and notional, and `weighting: "cap"` for a cap-weighted basket
+ * (desk/cap-weight), whose legs are tickers alone. */
+export type BasketParams = { legs: string; method: string; notional: string; weighting?: "cap" };
+
+/** What /basket/price is asked for a saved basket (§12.15): its legs as saved, the method, the notional; null
+ * until the basket has legs whose weights add to exactly 100%. A cap-weighted basket (desk/cap-weight) is asked
+ * as its tickers with `weighting=cap` when every name has a stored count (`cap`), nothing while the counts are
+ * read, and at its typed weights when cap weight is unavailable. */
+export function priceParams(b: SavedBasket | null, cap: CapAvailability = { state: "unavailable", reason: "" }): BasketParams | null {
+  if (!b || !b.legs.length) return null;
+  if (weightingOf(b) === "cap" && cap.state === "loading") return null;
+  if (weightingOf(b) === "cap" && cap.state === "ok") return { legs: b.legs.map((l) => l.symbol).join(","), method: methodOf(b), notional: String(notionalOf(b)), weighting: "cap" };
+  if (!sumsToHundred(b.legs)) return null;
+  return { legs: legsKey(b.legs), method: methodOf(b), notional: String(notionalOf(b)) };
+}
+
+/** The stored share counts as the page reads them (§12.18): the tickers with a count and their read dates, or why
+ * there are none (the awaiting answer's reason, or the failed request's words). */
+export function shareCountsOf(q: {
+  data?: { provider?: string; counts?: { symbol: string; as_of: string }[] };
+  isError: boolean;
+  error: { message: string; unavailable?: { reason: string } | null } | null;
+}): ShareCounts {
+  if (q.data?.counts) return { state: "ready", provider: q.data.provider ?? "the stored source", dates: Object.fromEntries(q.data.counts.map((c) => [c.symbol, c.as_of])) };
+  if (q.isError) return { state: "unavailable", reason: q.error?.unavailable?.reason ?? `The stored share counts could not be read: ${(q.error?.message ?? "no answer").replace(/\.+$/, "")}.` };
+  return { state: "loading" };
+}
+
+/** The basket as it is held at the last close, for the PROTOTYPE cards that size by weight (§1.0.3): a
+ * cap-weighted answer's weights at the last close, in percent to a tenth, when it answers for exactly the basket's
+ * names in order; otherwise the basket as saved. */
+export function heldBasket(b: SavedBasket, p: { weighting?: string; legs?: readonly { symbol: string; weight_now: number | null }[] } | undefined): SavedBasket {
+  const legs = p?.weighting === "cap" ? p.legs : undefined;
+  if (!legs || legs.length !== b.legs.length || legs.some((l, i) => l.symbol !== b.legs[i].symbol || typeof l.weight_now !== "number" || !Number.isFinite(l.weight_now))) return b;
+  return { ...b, legs: b.legs.map((l, i) => ({ ...l, weight: Number((100 * (legs[i].weight_now as number)).toFixed(1)) })) };
+}
+
+/** Whether a snapshot holds a finite weight for every leg. */
+const covers = (s: CapSnapshot | undefined, legs: readonly { symbol: string }[]): s is CapSnapshot =>
+  !!s && isSnapshot(s) && legs.every((l) => typeof s.weights[l.symbol] === "number" && Number.isFinite(s.weights[l.symbol]));
+
+/** Whether a served snapshot replaces the stored one: it is well formed and covers every leg, and the stored one is
+ * absent, does not cover the legs, or is older: its close, then its counts' read, then, when both dates are the same
+ * and the weights are not (the counts were read again that day, or a close was restated; Codex R-02), the answer this
+ * browser received later. Never on a tie or an older answer, so two windows holding different answers settle on one
+ * and never trade writes. */
+export function isNewerSnapshot(next: CapSnapshot, stored: CapSnapshot | undefined, legs: readonly { symbol: string }[]): boolean {
+  if (!covers(next, legs)) return false;
+  if (!covers(stored, legs)) return true;
+  const a = `${next.prices_as_of}|${next.as_of}`;
+  const b = `${stored.prices_as_of}|${stored.as_of}`;
+  if (a !== b) return a > b;
+  return legs.some((l) => next.weights[l.symbol] !== stored.weights[l.symbol]) && (next.received_at ?? 0) > (stored.received_at ?? 0);
+}
+
+/** The legs Position Monitor records for a saved basket (§9): its typed weights, or for a cap-weighted basket the
+ * cap weights last served for it, in percent; null for a cap-weighted basket no answer has been served for yet (its
+ * weights are not known here, and the typed ones are not its weights). */
+export function recordedLegs(b: SavedBasket): { symbol: string; name: string | null; weight: number | string }[] | null {
+  if (weightingOf(b) !== "cap") return b.legs;
+  const s = b.cap_weights;
+  if (!covers(s, b.legs)) return null;
+  return b.legs.map((l) => ({ ...l, weight: 100 * s.weights[l.symbol] }));
+}
+
 /** A ticker as typed, upper-cased; null when it cannot be a US listing's symbol. */
 export function parseTicker(s: string): string | null {
   const t = s.trim().toUpperCase();
@@ -267,6 +425,19 @@ function safeStorage(): Storage | null {
   }
 }
 
+function isSnapshot(v: unknown): v is CapSnapshot {
+  const s = v as CapSnapshot;
+  return (
+    !!s &&
+    typeof s.as_of === "string" &&
+    typeof s.prices_as_of === "string" &&
+    !!s.weights &&
+    typeof s.weights === "object" &&
+    Object.values(s.weights).every((w) => typeof w === "number" && Number.isFinite(w)) &&
+    (s.received_at === undefined || (typeof s.received_at === "number" && Number.isFinite(s.received_at)))
+  );
+}
+
 function isSaved(v: unknown): v is SavedBasket {
   const b = v as SavedBasket;
   return (
@@ -275,6 +446,8 @@ function isSaved(v: unknown): v is SavedBasket {
     typeof b.name === "string" &&
     (b.method === undefined || b.method === "hold" || b.method === "monthly") &&
     (b.notional === undefined || (typeof b.notional === "number" && Number.isFinite(b.notional) && b.notional > 0)) &&
+    (b.weighting === undefined || b.weighting === "target" || b.weighting === "cap") &&
+    (b.cap_weights === undefined || isSnapshot(b.cap_weights)) &&
     Array.isArray(b.legs) &&
     b.legs.every((l) => l && typeof l.symbol === "string" && ((typeof l.weight === "number" && Number.isFinite(l.weight)) || (typeof l.weight === "string" && parseWeight(l.weight) != null)))
   );
@@ -306,6 +479,38 @@ export function seedPreset(storage: Pick<Storage, "getItem" | "setItem"> | null 
   }
 }
 
+/** desk/cap-weight: the preset as desk/books seeded it, untouched (never saved, renamed or edited here): its legs at
+ * 10% each, buy-and-hold, $1,000,000, the seed's own `saved_at`, no weighting. Such an entry is the app's default,
+ * not the analyst's work, so it takes the new default, cap weight, where it stands (`upgradeSeededPreset`); any
+ * basket the analyst has saved, the preset included, is left as it is. */
+function isUntouchedSeed(v: unknown): boolean {
+  const b = v as SavedBasket;
+  return (
+    !!b &&
+    b.id === PRESET.id &&
+    b.name === PRESET.name &&
+    b.saved_at === PRESET.saved_at &&
+    b.weighting === undefined &&
+    b.cap_weights === undefined &&
+    methodOf(b) === "hold" &&
+    notionalOf(b) === DEFAULT_NOTIONAL &&
+    Array.isArray(b.legs) &&
+    legsKey(b.legs) === legsKey(PRESET.legs) &&
+    b.legs.every((l, i) => l.name === PRESET.legs[i].name)
+  );
+}
+
+/** Gives the untouched seeded preset the new default, cap weight, in place; never writes anything else. */
+export function upgradeSeededPreset(storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): void {
+  try {
+    const raw = readRaw(storage);
+    if (!storage || !raw.some(isUntouchedSeed)) return;
+    storage.setItem(SAVED_BASKETS_KEY, JSON.stringify(raw.map((x) => (isUntouchedSeed(x) ? { ...(x as SavedBasket), weighting: "cap" } : x))));
+  } catch {
+    /* no storage, or it is full: the basket stays as it was */
+  }
+}
+
 export function readSaved(storage: Pick<Storage, "getItem"> | null = safeStorage()): SavedBasket[] {
   return readRaw(storage).filter(isSaved);
 }
@@ -333,6 +538,18 @@ export function writeSaved(b: SavedBasket, storage: Pick<Storage, "getItem" | "s
   return writeAll([...readSaved(storage).filter((x) => x.id !== b.id), b], storage);
 }
 
+/** Writes the cap weights served for a saved basket onto it, in the background (desk/cap-weight; Codex R-03). The
+ * basket is read again from storage when the snapshot is written, and only its snapshot changes: only while the
+ * stored basket is still cap-weighted, holds exactly the snapshot's names, and the snapshot is newer than the one it
+ * carries (`isNewerSnapshot`). So an answer that arrives for a basket another window has since renamed, re-weighted
+ * or edited never writes that window's work back; and the basket keeps its place in the list. True when it wrote. */
+export function writeSnapshot(id: string, snap: CapSnapshot, storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): boolean {
+  const list = readSaved(storage);
+  const b = list.find((x) => x.id === id);
+  if (!b || weightingOf(b) !== "cap" || Object.keys(snap.weights).length !== b.legs.length || !isNewerSnapshot(snap, b.cap_weights, b.legs)) return false;
+  return writeAll(list.map((x) => (x.id === id ? { ...x, cap_weights: snap } : x)), storage) === "ok";
+}
+
 /** Forgets one saved basket. */
 export function removeSaved(id: string, storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): SaveResult {
   return writeAll(readSaved(storage).filter((x) => x.id !== id), storage);
@@ -343,10 +560,12 @@ export function exportSaved(list: readonly SavedBasket[]): string {
   return JSON.stringify({ kind: "mrr.desk.baskets", version: 1, baskets: list }, null, 2);
 }
 
-const sameBasket = (x: SavedBasket, y: SavedBasket) => x.name === y.name && legsKey(x.legs) === legsKey(y.legs);
+/** The same basket: its name and legs, and (desk/cap-weight, Codex R-04) its weighting: a cap-weighted basket keeps
+ * typed weights as its equal-weight fallback, so its legs can match a basket at those weights that it is not. */
+const sameBasket = (x: SavedBasket, y: SavedBasket) => x.name === y.name && legsKey(x.legs) === legsKey(y.legs) && weightingOf(x) === weightingOf(y);
 
 /** A JSON file's baskets merged into the list, never replacing one. A basket
- * already here (same name and legs, under any number) is skipped. One whose
+ * already here (same name, legs and weighting, under any number) is skipped. One whose
  * id is taken here, or is not `local-<n>` (a basket a server once kept; none
  * is served now, §10), gets a fresh `local-<n>`: every browser numbers from
  * `local-1`, so collisions are the normal case. Unreadable entries are

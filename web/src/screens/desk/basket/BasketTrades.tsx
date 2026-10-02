@@ -7,6 +7,9 @@
  * the relative-strength lines and their 50-day averages, beta and
  * correlation; contribution to return; concentration; liquidity. Each card
  * leads with one sentence stating its answer with its numbers (./trades.ts).
+ * desk/cap-weight: every number is the served basket's at the weights chosen;
+ * a cap-weighted basket says so in the index card's subtitle and footnote
+ * (its label) and in the contribution and liquidity cards' columns.
  * While the answer is on its way the cards stay quiet; an answer that did not
  * come keeps the labels and says "Awaiting refresh" (§1.7).
  */
@@ -19,7 +22,7 @@ import { DESK_ACCENTS } from "../kit/palette";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import { Awaiting, LoadingLine, Signed, Stat, StatRow } from "../kit/ui";
 import { Term, defineTerms } from "../kit/Term";
-import { excludedWords, byContribution, compareLead, concentrationLead, contributionLead, dayChange, daysText, indexLead, liquidityLead, methodSentence, momentumLead, rsLead, startSentence, usd, vsAverage } from "./trades";
+import { excludedWords, byContribution, capLabelOf, compareLead, concentrationLead, contributionLead, dayChange, daysText, indexLead, liquidityLead, methodSentence, momentumLead, rsLead, startSentence, usd, vsAverage } from "./trades";
 
 export type BasketRange = "6m" | "1y";
 export const BASKET_RANGES: readonly BasketRange[] = ["6m", "1y"];
@@ -55,7 +58,7 @@ function IndexCard({ p, state, range, setRange }: { p: BasketPriceResponse | und
     <TradeCard
       className="bh-index"
       title="Basket index"
-      sub={p?.start ? `base 100 on ${dayShort(p.start)} · ${p.method === "monthly" ? "rebalanced monthly" : "buy-and-hold"}` : "base 100"}
+      sub={p?.start ? `base 100 on ${dayShort(p.start)} · ${p.weighting === "cap" ? "cap-weighted · " : ""}${p.method === "monthly" ? "rebalanced monthly" : "buy-and-hold"}` : "base 100"}
       lead={p ? indexLead(p) : null}
       state={state}
       extra={<RangeChips className="bh-range" ranges={BASKET_RANGES} value={range} onChange={setRange} />}
@@ -70,7 +73,11 @@ function IndexCard({ p, state, range, setRange }: { p: BasketPriceResponse | und
       ) : state === "loading" ? null : (
         <Awaiting />
       )}
-      {ready && p ? <p className="bh-foot-note">{[startSentence(p), methodSentence(p.method), excludedWords(p.excluded)].filter(Boolean).join(" ")}</p> : null}
+      {ready && p ? (
+        <p className="bh-foot-note">
+          {[startSentence(p), capLabelOf(p) ? `${capLabelOf(p)}.` : null, methodSentence(p.method, p.weighting), excludedWords(p.excluded)].filter(Boolean).join(" ")}
+        </p>
+      ) : null}
     </TradeCard>
   );
 }
@@ -277,7 +284,7 @@ function RelativeCard({ p, state, range }: { p: BasketPriceResponse | undefined;
 }
 
 /** Each name's contribution as a bar from zero: right and green when it added, left and red when it took away (§1.3). */
-function ContribRows({ rows, names }: { rows: (BasketLegPriced & { contribution: number })[]; names: Record<string, string | null> }) {
+function ContribRows({ rows, names, cap }: { rows: (BasketLegPriced & { contribution: number })[]; names: Record<string, string | null>; cap: boolean }) {
   const max = Math.max(...rows.map((r) => Math.abs(r.contribution)), 1e-12);
   const signed = rows.some((r) => r.contribution < 0);
   const w = (x: number | null) => (fin(x) ? pctPlain(x, 0) : "—");
@@ -290,7 +297,7 @@ function ContribRows({ rows, names }: { rows: (BasketLegPriced & { contribution:
           <li key={r.symbol}>
             <span className="bh-c-sym">{r.symbol}</span>
             <span className="bh-c-name">{names[r.symbol] ?? ""}</span>
-            <span className="bh-c-w" title="target weight → weight at the last close">
+            <span className="bh-c-w" title={cap ? "cap weight at the start → weight at the last close" : "target weight → weight at the last close"}>
               {w(r.target_weight)} → {w(r.weight_now)}
             </span>
             <span className="bh-c-track" aria-hidden="true">
@@ -311,8 +318,8 @@ function ContributionCard({ p, state, names }: { p: BasketPriceResponse | undefi
   const ready = state === "ready" && rows.length > 0;
   return (
     <TradeCard className="bh-contrib" title="Contribution to return" sub={p?.start ? `points of the index's return since ${dayShort(p.start)}` : "points of the index's return"} lead={p ? contributionLead(p) : null} state={state}>
-      {ready ? <ContribRows rows={rows} names={names} /> : state === "loading" ? null : <Awaiting />}
-      {ready ? <p className="bh-foot-note">Weights: target → at the last close. The names add up to the index's return.</p> : null}
+      {ready ? <ContribRows rows={rows} names={names} cap={p?.weighting === "cap"} /> : state === "loading" ? null : <Awaiting />}
+      {ready ? <p className="bh-foot-note">{p?.weighting === "cap" ? "Weights: cap weight at the start → at the last close." : "Weights: target → at the last close."} The names add up to the index's return.</p> : null}
     </TradeCard>
   );
 }
@@ -356,8 +363,9 @@ function LiquidityCard({ p, state }: { p: BasketPriceResponse | undefined; state
               <th scope="col">
                 <Term ids={["col-adv"]}>20-day avg $ volume</Term>
               </th>
+              {/* desk/cap-weight: a cap-weighted basket bought today, at the last close's market values */}
               <th scope="col">
-                <Term ids={["col-at-target"]}>At target</Term>
+                <Term ids={["col-at-target"]}>{p?.weighting === "cap" ? "At cap weight" : "At target"}</Term>
               </th>
               <th scope="col">
                 <Term ids={["col-days20"]}>Days at 20%</Term>

@@ -24,8 +24,11 @@ def _xnys(start: str, end: str) -> list[str]:
 CAL = _xnys("2026-01-02", "2026-03-31")
 
 
-def H(dates, close, dv=None):
-    return bk.History(tuple(dates), tuple(float(c) for c in close), tuple(dv if dv is not None else [None] * len(dates)))
+def H(dates, close, dv=None, traded=None):
+    """A History; the close as traded is the adjusted close unless given (no split or dividend in the window)."""
+    traded = close if traded is None else traded
+    return bk.History(tuple(dates), tuple(float(c) for c in close), tuple(dv if dv is not None else [None] * len(dates)),
+                      tuple(None if t is None else float(t) for t in traded))
 
 
 def two_stocks():
@@ -345,3 +348,230 @@ def test_the_stress_says_why_when_the_three_share_too_few_returns():
     r = bk.stress(lv, {"SPY": gapped}, "SMH", lv, "60d", 1e6, cal, cutoff=cal[-1], hedge_ratio=1.0)[0]
     assert r["unhedged_usd"] is None and r["window"]["n"] == 58
     assert r["reason"] == "needs 60 daily returns the basket, SMH and SPY all have; there are 58"
+
+
+# ── desk/cap-weight: weights from share counts × the start's closes ─────────
+
+def test_hand_checked_cap_weights_from_known_shares_and_prices():
+    """A has 300 shares at 10 and B 50 at 20 on the start: market values 3,000 and 1,000, so 75% and 25%."""
+    r = bk.price_basket(two_stocks(), None, "hold", 1000.0, sessions=CAL, adv_sessions=5, shares_outstanding={"A": 300, "B": 50})
+    a, b = r["legs"]
+    assert r["weighting"] == "cap" and a["target_weight"] == pytest.approx(0.75) and b["target_weight"] == pytest.approx(0.25)
+    assert a["shares_outstanding"] == 300 and a["value_start"] == pytest.approx(3000.0) and b["value_start"] == pytest.approx(1000.0)
+    # Bought: A 750 / 10 = 75 shares, B 250 / 20 = 12.5, proportional to the counts (300 : 50).
+    assert a["shares_now"] == pytest.approx(75.0) and b["shares_now"] == pytest.approx(12.5)
+    # The index is the two companies' market value over its value at the start:
+    # (300·11 + 50·20) / 4000 = 1.075; 4700 / 4000; 4500 / 4000; (300·13 + 50·22) / 4000 = 1.25.
+    assert r["index"] == pytest.approx([100.0, 107.5, 117.5, 112.5, 125.0]) and r["total_return"] == pytest.approx(0.25)
+    # At the last close the weights are the market values there: 3900 / 5000 and 1100 / 5000.
+    assert a["weight_now"] == pytest.approx(0.78) and b["weight_now"] == pytest.approx(0.22)
+    # Contribution: A 75 × 3 / 1000 = 0.225; B 12.5 × 2 / 1000 = 0.025.
+    assert a["contribution"] == pytest.approx(0.225) and b["contribution"] == pytest.approx(0.025)
+    # Concentration reads the weights at the last close: 1 / (0.78² + 0.22²) = 1 / 0.6568.
+    assert r["concentration"]["effective_n"] == pytest.approx(1 / 0.6568) and r["concentration"]["top3"] == ["A", "B"]
+    # Liquidity: a basket bought at the last close, at its market values: A $780 / (0.2 × 1000) = 3.9 days,
+    # B $220 / (0.2 × 400) = 2.75 days.
+    assert a["dollars"] == pytest.approx(780.0) and a["days_to_trade"] == pytest.approx(3.9)
+    assert b["dollars"] == pytest.approx(220.0) and b["days_to_trade"] == pytest.approx(2.75)
+    assert r["liquidity"]["basket_days"] == pytest.approx(3.9) and r["liquidity"]["binding"] == "A"
+    # Typed weights say so, and carry no counts.
+    t = bk.price_basket(two_stocks(), {"A": 0.75, "B": 0.25}, "hold", 1000.0, sessions=CAL, adv_sessions=5)
+    assert t["weighting"] == "target" and t["legs"][0]["shares_outstanding"] is None and t["legs"][0]["value_start"] is None
+    # Held, the typed 75/25 basket is the cap-weighted one: the same index (they start at the same weights).
+    assert t["index"] == pytest.approx(r["index"])
+
+
+def test_the_monthly_cap_reset_is_each_months_first_session_and_changes_no_holding():
+    """Monthly, a cap-weighted basket resets to cap weights at the close of each month's first session after the
+    start: Feb 2 here (the typed basket resets on Jan 30, January's last). With one set of counts the reset leaves
+    every holding as it was, so the index is the held one."""
+    held = bk.price_basket(two_stocks(), None, "hold", 1000.0, sessions=CAL, adv_sessions=5, shares_outstanding={"A": 300, "B": 50})
+    r = bk.price_basket(two_stocks(), None, "monthly", 1000.0, sessions=CAL, adv_sessions=5, shares_outstanding={"A": 300, "B": 50})
+    assert r["rebalances"] == 2 and r["periods"] == [{"from": "2026-01-28", "to": "2026-02-02"}, {"from": "2026-02-02", "to": "2026-02-03"}]
+    assert r["index"] == pytest.approx(held["index"], abs=1e-12)
+    assert [l["shares_now"] for l in r["legs"]] == pytest.approx([75.0, 12.5])
+    assert sum(l["contribution"] for l in r["legs"]) == pytest.approx(r["total_return"])
+    typed = bk.price_basket(two_stocks(), {"A": 0.75, "B": 0.25}, "monthly", 1000.0, sessions=CAL, adv_sessions=5)
+    assert typed["periods"][0] == {"from": "2026-01-28", "to": "2026-01-30"}
+
+
+def test_over_three_months_the_monthly_cap_index_is_the_held_one():
+    rng = np.random.default_rng(7)
+    hist = {s: H(CAL, 50 * np.cumprod(1 + rng.normal(0, 0.02, len(CAL)))) for s in ("A", "B", "C")}
+    counts = {"A": 5e9, "B": 2e8, "C": 7e8}
+    held = bk.price_basket(hist, None, "hold", 1e6, sessions=CAL, shares_outstanding=counts)
+    monthly = bk.price_basket(hist, None, "monthly", 1e6, sessions=CAL, shares_outstanding=counts)
+    # Jan 2 is the start; Feb 2 and Mar 2 are the months' first sessions.
+    assert monthly["rebalances"] == 3 and [p["from"] for p in monthly["periods"]] == ["2026-01-02", "2026-02-02", "2026-03-02"]
+    assert monthly["index"] == pytest.approx(held["index"], rel=1e-12)
+    # Each name's weight at the last close is its market value there, both ways.
+    mv = {s: counts[s] * hist[s].close[-1] for s in counts}
+    for legs in (held["legs"], monthly["legs"]):
+        assert [l["weight_now"] for l in legs] == pytest.approx([mv[s] / sum(mv.values()) for s in ("A", "B", "C")])
+
+
+def test_cap_weight_starts_at_the_market_values_of_the_start_not_of_the_first_dates():
+    """A name that lists later sets the start (Codex R-03): every weight is read on that session's closes."""
+    h = {"OLD": H(D5, [10, 11, 12, 11, 13]), "NEW": H(D5[2:], [5, 6, 7])}
+    r = bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"OLD": 100, "NEW": 600})
+    assert r["start"] == "2026-01-30"
+    # OLD 100 × 12 = 1,200 and NEW 600 × 5 = 3,000 on Jan 30: 2/7 and 5/7.
+    assert [l["target_weight"] for l in r["legs"]] == pytest.approx([1200 / 4200, 3000 / 4200])
+
+
+# ── desk/cap-weight, Codex R-01: market values read the close as traded ────
+
+def test_codex_r01_a_dividend_payer_is_weighted_at_its_market_value_not_its_adjusted_close():
+    """Codex R-01's case with an ordinary dividend: A and B each have 100 shares at $100 on the start. A ends at
+    $200; B pays $2 and ends at $98 as traded, so its adjusted closes are 98 and 98. The market values at the start
+    are 10,000 each, so 50/50 (the adjusted closes would read 10,000 and 9,800: 50.5/49.5). Reinvested across the
+    basket, the basket returns 50%: A +100% and B 0% in total return, at half each."""
+    d2 = D5[:2]
+    h = {"A": H(d2, [100, 200]), "B": H(d2, [98, 98], traded=[100, 98])}
+    r = bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    a, b = r["legs"]
+    assert (a["target_weight"], b["target_weight"]) == pytest.approx((0.5, 0.5))
+    assert (a["close_traded_start"], b["close_traded_start"]) == pytest.approx((100.0, 100.0))
+    assert (a["value_start"], b["value_start"]) == pytest.approx((10_000.0, 10_000.0))
+    assert r["index"] == pytest.approx([100.0, 150.0]) and r["total_return"] == pytest.approx(0.5)
+    # At the last close the weights are the market values there, as traded: 20,000 and 9,800.
+    assert (a["weight_now"], b["weight_now"]) == pytest.approx((20_000 / 29_800, 9_800 / 29_800))
+    assert (a["contribution"], b["contribution"]) == pytest.approx((0.5, 0.0))
+    # The liquidity's dollars are the same market values at the last close.
+    assert a["dollars"] == pytest.approx(1000.0 * 20_000 / 29_800)
+    # Monthly is the held basket (D4), dividend or not.
+    m = bk.price_basket(h, None, "monthly", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    assert m["index"] == pytest.approx(r["index"], rel=1e-12)
+
+
+def test_held_reinvests_a_dividend_across_the_basket_so_the_weights_stay_the_market_values():
+    """Round 2, R2-01 (rejected; the policy kept and said on the page): Codex's case. A and B start at 100 shares and
+    $100; B pays $2 on Jan 29 (98 as traded and adjusted after); A doubles on Jan 30. The dividend is reinvested
+    across the basket at the market values (A 10,000, B 9,800), so the basket ends at 100 × (10,000 × 2 + 9,800) /
+    19,800 = 150.505; kept in B instead it would end at 150, its weights off the market values, and a monthly reset
+    would then differ from held (D4). Without a dividend the reset changes nothing: the one trade is the dividend's."""
+    d3 = D5[:3]
+    h = {"A": H(d3, [100, 100, 200]), "B": H(d3, [98, 98, 98], traded=[100, 98, 98])}
+    held = bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    assert held["index"] == pytest.approx([100.0, 100.0, 100 * (10_000 * 2 + 9_800) / 19_800])
+    assert held["rebalances"] == 1
+    a, b = held["legs"]
+    assert (a["weight_now"], b["weight_now"]) == pytest.approx((20_000 / 29_800, 9_800 / 29_800))
+    monthly = bk.price_basket(h, None, "monthly", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    assert monthly["index"] == pytest.approx(held["index"], rel=1e-12)
+
+
+def test_a_split_after_the_start_refuses_cap_weight_and_one_before_is_already_in_the_close():
+    """Round 3, R3-02: B splits 4-for-1 on Jan 29 (as traded 400 then 100, adjusted 100 and 100). After the basket's
+    start its close as traded is on another share basis than the current count, and prices cannot tell the split from a
+    large cash distribution, so cap weight is refused with the reason; so is a 2-for-1 or a reverse split. Before the
+    start it is already in the start's close: a basket that starts on Jan 30 (C's first close) weights B at 100."""
+    d2 = D5[:2]
+    h = {"A": H(d2, [100, 100]), "B": H(d2, [100, 100], traded=[400, 100])}
+    with pytest.raises(bk.BasketError, match="B's close as traded moved 300% against its adjusted close on 2026-01-29 for a split or for a cash distribution"):
+        bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    for traded in ([200, 100], [10, 100]):
+        with pytest.raises(bk.BasketError, match="for a split or for a cash distribution"):
+            bk.market_prices(H(d2, [100, 100], traded=traded), "B")
+    late = {"A": H(D5, [100] * 5), "B": H(D5, [100] * 5, traded=[400, 100, 100, 100, 100]), "C": H(D5[2:], [50] * 3)}
+    r = bk.price_basket(late, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100, "C": 100})
+    assert r["start"] == D5[2] and [l["target_weight"] for l in r["legs"]] == pytest.approx([100 / 250, 100 / 250, 50 / 250])
+    assert [l["close_traded_start"] for l in r["legs"]] == pytest.approx([100.0, 100.0, 50.0])
+    # A provider whose close is already split-adjusted (Yahoo's) shows only the dividend, and it stays in.
+    assert bk.market_prices(H(d2, [99, 100], traded=[100, 100])) == pytest.approx({d2[0]: 100.0, d2[1]: 100.0})
+
+
+def test_a_move_of_five_percent_or_more_after_the_start_refuses_cap_weight_instead_of_guessing():
+    """Rounds 2 and 3 (R2-02, R3-02): under 5% the move is an ordinary dividend and stays in; 5% or more, either way, is
+    a split, a stock dividend or a large cash distribution, which prices cannot tell apart, and it refuses cap weight
+    with the reason. Codex's cases: $20 on $100 (raw 100, 80, 80; adjusted 80, 80, 80), which moves the ratio as a
+    5-for-4 split would, and $40 on $100 (raw 100, 60, 60; adjusted 60, 60, 60), as a 5-for-3 split would."""
+    d2, d3 = D5[:2], D5[:3]
+    assert bk.market_prices(H(d2, [96, 96], traded=[100, 96])) == pytest.approx({d2[0]: 100.0, d2[1]: 96.0})
+    for traded in ([105, 100], [125, 100], [100, 125], [139, 100], [167, 100], [300, 100]):
+        with pytest.raises(bk.BasketError, match=r"^cap weight cannot tell whether B's close as traded moved \d+% against its "
+                                                 r"adjusted close on 2026-01-29 for a split or for a cash distribution, so it cannot weight"):
+            bk.market_prices(H(d2, [100, 100], traded=traded), "B")
+    for paid, moved in ((20, 25), (40, 67)):
+        h = {"A": H(d3, [100, 200, 200]), "B": H(d3, [100 - paid] * 3, traded=[100, 100 - paid, 100 - paid])}
+        with pytest.raises(bk.BasketError, match=f"B's close as traded moved {moved}% against its adjusted close on 2026-01-29"):
+            bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    # A move before the basket's start never weighs.
+    assert bk.market_prices(H(d3, [80, 80, 80], traded=[100, 80, 80]), "B", since=d3[1]) == pytest.approx({d3[1]: 80.0, d3[2]: 80.0})
+
+
+def test_dividends_over_three_months_keep_monthly_equal_to_held_and_the_weights_at_market_value():
+    rng = np.random.default_rng(11)
+    n = len(CAL)
+    adj = {s: 50 * np.cumprod(1 + rng.normal(0, 0.02, n)) for s in ("A", "B", "C")}
+    # B pays 1% on sessions 20 and 45, C 2% on session 30 (their earlier closes as traded stand above the adjusted).
+    div_b, div_c = np.ones(n), np.ones(n)
+    div_b[:20] *= 0.99 ** -1
+    div_b[:45] *= 0.99 ** -1
+    div_c[:30] *= 0.98 ** -1
+    traded_b, traded_c = adj["B"] * div_b, adj["C"] * div_c
+    hist = {"A": H(CAL, adj["A"]), "B": H(CAL, adj["B"], traded=traded_b), "C": H(CAL, adj["C"], traded=traded_c)}
+    counts = {"A": 5e9, "B": 2e8, "C": 7e8}
+    held = bk.price_basket(hist, None, "hold", 1e6, sessions=CAL, shares_outstanding=counts)
+    monthly = bk.price_basket(hist, None, "monthly", 1e6, sessions=CAL, shares_outstanding=counts)
+    assert monthly["index"] == pytest.approx(held["index"], rel=1e-12)
+    # Each name's market price is its close as traded: B's and C's above their adjusted closes before each dividend.
+    mkt = {"A": adj["A"], "B": traded_b, "C": traded_c}
+    start = {s: counts[s] * mkt[s][0] for s in counts}
+    assert [l["target_weight"] for l in held["legs"]] == pytest.approx([start[s] / sum(start.values()) for s in "ABC"])
+    end = {s: counts[s] * mkt[s][-1] for s in counts}
+    assert [l["weight_now"] for l in held["legs"]] == pytest.approx([end[s] / sum(end.values()) for s in "ABC"])
+    # The index is the cap-weighted total return: each session, the names' adjusted returns at the previous weights.
+    v = 1.0
+    for t in range(1, n):
+        mv = {s: counts[s] * mkt[s][t - 1] for s in counts}
+        v *= sum(mv[s] / sum(mv.values()) * adj[s][t] / adj[s][t - 1] for s in counts)
+    assert held["total_return"] == pytest.approx(v - 1.0, rel=1e-12)
+    assert sum(l["contribution"] for l in held["legs"]) == pytest.approx(held["total_return"])
+
+
+def test_cap_weight_refuses_a_name_without_its_close_as_traded_and_a_history_checks_it():
+    h = two_stocks()
+    h["B"] = bk.History(h["B"].dates, h["B"].close, h["B"].dollar_volume)
+    with pytest.raises(bk.BasketError, match="cap weight reads each name's close as traded, and B has none$"):
+        bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 300, "B": 50})
+    # At typed weights the close as traded is never read.
+    assert bk.price_basket(h, {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL)["weighting"] == "target"
+    # Round 2, R2-03: a session without a close as traded has no market value, none is borrowed from another
+    # session, and the start's and the last close's are needed. Codex's case: B's raw close is missing on the start.
+    assert bk.market_prices(H(D5, [10, 11, 12, 11, 13], traded=[10, None, 12, 11, 13])) == pytest.approx(
+        {D5[0]: 10, D5[2]: 12, D5[3]: 11, D5[4]: 13})
+    d3 = D5[:3]
+    codex = {"A": H(d3, [100, 100, 100]), "B": H(d3, [98, 98, 98], traded=[None, 98, 98])}
+    with pytest.raises(bk.BasketError, match="^cap weight reads each name's close as traded on its start, 2026-01-28, and B has none there$"):
+        bk.price_basket(codex, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    end = {"A": H(d3, [100, 100, 100], traded=[100, 100, None]), "B": H(d3, [98, 98, 98])}
+    with pytest.raises(bk.BasketError, match="on its last close, 2026-01-30, and A has none there$"):
+        bk.price_basket(end, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    # In between, the session keeps the holdings: priced, the index unchanged where no dividend is paid.
+    mid = {"A": H(D5, [100, 110, 120, 110, 130], traded=[100, None, 120, 110, 130]), "B": H(D5, [50] * 5)}
+    r = bk.price_basket(mid, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 10, "B": 20})
+    assert r["index"] == pytest.approx([100.0, 105.0, 110.0, 105.0, 115.0])
+    with pytest.raises(bk.BasketError, match="dates and closes as traded differ in length"):
+        bk.History(D5, (1.0,) * 5, (None,) * 5, (1.0,) * 4)
+    with pytest.raises(bk.BasketError, match="close as traded that is not a positive number"):
+        bk.History(D5, (1.0,) * 5, (None,) * 5, (1.0, 1.0, 0.0, 1.0, 1.0))
+
+
+@pytest.mark.parametrize("shares, words", [
+    ({"A": 300}, "cap weight needs a share count for every name; B has none"),
+    ({}, "cap weight needs a share count for every name; A, B have none"),
+    ({"A": 300, "B": 0}, "the share count of B is not a positive number"),
+    ({"A": 300, "B": float("nan")}, "the share count of B is not a positive number"),
+    ({"A": 300, "B": True}, "the share count of B is not a positive number"),
+    ({"A": 300, "B": 50, "C": 10}, "the share counts and the histories name different symbols"),
+])
+def test_a_missing_or_bad_share_count_is_refused_naming_the_name(shares, words):
+    with pytest.raises(bk.BasketError) as ei:
+        bk.price_basket(two_stocks(), None, "hold", 1000.0, sessions=CAL, shares_outstanding=shares)
+    assert str(ei.value) == words
+
+
+def test_cap_weight_takes_counts_not_weights():
+    with pytest.raises(bk.BasketError, match="takes share counts, not weights"):
+        bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 1, "B": 1})
