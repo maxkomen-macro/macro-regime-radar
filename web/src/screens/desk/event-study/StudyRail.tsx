@@ -19,15 +19,19 @@ import type { TargetUnit } from "../data/types";
 import { Term, defineTerms } from "../kit/Term";
 
 /**
- * desk/pdf-polish item 6: the hover on "Edge vs a normal period", the owner's two sentences, the target read from
- * the study (the S&P for the presets that target it): the range under it is the interval on the median's excess
- * over the baseline (api/desk_v2.py horizons ci_lo/ci_hi; src/desk/event_study.py horizon_stats), and Reliable
- * needs that interval on one side of zero (judge_exclusion, verdict_v1).
+ * desk/pdf-polish item 6, reworded by the owner for Codex R-09: the hover on "Edge vs a normal period" says, in
+ * neutral words, what the edge is: the median's excess over the baseline (src/desk/event_study.py horizon_stats
+ * `delta`; the range under it is its interval, api/desk_v2.py horizons ci_lo/ci_hi), the target read from the study
+ * (the S&P for the presets that target it), in the target's unit: a log move ×100 (kit/units.ts LOG_TIP, the
+ * owner's "percent"), bp for a yield or spread (api/desk_v2.py vs_normal, display_unit).
  */
 export function edgeDef(target: string | null | undefined): string {
   const who = !target ? "the target" : target === "S&P 500" ? "the S&P" : `the ${target}`;
-  return `How much better or worse than a typical period of the same length ${who} did after these events. The verdict is Reliable only if the whole range sits on one side of zero.`;
+  return `The difference between ${who}'s median move after these events and its median over a typical period of the same length, in ${who}'s unit (log returns ×100 for prices, basis points for yields and spreads).`;
 }
+
+/** Codex R-04: an outcome column says where its outcomes count from (kit/glossary.ts `entry`, `entry-rule`). */
+const ENTRY = ["entry", "entry-rule"] as const;
 
 /** "Edge vs a normal period", its §1.4 lowercase "vs" inside the uppercase label, carrying its hover. */
 function EdgeLabel({ target }: { target: string | null | undefined }) {
@@ -143,13 +147,13 @@ export default function StudyRail({
               <Term ids={["col-es-regime"]}>Regime</Term>
             </th>
             <th scope="col">
-              <Term ids={["col-es-n"]}>N</Term>
+              <Term ids={["col-es-n", ...ENTRY]}>N</Term>
             </th>
             <th scope="col">
-              <Term ids={["col-es-up"]}>Up</Term>
+              <Term ids={["col-es-up", ...ENTRY]}>Up</Term>
             </th>
             <th scope="col">
-              <Term ids={["col-es-median"]}>Median</Term>
+              <Term ids={["col-es-median", ...ENTRY]}>Median</Term>
             </th>
           </tr>
         </thead>

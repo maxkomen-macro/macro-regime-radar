@@ -268,6 +268,23 @@ export function gapWords(v: Pick<VixShown, "gapPts" | "realized" | "realizedDate
   return `${num(Math.abs(v.gapPts))} pts ${side} 21-day realized (${num(v.realized)})${on}`;
 }
 
+/**
+ * The Active signals card's date (desk/pdf-polish 2f; Codex R-01): the data's, never the generation's staging date
+ * (`as_of`). The earliest session the shown studies were evaluated on (`evaluated_on`), so "backtested through" is
+ * true of every row; with no row dated, "data through" the S&P's newest stored close (the trend tile's `date`);
+ * else nothing.
+ */
+export function activeSignalsWords(d: OverviewResponse | undefined): string {
+  const rows = Array.isArray(d?.active_signals) ? d.active_signals : [];
+  const days = rows
+    .map((r) => r.evaluated_on)
+    .filter((x): x is string => typeof x === "string" && /^\d{4}-\d{2}-\d{2}$/.test(x) && !!dayShort(x))
+    .sort();
+  if (days.length) return `backtested through ${dayShort(days[0])}`;
+  const close = d?.tiles?.trend?.date;
+  return typeof close === "string" && dayShort(close) ? `data through ${dayShort(close)}` : "";
+}
+
 /** One active signal's sentence (§2). */
 export function SignalSentence({ row }: { row: LedgerRow }) {
   const since = year(row.sample_start);
@@ -298,7 +315,7 @@ export function SignalSentence({ row }: { row: LedgerRow }) {
           {/* The row's own excess over its own baseline (§1.9), never a universal normal month. */}
           {ok(row.vs_normal) && vsNormalText(row.vs_normal, row.target_unit ?? undefined) ? (
             <>
-              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["baseline"]}>vs normal</Term>)
+              {" "}(<span title={tipOf(row.target_unit ?? undefined)}>{vsNormalText(row.vs_normal, row.target_unit ?? undefined)}</span> <Term ids={["vsnormal", "baseline"]}>vs normal</Term>)
             </>
           ) : null}
         </>
@@ -313,8 +330,8 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
   const lost = droppedOf(data, "active_signals");
   const unserved = useUnserved();
   if (unserved) return <UnservedCard headingId="ov-active-title" className="ov-active" title="Active signals" block={unserved} />;
-  // desk/pdf-polish 2f: the small text is the engine's date; each row keeps its own start year.
-  const through = data ? dayShort(data.as_of) : "";
+  // desk/pdf-polish 2f: the small text dates the data the studies read (Codex R-01); each row keeps its own start year.
+  const through = activeSignalsWords(data);
   return (
     <section className="dk-card ov-active" aria-labelledby="ov-active-title">
       <div className="dk-card-head">
@@ -322,7 +339,7 @@ function ActiveSignals({ data, failed, pathTo }: { data: OverviewResponse | unde
           Active signals
           {through ? (
             <span className="dk-card-sub" data-mono>
-              backtested through {through}
+              {through}
             </span>
           ) : null}
         </h2>

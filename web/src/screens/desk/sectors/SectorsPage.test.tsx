@@ -65,6 +65,11 @@ describe("Sectors tab", () => {
     expect(word.getAttribute("data-def")).toBe(patternDef(sectors.pattern as SectorPattern, sectors as unknown as SectorsResponse));
     // item 7: the six stat labels carry their definitions.
     for (const [label, id] of [["Leading", "col-leading"], ["Lagging", "col-lagging"], ["Pattern", "col-pattern"]] as const) expect(within(card).getByText(label).getAttribute("data-def")).toBe(GLOSSARY[id].text);
+    // Codex R-07: the ranking is among the sectors with a usable return, not "of the eleven".
+    for (const id of ["col-leading", "col-lagging"]) {
+      expect(GLOSSARY[id].text, id).toMatch(/among the sectors with a usable return, a close stored at both ends of the window\.$/);
+      expect(GLOSSARY[id].text, id).not.toMatch(/eleven/);
+    }
     const breadth = screen.getByRole("region", { name: /^Breadth/ });
     await waitFor(() => expect(within(breadth).getByText("Above 50-day")).toHaveClass("dk-term"));
     expect(within(breadth).getByText("Above 200-day").getAttribute("data-def")).toBe(GLOSSARY["col-above-200"].text);

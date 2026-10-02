@@ -21,7 +21,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   steep: { forms: ["steepening", "flattening"], text: "Steepening means the 10-year yield is rising against the 2-year, so 2s10s widens; flattening is the reverse." },
   front: { forms: ["Front end"], text: "The front end is the short end of the Treasury curve; here, the 3-month bill yield." },
   bp: { forms: ["basis points", "bp"], text: "A basis point (bp) is one hundredth of a percentage point: 25 bp is 0.25 percentage points." },
-  rsi: { forms: ["RSI"], text: "The relative strength index scores the last 14 sessions' gains against their losses from 0 to 100; above 70 reads as stretched up, below 30 as stretched down." },
+  rsi: { forms: ["RSI"], text: "The relative strength index weighs Wilder-smoothed average gains against average losses with a 14-session period, from 0 to 100; above 70 reads as stretched up, below 30 as stretched down." },
   realized: { forms: ["realized volatility", "Realized volatility", "realized vol", "Realized vol"], text: "Realized volatility is how much the price actually moved: the standard deviation of the last 21 daily log returns, annualized." },
   implied: { forms: ["implied volatility", "Implied volatility", "implied vol", "Implied vol", "IV"], text: "Implied volatility is the size of move option prices assume over their life, annualized; set against realized volatility it shows whether options are rich or cheap." },
   skew: { forms: ["skew", "Skew", "SKEW"], text: "Skew is how much more the market pays for puts than for calls the same distance from the price: the price of crash protection." },
@@ -33,7 +33,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   logret: { forms: ["log returns", "log return"], text: "A log return is the natural log of the price ratio; for moves this size it is close to the percent change." },
   corr: { forms: ["60-day correlation", "Correlation", "correlation", "Corr"], text: "Correlation runs from −1 to +1: how closely two assets' daily returns move together, here over the last 60 sessions." },
   breadth: { forms: ["Breadth", "breadth"], text: "Breadth is how much of the market joins a move; here, how many sector ETFs sit above their 50-day and 200-day averages, and the average stock against the index." },
-  baseline: { forms: ["Vs normal", "vs normal", "a normal stretch"], text: "Normal is the study's baseline: the same horizon's move over every evaluable session of its sample, not only after events." },
+  baseline: { forms: ["a normal stretch"], text: "Normal is the study's baseline: the same horizon's move over every evaluable session of its sample, not only after events." },
+  // Codex R-05: the served excess median (api/desk_v2.py vs_normal: 100 × (median − baseline_median) of log moves, bp as served).
+  vsnormal: { forms: ["Vs normal", "vs normal"], text: "Vs normal is the difference between the events' median log return and the same horizon's median from every evaluable session, times 100, or in basis points for a yield or spread." },
   blocks: { forms: ["overlap blocks"], text: "Events whose outcome windows overlap form one block and are resampled together, so one market episode counts once." },
   interval: { forms: ["90% interval"], text: "The range the median's excess over normal falls in on 90% of resampled histories." },
   odds: { forms: ["odds", "Odds"], text: "Regime odds are a strength score from the two trends, how far each slope sits from its own history, not a fitted probability." },
@@ -49,7 +51,8 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   effn: { forms: ["Effective names"], text: "Effective names is 1 divided by the sum of the squared weights: how many equal positions the basket's concentration amounts to." },
   peak: { forms: ["From peak"], text: "From peak is how far the basket index sits below its highest close since the basket's history starts." },
   adv: { forms: ["days to trade", "Days to trade", "Days at 20%", "Liquidity", "20-day avg $ volume", "ADV"], text: "Liquidity is read as days to trade: how many sessions buying or selling the position takes at 20% of each name's average daily dollar volume (ADV) over the last 20 sessions." },
-  hedgeratio: { forms: ["Hedge ratio", "hedge ratio"], text: "The hedge ratio is the dollars of the ETF to short per dollar of basket: the basket's beta to the ETF over one year, or 60 days when younger." },
+  // Codex R-08: src/desk/basket.py hedge_rows fits on the last 252 paired daily returns (WINDOWS "1y"), else the last 60.
+  hedgeratio: { forms: ["Hedge ratio", "hedge ratio"], text: "The hedge ratio is the dollars of ETF to short per dollar of basket: the basket's beta to the ETF over the last 252 daily returns both have, else the last 60." },
   conc: { forms: ["Concentration", "concentration"], text: "Concentration is how much of the basket rides on a few names: the top three weights, and the effective number of equal positions it amounts to." },
 
   // ── Column heads (desk/pdf-polish item 7) ──────────────────────────────
@@ -82,8 +85,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-r2-1y": { forms: [], text: "R² 1Y is the share of the basket's daily-return variance the ETF's daily returns explain over the last 252 returns both have, from 0 to 1." },
   "col-r2-60d": { forms: [], text: "R² 60D is the share of the basket's daily-return variance the ETF's daily returns explain over the last 60 returns both have, from 0 to 1." },
   "col-short": { forms: [], text: "Short is the dollars of the ETF to sell short: the hedge ratio times the basket's notional." },
-  "col-vol-left": { forms: [], text: "Vol left is the basket's annualized volatility after the short: the standard deviation of its daily return less the hedge ratio times the ETF's, times √252." },
-  "col-vol-cut": { forms: [], text: "Vol cut is how much of the basket's annualized volatility the short removes: one minus vol left over the basket's own volatility." },
+  "col-fit": { forms: [], text: "Fit is the window the row's hedge ratio, short and volatilities come from: 1Y, the last 252 daily returns both have, or 60D, the last 60 when 1Y has no fit." },
+  "col-vol-left": { forms: [], text: "Vol left is the basket's annualized volatility after the short, over the row's Fit window: the standard deviation of its daily return less the hedge ratio times the ETF's, times √252." },
+  "col-vol-cut": { forms: [], text: "Vol cut is the change the short makes to the basket's annualized volatility, as a share of it: vol left over the basket's own volatility, minus one, so −44% means 44% less." },
   "col-if": { forms: [], text: "If is the move tested: QQQ or SPY falling 10%." },
   "col-st-basket": { forms: [], text: "Basket is the basket's move in that case: its beta to the benchmark times the benchmark's move." },
   "col-unhedged": { forms: [], text: "Unhedged is the basket's profit or loss without the short: its notional times its beta to the benchmark times the move." },
@@ -99,29 +103,34 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-season-up": { forms: [], text: "Up is the share of those years in which the month's return was above zero." },
   "col-season-years": { forms: [], text: "Years is how many complete months of that calendar month are stored." },
   // Sectors (api/desk_items_etf.py).
-  "col-leading": { forms: [], text: "Leading is the sector ETF with the highest 60-session log return relative to SPY's, of the eleven." },
-  "col-lagging": { forms: [], text: "Lagging is the sector ETF with the lowest 60-session log return relative to SPY's, of the eleven." },
+  // Codex R-07: ranked only among the sectors with a return (api/desk_items_etf.py leadership: log_ret needs both closes).
+  "col-leading": { forms: [], text: "Leading is the sector ETF with the highest 60-session log return relative to SPY's, among the sectors with a usable return, a close stored at both ends of the window." },
+  "col-lagging": { forms: [], text: "Lagging is the sector ETF with the lowest 60-session log return relative to SPY's, among the sectors with a usable return, a close stored at both ends of the window." },
   "col-pattern": { forms: [], text: "Pattern says whether the six cyclical sector ETFs lead the three defensive ones over 60 sessions, or the reverse, by more than 1%." },
   "col-above-50": { forms: [], text: "How many of the 11 sector ETFs closed above their 50-day average, the mean of their last 50 closes." },
   "col-above-200": { forms: [], text: "How many of the 11 sector ETFs closed above their 200-day average, the mean of their last 200 closes." },
   "col-eqw": { forms: [], text: "RSP, the equal-weight S&P 500 ETF, against SPY: its 60-session log return less SPY's, above zero when the average stock leads." },
   // Event Study (api/desk_v2.py study answer; src/desk/event_study.py).
   "col-es-regime": { forms: [], text: "Regime is the label known when each event happened: the stored regime of the month two months before the event's month." },
-  "col-es-n": { forms: [], text: "N is how many of the events fell in that regime and have an outcome 20 sessions later." },
-  "col-es-up": { forms: [], text: "Up is the share of those events after which the target was higher 20 sessions later." },
-  "col-es-median": { forms: [], text: "Median is the middle move of the target over the 20 sessions after those events." },
+  "col-es-n": { forms: [], text: "N is how many of the events fell in that regime and have a complete 20-session outcome from their entry." },
+  "col-es-up": { forms: [], text: "Up is the share of those events whose target was higher 20 sessions after entry." },
+  "col-es-median": { forms: [], text: "Median is the middle move of the target over the 20 sessions from each event's entry." },
   "col-es-event": { forms: [], text: "Event is the session the shock fired on." },
-  "col-es-h5": { forms: [], text: "1 week is the target's move over the 5 sessions after each event's entry." },
-  "col-es-h10": { forms: [], text: "2 weeks is the target's move over the 10 sessions after each event's entry." },
-  "col-es-h20": { forms: [], text: "1 month is the target's move over the 20 sessions after each event's entry." },
-  "col-es-h60": { forms: [], text: "3 months is the target's move over the 60 sessions after each event's entry." },
+  "col-es-h5": { forms: [], text: "1 week is the target's move over the 5 sessions from each event's entry." },
+  "col-es-h10": { forms: [], text: "2 weeks is the target's move over the 10 sessions from each event's entry." },
+  "col-es-h20": { forms: [], text: "1 month is the target's move over the 20 sessions from each event's entry." },
+  "col-es-h60": { forms: [], text: "3 months is the target's move over the 60 sessions from each event's entry." },
+  // Codex R-04: every outcome counts from the event's entry (src/desk/event_study.py entry_delay_vec, :579-599;
+  // each series' fixed and known times and gold's defer_as_target in src/desk/series.py SERIES).
+  entry: { forms: [], text: "Entry is the session outcomes count from: the first whose target value is fixed no earlier than every input is known, and for a gold target the next at the earliest." },
+  "entry-rule": { forms: [], text: "For an S&P target, a signal on S&P closes enters on its own session, one on FRED, VIX, dollar or gold data the next, and one on weekly WTI the eighth." },
   // Signal Ledger (api/desk_v2.py ledger rows).
   "col-signal": { forms: [], text: "Signal is the event the engine scores, by its catalog name." },
   "col-last-fired": { forms: [], text: "Last fired is the last session the signal fired on." },
-  "col-times": { forms: [], text: "Times is how often the signal fired in its sample with an outcome 20 sessions later." },
-  "col-up-month": { forms: [], text: "Up a month later is the share of those times the target was higher 20 sessions later." },
-  "col-median": { forms: [], text: "Median is the middle move of the target over the 20 sessions after each firing." },
-  "col-vs-normal": { forms: [], text: "Vs normal is that median less the median 20-session move from every evaluable session of the sample, in percentage points, or bp for a yield." },
+  "col-times": { forms: [], text: "Times is how often the signal fired in its sample with a complete 20-session outcome from its entry." },
+  "col-up-month": { forms: [], text: "Up a month later is the share of those times the target was higher 20 sessions after entry." },
+  "col-median": { forms: [], text: "Median is the middle move of the target over the 20 sessions from each firing's entry." },
+  "col-vs-normal": { forms: [], text: "Vs normal is that median less the median 20-session move over every evaluable session of the sample, in log returns times 100, or basis points for a yield or spread." },
   "col-verdict": { forms: [], text: "Verdict is the 20-session result by the scoring rule: Reliable, Suggestive, No edge or Too few." },
   "col-now-firing": { forms: [], text: "Now says whether the signal is firing on the last session and for how many days, is quiet, or is stale because an input is behind." },
   // Position Monitor (positions/monitor.ts, positions/store.ts).
@@ -158,7 +167,13 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-pl-from": { forms: [], text: "From is the first observation stored." },
   "col-pl-asof": { forms: [], text: "As of is the newest observation stored." },
   "col-pl-feeds": { forms: [], text: "Feeds are the Desk tabs whose served values read this series." },
-  "col-pl-status": { forms: [], text: "Status is current when the newest observation stored is the one due on the series' own schedule, stale when it is behind, and missing otherwise." },
+  "col-pl-status": { forms: [], text: "Status is current when the newest stored observation is within the series' allowed publication lag, stale when further behind, and missing when nothing is stored or its date is unknown." },
+  // Codex R-06: each store's lag rule (api/desk_pipeline.py statuses; api/freshness.py assess's asset_prices verdict with
+  // its 06:00 UTC grace, desk_series_states and fred_series_state with DAILY_TOLERANCE 3, DESK_SLOW_PUBLICATION's WTI 8,
+  // _expected_month_for's release days in SERIES_REGISTRY).
+  "col-pl-lag-close": { forms: [], text: "The newest S&P 500, Russell 2000, VIX, gold or ETF close is current if it is the last completed session's, or the one before until 2 AM ET (1 AM in winter)." },
+  "col-pl-lag-daily": { forms: [], text: "Every other daily series is current within three business days of the previous business day's print, on the bond calendar for rates and spreads; weekly WTI within eight." },
+  "col-pl-lag-monthly": { forms: [], text: "A monthly series is current when it holds the newest month whose usual release day has passed, such as the 15th for CPI and the first Friday for unemployment." },
 };
 
 interface Form {

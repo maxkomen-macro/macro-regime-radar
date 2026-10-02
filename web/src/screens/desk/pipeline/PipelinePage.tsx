@@ -25,6 +25,9 @@ import { saveServed } from "../kit/download";
 import { SnowflakeSyncCard } from "../prototypes/SnowflakeSyncCard";
 import { PipelineBadge } from "./badge";
 import { Term } from "../kit/Term";
+
+/** What "current" allows for each kind of row (Codex R-06; kit/glossary.ts cites the freshness code). */
+const LAG_RULES = ["col-pl-lag-close", "col-pl-lag-daily", "col-pl-lag-monthly"] as const;
 import "./pipeline.css";
 
 /** The six steps a number takes (§11), fixed copy. */
@@ -125,7 +128,8 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
                     ] as const
                   ).map(([id, label]) => (
                     <th key={id} scope="col">
-                      <Term ids={[id]}>{label}</Term>
+                      {/* Codex R-06: Status also states each store's allowed publication lag. */}
+                      <Term ids={id === "col-pl-status" ? [id, ...LAG_RULES] : [id]}>{label}</Term>
                     </th>
                   ))}
                 </tr>

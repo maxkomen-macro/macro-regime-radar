@@ -131,6 +131,13 @@ describe("Technicals tab", () => {
     // The four badges are drawn as the card draws them.
     expect([...panel.querySelectorAll("dt .dk-pill")].map((p) => p.getAttribute("data-verdict"))).toEqual(["reliable", "suggestive", "no_edge", "insufficient"]);
     expect(panel).toHaveTextContent("The S&P's 50-day average moves above its 200-day average, from below.");
+    // Codex R-02: Wilder-smoothed averages with a 14-session period, never "the last 14 sessions".
+    expect(SIGNAL_KEY.find((k) => k.term === "RSI")?.text).toMatch(/Wilder-smoothed .* 14-session period/);
+    // Codex R-04: every row reads only the S&P's close, so its outcomes count from the firing's own close.
+    expect(SIGNAL_KEY.find((k) => k.term === "Too few")?.text).toBe("Fewer than ten firings with a complete 20-session outcome from the firing's close, too few to score.");
+    // Codex R-05: vs normal is the difference of the two median log returns, times 100.
+    expect(SIGNAL_KEY.find((k) => k.term === "vs normal")?.text).toBe("The difference between the S&P's median log return over the 20 sessions from each firing's close and its median 20-session log return from every evaluable session of the sample, times 100.");
+    expect(panel).not.toHaveTextContent("last 14 sessions");
     fireEvent.click(key);
     expect(card.querySelector(".te-key")).toBeNull();
     // item 7: the three column heads carry their definitions.

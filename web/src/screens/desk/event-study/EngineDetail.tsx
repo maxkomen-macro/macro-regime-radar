@@ -50,7 +50,8 @@ export default function EngineDetail({ id, study, ask }: { id: string; study: St
                     ] as const
                   ).map(([id, label]) => (
                     <th key={id} scope="col">
-                      <Term ids={[id]}>{label}</Term>
+                      {/* Codex R-04: the four moves count from each event's entry, and say how entry is set. */}
+                      <Term ids={id.startsWith("col-es-h") ? [id, "entry", "entry-rule"] : [id]}>{label}</Term>
                     </th>
                   ))}
                 </tr>
