@@ -160,8 +160,13 @@ test.describe("dashboard (checklist 03 E.3)", () => {
       else expect(labels[i], `row ${i + 1}`).toBe(expected);
     });
 
-    const strip = page.locator('#regime-summary button[aria-haspopup="dialog"]');
+    // Codex R-28: the summary carries two dialog buttons since fix/freshness 8 (the alert strip and "Data status ›");
+    // the alert strip is the one named for the alert feed, and there is exactly one of it.
+    // the alert strip is the StatusStrip button (.mrr-status), and there is exactly one of it.
+    await expect(page.locator('#regime-summary button[aria-haspopup="dialog"]')).toHaveCount(2);
+    const strip = page.locator('#regime-summary button.mrr-status[aria-haspopup="dialog"]');
     await expect(strip).toHaveCount(1);
+    await expect(page.locator("#regime-summary .mrr-summary-stamp").getByRole("button", { name: "Data status ›" })).toHaveCount(1);
     const bell = header(page).getByRole("button", { name: /alert/i });
     await expect(bell).toHaveAttribute("aria-haspopup", "dialog");
     await expect.poll(async () => strip.getAttribute("aria-label"), { timeout: 15_000 }).toMatch(/Open the alert feed\.$/);

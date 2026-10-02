@@ -162,6 +162,8 @@ interface Placed {
   anchor: "start" | "middle" | "end";
   text: string;
   current: boolean;
+  /** Codex R-21 (round 2): a short line from the current dot to a label placed further out. */
+  leader?: { x1: number; y1: number; x2: number; y2: number };
 }
 
 /**
@@ -197,17 +199,19 @@ function placeLabels(points: TrailPoint[], at: (p: TrailPoint) => [number, numbe
     const tw = text.length * glyph;
     const th = current ? 12 : 11;
     const d = current ? HALO_R : 7;
-    const spots: { dx: number; dy: number; anchor: Placed["anchor"] }[] = [
-      { dx: d, dy: d + th - 2, anchor: "start" },
-      { dx: d, dy: -d, anchor: "start" },
-      { dx: -d, dy: d + th - 2, anchor: "end" },
-      { dx: -d, dy: -d, anchor: "end" },
-      { dx: d + 2, dy: 4, anchor: "start" },
-      { dx: -d - 2, dy: 4, anchor: "end" },
-      { dx: 0, dy: -d - 3, anchor: "middle" },
-      { dx: 0, dy: d + th + 1, anchor: "middle" },
+    type Spot = { dx: number; dy: number; anchor: Placed["anchor"] };
+    const spotsAt = (r: number): Spot[] => [
+      { dx: r, dy: r + th - 2, anchor: "start" },
+      { dx: r, dy: -r, anchor: "start" },
+      { dx: -r, dy: r + th - 2, anchor: "end" },
+      { dx: -r, dy: -r, anchor: "end" },
+      { dx: r + 2, dy: 4, anchor: "start" },
+      { dx: -r - 2, dy: 4, anchor: "end" },
+      { dx: 0, dy: -r - 3, anchor: "middle" },
+      { dx: 0, dy: r + th + 1, anchor: "middle" },
     ];
-    const boxOf = (s: (typeof spots)[number]): Box => {
+    const spots = spotsAt(d);
+    const boxOf = (s: Spot): Box => {
       const lx = x + s.dx;
       const x0 = s.anchor === "start" ? lx : s.anchor === "end" ? lx - tw : lx - tw / 2;
       const ly = y + s.dy;
@@ -217,13 +221,39 @@ function placeLabels(points: TrailPoint[], at: (p: TrailPoint) => [number, numbe
     const fits = (b: Box) =>
       inside(b, g) && others.every((o) => clear(b, o)) && names.every((o) => clear(b, o)) && scaleBoxes.every((o) => clear(b, o)) && taken.every((o) => clear(b, o));
     let spot = spots.find((s) => fits(boxOf(s)));
-    if (!spot && current) spot = spots.find((s) => inside(boxOf(s), g)) ?? spots[0];
+    let leader: Placed["leader"];
+    if (!spot && current) {
+      // Codex R-21 (round 2): the latest month keeps every collision check. With no safe spot beside its dot, a
+      // short leader line reaches the first free spot further out; with none, the label is left off (the dot's
+      // tooltip still names the month).
+      for (const reach of [d + 14, d + 26, d + 40]) {
+        spot = spotsAt(reach).find((s) => fits(boxOf(s)));
+        if (spot) {
+          const ax = x + spot.dx;
+          const ay = y + spot.dy - th / 2 + 2;
+          const len = Math.hypot(ax - x, ay - y) || 1;
+          const r0 = CURRENT_R + 3;
+          leader = { x1: round1(x + ((ax - x) / len) * r0), y1: round1(y + ((ay - y) / len) * r0), x2: round1(ax - ((ax - x) / len) * 3), y2: round1(ay - ((ay - y) / len) * 3) };
+          break;
+        }
+      }
+    }
     if (!spot) continue;
     const box = boxOf(spot);
     taken.push(box);
-    placed.push({ i, x: round1(x + spot.dx), y: round1(y + spot.dy), anchor: spot.anchor, text, current });
+    placed.push({ i, x: round1(x + spot.dx), y: round1(y + spot.dy), anchor: spot.anchor, text, current, ...(leader ? { leader } : {}) });
   }
   return placed.sort((a, b) => a.i - b.i);
+}
+
+/** The month labels and the axis-scale labels for a plane of `w` × `h` (what `draw` prints; exported so a test can
+ * lay a plane of any size out without a browser). */
+export function layoutLabels(points: TrailPoint[], w: number, h: number): { labels: Placed[]; scale: ScaleLabel[] } {
+  const g = plane(w, h);
+  const { sx, sy } = axisScales(points);
+  const at = (p: TrailPoint): [number, number] => [round1(g.ox + (g.hw * p.x) / sx), round1(g.oy - (g.hh * p.y) / sy)];
+  const scale = scaleLabels(g, sx, sy);
+  return { labels: points.length >= 1 ? placeLabels(points, at, g, scale) : [], scale };
 }
 
 export function QuadrantChart({ points, current }: QuadrantChartProps) {
@@ -257,9 +287,7 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
     const g = plane(w, h);
     const px = (p: Pick<TrailPoint, "x">) => round1(g.ox + (g.hw * p.x) / sx);
     const py = (p: Pick<TrailPoint, "y">) => round1(g.oy - (g.hh * p.y) / sy);
-    const at = (p: TrailPoint): [number, number] => [px(p), py(p)];
-    const scale = scaleLabels(g, sx, sy);
-    const labels = n >= 1 ? placeLabels(plotted, at, g, scale) : [];
+    const { labels, scale } = layoutLabels(plotted, w, h);
     // Fade oldest → newest: the trail's segments and the dots both.
     const segOpacity = (k: number) => round2(0.12 + 0.5 * (n > 2 ? k / (n - 2) : 1));
     const dotOpacity = (k: number) => round2(0.35 + 0.55 * (faded.length > 1 ? k / (faded.length - 1) : 1));
@@ -364,6 +392,11 @@ export function QuadrantChart({ points, current }: QuadrantChartProps) {
             </circle>
           </g>
         ) : null}
+        {labels.map((l) =>
+          l.leader ? (
+            <line key={`leader-${l.i}`} data-leader="true" x1={l.leader.x1} y1={l.leader.y1} x2={l.leader.x2} y2={l.leader.y2} stroke={AXIS_FILL} strokeWidth={1} strokeOpacity={0.7} />
+          ) : null,
+        )}
         {labels.map((l) => (
           <text
             key={l.i}

@@ -428,8 +428,9 @@ test.describe("S4 strip by route and the sidebar freshness entry", () => {
 
       const sidebar = page.locator("#mrr-sidebar");
       await expect(sidebar).toBeVisible();
-      // The existing footer text stays.
-      await expect(sidebar).toContainText(/market data|Reconnecting to feeds|Data service unavailable|Validated snapshot/);
+      // fix/freshness 8 / Codex R-28: the footer reads "Data status" over the markets as-of (or the service words).
+      await expect(sidebar.getByTestId("sidebar-freshness")).toContainText(/^Data status/);
+      await expect(sidebar.getByTestId("sidebar-freshness")).toContainText(/Markets · |Data service unavailable|Validated snapshot|Snapshot · as of/);
       await expect(sidebar).toContainText(/v\d+\.\d+\.\d+/);
       await expect(sidebar).toContainText(/Saved in this browser|Won't be saved in this browser/);
       const entry = sidebar.getByTestId("sidebar-freshness");

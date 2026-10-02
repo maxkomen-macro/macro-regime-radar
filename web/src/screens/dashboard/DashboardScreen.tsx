@@ -183,7 +183,7 @@ export default function DashboardScreen() {
   // The glance panel (useMarketDaily, usePriced, useQuotes) and the calendar
   // card (useCalendar, useCalendarRecent) own their hooks; shared query keys
   // keep every endpoint at one request.
-  const { openAlerts, openFreshness } = useShellActions();
+  const { openAlerts, openFreshness, freshnessOpen = false } = useShellActions();
 
   // Hash-driven state, mirrored from the panels that own it: the deep-link
   // scroll re-runs once the hash's target is actually visible (D38).
@@ -528,7 +528,9 @@ export default function DashboardScreen() {
                 data-testid="summary-data-status"
                 onClick={openFreshness}
                 aria-haspopup="dialog"
-                aria-controls="freshness-drawer"
+                aria-expanded={freshnessOpen}
+                // Codex R-31: the drawer mounts only while open, so the reference exists only then.
+                aria-controls={freshnessOpen ? "freshness-drawer" : undefined}
                 title="Data status: each feed, the regime month and the NYSE session"
                 style={{ marginLeft: "auto", fontSize: "var(--fs-meta, 12px)" }}
               >

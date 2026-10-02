@@ -148,8 +148,8 @@ export default function AppShell() {
   // the Dashboard's status strip opens the alert drawer). One memoised value,
   // so a quote tick repainting the shell does not re-render every consumer.
   const shellActions = useMemo<ShellActions>(
-    () => ({ openAlerts: openDrawer, openFreshness, openPalette, openAssistant: () => setAssistantOpen(true) }),
-    [openDrawer, openFreshness, openPalette],
+    () => ({ openAlerts: openDrawer, openFreshness, openPalette, openAssistant: () => setAssistantOpen(true), freshnessOpen }),
+    [openDrawer, openFreshness, openPalette, freshnessOpen],
   );
 
   const tab = tabBySlug(slug);

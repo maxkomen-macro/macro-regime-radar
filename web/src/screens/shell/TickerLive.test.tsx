@@ -24,7 +24,7 @@ async function appCss(): Promise<string> {
 
 const TEN = { series_id: "DGS10", label: "UST10Y", date: "2026-09-28", value_pct: 5.24, value_bps: 524, change_bps: 28, change_basis: "1w", change_from: "2026-09-21", change_1w_bps: 28, history_basis: "daily", history: [{ date: "2026-09-21", value: 4.96 }, { date: "2026-09-28", value: 5.24 }] };
 const THIRTY = { series_id: "DGS30", label: "UST30Y", date: "2026-09-28", value_pct: 5.56, value_bps: 556, change_bps: 27, change_basis: "1w", change_from: "2026-09-21", change_1w_bps: 27, history_basis: "daily", history: [{ date: "2026-09-21", value: 5.29 }, { date: "2026-09-28", value: 5.56 }] };
-const DGS30_STATE = { id: "desk:DGS30", label: "30Y Treasury", kind: "fred", cadence: "daily", as_of: "2026-09-28", state: "close", delay_min: null, cycles_behind: 2, stale: false, discontinued: false, reason: "30Y Treasury observed 2026-09-28; 2 business day(s) behind the 2026-09-30 print." };
+const DGS30_STATE = { id: "DGS30", label: "30Y Treasury", kind: "fred", cadence: "daily", as_of: "2026-09-28", state: "close", delay_min: null, cycles_behind: 2, stale: false, discontinued: false, reason: "30Y Treasury observed 2026-09-28; 2 business day(s) behind the 2026-09-30 print." };
 
 function serve(credit: unknown) {
   stubFetch({

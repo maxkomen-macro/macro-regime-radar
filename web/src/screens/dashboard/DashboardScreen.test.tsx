@@ -668,7 +668,9 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     const stamps = card.querySelector(".mrr-summary-stamp") as HTMLElement;
     const link = within(stamps).getByRole("button", { name: "Data status ›" });
     expect(link).toHaveAttribute("aria-haspopup", "dialog");
-    expect(link).toHaveAttribute("aria-controls", "freshness-drawer");
+    // Codex R-31: closed, the drawer is not mounted, so the button names no control and says it is collapsed.
+    expect(link).not.toHaveAttribute("aria-controls");
+    expect(link).toHaveAttribute("aria-expanded", "false");
     // At the right of the header: the stamps' row, after both stamps.
     const kids = [...(stamps.firstElementChild as HTMLElement).children];
     expect(kids[kids.length - 1]).toBe(link);
@@ -677,6 +679,14 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(openFreshness).toHaveBeenCalledTimes(1);
     // Nothing on the Current regime card.
     expect(within(byId("regime-hero") as HTMLElement).queryByRole("button", { name: /Data status/ })).toBeNull();
+  });
+
+  it("Codex R-31: with the drawer open the summary's Data status names it in aria-controls and reads expanded", async () => {
+    renderDashboard({ actions: { freshnessOpen: true } });
+    const card = await awaitSection("regime-summary");
+    const link = within(card.querySelector(".mrr-summary-stamp") as HTMLElement).getByRole("button", { name: "Data status ›" });
+    expect(link).toHaveAttribute("aria-controls", "freshness-drawer");
+    expect(link).toHaveAttribute("aria-expanded", "true");
   });
 
   it("Codex R-08: an older API serves no history_basis, so the 10Y card says stored history, never daily closes", async () => {

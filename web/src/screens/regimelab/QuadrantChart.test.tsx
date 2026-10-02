@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
-import QuadrantChart, { axisScales, labelledIndices, pointTitle } from "./QuadrantChart";
+import QuadrantChart, { axisScales, labelledIndices, layoutLabels, pointTitle } from "./QuadrantChart";
 import type { trailPoints } from "./regime-history";
 import type { Regime, RegimeLabel } from "../../api/types";
 
@@ -266,5 +266,44 @@ describe("Codex R-21: month labels clear the axis-scale labels", () => {
       const lb = boxOf(l, l.getAttribute("data-label") === "latest" ? 11 : 10);
       for (const s of scale) expect(overlap(lb, boxOf(s, 9)), `${l.textContent} vs ${s.textContent}`).toBe(false);
     }
+  });
+});
+
+describe("Codex R-21 (round 2): the latest month never covers a scale label, even when no spot beside it is free", () => {
+  /** Estimated from the drawn attributes alone: a mono glyph is 0.6 em, a line one em tall. */
+  const box = (x: number, y: number, text: string, anchor: string, fontPx: number) => {
+    const w = text.length * fontPx * 0.6;
+    const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
+    return { x0, x1: x0 + w, y0: y - fontPx, y1: y };
+  };
+  const overlap = (a: ReturnType<typeof box>, b: ReturnType<typeof box>) => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  const pts = (rows: [string, number, number][]) => rows.map(([date, x, y]) => ({ date, label: "Overheating" as RegimeLabel, x, y }));
+
+  it("Codex's case: a 300 × 250 plane ending Dec 2025 at (0.94, 0.24)", () => {
+    const { labels, scale } = layoutLabels(pts([["2025-10-01", -0.34, 0.95], ["2025-11-01", 0.44, 0.33], ["2025-12-01", 0.94, 0.24]]), 300, 250);
+    const scaleBoxes = scale.map((s) => box(s.x, s.y, s.text, s.anchor, 9));
+    for (const l of labels) {
+      const lb = box(l.x, l.y, l.text, l.anchor, l.current ? 11 : 10);
+      for (const [k, sb] of scaleBoxes.entries()) expect(overlap(lb, sb), `${l.text} vs ${scale[k].text}`).toBe(false);
+    }
+    const latest = labels.find((l) => l.current);
+    // Placed with a leader line to a free spot, or left off; never on top of the scale.
+    if (latest) expect(latest.leader === undefined || latest.leader.x1 !== latest.leader.x2 || latest.leader.y1 !== latest.leader.y2).toBe(true);
+  });
+
+  it("a crowded corner: the latest month takes a leader line to a free spot further out, or is omitted", () => {
+    // Points packed at the top-right corner of a small plane, the latest among them.
+    const rows: [string, number, number][] = [["2025-08-01", 0.95, 0.98], ["2025-09-01", 1, 0.9], ["2025-10-01", 0.9, 1], ["2025-11-01", 0.97, 0.95], ["2025-12-01", 0.99, 0.97]];
+    const { labels, scale } = layoutLabels(pts(rows), 260, 200);
+    const latest = labels.find((l) => l.current);
+    const scaleBoxes = scale.map((s) => box(s.x, s.y, s.text, s.anchor, 9));
+    if (latest) {
+      const lb = box(latest.x, latest.y, latest.text, latest.anchor, 11);
+      for (const sb of scaleBoxes) expect(overlap(lb, sb)).toBe(false);
+    }
+    // The rendered chart draws the leader when one is placed.
+    render(<QuadrantChart points={pts(rows)} current={regime({ date: "2025-12-01", label: "Overheating", growth_trend: 0.99, inflation_trend: 0.97 })} />);
+    const drawn = svg()?.querySelectorAll("line[data-leader]").length ?? 0;
+    expect(drawn).toBeLessThanOrEqual(1);
   });
 });

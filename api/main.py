@@ -1379,7 +1379,9 @@ def api_credit_oas(
         # fix/freshness 8: the 30Y is judged like the Desk's DGS30 row (the FRED daily rule on the bond calendar),
         # dated by the observation it serves; /api/freshness carries no desk rows.
         spec = {"id": "DGS30", **freshness_mod.DESK_REFRESH_SERIES["DGS30"]}
-        block["DGS30"] = freshness_mod.desk_series_states(stored={"DGS30": ust30y["date"]}, specs=[spec], watermarks=_guarded(db.watermarks))[0]
+        state = freshness_mod.desk_series_states(stored={"DGS30": ust30y["date"]}, specs=[spec], watermarks=_guarded(db.watermarks))[0]
+        # The block's contract (FRESHNESS_CONTRACT §6): each state's id is its key.
+        block["DGS30"] = {**state, "id": "DGS30"}
     return CreditOAS(**payload, freshness=block)
 
 

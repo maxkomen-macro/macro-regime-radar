@@ -105,6 +105,21 @@ async function finishCell(cell: Cell, def: RouteDef, width: number, state: State
 const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
 /** fix/freshness 8: the strip's status card is gone; the sidebar's "● Data status" dot carries its worst line. */
 const dataStatusDot = (page: Page) => page.locator("#mrr-sidebar [data-testid='sidebar-freshness'] .mrr-dot");
+/** Codex R-29: below 860 the phone menu's "Data status" entry carries the same words and dot; opens the menu,
+ * checks the entry's wording and the dot's tone (or that a snapshot has no health dot), and closes the menu. */
+async function expectPhoneDataStatus(page: Page, words: string | RegExp, tone: string | null): Promise<void> {
+  await page.locator("button[aria-controls='mobile-nav-list']").click();
+  const entry = page.locator("#mobile-nav-list").getByTestId("sidebar-freshness");
+  await expect(entry).toBeVisible();
+  await expect(entry).toContainText(/^Data status/);
+  await expect(entry).toContainText(words, { timeout: 20_000 });
+  if (tone) await expect(entry.locator(".mrr-dot")).toHaveAttribute("data-tone", tone);
+  else {
+    await expect(entry.locator(".mrr-dot")).toHaveCount(0);
+    await expect(entry.locator(".mrr-side-snapmark")).toHaveCount(1);
+  }
+  await page.locator("button[aria-controls='mobile-nav-list']").click();
+}
 /** Iteration 1 S4: no strip on Recession and Methodology. */
 const hasStrip = (slug: string) => slug !== "recession" && slug !== METHODOLOGY_SLUG;
 /** The Data status drawer's trigger on every route (fix/freshness 8): the sidebar entry, the MobileNav list's below 860. */
@@ -350,6 +365,8 @@ for (const vp of [DESK, PHONE]) {
         if (vp.width >= 860) {
           await expect(page.locator(".mrr-side-foot")).toContainText("Data service unavailable", { timeout: 20_000 }); // shell-status.ts marketsAsOfWords
           await expect(dataStatusDot(page)).toHaveAttribute("data-tone", "error");
+        } else {
+          await expectPhoneDataStatus(page, "Data service unavailable", "error");
         }
         await expect(page.locator("header .mrr-bell")).toHaveAttribute("data-state", "error", { timeout: 20_000 });
         await expectNoRegimePill(page);
@@ -374,6 +391,7 @@ for (const vp of [DESK, PHONE]) {
         // The word arrives once both shell queries have failed (G11): a 20 s poll.
         if (!hasStrip(def.slug)) await expect(strip(page)).toHaveCount(0); // Iteration 1 S4
         if (vp.width >= 860) await expect(page.locator(".mrr-side-foot")).toContainText("Validated snapshot", { timeout: 20_000 }); // shell-status.ts:165
+        else await expectPhoneDataStatus(page, "Validated snapshot", null);
         await expectNoRegimePill(page);
         // The drawer's first block carries SNAPSHOT_NOTE (FreshnessDrawer.tsx:111-113).
         await openFreshness(page, def.slug, vp.width);

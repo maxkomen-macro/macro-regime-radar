@@ -459,7 +459,9 @@ test("drawers and palette: focus on open, Tab contained, Escape closes and retur
   expect(await inertShell(page)).toBeNull();
   await expect(bell).toBeFocused();
 
-  const trigger = strip(page).getByRole("button", { name: /^Freshness/ });
+  // fix/freshness 8 / Codex R-28: the drawer's opener is the sidebar's "Data status" (the strip's card is gone).
+  const trigger = page.locator("#mrr-sidebar").getByTestId("sidebar-freshness");
+  await expect(trigger).toHaveAccessibleName(/^Data status/);
   await focus(trigger);
   await page.keyboard.press("Enter");
   const fresh = page.locator("#freshness-drawer");
