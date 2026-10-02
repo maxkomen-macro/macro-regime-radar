@@ -193,6 +193,42 @@ describe("Codex R-11: the tip is measured and placed inside the window", () => {
     }
   });
 
+  it("Codex R-14: a window that changes size places an open tip again, or hides it once its term is out of the window", () => {
+    const vh = window.innerHeight;
+    const setHeight = (h: number) => Object.defineProperty(window, "innerHeight", { configurable: true, value: h });
+    try {
+      setHeight(844);
+      render(
+        <>
+          <Stat label="2s10s" value="+52 bp" />
+          <TermTip />
+        </>,
+      );
+      const term = screen.getByText("2s10s").closest(".dk-term")!;
+      let top = 600;
+      term.getBoundingClientRect = () => ({ top, bottom: top + 15, left: 40, right: 120, width: 80, height: 15, x: 40, y: top, toJSON: () => ({}) }) as DOMRect;
+      act(() => {
+        fireEvent.pointerOver(term);
+      });
+      expect(screen.getByRole("tooltip")).toHaveStyle({ top: "621px" });
+      // The window shrinks to 640 px and the page reflows the term to 300: the tip follows, inside the window.
+      setHeight(640);
+      top = 300;
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(screen.getByRole("tooltip")).toHaveStyle({ top: "321px" });
+      // Shrunk past the term: the tip goes.
+      setHeight(260);
+      act(() => {
+        window.dispatchEvent(new Event("resize"));
+      });
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      setHeight(vh);
+    }
+  });
+
   it("the pointer on its way into the tip, a finger in it and its own scroll keep it; leaving it hides it", () => {
     render(
       <>

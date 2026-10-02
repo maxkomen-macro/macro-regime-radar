@@ -237,8 +237,9 @@ export function TermTip() {
       if (e.key === "Escape") hide();
     };
     // A scroll moves the tip with its term, and hides it once the term leaves the window (a scroll that lands just
-    // after the pointer reached a term would otherwise wipe the tip while the pointer is still on it).
-    const scroll = (e: Event) => {
+    // after the pointer reached a term would otherwise wipe the tip while the pointer is still on it). Codex R-14: so
+    // does a change of the window's size (a resized window, a turned phone): the tip is measured and placed again.
+    const follow = (e: Event) => {
       if (!current || inTip(e.target)) return;
       const r = current.getBoundingClientRect();
       const vh = window.innerHeight || document.documentElement.clientHeight;
@@ -252,7 +253,8 @@ export function TermTip() {
     document.addEventListener("focusin", over);
     document.addEventListener("focusout", out);
     document.addEventListener("keydown", key);
-    window.addEventListener("scroll", scroll, true);
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
     return () => {
       document.removeEventListener("pointerover", over);
       document.removeEventListener("pointerout", out);
@@ -261,7 +263,8 @@ export function TermTip() {
       document.removeEventListener("focusin", over);
       document.removeEventListener("focusout", out);
       document.removeEventListener("keydown", key);
-      window.removeEventListener("scroll", scroll, true);
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
     };
   }, []);
   return (

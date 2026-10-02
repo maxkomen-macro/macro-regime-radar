@@ -510,7 +510,7 @@ test.describe("desk usability", () => {
     await phone.close();
   });
 
-  test("Codex R-10, R-11: on a 390 px phone a tapped definition opens no row, and its tip stays inside the window, scrolling when taller", async ({ browser, baseURL }) => {
+  test("Codex R-10, R-11, R-14: on a 390 px phone a tapped definition opens no row, and its tip stays inside the window, scrolling when taller and following a resize", async ({ browser, baseURL }) => {
     const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: "dark" });
     const p = await phone.newPage();
     const tip = p.getByTestId("dk-term-tip");
@@ -542,6 +542,24 @@ test.describe("desk usability", () => {
     // A tap elsewhere in the row still opens it.
     await row.locator("td").first().tap();
     await expect(p).toHaveURL(/\/desk\/event-study/);
+    // R-14: an open tip is placed again when the window changes size (here, 844 → 600 px tall), inside the new window.
+    await open(p, "/desk/data-pipeline?group=credit");
+    await expect(p.getByRole("main").getByTestId("dk-loading")).toHaveCount(0);
+    const statusHead = p.locator("thead abbr.dk-term", { hasText: "Status" });
+    await statusHead.tap();
+    await expect(tip).toBeVisible();
+    await inside(390, 844);
+    await p.setViewportSize({ width: 390, height: 600 });
+    const headTop = (await statusHead.boundingBox())!.y;
+    expect(headTop).toBeLessThan(600);
+    await expect(tip).toBeVisible();
+    await expect
+      .poll(async () => {
+        const b = (await tip.boundingBox())!;
+        return b.y >= 8 - 0.5 && b.y + b.height <= 600 - 8 + 0.5;
+      })
+      .toBe(true);
+    await inside(390, 600);
     // R-11: the Data Pipeline's Status head holds four sentences; in a short window they are clamped and scroll.
     await p.setViewportSize({ width: 390, height: 360 });
     await open(p, "/desk/data-pipeline?group=credit");
