@@ -23,12 +23,15 @@ The method, in the order the page states it:
   weights): each name's weight is its market value over the basket's,
   `w_i = S_i × M_i / Σ_j S_j × M_j`, from one share count per name (the
   stored current counts, on today's share basis) and its close as traded on
-  that basis, `M_i` (`market_prices`: the provider's own close divided by the
-  splits since). Codex R-01: never the adjusted close the index is priced
+  that basis, `M_i` (`market_prices`: the provider's own close, which is on
+  today's basis while no split falls after the start). Codex R-01: never the
+  adjusted close the index is priced
   from, which takes the dividends paid since out of the past and would read a
-  dividend payer's value at the start low. Splits are told from dividends by
-  the size of the move (`market_prices`); a move prices cannot place refuses
-  cap weight with the reason. Held, the basket stays cap-weighted: each
+  dividend payer's value at the start low. A split after the start would put
+  that close on another share basis than the count, and prices cannot tell a
+  split from a large cash distribution, so a move of 5% or more in its ratio
+  to the adjusted close after the start refuses cap weight with the reason
+  (`market_prices`). Held, the basket stays cap-weighted: each
   dividend is reinvested across the basket at its weights, as a total-return
   index does (and as the closes of SPY and QQQ, the funds it is read against,
   reinvest theirs), so the holdings stay proportional to the share counts,
@@ -81,14 +84,13 @@ PARTICIPATION = 0.20
 CORR_SESSIONS = 252
 CORR_MIN_SESSIONS = 60
 WEIGHT_TOLERANCE = 1e-9
-# desk/cap-weight (Codex R-01; round 2, R2-02): a session's move in the ratio of the close as traded to the
-# adjusted close tells a split from a dividend only at the two ends. Under DIVIDEND_STEP (5%), either way, it is a
-# cash dividend, which moves the ratio by its yield and stays in the market value; at SPLIT_STEP (40%) or more,
-# either way, it is a split (2-for-1 is 2, 3-for-2 1.5, a 1-for-10 reverse split 0.1) and is taken out. In
-# between (a 5-for-4 split, a stock dividend, a special cash dividend of that size) prices cannot tell which, so
-# cap weight is refused for the basket, with the reason, never guessed.
+# desk/cap-weight (Codex R-01; rounds 2 and 3, R2-02, R3-02): a session's move in the ratio of the close as traded
+# to the adjusted close under DIVIDEND_STEP (5%), either way, is an ordinary cash dividend, which moves the ratio by
+# its yield and stays in the market value. A move of 5% or more is a split, a stock dividend or a cash distribution
+# that large, and prices alone cannot tell which (a $40 distribution on $100 moves it as a 5-for-3 split does), so
+# one after the basket's start refuses cap weight for the basket, with the reason, and is never guessed at. Before
+# the start nothing is read: a split there is already in the start's close as traded, on today's share basis.
 DIVIDEND_STEP = 1.05
-SPLIT_STEP = 1.4
 
 
 class BasketError(ValueError):
@@ -165,23 +167,21 @@ def cap_weights(counts: np.ndarray, closes: np.ndarray) -> np.ndarray:
 
 def market_prices(h: History, symbol: str = "", since: str | None = None) -> dict[str, float]:
     """desk/cap-weight (Codex R-01): one name's close as traded on each of its
-    sessions from `since` (every one without it), on today's share basis: the
-    provider's own close (`close_traded`) divided by the splits since, never
-    adjusted for dividends, so a share count times it is the name's market
-    value that day. The splits are read from the history itself: the ratio of
-    the close as traded to the adjusted close moves only on an ex-date, by a
-    split's ratio or by a dividend's yield; walking back from the last session,
-    a move of SPLIT_STEP or more is taken out as a split, one under
-    DIVIDEND_STEP stays in as a dividend, and one in between refuses cap weight
-    with the reason (round 2, R2-02). A provider whose close is already
-    split-adjusted, as Yahoo's is, shows only dividends. A session without a
-    close as traded has no market value: none is borrowed from another session
-    (R2-03)."""
+    sessions from `since` (every one without it): the provider's own close
+    (`close_traded`), never adjusted for dividends, so a share count times it is
+    the name's market value that day. It is on today's share basis only while
+    no split falls after `since`, so the ratio of the close as traded to the
+    adjusted close is read walking back from the last session: a move under
+    DIVIDEND_STEP is an ordinary dividend and stays in, and a move of 5% or
+    more refuses cap weight with the reason (rounds 2 and 3, R2-02, R3-02: a
+    split, a stock dividend and a large cash distribution move it alike). A
+    provider whose close is already split-adjusted, as Yahoo's is, shows only
+    dividends. A session without a close as traded has no market value: none
+    is borrowed from another session (R2-03)."""
     who = symbol or "a name"
     if h.close_traded is None:
         raise BasketError(f"cap weight reads each name's close as traded, and {who} has none")
     out: dict[str, float] = {}
-    split = 1.0
     later: tuple[str, float] | None = None  # the next later session with a close as traded, and its ratio
     for i in range(len(h.dates) - 1, -1, -1):
         d, t = h.dates[i], h.close_traded[i]
@@ -192,13 +192,11 @@ def market_prices(h: History, symbol: str = "", since: str | None = None) -> dic
         r = t / h.close[i]
         if later is not None:
             step = r / later[1]
-            if step >= SPLIT_STEP or step <= 1.0 / SPLIT_STEP:
-                split *= step
-            elif step >= DIVIDEND_STEP or step <= 1.0 / DIVIDEND_STEP:
+            if step >= DIVIDEND_STEP or step <= 1.0 / DIVIDEND_STEP:
                 raise BasketError(f"cap weight cannot tell whether {who}'s close as traded moved {abs(step - 1) * 100:.0f}% "
-                                  f"against its adjusted close on {later[0]} for a split or for a dividend, so it cannot "
-                                  "weight this basket by market value")
-        out[d] = t / split
+                                  f"against its adjusted close on {later[0]} for a split or for a cash distribution, so it "
+                                  "cannot weight this basket by market value")
+        out[d] = float(t)
         later = (d, r)
     return out
 

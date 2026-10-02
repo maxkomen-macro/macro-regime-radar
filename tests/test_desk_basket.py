@@ -461,61 +461,62 @@ def test_held_reinvests_a_dividend_across_the_basket_so_the_weights_stay_the_mar
     assert monthly["index"] == pytest.approx(held["index"], rel=1e-12)
 
 
-def test_a_split_is_taken_out_of_the_close_as_traded_so_a_current_count_meets_a_price_on_its_basis():
-    """B splits 4-for-1 on Jan 29: as traded 400 then 100, adjusted 100 and 100, and its current count (100) is
-    post-split. Its market value at the start is 100 × 400 / 4 = 10,000, the same as A's 100 × 100."""
+def test_a_split_after_the_start_refuses_cap_weight_and_one_before_is_already_in_the_close():
+    """Round 3, R3-02: B splits 4-for-1 on Jan 29 (as traded 400 then 100, adjusted 100 and 100). After the basket's
+    start its close as traded is on another share basis than the current count, and prices cannot tell the split from a
+    large cash distribution, so cap weight is refused with the reason; so is a 2-for-1 or a reverse split. Before the
+    start it is already in the start's close: a basket that starts on Jan 30 (C's first close) weights B at 100."""
     d2 = D5[:2]
     h = {"A": H(d2, [100, 100]), "B": H(d2, [100, 100], traded=[400, 100])}
-    assert bk.market_prices(h["B"]) == pytest.approx({d2[0]: 100.0, d2[1]: 100.0})
-    r = bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
-    assert [l["target_weight"] for l in r["legs"]] == pytest.approx([0.5, 0.5])
-    assert [l["close_traded_start"] for l in r["legs"]] == pytest.approx([100.0, 100.0])
-    # A 2-for-1 split, and a reverse split (1-for-10 on Jan 29: 10 then 100 as traded), are taken out the same way.
-    assert bk.market_prices(H(d2, [100, 100], traded=[200, 100])) == pytest.approx({d2[0]: 100.0, d2[1]: 100.0})
-    assert bk.market_prices(H(d2, [100, 100], traded=[10, 100])) == pytest.approx({d2[0]: 100.0, d2[1]: 100.0})
+    with pytest.raises(bk.BasketError, match="B's close as traded moved 300% against its adjusted close on 2026-01-29 for a split or for a cash distribution"):
+        bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    for traded in ([200, 100], [10, 100]):
+        with pytest.raises(bk.BasketError, match="for a split or for a cash distribution"):
+            bk.market_prices(H(d2, [100, 100], traded=traded), "B")
+    late = {"A": H(D5, [100] * 5), "B": H(D5, [100] * 5, traded=[400, 100, 100, 100, 100]), "C": H(D5[2:], [50] * 3)}
+    r = bk.price_basket(late, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100, "C": 100})
+    assert r["start"] == D5[2] and [l["target_weight"] for l in r["legs"]] == pytest.approx([100 / 250, 100 / 250, 50 / 250])
+    assert [l["close_traded_start"] for l in r["legs"]] == pytest.approx([100.0, 100.0, 50.0])
     # A provider whose close is already split-adjusted (Yahoo's) shows only the dividend, and it stays in.
     assert bk.market_prices(H(d2, [99, 100], traded=[100, 100])) == pytest.approx({d2[0]: 100.0, d2[1]: 100.0})
 
 
-def test_a_move_prices_cannot_place_refuses_cap_weight_instead_of_guessing():
-    """Round 2, R2-02: under 5% the move is a dividend and stays in; 40% or more is a split and is taken out; in
-    between (a 5-for-4 split, a stock dividend, a special dividend that large) prices cannot tell which, and cap
-    weight is refused with the reason. Codex's case: B pays $20 on $100 (raw 100, 80, 80; adjusted 80, 80, 80),
-    which reads exactly as a 5-for-4 split would."""
+def test_a_move_of_five_percent_or_more_after_the_start_refuses_cap_weight_instead_of_guessing():
+    """Rounds 2 and 3 (R2-02, R3-02): under 5% the move is an ordinary dividend and stays in; 5% or more, either way, is
+    a split, a stock dividend or a large cash distribution, which prices cannot tell apart, and it refuses cap weight
+    with the reason. Codex's cases: $20 on $100 (raw 100, 80, 80; adjusted 80, 80, 80), which moves the ratio as a
+    5-for-4 split would, and $40 on $100 (raw 100, 60, 60; adjusted 60, 60, 60), as a 5-for-3 split would."""
     d2, d3 = D5[:2], D5[:3]
     assert bk.market_prices(H(d2, [96, 96], traded=[100, 96])) == pytest.approx({d2[0]: 100.0, d2[1]: 96.0})
-    for traded in ([105, 100], [125, 100], [100, 125], [139, 100]):
+    for traded in ([105, 100], [125, 100], [100, 125], [139, 100], [167, 100], [300, 100]):
         with pytest.raises(bk.BasketError, match=r"^cap weight cannot tell whether B's close as traded moved \d+% against its "
-                                                 r"adjusted close on 2026-01-29 for a split or for a dividend, so it cannot weight"):
+                                                 r"adjusted close on 2026-01-29 for a split or for a cash distribution, so it cannot weight"):
             bk.market_prices(H(d2, [100, 100], traded=traded), "B")
-    h = {"A": H(d3, [100, 100, 100]), "B": H(d3, [80, 80, 80], traded=[100, 80, 80])}
-    with pytest.raises(bk.BasketError, match="B's close as traded moved 25% against its adjusted close on 2026-01-29"):
-        bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
-    # A move before the basket's start never weighs: only the splits since the start meet a current count.
+    for paid, moved in ((20, 25), (40, 67)):
+        h = {"A": H(d3, [100, 200, 200]), "B": H(d3, [100 - paid] * 3, traded=[100, 100 - paid, 100 - paid])}
+        with pytest.raises(bk.BasketError, match=f"B's close as traded moved {moved}% against its adjusted close on 2026-01-29"):
+            bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    # A move before the basket's start never weighs.
     assert bk.market_prices(H(d3, [80, 80, 80], traded=[100, 80, 80]), "B", since=d3[1]) == pytest.approx({d3[1]: 80.0, d3[2]: 80.0})
-    late = {"A": H(D5, [100] * 5), "B": H(D5, [80] * 5, traded=[100, 80, 80, 80, 80]), "C": H(D5[2:], [50] * 3)}
-    r = bk.price_basket(late, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100, "C": 100})
-    assert r["start"] == D5[2] and [l["target_weight"] for l in r["legs"]] == pytest.approx([100 / 230, 80 / 230, 50 / 230])
 
 
-def test_dividends_and_splits_over_three_months_keep_monthly_equal_to_held_and_the_weights_at_market_value():
+def test_dividends_over_three_months_keep_monthly_equal_to_held_and_the_weights_at_market_value():
     rng = np.random.default_rng(11)
     n = len(CAL)
     adj = {s: 50 * np.cumprod(1 + rng.normal(0, 0.02, n)) for s in ("A", "B", "C")}
-    # B pays 1% on sessions 20 and 45; C splits 2-for-1 on session 30 (its earlier closes as traded are doubled).
-    div = np.ones(n)
-    div[:20] *= 0.99 ** -1
-    div[:45] *= 0.99 ** -1
-    traded_b = adj["B"] * div
-    traded_c = adj["C"].copy()
-    traded_c[:30] *= 2
+    # B pays 1% on sessions 20 and 45, C 2% on session 30 (their earlier closes as traded stand above the adjusted).
+    div_b, div_c = np.ones(n), np.ones(n)
+    div_b[:20] *= 0.99 ** -1
+    div_b[:45] *= 0.99 ** -1
+    div_c[:30] *= 0.98 ** -1
+    traded_b, traded_c = adj["B"] * div_b, adj["C"] * div_c
     hist = {"A": H(CAL, adj["A"]), "B": H(CAL, adj["B"], traded=traded_b), "C": H(CAL, adj["C"], traded=traded_c)}
     counts = {"A": 5e9, "B": 2e8, "C": 7e8}
     held = bk.price_basket(hist, None, "hold", 1e6, sessions=CAL, shares_outstanding=counts)
     monthly = bk.price_basket(hist, None, "monthly", 1e6, sessions=CAL, shares_outstanding=counts)
     assert monthly["index"] == pytest.approx(held["index"], rel=1e-12)
-    # B's and C's prices on today's basis: B's closes before each dividend as traded, C's halved before its split.
-    mkt = {"A": adj["A"], "B": traded_b, "C": adj["C"]}
+    # Each name's market price is its close as traded: B's and C's above their adjusted closes before each dividend.
+    mkt = {"A": adj["A"], "B": traded_b, "C": traded_c}
     start = {s: counts[s] * mkt[s][0] for s in counts}
     assert [l["target_weight"] for l in held["legs"]] == pytest.approx([start[s] / sum(start.values()) for s in "ABC"])
     end = {s: counts[s] * mkt[s][-1] for s in counts}
