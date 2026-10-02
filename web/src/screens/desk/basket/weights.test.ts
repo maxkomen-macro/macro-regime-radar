@@ -1,7 +1,7 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
 import { addLeg, saveRefusal, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
-import { capAvailability, heldBasket, priceParams, recordedLegs, shareCountsOf, updateSaved, weightingOf, type ShareCounts } from "./weights";
+import { capAvailability, heldBasket, priceParams, recordedLegs, shareCountsOf, updateSaved, upgradeSeededPreset, weightingOf, type ShareCounts } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -267,5 +267,26 @@ describe("cap weight (desk/cap-weight)", () => {
     st.setItem(SAVED_BASKETS_KEY, JSON.stringify([{ ...a, weighting: "equal" }, { ...a, id: "local-3", cap_weights: { as_of: "x", prices_as_of: "y", weights: { NVDA: "big" } } }]));
     expect(readSaved(st)).toEqual([]);
     expect(unreadableSaved(st)).toHaveLength(2);
+  });
+
+  it("the preset desk/books seeded, untouched, takes cap weight where it stands; a basket the analyst saved is left alone", () => {
+    const st = memory();
+    const seeded = { ...PRESET, weighting: undefined };
+    const other: SavedBasket = { ...PRESET, id: "local-2", name: "Mine", weighting: undefined };
+    st.setItem(SAVED_BASKETS_KEY, JSON.stringify([other, seeded, "unreadable"]));
+    upgradeSeededPreset(st);
+    expect(readSaved(st).map((b) => [b.id, weightingOf(b)])).toEqual([["local-2", "target"], ["local-1", "cap"]]);
+    expect(unreadableSaved(st)).toEqual(["unreadable"]);
+    // Saved by the analyst (a new saved_at), renamed, re-weighted, or monthly: theirs, untouched.
+    for (const mine of [{ ...seeded, saved_at: "2026-09-30T12:00:00Z" }, { ...seeded, name: "AI 10" }, { ...seeded, legs: seeded.legs.map((l, i) => ({ ...l, weight: i === 0 ? "19" : i === 1 ? "1" : "10" })) }, { ...seeded, method: "monthly" as const }]) {
+      st.setItem(SAVED_BASKETS_KEY, JSON.stringify([mine]));
+      const before = st.getItem(SAVED_BASKETS_KEY);
+      upgradeSeededPreset(st);
+      expect(st.getItem(SAVED_BASKETS_KEY)).toBe(before);
+    }
+    // No store, nothing written.
+    const empty = memory();
+    upgradeSeededPreset(empty);
+    expect(empty.getItem(SAVED_BASKETS_KEY)).toBeNull();
   });
 });

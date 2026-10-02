@@ -422,6 +422,38 @@ export function seedPreset(storage: Pick<Storage, "getItem" | "setItem"> | null 
   }
 }
 
+/** desk/cap-weight: the preset as desk/books seeded it, untouched (never saved, renamed or edited here): its legs at
+ * 10% each, buy-and-hold, $1,000,000, the seed's own `saved_at`, no weighting. Such an entry is the app's default,
+ * not the analyst's work, so it takes the new default, cap weight, where it stands (`upgradeSeededPreset`); any
+ * basket the analyst has saved, the preset included, is left as it is. */
+function isUntouchedSeed(v: unknown): boolean {
+  const b = v as SavedBasket;
+  return (
+    !!b &&
+    b.id === PRESET.id &&
+    b.name === PRESET.name &&
+    b.saved_at === PRESET.saved_at &&
+    b.weighting === undefined &&
+    b.cap_weights === undefined &&
+    methodOf(b) === "hold" &&
+    notionalOf(b) === DEFAULT_NOTIONAL &&
+    Array.isArray(b.legs) &&
+    legsKey(b.legs) === legsKey(PRESET.legs) &&
+    b.legs.every((l, i) => l.name === PRESET.legs[i].name)
+  );
+}
+
+/** Gives the untouched seeded preset the new default, cap weight, in place; never writes anything else. */
+export function upgradeSeededPreset(storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): void {
+  try {
+    const raw = readRaw(storage);
+    if (!storage || !raw.some(isUntouchedSeed)) return;
+    storage.setItem(SAVED_BASKETS_KEY, JSON.stringify(raw.map((x) => (isUntouchedSeed(x) ? { ...(x as SavedBasket), weighting: "cap" } : x))));
+  } catch {
+    /* no storage, or it is full: the basket stays as it was */
+  }
+}
+
 export function readSaved(storage: Pick<Storage, "getItem"> | null = safeStorage()): SavedBasket[] {
   return readRaw(storage).filter(isSaved);
 }

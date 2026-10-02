@@ -51,6 +51,7 @@ import {
   notionalText,
   parseNotional,
   seedPreset,
+  upgradeSeededPreset,
   saveRefusal,
   savedLegs,
   shareCountsOf,
@@ -826,6 +827,8 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   // A browser with no basket store at all starts with the preset (desk/books).
   const [saved, setSaved] = useState<SavedBasket[]>(() => {
     seedPreset();
+    // desk/cap-weight: the preset desk/books seeded, untouched, takes the new default (cap weight) where it stands.
+    upgradeSeededPreset();
     return readSaved();
   });
   const [unreadable, setUnreadable] = useState(() => unreadableSaved().length);
