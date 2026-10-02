@@ -265,28 +265,20 @@ export function seriesById(f: Freshness | null | undefined, id: string): SeriesS
 }
 
 /** The plain-words line every tab prints when the newest stored close is
- * older than the last completed session (A3), else null. */
+ * older than the last completed session (A3), else null: "Most recent stored
+ * close: Sep 30" (desk/pdf-polish item 1, the owner's wording; the close that
+ * is due is no longer named). */
 export function storedCloseLine(f: Freshness | null | undefined): string | null {
   const daily = seriesById(f, "market_daily");
   if (!daily || normalizeState(daily.state) !== "stale") return null;
   const stored = monDD(daily.as_of);
-  const due = monDD(f?.session?.last_completed_session);
-  if (!stored) return null;
-  return due
-    ? `The newest stored close is ${stored}; the ${due} close is not stored yet.`
-    : `The newest stored close is ${stored}; newer closes are not stored yet.`;
+  return stored ? `Most recent stored close: ${stored}` : null;
 }
 
-/** The same fact in a phone's one line ("Stored close Sep 14; Sep 18 not
- * stored yet."), else null. The shell prints it in place of storedCloseLine
- * where the full sentence would wrap; the full one stays for screen readers. */
+/** The same fact on a phone, else null. desk/pdf-polish item 1: the line is
+ * short enough for one line at 390 px, so the phone prints it whole. */
 export function storedCloseShort(f: Freshness | null | undefined): string | null {
-  const daily = seriesById(f, "market_daily");
-  if (!daily || normalizeState(daily.state) !== "stale") return null;
-  const stored = monDD(daily.as_of);
-  const due = monDD(f?.session?.last_completed_session);
-  if (!stored) return null;
-  return due ? `Stored close ${stored}; ${due} not stored yet.` : `Stored close ${stored}; newer not stored yet.`;
+  return storedCloseLine(f);
 }
 
 /* ── Series groups (Iteration 1 step 6, A3 and E3) ───────────────────────── */

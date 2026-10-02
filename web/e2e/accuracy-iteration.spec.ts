@@ -70,7 +70,8 @@ const METRIC_IDS = [
   "hy-oas",
 ] as const;
 
-const STORED_CLOSE_LINE = "The newest stored close is Sep 14; the Sep 18 close is not stored yet.";
+// desk/pdf-polish item 1: the owner's wording; the close that is due is no longer named.
+const STORED_CLOSE_LINE = "Most recent stored close: Sep 14";
 
 /** A loading line in <main> ("Reading stored data…", "Building ~24 years of
  * monthly return history…"): StateNote's loading copy carries no role=status,
@@ -989,7 +990,7 @@ test.describe("A3 · as of the bell (series[] mocked)", () => {
       const s = await freshAt(page, route);
       if (!hasScope(s, "Close · Sep 18")) problems.push(`${route}: no market freshness reads "Close · Sep 18"; freshness text:\n${scopeText(s)}`);
       if (hasScope(s, "Close · Sep 14")) problems.push(`${route}: a freshness line re-derives "Close · Sep 14" from the stored bars instead of reading series[]`);
-      if (s.statusLines.some((l) => l.startsWith("The newest stored close is"))) problems.push(`${route}: the stored-close line shows while market_daily is "close"`);
+      if (s.statusLines.some((l) => l.startsWith("Most recent stored close:"))) problems.push(`${route}: the stored-close line shows while market_daily is "close"`);
       if (route === "/app/dashboard" && !hasScope(s, "Aug 2026 print")) problems.push(`${route}: no monthly stamp reads "Aug 2026 print" (CPIAUCSL close); freshness text:\n${scopeText(s)}`);
     }
 
@@ -1067,7 +1068,7 @@ test.describe("A3 · as of the bell (series[] mocked)", () => {
         const drawer = await drawerText(page);
         if (!drawer.includes("Delayed 7 min")) problems.push(`${route}: neither a freshness line nor the freshness drawer reads "Delayed 7 min" (market_intraday delayed 7); freshness text:\n${scopeText(s)}\n    drawer: "${drawer.slice(0, 400)}"`);
       }
-      if (s.statusLines.some((l) => l.startsWith("The newest stored close is"))) problems.push(`${route}: the stored-close line shows in session with the Sep 18 close stored`);
+      if (s.statusLines.some((l) => l.startsWith("Most recent stored close:"))) problems.push(`${route}: the stored-close line shows in session with the Sep 18 close stored`);
     }
     expect(problems, problems.join("\n")).toEqual([]);
   });
@@ -1084,7 +1085,7 @@ test.describe("A3 · as of the bell (series[] mocked)", () => {
       const s = await freshAt(page, route);
       if (!hasScope(s, "Close · Sep 17")) problems.push(`${route}: no market freshness reads "Close · Sep 17"; freshness text:\n${scopeText(s)}`);
       if (hasScope(s, "Close · Sep 18")) problems.push(`${route}: a freshness line claims the Sep 18 close before it exists`);
-      if (s.statusLines.some((l) => l.startsWith("The newest stored close is"))) problems.push(`${route}: the stored-close line shows before the open`);
+      if (s.statusLines.some((l) => l.startsWith("Most recent stored close:"))) problems.push(`${route}: the stored-close line shows before the open`);
     }
     expect(problems, problems.join("\n")).toEqual([]);
   });
@@ -1120,7 +1121,7 @@ test.describe("A3 · as of the bell (series[] mocked)", () => {
         const bad = h.dots.filter((d) => d.healthy);
         if (bad.length) problems.push(`${route}: healthy dot beside "As of unknown" at ${h.selector} (container ${h.container}): ${bad.map((d) => `${d.cls} ${d.color}`).join(", ")}`);
       }
-      if (s.statusLines.some((l) => l.startsWith("The newest stored close is"))) problems.push(`${route}: the stored-close line shows for an unknown state`);
+      if (s.statusLines.some((l) => l.startsWith("Most recent stored close:"))) problems.push(`${route}: the stored-close line shows for an unknown state`);
     }
     expect(problems, problems.join("\n")).toEqual([]);
   });

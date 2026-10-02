@@ -19,9 +19,21 @@ import { moveText, tipOf, vsNormalText } from "../kit/units";
 import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill, LoadingLine, FailedScope } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import "./ledger.css";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 
 export type Filter = "all" | "firing" | "reliable" | "spx" | "cross";
+
+/** The table's eight column heads and their definitions' ids (desk/pdf-polish item 7). */
+export const LEDGER_HEADS = [
+  ["col-signal", "Signal"],
+  ["col-last-fired", "Last fired"],
+  ["col-times", "Times"],
+  ["col-up-month", "Up a month later"],
+  ["col-median", "Median"],
+  ["col-vs-normal", "Vs normal"],
+  ["col-verdict", "Verdict"],
+  ["col-now-firing", "Now"],
+] as const;
 const FILTER_IDS: readonly Filter[] = ["all", "firing", "reliable", "spx", "cross"];
 
 /** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
@@ -226,15 +238,13 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                 <col style={{ width: 148 }} />
               </colgroup>
               <thead>
+                {/* desk/pdf-polish 7: every column head carries its definition. */}
                 <tr>
-                  <th scope="col">Signal</th>
-                  <th scope="col">Last fired</th>
-                  <th scope="col">Times</th>
-                  <th scope="col">Up a month later</th>
-                  <th scope="col">Median</th>
-                  <th scope="col">{defineTerms("Vs normal")}</th>
-                  <th scope="col">Verdict</th>
-                  <th scope="col">Now</th>
+                  {LEDGER_HEADS.map(([id, label]) => (
+                    <th key={id} scope="col">
+                      <Term ids={[id]}>{label}</Term>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               {shown.length ? (

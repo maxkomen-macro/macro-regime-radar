@@ -34,7 +34,7 @@ import type { BasketPriceResponse } from "../data/types";
 import { asOfMismatch, basketLead, capLabel } from "./trades";
 import { Card, LiveBadge, NotServedBadge } from "../kit/ui";
 import { InstrumentSearch } from "../kit/InstrumentSearch";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
 import { checkTicker } from "./check";
@@ -195,20 +195,26 @@ function Legs({
           <caption className="dk-sr">The basket's legs and their weights</caption>
           <thead className={live ? "bh-legs-thead" : "dk-sr"}>
             <tr>
-              <th scope="col">Ticker</th>
-              <th scope="col">Name</th>
+              {/* desk/pdf-polish 7: every column head carries its definition. */}
+              <th scope="col">
+                <Term ids={["col-ticker"]}>Ticker</Term>
+              </th>
+              <th scope="col">
+                <Term ids={["col-name"]}>Name</Term>
+              </th>
               {live ? (
                 <>
                   <th scope="col" className="bh-live">
-                    Now
+                    <Term ids={["col-now"]}>Now</Term>
                   </th>
                   <th scope="col" className="bh-live">
-                    Since start
+                    <Term ids={["col-since"]}>Since start</Term>
                   </th>
                 </>
               ) : null}
               <th scope="col" className="bh-w-h">
-                {capped ? "At start" : "Weight"}
+                {/* desk/cap-weight: a cap-weighted basket's column is its weights at the start, served */}
+                <Term ids={[capped ? "col-weight-cap" : "col-weight"]}>{capped ? "At start" : "Weight"}</Term>
               </th>
               <th scope="col">
                 <span className="dk-sr">Drop</span>

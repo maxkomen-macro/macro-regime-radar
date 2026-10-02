@@ -21,7 +21,7 @@ import RankBars, { relTone } from "../kit/RankBars";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import "./sectors.css";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -59,6 +59,42 @@ export function patternWords(p: SectorPattern | undefined): { value: string; sub
   return { value: "Mixed", sub: `neither group ahead by more than ${pct(p.band ?? 0.01, 0).replace(/^\+/, "")}` };
 }
 
+/**
+ * desk/pdf-polish item 4: the pattern word's hover, from the served rule (§12.14 `sector-pattern-v1`,
+ * api/desk_items_etf.py `pattern`): which sector ETFs make each group, and how the gap under the word is
+ * computed: each group's average 60-session log return less SPY's, the cyclicals' less the defensives',
+ * ×100, against the ±1% band. Groups, names, window and band are the served ones; null when the word, its
+ * spread or a group is not served.
+ */
+export function patternDef(p: SectorPattern | undefined, s: SectorsResponse | undefined): string | null {
+  const cyc = Array.isArray(p?.cyclicals) ? p.cyclicals : [];
+  const dfn = Array.isArray(p?.defensives) ? p.defensives : [];
+  if (!p || !p.word || !fin(p.spread) || !cyc.length || !dfn.length) return null;
+  const rows = Array.isArray(s?.leadership) ? s.leadership : [];
+  const named = (etf: string) => {
+    const name = rows.find((r) => r.etf === etf)?.name;
+    return name ? `${name} (${etf})` : etf;
+  };
+  const neither = rows.filter((r) => !cyc.includes(r.etf) && !dfn.includes(r.etf)).map((r) => named(r.etf));
+  const outside = neither.length ? `; ${neither.join(" and ")} ${neither.length === 1 ? "is" : "are"} in neither group` : "";
+  const band = pct(fin(p.band) ? p.band : 0.01, 0).replace(/^\+/, "");
+  const n = s?.window && fin(s.window.n) ? s.window.n : 60;
+  const gap = pct(Math.abs(p.spread)).replace(/^\+/, "");
+  const excess = `average ${n}-session log return in excess of SPY's`;
+  const groups = [`Cyclical sectors: ${cyc.map(named).join(", ")}.`, `Defensive sectors: ${dfn.map(named).join(", ")}${outside}.`];
+  if (p.word === "cyclical") return [...groups, `Cyclical means the cyclicals lead by more than ${band}: the ${gap} is their ${excess}, minus the defensives' average, ×100.`].join("\n");
+  if (p.word === "defensive") return [...groups, `Defensive means the defensives lead by more than ${band}: the ${gap} is their ${excess}, minus the cyclicals' average, ×100.`].join("\n");
+  return [...groups, `Mixed means neither group leads by more than ${band}: the cyclicals' ${excess}, minus the defensives' average, ×100, is ${pct(p.spread)}.`].join("\n");
+}
+
+/** The six stat labels' definitions (desk/pdf-polish item 7): the leadership row and the breadth row. */
+const LEADING = <Term ids={["col-leading"]}>Leading</Term>;
+const LAGGING = <Term ids={["col-lagging"]}>Lagging</Term>;
+const PATTERN = <Term ids={["col-pattern"]}>Pattern</Term>;
+const ABOVE_50 = <Term ids={["col-above-50"]}>Above 50-day</Term>;
+const ABOVE_200 = <Term ids={["col-above-200"]}>Above 200-day</Term>;
+const EQW = <Term ids={["col-eqw"]}>{vs("Equal", "cap weight")}</Term>;
+
 /** "60 sessions to Sep 23 · log return, ×100 · SPY +2.1%": what the bars measure, from the served window. */
 export function windowLine(s: SectorsResponse | undefined): string {
   if (!s?.window?.end) return "";
@@ -80,6 +116,7 @@ function Leadership({ s, state }: { s: SectorsResponse | undefined; state: State
   const topV = top && fin(top.rel_ret) ? top.rel_ret : null;
   const bottomV = bottom && fin(bottom.rel_ret) ? bottom.rel_ret : null;
   const pat = patternWords(s?.pattern);
+  const patDef = patternDef(s?.pattern, s);
   // Codex R-01: with a sector's return not available, the ranking is only among the others; it says so and names them.
   const gaps = leadershipGaps(s);
   const among = gaps.among ? ` · ${gaps.among}` : "";
@@ -93,16 +130,17 @@ function Leadership({ s, state }: { s: SectorsResponse | undefined; state: State
       <LoadingLine busy={quiet} />
       {quiet ? null : (
         <StatRow cols={3}>
-          <Stat label="Leading" awaiting={topV == null} value={top?.name} tone={topV != null ? relTone(topV) : undefined} sub={topV != null ? <span title={LOG_TIP}>{pct(topV)} vs the index{among}</span> : undefined} />
+          <Stat label={LEADING} awaiting={topV == null} value={top?.name} tone={topV != null ? relTone(topV) : undefined} sub={topV != null ? <span title={LOG_TIP}>{pct(topV)} vs the index{among}</span> : undefined} />
           <Stat
-            label="Lagging"
+            label={LAGGING}
             awaiting={bottomV == null}
             value={bottom?.name}
             tone={bottomV != null ? relTone(bottomV) : undefined}
             sub={bottomV != null ? <span data-tone={bottomV < 0 ? "red" : undefined} title={LOG_TIP}>{pct(bottomV)} vs the index{among}</span> : undefined}
           />
           {/* §12.14: the served word by its named rule; its reason when a group member is not served. */}
-          <Stat label="Pattern" awaiting={!pat} value={pat?.value} sub={pat?.sub} why={s?.pattern?.reason ?? undefined} />
+          {/* desk/pdf-polish 4: the word carries its groups and how the gap under it is computed. */}
+          <Stat label={PATTERN} awaiting={!pat} value={pat ? patDef ? <Term def={patDef}>{pat.value}</Term> : pat.value : undefined} sub={pat?.sub} why={s?.pattern?.reason ?? undefined} />
         </StatRow>
       )}
       {rows.length ? (
@@ -244,7 +282,7 @@ function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State })
         className="sc-card"
         title="Breadth"
         sub={`is the rally wide or narrow? · of ${total} sectors`}
-        labels={["Above 50-day", "Above 200-day", vs("Equal", "cap weight")]}
+        labels={[ABOVE_50, ABOVE_200, EQW]}
         block={off}
         advanced
       />
@@ -256,10 +294,10 @@ function Breadth({ s, state }: { s: SectorsResponse | undefined; state: State })
       {quiet ? null : (
         <StatRow cols={3}>
           {/* §12.14: each count says what it is counted over, and when; no month-ago count and no words are served. */}
-          <Stat label="Above 50-day" awaiting={!countWords(a50)} value={countWords(a50)} sub={countSub(a50)} />
-          <Stat label="Above 200-day" awaiting={!countWords(a200)} value={countWords(a200)} sub={countSub(a200)} />
+          <Stat label={ABOVE_50} awaiting={!countWords(a50)} value={countWords(a50)} sub={countSub(a50)} />
+          <Stat label={ABOVE_200} awaiting={!countWords(a200)} value={countWords(a200)} sub={countSub(a200)} />
           <Stat
-            label={vs("Equal", "cap weight")}
+            label={EQW}
             awaiting={!fin(eqw)}
             value={fin(eqw) ? <span title={LOG_TIP}>{pct(eqw)}</span> : undefined}
             tone={fin(eqw) ? (eqw < 0 ? "down" : eqw > 0 ? "up" : undefined) : undefined}

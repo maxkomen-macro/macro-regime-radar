@@ -21,7 +21,7 @@ import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
 import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart";
 import { Awaiting, LoadingLine, Signed, Stat, StatRow } from "../kit/ui";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 import { excludedWords, byContribution, capLabelOf, compareLead, concentrationLead, contributionLead, dayChange, daysText, indexLead, liquidityLead, methodSentence, momentumLead, rsLead, startSentence, usd, vsAverage } from "./trades";
 
 export type BasketRange = "6m" | "1y";
@@ -175,11 +175,22 @@ function BetaTable({ b }: { b: { qqq?: BasketBenchmark; spy?: BasketBenchmark } 
       <caption className="dk-sr">Beta and correlation of the basket's daily returns to QQQ and SPY</caption>
       <thead>
         <tr>
-          <th scope="col">Against</th>
-          <th scope="col">{defineTerms("Beta 1Y")}</th>
-          <th scope="col">{defineTerms("Corr 1Y")}</th>
-          <th scope="col">{defineTerms("Beta 60D")}</th>
-          <th scope="col">{defineTerms("Corr 60D")}</th>
+          {/* desk/pdf-polish 7: each head its own window's definition (252 or 60 daily returns), not the generic beta's. */}
+          <th scope="col">
+            <Term ids={["col-against"]}>Against</Term>
+          </th>
+          <th scope="col">
+            <Term ids={["col-beta1y"]}>Beta 1Y</Term>
+          </th>
+          <th scope="col">
+            <Term ids={["col-corr1y"]}>Corr 1Y</Term>
+          </th>
+          <th scope="col">
+            <Term ids={["col-beta60d"]}>Beta 60D</Term>
+          </th>
+          <th scope="col">
+            <Term ids={["col-corr60d"]}>Corr 60D</Term>
+          </th>
         </tr>
       </thead>
       <tbody>
@@ -346,11 +357,19 @@ function LiquidityCard({ p, state }: { p: BasketPriceResponse | undefined; state
           <caption className="dk-sr">Days to trade each name at 20% of its 20-day average dollar volume</caption>
           <thead>
             <tr>
-              <th scope="col">Name</th>
-              <th scope="col">{defineTerms("20-day avg $ volume")}</th>
+              <th scope="col">
+                <Term ids={["col-liq-name"]}>Name</Term>
+              </th>
+              <th scope="col">
+                <Term ids={["col-adv"]}>20-day avg $ volume</Term>
+              </th>
               {/* desk/cap-weight: a cap-weighted basket bought today, at the last close's market values */}
-              <th scope="col">{p?.weighting === "cap" ? "At cap weight" : "At target"}</th>
-              <th scope="col">{defineTerms("Days at 20%")}</th>
+              <th scope="col">
+                <Term ids={[p?.weighting === "cap" ? "col-at-cap-weight" : "col-at-target"]}>{p?.weighting === "cap" ? "At cap weight" : "At target"}</Term>
+              </th>
+              <th scope="col">
+                <Term ids={["col-days20"]}>Days at 20%</Term>
+              </th>
             </tr>
           </thead>
           <tbody>

@@ -13,7 +13,8 @@ import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, stubDesk } from "../../../test/desk";
 import sectors from "../../../fixtures/desk/sectors.json";
-import { patternWords, windowLine } from "./SectorsPage";
+import { patternDef, patternWords, windowLine } from "./SectorsPage";
+import { GLOSSARY } from "../kit/glossary";
 import type { SectorPattern, SectorsResponse } from "../data/types";
 
 function renderTab() {
@@ -57,6 +58,17 @@ describe("Sectors tab", () => {
     expect(card).toHaveTextContent("60 sessions to Sep 23 (from Jun 29) · log returns ×100 · SPY +3.8% over the same sessions");
     // §12.0: no read without a rule.
     expect(card).not.toHaveTextContent("Read:");
+    // desk/pdf-polish 4: the word carries its groups and how the 5.2% under it is computed, from the served rule.
+    const word = within(card).getByText("Cyclical");
+    expect(word).toHaveClass("dk-term");
+    expect(word).toHaveAttribute("tabindex", "0");
+    expect(word.getAttribute("data-def")).toBe(patternDef(sectors.pattern as SectorPattern, sectors as unknown as SectorsResponse));
+    // item 7: the six stat labels carry their definitions.
+    for (const [label, id] of [["Leading", "col-leading"], ["Lagging", "col-lagging"], ["Pattern", "col-pattern"]] as const) expect(within(card).getByText(label).getAttribute("data-def")).toBe(GLOSSARY[id].text);
+    const breadth = screen.getByRole("region", { name: /^Breadth/ });
+    await waitFor(() => expect(within(breadth).getByText("Above 50-day")).toHaveClass("dk-term"));
+    expect(within(breadth).getByText("Above 200-day").getAttribute("data-def")).toBe(GLOSSARY["col-above-200"].text);
+    expect(breadth.querySelector('[data-term="col-eqw"]')?.textContent).toBe("Equal vs cap weight");
   });
   it("the badge dates the served comparison session and names the served provider (§1.6)", async () => {
     renderTab();
@@ -194,6 +206,23 @@ describe("the pattern words and the window line (§12.14)", () => {
     expect(patternWords(p(null, null))).toBeNull();
     expect(patternWords(undefined)).toBeNull();
   });
+  it("desk/pdf-polish 4: each word's hover names the groups, the sectors in neither, and how the gap is computed", () => {
+    const s = sectors as unknown as SectorsResponse;
+    const lines = (word: SectorPattern["word"], spread: number) => patternDef(p(word, spread), s)?.split("\n");
+    const groups = [
+      "Cyclical sectors: Materials (XLB), Energy (XLE), Financials (XLF), Industrials (XLI), Technology (XLK), Discretionary (XLY).",
+      "Defensive sectors: Staples (XLP), Utilities (XLU), Health care (XLV); Communications (XLC) and Real estate (XLRE) are in neither group.",
+    ];
+    // The owner's example: 4.5% (the live store's spread on Sep 30, 0.0455).
+    expect(lines("cyclical", 0.0455)).toEqual([...groups, "Cyclical means the cyclicals lead by more than 1%: the 4.5% is their average 60-session log return in excess of SPY's, minus the defensives' average, ×100."]);
+    expect(lines("defensive", -0.031)).toEqual([...groups, "Defensive means the defensives lead by more than 1%: the 3.1% is their average 60-session log return in excess of SPY's, minus the cyclicals' average, ×100."]);
+    expect(lines("mixed", -0.004)).toEqual([...groups, "Mixed means neither group leads by more than 1%: the cyclicals' average 60-session log return in excess of SPY's, minus the defensives' average, ×100, is −0.4%."]);
+    // The gap printed under the word is the same number the hover names.
+    expect(patternWords(p("cyclical", 0.0455))?.sub).toBe("cyclical sectors ahead of defensives by 4.5%");
+    expect(patternDef(p(null, null), s)).toBeNull();
+    expect(patternDef({ ...p("cyclical", 0.05), defensives: [] }, s)).toBeNull();
+  });
+
   it("the window line reads the served window and SPY's own return", () => {
     expect(windowLine(sectors as unknown as SectorsResponse)).toBe("60 sessions to Sep 23 (from Jun 29) · log returns ×100 · SPY +3.8% over the same sessions");
     expect(windowLine({ ...(sectors as unknown as SectorsResponse), window: undefined })).toBe("");

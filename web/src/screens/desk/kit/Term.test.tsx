@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { GLOSSARY, splitTerms } from "./glossary";
-import { TermTip, defineTerms, termsIn } from "./Term";
+import { Term, TermTip, defineTerms, termsIn, writtenId } from "./Term";
 import { Stat } from "./ui";
 
 describe("hover definitions (desk/usability item 11, §14.11)", () => {
@@ -94,5 +94,117 @@ describe("hover definitions (desk/usability item 11, §14.11)", () => {
       fireEvent.pointerOut(term, { relatedTarget: document.body });
     });
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+});
+
+describe("keyboard, touch and written definitions (desk/pdf-polish item 7)", () => {
+  it("a term is a Tab stop of its own, but not inside a control, which takes the focus itself", () => {
+    render(
+      <>
+        <Stat label="RSI (14)" value="55" />
+        <button type="button">
+          <Term ids={["beta"]}>Beta</Term>
+        </button>
+        <table>
+          <tbody>
+            <tr tabIndex={0}>
+              <th>{defineTerms("2s10s +2σ steepening")}</th>
+            </tr>
+          </tbody>
+        </table>
+        <div role="region" aria-label="A table that scrolls" tabIndex={0}>
+          <Term ids={["r2"]}>R²</Term>
+        </div>
+      </>,
+    );
+    expect(screen.getByText("RSI (14)")).toHaveAttribute("tabindex", "0");
+    expect(screen.getByText("Beta")).not.toHaveAttribute("tabindex");
+    expect(screen.getByText("2s10s +2σ steepening")).not.toHaveAttribute("tabindex");
+    // A focusable scroll region is not a control: the column head keeps its stop.
+    expect(screen.getByText("R²")).toHaveAttribute("tabindex", "0");
+  });
+
+  it("a tap shows the sentence until a tap elsewhere; the finger lifting does not hide it", () => {
+    render(
+      <>
+        <Stat label="2s10s" value="+52 bp" />
+        <p>elsewhere</p>
+        <TermTip />
+      </>,
+    );
+    // jsdom's pointer events carry no pointerType: a touch pointer's events are written out with it.
+    const touch = (el: Element, type: string, init: MouseEventInit = {}) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
+      Object.defineProperty(e, "pointerType", { value: "touch" });
+      act(() => {
+        el.dispatchEvent(e);
+      });
+    };
+    const term = screen.getByText("2s10s");
+    touch(term, "pointerover");
+    touch(term, "pointerdown");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(GLOSSARY.curve.text);
+    touch(term, "pointerout", { relatedTarget: document.body });
+    expect(screen.getByRole("tooltip")).toHaveTextContent(GLOSSARY.curve.text);
+    touch(screen.getByText("elsewhere"), "pointerdown");
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    // A tap on the term alone (no pointerover first) shows it too.
+    touch(term, "pointerdown");
+    expect(screen.getByRole("tooltip")).toHaveTextContent(GLOSSARY.curve.text);
+  });
+
+  it("a control that holds terms shows their sentences when it takes the focus; a pointer over the control alone shows none", () => {
+    render(
+      <>
+        <button type="button">
+          <Term ids={["nav"]}>4% NAV</Term> <Term ids={["col-room"]}>68% room</Term>
+        </button>
+        <TermTip />
+      </>,
+    );
+    const button = screen.getByRole("button");
+    act(() => {
+      fireEvent.focusIn(button);
+    });
+    const tip = screen.getByRole("tooltip");
+    expect([...tip.querySelectorAll("p")].map((p) => p.textContent)).toEqual([GLOSSARY.nav.text, GLOSSARY["col-room"].text]);
+    act(() => {
+      fireEvent.focusOut(button, { relatedTarget: document.body });
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => {
+      fireEvent.pointerOver(button);
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("a definition written from data joins the hidden list while it shows, and the tip reads it", () => {
+    const def = "The recession model reads data from three months earlier, so September's score uses June's readings.";
+    const first = render(
+      <>
+        <Term def={def}>based on Jun 2026 data</Term>
+        <TermTip />
+      </>,
+    );
+    const term = screen.getByText("based on Jun 2026 data");
+    expect(term).toHaveAttribute("data-term", "written");
+    expect(term.getAttribute("aria-describedby")).toBe(writtenId(def));
+    expect(document.getElementById(writtenId(def))?.textContent).toBe(def);
+    act(() => {
+      fireEvent.focusIn(term);
+    });
+    expect(screen.getByRole("tooltip")).toHaveTextContent(def);
+    first.unmount();
+    expect(document.getElementById(writtenId(def))).toBeNull();
+    // A glossary term and a written sentence on one label: both, in that order.
+    render(
+      <>
+        <Term ids={["beta"]} def="Over the last 252 daily returns.">
+          Beta 1Y
+        </Term>
+        <TermTip />
+      </>,
+    );
+    expect(screen.getByText("Beta 1Y").getAttribute("data-def")).toBe(`${GLOSSARY.beta.text}\nOver the last 252 daily returns.`);
   });
 });

@@ -449,7 +449,8 @@ describe("A3 stored-close notice (FRESHNESS_CONTRACT §5)", () => {
       { id: "INDPRO", label: "Industrial production", kind: "fred", cadence: "monthly", as_of: "2026-07-01", state: "stale", delay_min: null, cycles_behind: 1, stale: true, discontinued: false, reason: "Industrial production: 1 release(s) behind; Aug 2026 is due." },
     ],
   };
-  const LINE = "The newest stored close is Sep 14; the Sep 18 close is not stored yet.";
+  // desk/pdf-polish item 1: the owner's wording; the close that is due is no longer named.
+  const LINE = "Most recent stored close: Sep 14";
 
   for (const slug of ROUTES) {
     it(`/app/${slug}: one status line states it once, with the server's reason as its title`, async () => {
@@ -468,7 +469,7 @@ describe("A3 stored-close notice (FRESHNESS_CONTRACT §5)", () => {
       expect(notice).toHaveAttribute("role", "status");
       expect(notice).toHaveAttribute("data-copy", "status");
       expect(notice.textContent).toContain(LINE);
-      expect(notice.textContent).toContain("Stored close Sep 14; Sep 18 not stored yet.");
+      expect(notice.textContent).not.toContain("Sep 18");
       expect(notice.getAttribute("title")).toContain("4 session(s)");
       expect(screen.getAllByTestId("stored-close-notice")).toHaveLength(1);
       expect((document.querySelector("main") as HTMLElement).contains(notice)).toBe(false);

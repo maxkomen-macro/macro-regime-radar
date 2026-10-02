@@ -20,7 +20,7 @@ import { REGIME_TAGGED_LINE, bandWord, capitalize, dayShort, monthLong, monthSho
 import Gauge from "../kit/Gauge";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import "./regime.css";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, "green" | "amber" | "red" | "gray"> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
@@ -302,6 +302,17 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
 }
 
 const MEANT_LABELS = ["Regime", "Months", "S&P n", "S&P median", "S&P mean", "Up", "VIX avg", "VIX days"];
+/** desk/pdf-polish 7: each column head's definition, by label. */
+const MEANT_DEFS: Record<string, string> = {
+  Regime: "col-rg-regime",
+  Months: "col-rg-months",
+  "S&P n": "col-rg-n",
+  "S&P median": "col-rg-median",
+  "S&P mean": "col-rg-mean",
+  Up: "col-rg-up",
+  "VIX avg": "col-rg-vix",
+  "VIX days": "col-rg-vix-days",
+};
 
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -364,7 +375,8 @@ function Meant({ r, state }: { r: RegimeResponse | undefined; state: State }) {
             <tr>
               {MEANT_LABELS.map((l) => (
                 <th key={l} scope="col">
-                  {defineTerms(l)}
+                  {/* The VIX column also says what the VIX is, as the label did before (the glossary's "VIX"). */}
+                  <Term ids={l === "VIX avg" ? ["vix", MEANT_DEFS[l]] : [MEANT_DEFS[l]]}>{l}</Term>
                 </th>
               ))}
             </tr>

@@ -152,7 +152,8 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
   const parts = [
     statusWord === "Validated snapshot" ? SNAPSHOT_NOTE : null,
     seededLabel ? `${seededLabel.word}: every state is unknown until the live freshness report replaces it.` : null,
-    status.storedCloseLine,
+    // desk/pdf-polish item 1: the banner's line has no full stop; in the drawer's sentence it takes one.
+    status.storedCloseLine ? `${status.storedCloseLine}.` : null,
     status.blockerNote ?? (seededLabel ? null : words),
   ].filter((x): x is string => Boolean(x));
   const baseSentence = parts.join(" ");

@@ -12,7 +12,8 @@ import overview from "../../../fixtures/desk/overview.json";
 import type { OverviewResponse } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { sinceItems, trendSub, trendWords } from "./OverviewPage";
+import { monthsBetween, recessionLag, recessionWords, regimeSub, sinceItems, trendSub, trendWords } from "./OverviewPage";
+import { writtenId } from "../kit/Term";
 import positions from "../../../fixtures/desk/positions.json";
 import { FIXTURE_META } from "../../../fixtures/desk";
 import { awaitingEnvelope } from "../data/envelope";
@@ -46,18 +47,42 @@ describe("Overview words", () => {
     // The audit's snapshot: nothing firing; the VIX (^VIX, desk/fill-compute) closes on both sessions, so its change
     // is served (15.18 on Sep 23 against 14.21 on Sep 22); the August row both days. fix/freshness 3d: the refresh
     // time is the full refresh's last run on the Desk store (15:52 UTC), not the laggard series' advance (05:07).
-    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual(["vol up 1.0 pts", "regime unchanged", "data refreshed 15:52 UTC"]);
+    // desk/pdf-polish item 2b: each phrase starts with a capital; the regime and the refresh are one item, the
+    // owner's, and the time is New York's (15:52 UTC on Sep 24 is 11:52 AM EDT).
+    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual(["Vol up 1.0 pts", "Regime unchanged (Data refreshed 11:52 AM ET)"]);
     const still = { slug: "2s10s-2sigma-steepening", label: "2s10s +2σ steepening", short: "2s10s steepening", firing_day: 10 };
-    expect(sinceItems({ ...fixture.since_last_close!, still_firing: [still], vol_change_pts: 0.8 }).map((i) => i.text)).toEqual(["2s10s steepening still firing, day 10", "vol up 0.8 pts", "regime unchanged", "data refreshed 15:52 UTC"]);
-    expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
-    expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts");
+    expect(sinceItems({ ...fixture.since_last_close!, still_firing: [still], vol_change_pts: 0.8 }).map((i) => i.text)).toEqual(["2s10s steepening still firing, day 10", "Vol up 0.8 pts", "Regime unchanged (Data refreshed 11:52 AM ET)"]);
+    expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("Regime changed → Overheating (Data refreshed 11:52 AM ET)");
+    expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("Vol down 1.2 pts");
+    // Either part not served is left out: the refresh alone, or the regime alone.
+    expect(sinceItems({ ...fixture.since_last_close!, regime_changed: null }).at(-1)).toEqual({ key: "refresh", text: "Data refreshed 11:52 AM ET" });
+    expect(sinceItems({ ...fixture.since_last_close!, refreshed_at_utc: null }).at(-1)).toEqual({ key: "regime", text: "Regime unchanged" });
     // fix/freshness 3d: a Desk series the refresh left behind is named apart from the refresh time; none, nothing.
     const behind = { series: "DGS10", observation_date: "2026-09-22", state: "stale" as const, reason: "10Y Treasury observed 2026-09-22." };
-    expect(sinceItems({ ...fixture.since_last_close!, oldest_behind: behind }).slice(-2).map((i) => i.text)).toEqual(["data refreshed 15:52 UTC", "DGS10 behind, through Sep 22"]);
+    expect(sinceItems({ ...fixture.since_last_close!, oldest_behind: behind }).slice(-2).map((i) => i.text)).toEqual(["Regime unchanged (Data refreshed 11:52 AM ET)", "DGS10 behind, through Sep 22"]);
     expect(sinceItems({ ...fixture.since_last_close!, oldest_behind: { ...behind, observation_date: null, state: "missing" } }).at(-1)?.text).toBe("DGS10 not stored");
     expect(sinceItems(fixture.since_last_close!).some((i) => i.key === "behind")).toBe(false);
     // §2: each new fire with (new); its served short name.
-    expect(sinceItems({ ...fixture.since_last_close!, new_fires: [{ slug: "golden-cross", label: "S&P golden cross", short: "golden cross" }] })[0]).toEqual({ key: "new-golden-cross", text: "golden cross fired", tag: "(new)" });
+    expect(sinceItems({ ...fixture.since_last_close!, new_fires: [{ slug: "golden-cross", label: "S&P golden cross", short: "golden cross" }] })[0]).toEqual({ key: "new-golden-cross", text: "Golden cross fired", tag: "(new)" });
+  });
+
+  it("the regime tile says only the two directions; the recession tile its band and the month its inputs come from (desk/pdf-polish 2c, 2d)", () => {
+    const r = fixture.tiles!.regime!;
+    expect(regimeSub(r)).toBe("Growth rising, inflation rising");
+    expect(regimeSub({ ...r, growth: undefined })).toBe("");
+    const rec = fixture.tiles!.recession!;
+    // The fixture's score is August's, from May's inputs (the model's three-row shift, src/analytics/recession.py).
+    expect(recessionWords(rec)).toBe("Low · based on May\u00a02026 data");
+    expect(recessionLag(rec)).toBe("The recession model reads data from three months earlier, so August's score uses May's readings.");
+    // The owner's example, read from the served months: September's score from June's readings.
+    expect(recessionLag({ ...rec, probability_month: "2026-09", inputs_through: "2026-06" })).toBe("The recession model reads data from three months earlier, so September's score uses June's readings.");
+    // Across a year, and with a month not served: no sentence is typed.
+    expect(recessionLag({ ...rec, probability_month: "2027-01", inputs_through: "2026-10" })).toBe("The recession model reads data from three months earlier, so January's score uses October's readings.");
+    expect(recessionLag({ ...rec, inputs_through: undefined })).toBeNull();
+    expect(recessionWords({ ...rec, inputs_through: undefined })).toBe("Low");
+    expect(monthsBetween("2026-06", "2026-09")).toBe(3);
+    expect(monthsBetween("2025-11-01", "2026-02")).toBe(3);
+    expect(monthsBetween(null, "2026-02")).toBeNull();
   });
 
   it("names the trend from the served state, and its sub-line from state_since and the last cross (§2)", () => {
@@ -77,25 +102,35 @@ describe("Overview words", () => {
 describe("Overview tab", () => {
   it("prints the since-last-close line and the four tiles from /overview", async () => {
     renderOverview();
+    // desk/pdf-polish 2a: no line under the title.
+    expect(await screen.findByRole("heading", { level: 1, name: "Overview" })).toBeInTheDocument();
+    expect(document.querySelector(".dk-title-sub")).toBeNull();
     const since = await screen.findByTestId("ov-since");
-    await waitFor(() => expect(since).toHaveTextContent("regime unchanged"));
+    await waitFor(() => expect(since).toHaveTextContent("Regime unchanged (Data refreshed 11:52 AM ET)"));
     // §12.1 (B-05): the two sessions compared, by their dates.
     expect(within(since).getByText("Since last close")).toHaveAttribute("title", "the Sep 23 close against Sep 22");
     expect(since).not.toHaveTextContent(/Dollar|firing/);
-    expect(since.textContent).toContain("data refreshed 15:52 UTC");
+    expect(since.textContent).not.toContain("UTC");
     const regime = screen.getByRole("region", { name: "Regime" });
     // fix/freshness 3a (D2): the newest stored row, the Dashboard's label and month (Overheating, August 2026).
     expect(regime).toHaveTextContent("Live · Aug 2026 data");
     expect(regime).toHaveTextContent("Overheating");
     // §1.3's exception (v2 D-36): the regime carries its color, Overheating amber.
     expect(regime.querySelector(".ov-tile-value")).toHaveAttribute("data-tone", "amber");
-    expect(regime).toHaveTextContent("Growth rising, inflation rising · odds 42% · rule-based");
+    // desk/pdf-polish 2c: the label, then only the two directions.
+    expect(regime.querySelector(".ov-tile-sub")?.textContent).toBe("Growth rising, inflation rising");
+    expect(regime).not.toHaveTextContent(/odds|rule-based/);
     expect(regime).not.toHaveTextContent("two-month lag");
     const rec = screen.getByRole("region", { name: "Recession · logistic model" });
     // fix/freshness 3b: one decimal, the value the app prints.
     expect(rec).toHaveTextContent("11.6%");
-    // §2: "<band> · score for <probability_month> · inputs through <inputs_through>"; no odds in words.
-    expect(rec).toHaveTextContent("Low · score for Aug 2026 · inputs through May 2026");
+    // desk/pdf-polish 2d: "<band> · based on <inputs_through> data", the month carrying the model's lag on hover.
+    expect(rec).toHaveTextContent("Low · based on May 2026 data");
+    const based = within(rec).getByText(/based on May/);
+    expect(based).toHaveClass("dk-term");
+    expect(based).toHaveAttribute("tabindex", "0");
+    expect(based.getAttribute("data-def")).toBe("The recession model reads data from three months earlier, so August's score uses May's readings.");
+    expect(based.getAttribute("aria-describedby")).toBe(writtenId(based.getAttribute("data-def")!));
     expect(rec).not.toHaveTextContent("one-in-eight");
     const trend = screen.getByRole("region", { name: "S&P 500 · trend" });
     // fix/freshness 3c: the trend reads daily closes, so its badge is the close's date, never Live.
@@ -112,7 +147,9 @@ describe("Overview tab", () => {
     // §2 (desk/fill-compute): the level, its day and its band (^VIX in asset_prices, as the S&P, so dated Sep 23);
     // the gap to the S&P's 21-day realized volatility recomputed against the VIX shown (15.18 − 10.47), the realized
     // figure's session named (the fixture's store has no Sep 22 S&P close, so no window ends on Sep 22 or 23).
-    expect(vol).toHaveTextContent("VIX 15.18 · Sep 23 · subdued");
+    // desk/pdf-polish 2e: no band word.
+    expect(vol).toHaveTextContent("VIX 15.18 · Sep 23");
+    expect(vol).not.toHaveTextContent(/subdued|calm|stressed/);
     expect(vol).toHaveTextContent("4.7 pts above 21-day realized (10.5), realized to Sep 21");
     expect(vol).not.toHaveTextContent(/not specified|protection costs/);
   });
@@ -145,6 +182,9 @@ describe("Overview tab", () => {
     // §12.1: nothing firing, so the five latest last fires, newest first.
     expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P 5-day move over 2σ", "VIX spike +2σ, 5 days", "RSI above 70", "S&P 20-day move over 2σ", "RSI below 30"]);
     expect(rows[0]).toHaveTextContent("last fired Aug 4, 2026");
+    // desk/pdf-polish 2f: the title, and the engine's date as its small text; each row keeps its own start year.
+    expect(card.querySelector(".dk-card-title")?.textContent).toBe("Active signalsbacktested through Sep 24");
+    expect(card).not.toHaveTextContent(/what fired|engine as of/);
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Fired 78× since 1996 · S&P up 63% of the time · 20-day median +1.7% (+0.4 pts vs normal)");
     expect(within(rows[0]).getByText("No edge")).toBeInTheDocument();
     // desk/fill-compute: the RSI rows are scored, and their last fires are among the five latest.
@@ -178,10 +218,19 @@ describe("Overview tab", () => {
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% NAV29% room · 10 bp to level");
     expect(rows[1].textContent?.replace(/\s+/g, " ")).toContain("Long S&P 5003% NAV60% room · 1.1% to level");
     expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Long NDX vs SPX4% NAVmanual");
-    expect(within(rows[0]).getByText(/29% room/)).toHaveAttribute("data-tone", "amber");
-    expect(within(rows[1]).getByText(/60% room/)).toHaveAttribute("data-tone", "green");
+    expect(within(rows[0]).getByText(/29% room/).closest(".dk-mon-room")).toHaveAttribute("data-tone", "amber");
+    expect(within(rows[1]).getByText(/60% room/).closest(".dk-mon-room")).toHaveAttribute("data-tone", "green");
+    // desk/pdf-polish 7: the row's figures carry their definitions; the button names them for a screen reader.
+    expect(within(rows[0]).getByText("2% NAV").getAttribute("data-term")).toBe("nav");
+    expect(within(rows[0]).getByText("29% room").getAttribute("data-term")).toBe("col-room");
+    expect(within(rows[0]).getByText("10 bp to level").getAttribute("data-term")).toBe("col-to-level");
+    expect(rows[0].querySelector(".dk-mon-row")).toHaveAttribute("aria-describedby", "dk-def-nav dk-def-col-room dk-def-col-to-level");
+    // Inside the row's button a term is no Tab stop of its own: the row is.
+    expect(within(rows[0]).getByText("29% room")).not.toHaveAttribute("tabindex");
     expect(rows[2].querySelector(".dk-mon-bar")?.children).toHaveLength(0);
     expect(card).toHaveTextContent("Sorted by room left · same scale for every trade · size as % of NAV · click a row for the gate text");
+    // desk/pdf-polish 2g: the title and its small text.
+    expect(card.querySelector(".dk-card-title")?.textContent).toBe("Monitoredyour positions vs. their exit levels");
     expect(within(card).getByRole("link", { name: "Act on this → Position Monitor" })).toHaveAttribute("href", "/desk/position-monitor");
   });
 

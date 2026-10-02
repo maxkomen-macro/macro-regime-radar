@@ -139,7 +139,8 @@ test.describe("desk v2", () => {
   // request that could not be loaded, said once per card with Retry.
   const NULL_ANSWERS: { slug: string; path: string; labels: string[] }[] = [
     { slug: "overview", path: "/api/desk/overview", labels: ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX", "Active signals", "Monitored"] },
-    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "Trend", "Last 20 days", "Now", "Last crossover", "Years", "From 1-year high"] },
+    // desk/pdf-polish 3c: the S&P's page has no Risk card, so its "From 1-year high" is gone; the Signals card's first label stands.
+    { slug: "technicals", path: "/api/desk/technicals", labels: ["Price", "50-day average", "200-day average", "1-year return", "Trend", "Last 20 days", "Now", "Last crossover", "Years"] },
     { slug: "event-study", path: "/api/desk/study", labels: ["Events", "Up a month later", "Median at a month", "Worst · best"] },
     { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
@@ -262,7 +263,8 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Aug 2026 data");
     // The audit's values (§2.2, §2.1): the August row is Overheating; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Overheating");
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("odds 42%");
+    // desk/pdf-polish 2c: under the label only the two directions; no odds, no "rule-based".
+    await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-sub")).toHaveText("Growth rising, inflation rising");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("11.6%");
     // fix/freshness 3c: closes say Close · <date>, never Live (no relay quote in this test, so the VIX is the stored close).
     await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Close · Sep 23");
@@ -270,7 +272,8 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("Close · Sep 23");
     await expect(page.getByTestId("dk-live")).toHaveCount(4);
     // Nothing is firing in the audit's snapshot, so the line names no signal.
-    await expect(page.getByTestId("ov-since")).toContainText("regime unchanged");
+    // desk/pdf-polish 2b: the owner's words, the refresh time in New York time.
+    await expect(page.getByTestId("ov-since")).toContainText("Regime unchanged (Data refreshed 11:52 AM ET)");
     await expect(page.getByTestId("ov-since")).not.toContainText("firing");
     // Tones render (verifier V-1): Overheating amber, room amber under 30% and green at 50% or more.
     await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(232, 180, 71)");
@@ -401,7 +404,8 @@ test.describe("desk v2", () => {
     expect(text.trim().split("\n")).toHaveLength(19);
     // §14.3: the engine's one level, in words; no confidence control.
     await expect(page.getByRole("group", { name: "Confidence" })).toHaveCount(0);
-    await expect(page.getByTestId("es-conf")).toHaveText("90% interval");
+    // desk/pdf-polish 6: "Edge vs a normal period · 90% range".
+    await expect(page.getByTestId("es-conf")).toHaveText("90% range");
     expect(calls.some((c) => c.includes("confidence"))).toBe(false);
     await expect(page).not.toHaveURL(/confidence/);
     // "Act on this" carries the question to the Position Monitor.

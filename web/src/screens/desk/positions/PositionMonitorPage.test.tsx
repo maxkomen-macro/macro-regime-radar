@@ -639,6 +639,8 @@ describe("the Monitored card's levels come from the API (desk/usability §14.10,
     answer(macro());
     await waitFor(() => expect(within(card).queryByTestId("dk-loading")).toBeNull());
     expect(within(card).queryByTestId("dk-failed")).toBeNull();
+    // desk/pdf-polish follow-up 2: the Overview's small text; no "· live", since the levels are stored data.
+    expect(card.querySelector(".pm-mon-sub")?.textContent).toBe("your positions vs. their exit levels");
   });
 
   it("says Couldn't load · Retry when the level's request failed, and Retry asks again", async () => {
