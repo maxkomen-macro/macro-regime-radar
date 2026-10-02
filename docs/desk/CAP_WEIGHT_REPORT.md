@@ -65,6 +65,13 @@ round 2, Codex R-01).
   - "Cap weight is unavailable. Awaiting refresh: share counts are not
     stored in this database yet; the next full refresh reads them from
     Yahoo."
+  - Overnight rounds 2 and 3: the API's own refusal, with **Try cap weight
+    again** beside it: "Cap weight is unavailable. Cap weight cannot tell
+    whether NVDA's close as traded moved 25% against its adjusted close on
+    2026-03-03 for a split or for a cash distribution, so it cannot weight
+    this basket by market value." (or "…reads each name's close as traded on
+    its start, …, and NBIS has none there."). It lapses when another data
+    generation answers.
 
   A saved cap-weighted basket is then priced at its typed weights (equal),
   and its lead says "10% each (cap weight is unavailable)"; the choice is
@@ -105,18 +112,20 @@ step 2 and step 3 cap-weighted, `08`–`09` the same basket at equal weight,
   basket's start (the first XNYS session every name has a close; for the AI
   Infrastructure 10, CoreWeave's first close, Mar 28, 2025), as traded, on
   today's share basis: the provider's own close (EODHD's; Yahoo's Close in
-  the fixtures) divided by the splits since (`market_prices`). Overnight
-  round 2 (Codex R-01): until then this was the split- and
-  dividend-adjusted close the index is priced from, which took the
-  dividends paid since out of the past and read a dividend payer's value
-  low (TSM 1.7%, AVGO 1.2%). The splits are read from the ratio of the
-  close as traded to the adjusted close: a session's move of 5% or more
-  is taken out as a split (every split and stock dividend), a smaller one is
-  a dividend and stays in. Prices cannot tell a cash dividend of 5% or more
-  paid at once from a split, so it is read as one, the adjusted close's
-  reading of that one dividend (none of the preset's names paid one in the
-  window). Using today's counts with the start's close is the approximation
-  the label states ("current share counts").
+  the fixtures; `market_prices`). Overnight round 2 (Codex R-01): until
+  then this was the split- and dividend-adjusted close the index is priced
+  from, which took the dividends paid since out of the past and read a
+  dividend payer's value low (TSM 1.7%, AVGO 1.2%). The close as traded is
+  on today's share basis only while no split falls after the start, and
+  prices cannot tell a split from a stock dividend or a large cash
+  distribution, so the ratio of the close as traded to the adjusted close
+  is read from the start on: a session's move under 5% is an ordinary
+  dividend and stays in; a move of 5% or more refuses cap weight for the
+  basket, with the reason (rounds 2 and 3, R2-02, R3-02), and the page then
+  prices it at its typed weights. None of the preset's names moved that
+  much in the window (the largest is 0.39%, TSM). Using today's counts with
+  the start's close is the approximation the label states ("current share
+  counts").
 - **Held** (the default): the basket stays cap-weighted. Each dividend is
   reinvested across the basket at its weights, as a total-return index does,
   so the holdings stay proportional to the companies' share counts, the
@@ -570,7 +579,8 @@ are fixed in `ac312b3b` but the last, which is the deploy window above.
    basis, and the basket stays cap-weighted with dividends reinvested across
    it (overnight round 2, Codex R-01; round 1 used the adjusted close and
    stated the dividend understatement). A one-session move of 5% or more in
-   the ratio to the adjusted close is read as a split.
+   the ratio to the adjusted close after the start refuses cap weight
+   (rounds 2 and 3): prices cannot tell a split from a large distribution.
 3. **Monthly resets on each month's first session**, as asked; the report
    and the page say it changes nothing with one set of counts.
 4. **Liquidity reads today's cap weights** for a cap-weighted basket (the
@@ -620,10 +630,12 @@ are fixed in `ac312b3b` but the last, which is the deploy window above.
 - Historical share counts (each name's count on the start date, from its
   filings) would remove the "current share counts" approximation.
 - The provider's own corporate actions (EODHD's splits, `api/providers/eodhd.py`
-  `splits`, one call per name, cached) would place a move of 5% to 40% in the
-  ratio of the close as traded to the adjusted close, where cap weight now
-  refuses (overnight round 2, R2-02); no preset name has had one in the
-  window (the largest is 0.39%).
+  `splits`, one call per name, cached) would let a split after the basket's
+  start be taken out, and a large distribution kept in, where cap weight now
+  refuses any move of 5% or more in the ratio of the close as traded to the
+  adjusted close (overnight round 3, R3-02). No preset name has moved that
+  much in the window (the largest is 0.39%), but a split in one of them
+  would turn cap weight off for its basket, with the reason, until then.
 
 ## Overnight round 2
 
@@ -747,7 +759,7 @@ because the shell already refetches answers from mixed generations.
 
 | ID | Severity | Finding | What I did |
 |---|---|---|---|
-| R-01 | blocking | Cap weights used the dividend-adjusted closes, so the start's weights were not the market values the label names | Fixed, `f0079da4`. The market values read each name's close as traded on today's share basis (`market_prices`: EODHD's own close, Yahoo's Close in the fixtures, the splits taken out of its ratio to the adjusted close); the basket stays cap-weighted on every session, each dividend reinvested across it, so monthly still equals held (D4). Tests: Codex's case with an ordinary 2% dividend (50/50 at the start, +50%), a 4-for-1 split and a reverse split, three months of dividends and a split with monthly equal to held, the refusals, and `history_of` keeping EODHD's close. Codex's own case pays $20 on $100 in one day, exactly a 5-for-4 step: prices cannot tell the two apart, so this fix read a one-day move of 5% or more as a split (round 2, R2-02, replaced that rule with a refusal). Figures: NVDA 55.35% → 55.12% at the start, AVGO 16.72% → 16.80%, TSM 17.65% → 17.84%; 1-year +46.7% → +46.6%; the SMH short $847,494 → $847,384; the equal-weight answers byte-identical |
+| R-01 | blocking | Cap weights used the dividend-adjusted closes, so the start's weights were not the market values the label names | Fixed, `f0079da4`. The market values read each name's close as traded on today's share basis (`market_prices`: EODHD's own close, Yahoo's Close in the fixtures); the basket stays cap-weighted on every session, each dividend reinvested across it, so monthly still equals held (D4). Tests: Codex's case with an ordinary 2% dividend (50/50 at the start, +50%), three months of dividends with monthly equal to held, and `history_of` keeping EODHD's close. This fix also took splits out of the ratio of the close as traded to the adjusted close, reading any one-day move of 5% or more as a split; Codex's own case, $20 paid on $100 in one day, moves it exactly as a 5-for-4 split does, so rounds 2 and 3 (R2-02, R3-02) replaced that with a refusal. Figures: NVDA 55.35% → 55.12% at the start, AVGO 16.72% → 16.80%, TSM 17.65% → 17.84%; 1-year +46.7% → +46.6%; the SMH short $847,494 → $847,384; the equal-weight answers byte-identical |
 | R-02 | blocking | A snapshot with the same dates and other weights never replaced the stored one, so Position Monitor recorded stale weights | Fixed, `98dadb2e`: the snapshot carries when this browser received it, and with the same dates and other weights the later answer replaces (an earlier one never does, so two windows still settle). Tests: Codex's 60/40 → 80/20 case through what Position Monitor records, and the page writing it |
 | R-03 | high | The background write replaced the whole saved basket from the page's own copy and could undo another window's save | Fixed, `98dadb2e`: `writeSnapshot` reads the basket again and changes only its snapshot, only while it is still cap-weighted with the same names. Test: Codex's repro (renamed and re-weighted in another window) |
 | R-04 | high | Import treated a cap-weighted basket as a duplicate of the same basket at typed weights | Fixed, `5321d779`, for the weighting (test: Codex's repro). Codex's fix also named the method and the notional; that part is the same before this branch (desk/books) and is listed below, not fixed |
@@ -769,7 +781,7 @@ R2-01 to R2-04 here.
 | ID | Severity | Finding | What I did |
 |---|---|---|---|
 | R2-01 | blocking | Cap-weighted "hold" re-weights every session (each dividend reinvested across the basket), so it is not the start weights held (D1); Codex's fix: the existing hold engine from the start weights, the dividend policy reconciled with D4 | **Rejected**, with the evidence, its point taken. Codex's policy (each name's dividends kept in that name; monthly resets to market values) breaks D4 on the preset: after 18 months monthly − held = **+0.0101 index points** (255.805145 against 255.795085), and the held basket's weights at the last close leave the companies' market values (TSM 19.18% against 18.97%, NVDA 44.42% against 44.60%). The branch's policy keeps D1 (the only trade is the dividends' reinvestment: on a session without a dividend the reset changes nothing) and D4 exactly, and it is how the adjusted closes of SPY and QQQ, the funds the basket is read against, reinvest their own dividends. The two policies differ on the preset by 0.0055 index points and $65 of the SMH short. The point taken: the page did not say the policy; it now does ("held, its dividends reinvested across the basket as an index fund's are"), `e9e58e73`; the policy is pinned on Codex's own case (150.505, not 150), `4b849710` |
-| R2-02 | blocking | The 5% rule read a cash dividend of 5% or more as a split and moved the start's weights (Codex's $20 on $100: 55.6/44.4) | Fixed, `f8503cca`: a move under 5% is a dividend, one of 40% or more a split, and one in between (a 5-for-4 split, a stock dividend, a large special) refuses cap weight with the reason; only moves after the basket's start count. Tests: Codex's case refused, moves of 5%, 25% and 39% refused, a 2-for-1 and a reverse split taken out, a move before the start ignored. A refusal leaves the basket priced at its typed weights, with the API's words under the legs, as a basket without stored counts is (decision 5), `cd5366da`. The preset's largest move in the window is 0.39% (TSM), so its figures did not change (the fixtures moved by float rounding only, 6e-12 relative) |
+| R2-02 | blocking | The 5% rule read a cash dividend of 5% or more as a split and moved the start's weights (Codex's $20 on $100: 55.6/44.4) | Fixed, `f8503cca` (and made stricter by R3-02 in round 3: any move of 5% or more refuses): a move under 5% is a dividend, one of 40% or more a split, and one in between (a 5-for-4 split, a stock dividend, a large special) refuses cap weight with the reason; only moves after the basket's start count. Tests: Codex's case refused, moves of 5%, 25% and 39% refused, a 2-for-1 and a reverse split taken out, a move before the start ignored. A refusal leaves the basket priced at its typed weights, with the API's words under the legs, as a basket without stored counts is (decision 5), `cd5366da`. The preset's largest move in the window is 0.39% (TSM), so its figures did not change (the fixtures moved by float rounding only, 6e-12 relative) |
 | R2-03 | blocking | A missing close as traded borrowed a later session's ratio and dated a start weight with it | Fixed, `f8503cca` (the page's fallback, `cd5366da`): no market value is borrowed. At the start or the last close a missing one refuses, naming the name and the date (Codex's case); in between, the session keeps the holdings (a dividend waits a session to be reinvested; no other effect). EODHD's close is the field every bar is built from, so the API never meets one |
 | R2-04 | high | SQLite's `trim()` removes spaces only, so a tab-only source read as current to the freshness while the basket set it aside | Fixed, `4d45bce7`: the predicate trims Python's own whitespace (`STRIP_WHITESPACE`, pinned to `str.isspace()`). Test: Codex's tab-only source and an ideographic-space symbol, set aside by both |
 
@@ -780,6 +792,39 @@ file (41); full pytest **1,930 passed, 3 skipped, 10 failed** (collected at
 `4d45bce7`, whose Python `cd5366da` leaves unchanged but for that one test:
 the 11 above less `test_generations`, whose timing held this run); Desk e2e
 **84/84 passed** (stamp `desk/cap-weight@cd5366d`).
+
+**Round 3** (base `2f27bf13`, the tip round 2 reviewed; reviewed `a409e900`;
+02:57–03:13 ET): `VERDICT: not safe to push — R-01 blocking`. Codex's own
+330-session reference matched the index, the returns, the concentration,
+the liquidity, the benchmark fits, all eight hedge fits and rankings, the
+hedge sizing, the volatility cut and both stress tests, and monthly matched
+held; it recomputed the start weights from the fixtures (NVDA 55.1215%, AVGO
+16.8040%, TSM 17.8395%, …), and checked the old and new web against the old
+and new answers, the preset migration, the two-window exchange (settled
+without looping) and all 123 glossary definitions. It did not raise the
+dividend policy again. Its three findings, R3-01 to R3-03 here:
+
+| ID | Severity | Finding | What I did |
+|---|---|---|---|
+| R3-01 | blocking | After cap weight was refused, the page showed the typed weights while Position Monitor could record an older cap-weight snapshot (Codex: 80/20 recorded, 50/50 priced) | Fixed, `45f5b981`: while the page prices a cap-weighted basket at its typed weights (cap weight refused, or no stored counts, a gap round 1 also left), its address carries `weighting=target`, Send to Position Monitor carries it on, and Position Monitor records the typed legs. Tests: Codex's case recorded at 50/50; the page's address and its Send link |
+| R3-02 | blocking | Round 2's 40% line still read a large cash distribution as a split (Codex: $40 on $100 gave 62.5/37.5 where the market values are 50/50, and +62.5% for +50%) | Fixed, `12bbb187`: prices alone cannot tell a split, a stock dividend and a large distribution apart, so any move of 5% or more after the start now refuses cap weight with the reason (and the page prices the basket at its typed weights, `cd5366da`); a split before the start is already in the start's close. Tests: Codex's $20 and $40 cases, 2-for-1, 4-for-1 and reverse splits refused after the start, a 4-for-1 split before the start priced. The preset's figures and the fixtures are byte-identical (its largest move is 0.39%). The cost: a split in a preset name after the basket's start would turn cap weight off for that basket, with the reason, until the follow-up below |
+| R3-03 | high | A refusal stayed for the same names until the page was opened again, even after the data changed | Fixed, `45f5b981`: a refusal carries the generation it was answered on and lapses when an answer from another generation arrives after it (never on its own generation's, or on an older cached answer, so a refused basket is not asked in a loop), and the reason carries "Try cap weight again". Tests: the lapse rule, and the retry on the page |
+
+Gates after round 3's fixes (tip `45f5b981`): web `tsc -b` clean, vitest
+147 files and **1,845 tests passed**, `vite build` clean; the Python suites
+the fixes touch, 368 passed; full pytest **1,930 passed, 3 skipped, the
+same 11 failed** (15 min; `test_generations`' timing failed again this run);
+Desk e2e **84/84 passed** (stamp `desk/cap-weight@45f5b98`).
+
+Three rounds is the limit, so there was no fourth: every finding of round
+3 is fixed with a test and the gates are green, but no reviewer has read
+those fixes (`12bbb187`, `45f5b981`).
+
+The verdict line of each round, as Codex wrote it:
+
+- Round 1: `VERDICT: not safe to push — R-01, R-02 blocking`
+- Round 2: `VERDICT: not safe to push — R-01 blocking`
+- Round 3: `VERDICT: not safe to push — R-01 blocking`
 
 ### Listed, not fixed (before this branch)
 
@@ -802,3 +847,22 @@ the 11 above less `test_generations`, whose timing held this run); Desk e2e
   do); layers 1 and 2 (`tests/test_desk_native_regression.py`) ran in every
   full pytest.
 - `tests/test_streamlit_backports.py` (needs Streamlit), as in round 1.
+
+### Final state
+
+Round 2's commits, on round 1's `a0643046`, oldest first: `f604610d` the
+merge; `de49eb5f` the CLAUDE.md lines; `f0079da4`, `98dadb2e`, `5321d779`,
+`ff96dfcd` round 1's fixes; `2f27bf13` this report's figures; `f8503cca`,
+`e9e58e73`, `4d45bce7`, `4b849710`, `cd5366da` round 2's; `a409e900` this
+section so far; `12bbb187`, `45f5b981` round 3's; and the commit that adds
+this paragraph, whose parent is `45f5b981`, the last code commit. That
+commit is the final HEAD (a commit cannot name its own SHA; `git log -1`
+gives it). Nothing is pushed; `data/macro_radar.db` was never staged.
+
+The deploy sequence above stands. One change the deploy sees: the
+cap-weighted figures moved (NVDA 55.12% at the start, not 55.35%) and a
+cap-weighted basket can now be refused cap weight on its closes, in which
+case it is priced at its typed weights with the reason.
+
+Every server this run started (the API on 8001, Vite on 5174) is stopped,
+and each Codex run ended on its own.
