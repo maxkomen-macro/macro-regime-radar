@@ -320,16 +320,17 @@ export function ReadBox({ label = "Read", warn = false, children, className }: {
   );
 }
 
-/** `Advanced ▸` (blue link) plus the gray list of what expands (§1.4 item 5). */
-export function Advanced({ items, open, onToggle, controls, served = true }: { items: string; open?: boolean; onToggle?: () => void; controls?: string; served?: boolean }) {
+/** `Advanced ▸` (blue link) plus the gray list of what expands (§1.4 item 5). desk/pdf-polish 3b: the same
+ * control under another name (`label`, "Signal key"), with its own test id. */
+export function Advanced({ items, open, onToggle, controls, served = true, label = "Advanced", testId = "dk-advanced" }: { items: string; open?: boolean; onToggle?: () => void; controls?: string; served?: boolean; label?: string; testId?: string }) {
   // §1.4 as amended by desk/usability §14.13: shown only when what it opens is served; a control that
   // would open nothing is not shown (it was a disabled "Advanced ▸ not yet served").
   const unserved = useUnserved();
   if (unserved || !served) return null;
   return (
     <p className="dk-adv">
-      <button type="button" className="dk-link" aria-expanded={onToggle ? Boolean(open) : undefined} aria-controls={open ? controls : undefined} onClick={onToggle} data-testid="dk-advanced">
-        Advanced {open ? "▾" : "▸"}
+      <button type="button" className="dk-link" aria-expanded={onToggle ? Boolean(open) : undefined} aria-controls={open ? controls : undefined} onClick={onToggle} data-testid={testId}>
+        {label} {open ? "▾" : "▸"}
       </button>{" "}
       <span>{items}</span>
     </p>

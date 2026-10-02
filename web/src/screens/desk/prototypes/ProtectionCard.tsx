@@ -121,7 +121,10 @@ export function ProtectionCard() {
           tone="amber"
           size="xl"
         />
-        <p className="te-vol-meaning">Puts are {num(Math.abs(P.skew))} vol points dearer than calls.</p>
+        {/* desk/pdf-polish 3a: "richer", the desk's word ("cheaper" when the skew is below zero). */}
+        <p className="te-vol-meaning">
+          Puts are {num(Math.abs(P.skew))} vol points {P.skew < 0 ? "cheaper" : "richer"} than calls.
+        </p>
         <table className="pr-sides">
           <caption className="dk-sr">The 25-delta put and call, 1 month out</caption>
           <thead>

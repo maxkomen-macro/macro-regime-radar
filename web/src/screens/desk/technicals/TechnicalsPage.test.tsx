@@ -21,6 +21,8 @@ import { symbolOf } from "./symbol";
 import { deskPageBySlug } from "../desk-sections";
 import { servedTechnicals } from "../../../test/desk-variants";
 import { DESK_ACCENTS } from "../kit/palette";
+import { GLOSSARY } from "../kit/glossary";
+import { SIGNAL_KEY } from "./signal-key";
 
 function renderTab() {
   return renderWithProviders(
@@ -97,7 +99,7 @@ describe("Technicals tab", () => {
     expect(within(card).getByRole("img", { name: /3Y/ })).toBeInTheDocument();
   });
 
-  it("lists the Ledger's S&P signals, the two RSI rows among them, with §3's note", async () => {
+  it("lists the Ledger's S&P signals, the two RSI rows among them, with the Signal key (desk/pdf-polish 3b)", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Signals/ });
     await waitFor(() => expect(within(card).getAllByRole("listitem")).toHaveLength(6));
@@ -111,8 +113,32 @@ describe("Technicals tab", () => {
     expect(card).toHaveTextContent(/1-year return\s*\+15\.1%\s*since Sep 22, 2025/);
     expect(card).toHaveTextContent(/Trend\s*Unavailable\s*since Sep 22, 2026/);
     expect(card).toHaveTextContent(/Last 20 days\s*−0\.3σ\s*on Sep 23/);
-    expect(card.querySelector(".te-note")?.textContent).toBe("vs normal compares each study to its own baseline over its own sample.");
-    expect(card.textContent).not.toMatch(/normal month|A normal month|survives resampling/);
+    // desk/pdf-polish 3b: the title alone; §3's note box gives way to the key, collapsed.
+    expect(card.querySelector(".dk-card-title")?.textContent).toBe("Signals");
+    expect(card.querySelector(".te-note")).toBeNull();
+    expect(card).not.toHaveTextContent(/what fired|vs normal compares/);
+    const key = within(card).getByTestId("te-signal-key");
+    expect(key).toHaveTextContent("Signal key ▸");
+    expect(key).toHaveAttribute("aria-expanded", "false");
+    expect(card.querySelector(".te-key")).toBeNull();
+    fireEvent.click(key);
+    expect(key).toHaveTextContent("Signal key ▾");
+    expect(key).toHaveAttribute("aria-expanded", "true");
+    const panel = document.getElementById(key.getAttribute("aria-controls")!)!;
+    expect(card.contains(panel)).toBe(true);
+    const entries = [...panel.querySelectorAll(".te-key > div")].map((d) => [d.querySelector("dt")?.textContent, d.querySelector("dd")?.textContent]);
+    expect(entries).toEqual(SIGNAL_KEY.map((k) => [k.term, k.text]));
+    // The four badges are drawn as the card draws them.
+    expect([...panel.querySelectorAll("dt .dk-pill")].map((p) => p.getAttribute("data-verdict"))).toEqual(["reliable", "suggestive", "no_edge", "insufficient"]);
+    expect(panel).toHaveTextContent("The S&P's 50-day average moves above its 200-day average, from below.");
+    fireEvent.click(key);
+    expect(card.querySelector(".te-key")).toBeNull();
+    // item 7: the three column heads carry their definitions.
+    for (const [label, id] of [["1-year return", "col-ret-1y"], ["Trend", "col-trend"], ["Last 20 days", "col-last-20"]] as const) {
+      const head = within(card).getByText(label);
+      expect(head).toHaveClass("dk-term");
+      expect(head.getAttribute("data-def")).toBe(GLOSSARY[id].text);
+    }
   });
 
   it("Codex R-26: an absent allowlist is Awaiting refresh; an empty one is an empty panel", async () => {
@@ -123,7 +149,7 @@ describe("Technicals tab", () => {
     let card = await screen.findByRole("region", { name: /^Signals/ });
     await waitFor(() => expect(card).toHaveTextContent("Awaiting refresh"));
     expect(within(card).queryAllByRole("listitem")).toHaveLength(0);
-    expect(card.querySelector(".te-note")).toBeNull();
+    expect(within(card).queryByTestId("te-signal-key")).toBeNull();
     one.unmount();
     stubDesk({ "/api/desk/technicals": () => ({ ...technicals, signals_allowlist: [] }) });
     renderTab();
@@ -164,17 +190,18 @@ describe("Technicals tab", () => {
     expect(within(within(card).getByRole("list", { name: /All eleven/ })).getAllByRole("listitem")).toHaveLength(11);
   });
 
-  it("the Risk card reads the drawdown from the one-year high and the 21-day realized vol (§14.2)", async () => {
+  it("desk/pdf-polish 3c: the S&P's page has no Risk card, and its grid places every card it draws", async () => {
     renderTab();
-    const card = await screen.findByRole("region", { name: /^Risk · drawdown and volatility/ });
-    // The fixture's S&P has no Sep 22 close (the audit's §2.1): the realized vol needs 22 unbroken closes, so it says why.
-    // Codex R-01: the missing Sep 22 close leaves 251 of the year's 252 sessions: partial history, said with its count.
-    await waitFor(() => expect(card).toHaveTextContent("From high−1.2%"));
-    expect(card).toHaveTextContent("partial history: 251 of 252 sessions · high 7,799 on Aug 13");
-    expect(card).not.toHaveTextContent("From 1-year high");
-    expect(card).toHaveTextContent("Realized vol needs the last 22 closes; one is missing.");
-    // The S&P's 1-year return is on its Signals card.
-    expect(card).not.toHaveTextContent("1-year return");
+    await screen.findByRole("region", { name: /^Signals/ });
+    await waitFor(() => expect(screen.getByRole("region", { name: /^Momentum · RSI/ })).toHaveTextContent("Now"));
+    expect(screen.queryByRole("region", { name: /^Risk/ })).toBeNull();
+    expect(document.querySelector(".te-risk")).toBeNull();
+    // Nothing else on the S&P's page prints the drawdown or the 21-day realized vol the card carried.
+    expect(screen.getByRole("main")).not.toHaveTextContent(/From 1-year high|From high|21-day realized vol/);
+    // Every card in the S&P's grid is one technicals.css places (vol, price, signals, sectors, RSI, MACD, seasonality).
+    const placed = ["te-vol", "te-price", "te-signals", "te-sectors", "te-rsi", "te-macd", "te-season"];
+    const cards = [...document.querySelectorAll(".te-grid > *")];
+    expect(cards.map((c) => placed.find((k) => c.classList.contains(k)) ?? c.className)).toEqual(placed);
   });
 
   it("Codex R-01: a sector without a return is shown with why, never hidden, and the ends are among the sectors with data", async () => {
@@ -364,7 +391,9 @@ describe("Technicals tab", () => {
     await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection"));
     const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
     expect(vol).toHaveTextContent("+6.8 pts");
-    expect(vol).toHaveTextContent("Puts are 6.8 vol points dearer than calls.");
+    // desk/pdf-polish 3a: "richer", never "dearer".
+    expect(vol).toHaveTextContent("Puts are 6.8 vol points richer than calls.");
+    expect(vol).not.toHaveTextContent("dearer");
     // Black-Scholes at 19.2% and 12.4% vol, 30 days: the 25-delta strikes and what each costs.
     expect(vol).toHaveTextContent(/25Δ put\s*19\.2%\s*96\.7%\s*0\.84%/);
     expect(vol).toHaveTextContent(/25Δ call\s*12\.4%\s*102\.7%\s*0\.52%/);
@@ -469,8 +498,8 @@ describe("routes served awaiting (§12.0, §1.0.2)", () => {
     const season = screen.getByRole("region", { name: /^Seasonality/ });
     expect(within(season).getAllByText("no generation stored yet.")).toHaveLength(1);
     expect(season.textContent).not.toMatch(/\d+\.\d|%/);
-    // §14.2: so is the Risk card (desk/usability).
-    expect(within(screen.getByRole("region", { name: /^Risk · drawdown/ })).getAllByText("no generation stored yet.")).toHaveLength(1);
+    // desk/pdf-polish 3c: the S&P's page has no Risk card.
+    expect(screen.queryByRole("region", { name: /^Risk/ })).toBeNull();
     expect(screen.getAllByTestId("dk-live")[0]).toHaveTextContent("Not yet served");
   });
 });

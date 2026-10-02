@@ -463,7 +463,8 @@ test.describe("desk usability", () => {
     await hover("/desk/macro", "2s10s", "curve");
     await hover("/desk/macro", "HY spread", "oas");
     await hover("/desk/technicals", "Momentum · RSI", "rsi");
-    await hover("/desk/technicals", "21-day realized vol", "realized");
+    // desk/pdf-polish 3c: the S&P's page has no Risk card; a stock's page keeps it.
+    await hover("/desk/technicals?symbol=NVDA", "21-day realized vol", "realized");
     await hover("/desk/signal-ledger", "2s10s +2σ steepening", "sigma");
     await hover("/desk/regime", "VIX avg", "vix");
     await hover("/desk/overview", "Vol · VIX", "vix");
