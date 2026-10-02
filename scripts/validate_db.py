@@ -280,10 +280,13 @@ def _advisory(out: dict, name: str, query):
         return None
 
 
-# desk/cap-weight: share_counts rows the API sets aside on read (api/desk_items.desk_share_counts): a count
-# that is not a positive number, or a read date that is not a YYYY-MM-DD calendar date.
-SHARE_COUNTS_UNREADABLE = ("SELECT COUNT(*) FROM share_counts WHERE typeof(shares_outstanding) NOT IN ('real', 'integer') "
-                           "OR shares_outstanding <= 0 OR NOT (typeof(as_of) = 'text' AND COALESCE(date(as_of) = as_of, 0))")
+# desk/cap-weight: share_counts rows the API sets aside on read (api/desk_basket.desk_share_counts): no symbol, a
+# count that is not a positive number, a read date that is not a YYYY-MM-DD calendar date or is after the run's
+# New York date (the `?`), or no source.
+SHARE_COUNTS_UNREADABLE = ("SELECT COUNT(*) FROM share_counts WHERE typeof(symbol) <> 'text' OR trim(symbol) = '' "
+                           "OR typeof(shares_outstanding) NOT IN ('real', 'integer') OR shares_outstanding <= 0 "
+                           "OR NOT (typeof(as_of) = 'text' AND COALESCE(date(as_of) = as_of, 0)) OR as_of > ? "
+                           "OR typeof(source) <> 'text' OR trim(source) = ''")
 
 
 def inspect(path: Path, as_of: str | None = None) -> dict:
@@ -365,8 +368,9 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
         if "share_counts" in out["tables"]:
             out["fresh"]["share_counts_as_of"] = _advisory(out, "share_counts oldest read", lambda: conn.execute(
                 "SELECT MIN(as_of) FROM share_counts").fetchone()[0])
+            cut_sc = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()
             out["share_counts_unreadable"] = _advisory(out, "share_counts unreadable rows", lambda: int(conn.execute(
-                SHARE_COUNTS_UNREADABLE).fetchone()[0]))
+                SHARE_COUNTS_UNREADABLE, (cut_sc,)).fetchone()[0]))
         if "asset_prices" in out["tables"]:
             out["fresh"]["asset_prices_date"] = _mandatory(out, "asset_prices newest daily closes", None, lambda: conn.execute(
                 "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
@@ -625,8 +629,8 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         warnings.append("no previous snapshot given: the row-loss, date-regression and change comparisons did not run")
     # desk/cap-weight: the advisory table's own reports, never a failure
     if cur.get("share_counts_unreadable"):
-        warnings.append(f"share_counts: {cur['share_counts_unreadable']} row(s) the API sets aside (a count that is not a "
-                        "positive number, or a malformed date) (advisory, never blocking)")
+        warnings.append(f"share_counts: {cur['share_counts_unreadable']} row(s) the API sets aside (no symbol or source, a count "
+                        "that is not a positive number, or a read date malformed or after today) (advisory, never blocking)")
     for name in cur.get("advisory_not_executed") or []:
         warnings.append(f"advisory check not run: {name} (never blocking)")
     for name in ((prev or {}).get("advisory_not_executed") or []) if prev and not prev.get("error") else []:

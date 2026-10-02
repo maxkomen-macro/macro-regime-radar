@@ -304,6 +304,45 @@ describe("Position Monitor tab", () => {
     }
   });
 
+  // desk/cap-weight: a cap-weighted basket is recorded at the cap weights last served for it, never at its typed ones.
+  const capBasket = { id: "local-1", name: "Two", legs: [{ symbol: "NVDA", name: null, weight: "50" }, { symbol: "TSM", name: null, weight: "50" }], saved_at: "2026-09-30T00:00:00Z", weighting: "cap" };
+  const sendAndSave = async () => {
+    renderTab("/desk/position-monitor?basket=local-1");
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("Two basket"));
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "2s10s" } });
+    answer();
+    fireEvent.click(await screen.findByRole("button", { name: /falls 10 bp from entry/ }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+  };
+
+  it("a cap-weighted basket is recorded at the cap weights last served for it (desk/cap-weight)", async () => {
+    const snap = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 0.7, TSM: 0.3 } };
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([{ ...capBasket, cap_weights: snap }]));
+    try {
+      await sendAndSave();
+      await waitFor(() => expect(stored()).toHaveLength(1));
+      expect(stored()[0]).toMatchObject({ subject: { kind: "basket", legs: [{ symbol: "NVDA", weight: 70 }, { symbol: "TSM", weight: 30 }], benchmark: null } });
+    } finally {
+      localStorage.removeItem(SAVED_BASKETS_KEY);
+    }
+  });
+
+  it("a cap-weighted basket no answer was served for is not recorded at its typed weights, and Save says why", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([capBasket]));
+    try {
+      await sendAndSave();
+      await waitFor(() =>
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "Two is cap-weighted, and no cap weights have been served for it in this browser yet: open it on Basket & Hedge until it is priced, then send it again.",
+        ),
+      );
+      expect(stored()).toEqual([]);
+      expect(screen.getByText(/Sent from Basket & Hedge · Two is cap-weighted/)).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem(SAVED_BASKETS_KEY);
+    }
+  });
+
   it("the monitor: sorted by room, manual rows last by id, a row opens to its gate text, and ?open= opens one", async () => {
     seed(RECORDS);
     renderTab("/desk/position-monitor?open=2s10s-steepener");

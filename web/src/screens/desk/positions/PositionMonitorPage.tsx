@@ -374,8 +374,10 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   // A basket sent from Basket & Hedge (`?basket=`): one saved in this browser (§10: no basket is served).
   const basketId = search.get("basket");
   const localBasket = basketId ? (readSaved().find((b) => b.id === basketId) ?? null) : null;
-  // desk/cap-weight: a cap-weighted basket is recorded at the cap weights last served for it.
+  // desk/cap-weight: a cap-weighted basket is recorded at the cap weights last served for it; with none served yet
+  // its weights are not known here (`legs` null), and Save says so rather than record the typed ones.
   const sent = localBasket ? { name: localBasket.name, instrument: `${localBasket.name} basket`, legs: recordedLegs(localBasket) } : null;
+  const capNotServed = sent && sent.legs === null ? `${sent.name} is cap-weighted, and no cap weights have been served for it in this browser yet: open it on Basket & Hedge until it is priced, then send it again.` : null;
   const tech = useTechnicals();
   const [store, change] = usePositionStore();
   const levels = useLevels(store, true);
@@ -474,7 +476,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const subject = (): Subject => {
     if (carried && canonical) return { kind: "study", question: canonical };
     // A position records a basket's weights as numbers (§9); a saved basket keeps its exact digits (Codex R-20).
-    if (sent && !carriedAsk && Array.isArray(sent.legs) && sent.legs.length) return { kind: "basket", legs: sent.legs.map((l) => ({ symbol: l.symbol, weight: Number(l.weight) })), benchmark: null };
+    if (sent && !carriedAsk && sent.legs?.length) return { kind: "basket", legs: sent.legs.map((l) => ({ symbol: l.symbol, weight: Number(l.weight) })), benchmark: null };
     return { kind: "instrument", id: seriesOf(draft.instrument) ?? draft.instrument.trim() };
   };
 
@@ -485,6 +487,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
       // The status line takes the focus (P-14).
       statusRef.current?.focus();
     };
+    // desk/cap-weight: a cap-weighted basket whose weights were never served is not recorded at its typed ones.
+    if (capNotServed && !carriedAsk) return finish(capNotServed, "refused");
     const subj = subject();
     // §9: automatic only when the subject's monitored quantity is the served series; a basket never is.
     const plan = planFor(picked?.id ?? null, draft.instrument, levels, subj.kind);
@@ -548,7 +552,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const sub = carried
     ? `Carried in from Event Study · ${questionWords(carried.question, label)} · any study can be carried in`
     : sent && !carriedAsk
-      ? `Sent from Basket & Hedge · ${sent.name} · the gate is the same for every position.`
+      ? capNotServed
+        ? `Sent from Basket & Hedge · ${capNotServed}`
+        : `Sent from Basket & Hedge · ${sent.name} · the gate is the same for every position.`
       : basketId && !carriedAsk && !localBasket
         ? `The basket sent from Basket & Hedge (${basketId}) is not saved in this browser; the gate is the same for every position.`
         : carriedFailed

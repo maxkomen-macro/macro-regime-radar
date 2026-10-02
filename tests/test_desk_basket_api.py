@@ -473,9 +473,11 @@ def test_basket_shares_lists_the_stored_counts_and_sets_a_bad_row_aside(served_c
         "NOSRC": "set aside: it names no source",
         "ZERO": "set aside: its count 0.0 is not a positive number",
     }
-    # A set-aside name is a name without a count.
-    r = price(legs="NVDA,ZERO", weighting="cap")
-    assert r.status_code == 422 and "ZERO has none" in r.json()["error"]["message"]
+    # A set-aside name is refused with why its stored count was set aside.
+    r = price(legs="NVDA,ZERO,ORCL", weighting="cap")
+    assert r.status_code == 422 and r.json()["error"]["message"] == (
+        "Cap weight needs a stored share count for every name: ORCL has none. The full refresh stores counts for the "
+        "preset baskets' names. ZERO's stored count is set aside: its count 0.0 is not a positive number.")
     assert client.get("/api/desk/basket/shares", params={"symbols": "NVDA"}).status_code == 422
 
 
@@ -510,3 +512,12 @@ def test_the_hedge_ranking_follows_the_chosen_weights():
     # Both start at 50: X's weight is 1e10 / (1e10 + 1e8).
     assert cap["cap_weights"]["legs"][0]["weight_start"] == pytest.approx(1e10 / 1.01e10) and equal["cap_weights"] is None
     assert all(s["hedge"] == "SMH" for s in cap["stress"]) and all(s["hedge"] == "XLU" for s in equal["stress"])
+
+
+def test_a_table_whose_every_row_is_set_aside_awaits_and_says_so(served_counts):
+    served_counts(rows={}, extra=[("ZERO", 0, "2026-09-24", "yfinance")])
+    body = client.get("/api/desk/basket/shares").json()
+    assert body["status"] == "awaiting" and body["unavailable"]["reason"] == (
+        "Awaiting refresh: no stored share count can be read (each is set aside, with why); the next full refresh stores "
+        "them again.")
+

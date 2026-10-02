@@ -1,7 +1,7 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
 import { addLeg, saveRefusal, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
-import { capAvailability, heldBasket, priceParams, recordedLegs, shareCountsOf, updateSaved, upgradeSeededPreset, weightingOf, type ShareCounts } from "./weights";
+import { capAvailability, heldBasket, isNewerSnapshot, priceParams, recordedLegs, shareCountsOf, updateSaved, upgradeSeededPreset, weightingOf, type ShareCounts } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -241,12 +241,28 @@ describe("cap weight (desk/cap-weight)", () => {
     expect(heldBasket(b, undefined)).toBe(b);
   });
 
-  it("Position Monitor records a cap-weighted basket at the cap weights last served, in percent; typed weights otherwise", () => {
+  it("Position Monitor records a cap-weighted basket at the cap weights last served, in percent; never at its typed ones", () => {
     const b: SavedBasket = { ...PRESET, legs: PRESET.legs.slice(0, 2), cap_weights: { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 0.75, AVGO: 0.25 } } };
-    expect(recordedLegs(b).map((l) => [l.symbol, l.weight])).toEqual([["NVDA", 75], ["AVGO", 25]]);
+    expect(recordedLegs(b)!.map((l) => [l.symbol, l.weight])).toEqual([["NVDA", 75], ["AVGO", 25]]);
     expect(recordedLegs({ ...b, weighting: undefined })).toBe(b.legs);
-    expect(recordedLegs({ ...b, cap_weights: undefined })).toBe(b.legs);
-    expect(recordedLegs({ ...b, cap_weights: { ...b.cap_weights!, weights: { NVDA: 1 } } })).toBe(b.legs);
+    // Cap-weighted with no served weights, or weights that miss a name: not known here, so nothing to record.
+    expect(recordedLegs({ ...b, cap_weights: undefined })).toBeNull();
+    expect(recordedLegs({ ...b, cap_weights: { ...b.cap_weights!, weights: { NVDA: 1 } } })).toBeNull();
+  });
+
+  it("a served snapshot replaces the stored one only when it is newer, so two windows never trade writes", () => {
+    const legs = [{ symbol: "NVDA" }, { symbol: "AVGO" }];
+    const snap = (prices_as_of: string, as_of: string, nvda = 0.6) => ({ as_of, prices_as_of, weights: { NVDA: nvda, AVGO: 1 - nvda } });
+    expect(isNewerSnapshot(snap("2026-09-23", "2026-10-01"), undefined, legs)).toBe(true);
+    expect(isNewerSnapshot(snap("2026-09-24", "2026-10-01"), snap("2026-09-23", "2026-10-01"), legs)).toBe(true);
+    expect(isNewerSnapshot(snap("2026-09-23", "2026-10-02"), snap("2026-09-23", "2026-10-01"), legs)).toBe(true);
+    // Older, or the same day with other weights (another window's answer): the stored one stands.
+    expect(isNewerSnapshot(snap("2026-09-22", "2026-10-02"), snap("2026-09-23", "2026-10-01"), legs)).toBe(false);
+    expect(isNewerSnapshot(snap("2026-09-23", "2026-10-01", 0.7), snap("2026-09-23", "2026-10-01"), legs)).toBe(false);
+    // A stored one that misses a name gives way; a served one that misses a name, or is malformed, never writes.
+    expect(isNewerSnapshot(snap("2026-09-01", "2026-09-01"), { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 1 } }, legs)).toBe(true);
+    expect(isNewerSnapshot({ ...snap("2026-09-24", "2026-10-01"), weights: { NVDA: 1 } }, undefined, legs)).toBe(false);
+    expect(isNewerSnapshot({ ...snap("2026-09-24", "2026-10-01"), as_of: undefined as unknown as string }, undefined, legs)).toBe(false);
   });
 
   it("the weighting and the snapshot are saved and read back; a bad one makes the entry unreadable; a background write keeps the order", () => {

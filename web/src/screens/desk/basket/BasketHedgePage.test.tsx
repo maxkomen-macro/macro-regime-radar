@@ -454,9 +454,10 @@ describe("Basket & Hedge tab", () => {
     renderTab("/desk/basket-hedge?add=orcl");
     const b = await loaded();
     await waitFor(() => expect(within(b).getByLabelText("Weight of ORCL, percent")).toBeInTheDocument());
-    // The preset is cap-weighted, and ORCL has no stored share count: the basket returns to equal weight, all eleven.
+    // The preset is cap-weighted, and ORCL has no stored share count: cap weight is unavailable for the eleven, which
+    // are priced at their typed weights, equal (the basket's choice of cap weight is kept for when ORCL is dropped).
     expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("9.1");
-    expect(b).toHaveTextContent("ORCL added; the 11 names are at equal weight. ORCL has no stored share count, so cap weight is off for this basket. Save to price it.");
+    expect(b).toHaveTextContent("ORCL added; the 11 names are at equal weight. ORCL has no stored share count, so cap weight is unavailable for this basket. Save to price it.");
     // The control says why it cannot cap-weight this basket (desk/cap-weight).
     expect(within(b).getByRole("button", { name: "Cap-weight" })).toBeDisabled();
     expect(within(b).getByRole("button", { name: "Cap-weight" }).closest("[data-unserved]")).not.toBeNull();
@@ -816,7 +817,7 @@ describe("Cap weight (desk/cap-weight)", () => {
     expect(b).toHaveTextContent("Cap weight is unavailable. It needs a stored share count for every name: SMCI has none (counts are stored for the preset baskets' names).");
     // Priced at its typed weights.
     await waitFor(() => expect(screen.getByRole("region", { name: /^Basket index/ })).toHaveTextContent("Up 113.8% since Mar 28, 2025"));
-    // Drop SMCI: every name left has a count, so Cap-weight acts; the typed weights go to equal weight, unsaved.
+    // Drop SMCI: every name left has a count, so Cap-weight acts; the typed weights are kept, scaled to 100%, unsaved.
     fireEvent.click(within(b).getByRole("button", { name: "Drop SMCI" }));
     expect(capBtn()).toBeEnabled();
     expect(capBtn()).toHaveAttribute("aria-pressed", "false");
@@ -827,7 +828,12 @@ describe("Cap weight (desk/cap-weight)", () => {
     expect(b).toHaveTextContent("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026)");
     fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
     await waitFor(() => expect(stored()[0].weighting).toBe("cap"));
-    expect(stored()[0].legs.map((l) => [l.symbol, l.weight])).toEqual(["NVDA", "AVGO", "VRT", "CRWV", "ANET", "CEG"].map((s, i) => [s, i < 4 ? "16.7" : "16.6"]));
+    // 22, 16, 14, 12, 12 and 12 (88%) scaled to 100% at a tenth: kept for when Cap-weight is turned off.
+    expect(stored()[0].legs.map((l) => [l.symbol, l.weight])).toEqual([["NVDA", "25"], ["AVGO", "18.2"], ["VRT", "15.9"], ["CRWV", "13.7"], ["ANET", "13.6"], ["CEG", "13.6"]]);
+    // Cap-weight is a toggle: off again, the typed weights are back.
+    fireEvent.click(capBtn());
+    expect(capBtn()).toHaveAttribute("aria-pressed", "false");
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("25");
     // The six names cap-weighted have no fixture answer; the request is the cap one, and its refusal is shown in words.
     await waitFor(() => expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CVRT%2CCRWV%2CANET%2CCEG&method=hold&notional=1000000&weighting=cap"));
   });

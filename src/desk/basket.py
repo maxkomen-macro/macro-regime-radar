@@ -24,7 +24,9 @@ The method, in the order the page states it:
   the basket's, `w_i = S_i × P_i(start) / Σ_j S_j × P_j(start)`, from one
   share count per name (the stored current counts) and the start's closes
   (the same split- and dividend-adjusted closes the index is priced from, so
-  a count and a close are on one share basis across a split). Held, the
+  a count and a close are on one share basis across a split; a dividend
+  payer's value at the start therefore reads low by the dividends paid
+  since, about 2% for AVGO and TSM over eighteen months). Held, the
   holdings stay proportional to the share counts, as a cap-weighted index
   behaves between rebalances. Monthly, the counts are reset to cap weights at
   the close of each month's first index session after the start; with one

@@ -377,6 +377,7 @@ COUNTS_SOURCE = "Yahoo's shares outstanding, read by the full refresh and checke
 COUNTS_NOT_STORED = "share counts are not stored in this database yet; the next full refresh reads them from Yahoo"
 COUNTS_EMPTY = "no share count is stored yet; the next full refresh reads them from Yahoo"
 COUNTS_UNREADABLE = "the stored share counts could not be read; the next full refresh stores them again"
+COUNTS_ALL_SET_ASIDE = "no stored share count can be read (each is set aside, with why); the next full refresh stores them again"
 # The providers the table's `source` names, in words (src/market_data/share_counts.SOURCE is "yfinance").
 PROVIDER_WORDS = {"yfinance": "Yahoo", "eodhd": "EODHD"}
 
@@ -446,7 +447,7 @@ def desk_share_counts(ctx: dict) -> dict:
             continue
         counts[sym] = {"shares_outstanding": float(shares), "as_of": as_of, "source": source}
     if not counts:
-        return none(COUNTS_EMPTY, excluded)
+        return none(COUNTS_ALL_SET_ASIDE if excluded else COUNTS_EMPTY, excluded)
     return {"stored": True, "reason": None, "counts": counts, "excluded": excluded}
 
 
@@ -463,11 +464,17 @@ def cap_counts(symbols: list[str]) -> dict[str, dict]:
     item = stored_counts()
     if not item["stored"]:
         raise env.Awaiting(f"Awaiting refresh: cap weight reads stored share counts, and {item['reason']}.")
-    missing = [s for s in symbols if s not in item["counts"]]
-    if missing:
-        raise env.Unsupported(f"Cap weight needs a stored share count for every name: {', '.join(missing)} "
-                              f"{'has' if len(missing) == 1 else 'have'} none. The full refresh stores counts for "
-                              "the preset baskets' names.")
+    aside = {e["symbol"]: e["reason"] for e in item.get("excluded") or []}
+    missing = [s for s in symbols if s not in item["counts"] and s not in aside]
+    unread = [s for s in symbols if s not in item["counts"] and s in aside]
+    if missing or unread:
+        parts = []
+        if missing:
+            parts.append(f"{', '.join(missing)} {'has' if len(missing) == 1 else 'have'} none. The full refresh stores counts "
+                         "for the preset baskets' names.")
+        for s in unread:
+            parts.append(f"{s}'s stored count is {aside[s]}.")
+        raise env.Unsupported("Cap weight needs a stored share count for every name: " + " ".join(parts))
     return {s: item["counts"][s] for s in symbols}
 
 

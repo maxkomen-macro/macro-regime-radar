@@ -317,12 +317,27 @@ export function heldBasket(b: SavedBasket, p: { weighting?: string; legs?: reado
   return { ...b, legs: b.legs.map((l, i) => ({ ...l, weight: Number((100 * (legs[i].weight_now as number)).toFixed(1)) })) };
 }
 
+/** Whether a snapshot holds a finite weight for every leg. */
+const covers = (s: CapSnapshot | undefined, legs: readonly { symbol: string }[]): s is CapSnapshot =>
+  !!s && isSnapshot(s) && legs.every((l) => typeof s.weights[l.symbol] === "number" && Number.isFinite(s.weights[l.symbol]));
+
+/** Whether a served snapshot replaces the stored one: it is well formed and covers every leg, and the stored one is
+ * absent, does not cover the legs, or is older (its close, then its counts' read). Never on a tie or an older answer,
+ * so two windows holding answers of different days settle on the newer and never trade writes. */
+export function isNewerSnapshot(next: CapSnapshot, stored: CapSnapshot | undefined, legs: readonly { symbol: string }[]): boolean {
+  if (!covers(next, legs)) return false;
+  if (!covers(stored, legs)) return true;
+  return `${next.prices_as_of}|${next.as_of}` > `${stored.prices_as_of}|${stored.as_of}`;
+}
+
 /** The legs Position Monitor records for a saved basket (§9): its typed weights, or for a cap-weighted basket the
- * cap weights last served for it, in percent, when they cover every name. */
-export function recordedLegs(b: SavedBasket): { symbol: string; name: string | null; weight: number | string }[] {
-  const w = weightingOf(b) === "cap" ? b.cap_weights?.weights : undefined;
-  if (!w || !b.legs.every((l) => typeof w[l.symbol] === "number" && Number.isFinite(w[l.symbol]))) return b.legs;
-  return b.legs.map((l) => ({ ...l, weight: 100 * w[l.symbol] }));
+ * cap weights last served for it, in percent; null for a cap-weighted basket no answer has been served for yet (its
+ * weights are not known here, and the typed ones are not its weights). */
+export function recordedLegs(b: SavedBasket): { symbol: string; name: string | null; weight: number | string }[] | null {
+  if (weightingOf(b) !== "cap") return b.legs;
+  const s = b.cap_weights;
+  if (!covers(s, b.legs)) return null;
+  return b.legs.map((l) => ({ ...l, weight: 100 * s.weights[l.symbol] }));
 }
 
 /** A ticker as typed, upper-cased; null when it cannot be a US listing's symbol. */

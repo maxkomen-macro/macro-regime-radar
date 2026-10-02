@@ -131,21 +131,6 @@ jobs:
         if: steps.mode.outputs.mode == 'full'
         run: python -m src.market_data.asset_history
 
-      # desk/cap-weight: Basket & Hedge's cap weight reads a share count for
-      # every preset basket's name (src/desk/presets.py), stored here from
-      # Yahoo (src/market_data/share_counts.py) because this EODHD plan has no
-      # fundamentals; the API reads the table and never calls Yahoo. Each count
-      # is checked against Yahoo's own market cap (ADRs in ADR units, a
-      # multi-class company's listed class). Never fails the refresh: a name
-      # not answered or not passing the check keeps its stored row and is named
-      # in the share_counts watermark, the command exits 0, and validate_db
-      # only warns, so the upload below is never held back by it.
-      - name: Store share counts
-        if: steps.mode.outputs.mode == 'full'
-        continue-on-error: true
-        timeout-minutes: 5
-        run: python -m src.market_data.share_counts
-
       # desk/event-study: the Desk's daily series (src/market_data/desk_history.py),
       # FRED direct (the .env above carries the key) plus, at tier 2, market
       # series through the same EODHD-first/Yahoo-fallback path as the step
@@ -162,6 +147,21 @@ jobs:
         if: steps.mode.outputs.mode == 'full'
         continue-on-error: true
         run: python -m src.market_data.desk_history --tier 2
+
+      # desk/cap-weight: Basket & Hedge's cap weight reads a share count for
+      # every preset basket's name (src/desk/presets.py), stored here from
+      # Yahoo (src/market_data/share_counts.py) because this EODHD plan has no
+      # fundamentals; the API reads the table and never calls Yahoo. Each count
+      # is checked against Yahoo's own market cap (ADRs in ADR units, a
+      # multi-class company's listed class). Never fails the refresh: a name
+      # not answered or not passing the check keeps its stored row and is named
+      # in the share_counts watermark, the command exits 0, and validate_db
+      # only warns, so the upload below is never held back by it.
+      - name: Store share counts
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 5
+        run: python -m src.market_data.share_counts
 
       - name: Fetch intraday bars
         if: steps.mode.outputs.mode == 'market-only'

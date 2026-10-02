@@ -835,7 +835,7 @@ test.describe("desk v2", () => {
     // Eleven equal weights at a tenth that add to 100: ten at 9.1 and the last at 9.
     await expect(basket.getByLabel("Weight of ORCL, percent")).toHaveValue("9");
     await expect(basket.getByLabel("Weight of NVDA, percent")).toHaveValue("9.1");
-    await expect(basket).toContainText("ORCL added; the 11 names are at equal weight. ORCL has no stored share count, so cap weight is off for this basket.");
+    await expect(basket).toContainText("ORCL added; the 11 names are at equal weight. ORCL has no stored share count, so cap weight is unavailable for this basket.");
     await expect(basket.getByRole("button", { name: "Cap-weight" })).toBeDisabled();
     await expect(page).toHaveURL(/\/desk\/basket-hedge\?basket=local-1$/);
   });
