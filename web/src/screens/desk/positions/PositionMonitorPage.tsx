@@ -34,7 +34,7 @@ import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { apiParams, askFromSearch, questionWords, searchFor, slotsOf, targetLabel, type Ask } from "../event-study/question";
-import { readSaved } from "../basket/weights";
+import { readSaved, recordedLegs } from "../basket/weights";
 import { planFor, planRefusal, seriesOf, suggestions, underlyingName } from "./levels";
 import { falsifiesLine, sizeLine, viewOf, type PositionView } from "./monitor";
 import { nyDate } from "./sessions";
@@ -374,7 +374,8 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   // A basket sent from Basket & Hedge (`?basket=`): one saved in this browser (§10: no basket is served).
   const basketId = search.get("basket");
   const localBasket = basketId ? (readSaved().find((b) => b.id === basketId) ?? null) : null;
-  const sent = localBasket ? { name: localBasket.name, instrument: `${localBasket.name} basket`, legs: localBasket.legs } : null;
+  // desk/cap-weight: a cap-weighted basket is recorded at the cap weights last served for it.
+  const sent = localBasket ? { name: localBasket.name, instrument: `${localBasket.name} basket`, legs: recordedLegs(localBasket) } : null;
   const tech = useTechnicals();
   const [store, change] = usePositionStore();
   const levels = useLevels(store, true);

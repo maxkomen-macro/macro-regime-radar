@@ -63,7 +63,10 @@ export function coverageWords(p: Positioning): string {
   return `weighted over ${pctText(p.coveredWeight)} of the basket (${p.rows.length} of ${n} names)`;
 }
 
-export function PositioningCard({ basket }: { basket: SavedBasket }) {
+/** `basket` is the saved basket, which decides whether the card is drawn (./drawn-for.ts); `held` is the same basket
+ * at the weights it holds (desk/cap-weight: a cap-weighted basket's served weights at the last close), which the
+ * figures read. */
+export function PositioningCard({ basket, held = basket }: { basket: SavedBasket; held?: SavedBasket }) {
   const adv = useAdvanced();
   const entry = prototype("positioning");
   if (!isDrawnFor(basket.legs))
@@ -77,7 +80,7 @@ export function PositioningCard({ basket }: { basket: SavedBasket }) {
         <p className="pr-why">{OTHER_BASKET_LINE}</p>
       </PrototypeCard>
     );
-  const p = positioning(legsOf(basket));
+  const p = positioning(legsOf(held));
   const covered = coverageWords(p);
   const weighted = p.weightedSi != null;
   return (

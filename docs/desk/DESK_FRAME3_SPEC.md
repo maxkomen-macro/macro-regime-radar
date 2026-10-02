@@ -978,13 +978,15 @@ subject, monitored manually, §9). Badge `● Live · <provider> · <prices_as_o
 once the saved basket is priced, else `○ Not yet served`.
 
 **Basket** (step 1). Named baskets kept in this browser (§1.8), each
-`{id, name, legs, method, notional, saved_at}`. The header: the selector
+`{id, name, legs, method, notional, saved_at}`, and `weighting: "cap"` with
+the last served cap weights (`cap_weights`) for a cap-weighted one
+(desk/cap-weight). The header: the selector
 of this browser's baskets (switching never drops unsaved changes unseen),
 **Rename** and **+ New basket**, each an inline name field (a name is
 required and unique here). Below it NOTIONAL (dollars, default
 $1,000,000) and METHOD (Buy-and-hold, the default, or Monthly rebalance),
-with the method in words. The LEGS table with Equal-weight / Normalize to
-100%, typed weights, `+ Add a ticker…`, the total, **Save basket** and
+with the method in words. The LEGS table with **Cap-weight** / Equal-weight /
+Normalize to 100%, typed weights, `+ Add a ticker…`, the total, **Save basket** and
 Export / Import JSON; **Delete this basket** asks a second time. A weight
 keeps every digit it is typed with; a total counts as 100% only when it is
 exactly 100. A name added re-spreads the weights to equal, the new name
@@ -998,9 +1000,30 @@ says so; a check answered after another basket was opened adds nothing
 way, and Enter with no suggestion adds the typed ticker. `/desk/basket-hedge?add=XYZ` (Technicals links here) adds XYZ to the
 open basket the same way, as unsaved work, and the address forgets it. A
 browser with no basket store starts with **AI Infrastructure 10**: NVDA AVGO
-AMD TSM MU ANET VRT CEG CRWV NBIS at 10% each, buy-and-hold, $1,000,000
-(written once; a deleted preset is not written back). Only a saved basket
-whose weights add to exactly 100% is priced: Save computes everything.
+AMD TSM MU ANET VRT CEG CRWV NBIS, cap-weighted, buy-and-hold, $1,000,000
+(written once; a deleted preset is not written back; its typed weights are
+10% each, so Equal-weight is one click away). Only a saved basket whose
+weights add to exactly 100%, or a saved cap-weighted one, is priced: Save
+computes everything.
+
+**Cap-weight** (desk/cap-weight) weights the basket by each name's market
+value at its start (§12.15 `weighting=cap`): the stored share count (Yahoo's,
+read by the full refresh, §12.18) times the start's close, over the sum,
+then held; monthly, reset to cap weights on each month's first session.
+The weights column then shows the resulting weights at the start, read
+only, beside the weights at the last close, and the basket reads
+"Cap-weighted: market value at the start, current share counts (Yahoo, as
+of <date>)". It needs a stored count for every name: with any other name in
+the basket (a custom ticker), or on a database the full refresh has not
+reached, the control is unavailable with the reason (`data-unserved`), a
+name added without a count returns the basket to equal weight and says so,
+and a saved cap-weighted basket is priced at its typed weights and says why.
+**Equal-weight** returns to typed weights, at equal weight. Everything below
+step 1 is computed from the weights chosen: the index, its returns and
+technicals, the beta and correlation, the contribution, the concentration,
+the liquidity, the hedge ranking, the hedge ratio and short, the volatility
+left and cut, and the stress test. Send to Position Monitor records a
+cap-weighted basket at the cap weights last served for it.
 
 **How the basket trades** (step 2). Each card leads with one plain sentence
 stating its answer with its numbers, then its stats and body, all served

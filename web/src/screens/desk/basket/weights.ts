@@ -5,6 +5,12 @@
  * are the analyst's input, so the page may tidy them (equal-weight, normalize
  * to 100%); nothing about the basket itself is computed here: the API prices
  * a saved basket (§12.15). Pure except the storage helpers, which never throw.
+ *
+ * desk/cap-weight: a basket may instead be cap-weighted (`weighting: "cap"`):
+ * the API weights each name by its market value at the start from the share
+ * counts the full refresh stores (§12.15, §12.18), so its typed weights are
+ * kept at equal weight, the fallback and one click away. A cap-weighted
+ * basket needs a stored count for every name (`capAvailability`).
  */
 
 export interface WorkLeg {
@@ -16,6 +22,19 @@ export interface WorkLeg {
 }
 
 export type Method = "hold" | "monthly";
+/** desk/cap-weight: the typed weights (`target`), or market value at the start (`cap`). */
+export type Weighting = "target" | "cap";
+
+/** The cap weights last served for a saved cap-weighted basket (§12.15): each name's market-value weight at the
+ * last close, what Send to Position Monitor records (§9). Written by the page when an answer arrives. */
+export interface CapSnapshot {
+  /** The share counts' oldest read. */
+  as_of: string;
+  /** The close the weights are taken on. */
+  prices_as_of: string;
+  /** Fractions, by ticker. */
+  weights: Record<string, number>;
+}
 
 export interface SavedBasket {
   id: string;
@@ -28,6 +47,10 @@ export interface SavedBasket {
   method?: Method;
   /** Dollars (desk/books); an older save without it is $1,000,000. */
   notional?: number;
+  /** desk/cap-weight: "cap" when weighted by market value; an older save without it has typed weights. */
+  weighting?: Weighting;
+  /** desk/cap-weight: the cap weights last served (a cap-weighted basket only). */
+  cap_weights?: CapSnapshot;
 }
 
 export const SAVED_BASKETS_KEY = "mrr.desk.baskets.v1";
@@ -36,9 +59,11 @@ export const DEFAULT_NOTIONAL = 1_000_000;
 export const METHOD_WORDS: Record<Method, string> = { hold: "Buy-and-hold", monthly: "Monthly rebalance" };
 export const methodOf = (b: Pick<SavedBasket, "method"> | null | undefined): Method => (b?.method === "monthly" ? "monthly" : DEFAULT_METHOD);
 export const notionalOf = (b: Pick<SavedBasket, "notional"> | null | undefined): number => (typeof b?.notional === "number" && Number.isFinite(b.notional) && b.notional > 0 ? b.notional : DEFAULT_NOTIONAL);
+export const weightingOf = (b: Pick<SavedBasket, "weighting"> | null | undefined): Weighting => (b?.weighting === "cap" ? "cap" : "target");
 
-/** The basket this browser starts with when it has none stored (desk/books): ten AI infrastructure names at equal
- * weight, bought and held, $1,000,000. Written once, when the store is absent; a deleted preset is not written back. */
+/** The basket this browser starts with when it has none stored (desk/books): ten AI infrastructure names, bought and
+ * held, $1,000,000; cap-weighted since desk/cap-weight, like the S&P and the Nasdaq it is read against, with its
+ * typed weights at 10% each (Equal-weight). Written once, when the store is absent; a deleted preset is not written back. */
 export const PRESET: SavedBasket = {
   id: "local-1",
   name: "AI Infrastructure 10",
@@ -57,6 +82,7 @@ export const PRESET: SavedBasket = {
   saved_at: "2026-09-27T00:00:00Z",
   method: "hold",
   notional: DEFAULT_NOTIONAL,
+  weighting: "cap",
 };
 
 /** A notional as typed ("1,000,000", "$2.5m" is not one): dollars above 0 and at most $1 trillion, or null. */
@@ -223,6 +249,82 @@ export function normalize(legs: readonly WorkLeg[]): WorkLeg[] {
   return legs.map((l, i) => ({ ...l, weight: w[i] }));
 }
 
+// ── desk/cap-weight: whether a basket can be cap-weighted ──────────────────
+
+/** The stored share counts as the page reads them (§12.18): the tickers with a count, the provider in words and
+ * each count's read date; or why there are none (an awaiting answer's reason, or a failed request's words). */
+export type ShareCounts =
+  | { state: "loading" }
+  | { state: "ready"; provider: string; dates: Record<string, string> }
+  | { state: "unavailable"; reason: string };
+
+export type CapAvailability = { state: "ok"; provider: string; as_of: string } | { state: "loading" } | { state: "unavailable"; reason: string };
+
+/** "CRWV", "CRWV and NBIS", "CRWV, NBIS and SMCI". */
+function listOf(items: readonly string[]): string {
+  return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/** Whether a basket of these names can be cap-weighted: every name needs a stored share count (§12.18). When it
+ * can, the counts' provider and their oldest read, for the label; when it cannot, why, in words. */
+export function capAvailability(symbols: readonly string[], counts: ShareCounts): CapAvailability {
+  if (counts.state === "loading") return { state: "loading" };
+  if (counts.state === "unavailable") return { state: "unavailable", reason: `Cap weight is unavailable. ${counts.reason}` };
+  if (!symbols.length) return { state: "unavailable", reason: "Cap weight is unavailable. The basket holds no name yet." };
+  const missing = symbols.filter((s) => !(s in counts.dates));
+  if (missing.length)
+    return {
+      state: "unavailable",
+      reason: `Cap weight is unavailable. It needs a stored share count for every name: ${listOf(missing)} ${missing.length === 1 ? "has" : "have"} none (counts are stored for the preset baskets' names).`,
+    };
+  return { state: "ok", provider: counts.provider, as_of: symbols.map((s) => counts.dates[s]).sort()[0] };
+}
+
+/** A basket request (§12.15): its legs, method and notional, and `weighting: "cap"` for a cap-weighted basket
+ * (desk/cap-weight), whose legs are tickers alone. */
+export type BasketParams = { legs: string; method: string; notional: string; weighting?: "cap" };
+
+/** What /basket/price is asked for a saved basket (§12.15): its legs as saved, the method, the notional; null
+ * until the basket has legs whose weights add to exactly 100%. A cap-weighted basket (desk/cap-weight) is asked
+ * as its tickers with `weighting=cap` when every name has a stored count (`cap`), nothing while the counts are
+ * read, and at its typed weights when cap weight is unavailable. */
+export function priceParams(b: SavedBasket | null, cap: CapAvailability = { state: "unavailable", reason: "" }): BasketParams | null {
+  if (!b || !b.legs.length) return null;
+  if (weightingOf(b) === "cap" && cap.state === "loading") return null;
+  if (weightingOf(b) === "cap" && cap.state === "ok") return { legs: b.legs.map((l) => l.symbol).join(","), method: methodOf(b), notional: String(notionalOf(b)), weighting: "cap" };
+  if (!sumsToHundred(b.legs)) return null;
+  return { legs: legsKey(b.legs), method: methodOf(b), notional: String(notionalOf(b)) };
+}
+
+/** The stored share counts as the page reads them (§12.18): the tickers with a count and their read dates, or why
+ * there are none (the awaiting answer's reason, or the failed request's words). */
+export function shareCountsOf(q: {
+  data?: { provider?: string; counts?: { symbol: string; as_of: string }[] };
+  isError: boolean;
+  error: { message: string; unavailable?: { reason: string } | null } | null;
+}): ShareCounts {
+  if (q.data?.counts) return { state: "ready", provider: q.data.provider ?? "the stored source", dates: Object.fromEntries(q.data.counts.map((c) => [c.symbol, c.as_of])) };
+  if (q.isError) return { state: "unavailable", reason: q.error?.unavailable?.reason ?? `The stored share counts could not be read: ${(q.error?.message ?? "no answer").replace(/\.+$/, "")}.` };
+  return { state: "loading" };
+}
+
+/** The basket as it is held at the last close, for the PROTOTYPE cards that size by weight (§1.0.3): a
+ * cap-weighted answer's weights at the last close, in percent to a tenth, when it answers for exactly the basket's
+ * names in order; otherwise the basket as saved. */
+export function heldBasket(b: SavedBasket, p: { weighting?: string; legs?: readonly { symbol: string; weight_now: number | null }[] } | undefined): SavedBasket {
+  const legs = p?.weighting === "cap" ? p.legs : undefined;
+  if (!legs || legs.length !== b.legs.length || legs.some((l, i) => l.symbol !== b.legs[i].symbol || typeof l.weight_now !== "number" || !Number.isFinite(l.weight_now))) return b;
+  return { ...b, legs: b.legs.map((l, i) => ({ ...l, weight: Number((100 * (legs[i].weight_now as number)).toFixed(1)) })) };
+}
+
+/** The legs Position Monitor records for a saved basket (§9): its typed weights, or for a cap-weighted basket the
+ * cap weights last served for it, in percent, when they cover every name. */
+export function recordedLegs(b: SavedBasket): { symbol: string; name: string | null; weight: number | string }[] {
+  const w = weightingOf(b) === "cap" ? b.cap_weights?.weights : undefined;
+  if (!w || !b.legs.every((l) => typeof w[l.symbol] === "number" && Number.isFinite(w[l.symbol]))) return b.legs;
+  return b.legs.map((l) => ({ ...l, weight: 100 * w[l.symbol] }));
+}
+
 /** A ticker as typed, upper-cased; null when it cannot be a US listing's symbol. */
 export function parseTicker(s: string): string | null {
   const t = s.trim().toUpperCase();
@@ -267,6 +369,18 @@ function safeStorage(): Storage | null {
   }
 }
 
+function isSnapshot(v: unknown): v is CapSnapshot {
+  const s = v as CapSnapshot;
+  return (
+    !!s &&
+    typeof s.as_of === "string" &&
+    typeof s.prices_as_of === "string" &&
+    !!s.weights &&
+    typeof s.weights === "object" &&
+    Object.values(s.weights).every((w) => typeof w === "number" && Number.isFinite(w))
+  );
+}
+
 function isSaved(v: unknown): v is SavedBasket {
   const b = v as SavedBasket;
   return (
@@ -275,6 +389,8 @@ function isSaved(v: unknown): v is SavedBasket {
     typeof b.name === "string" &&
     (b.method === undefined || b.method === "hold" || b.method === "monthly") &&
     (b.notional === undefined || (typeof b.notional === "number" && Number.isFinite(b.notional) && b.notional > 0)) &&
+    (b.weighting === undefined || b.weighting === "target" || b.weighting === "cap") &&
+    (b.cap_weights === undefined || isSnapshot(b.cap_weights)) &&
     Array.isArray(b.legs) &&
     b.legs.every((l) => l && typeof l.symbol === "string" && ((typeof l.weight === "number" && Number.isFinite(l.weight)) || (typeof l.weight === "string" && parseWeight(l.weight) != null)))
   );
@@ -331,6 +447,14 @@ function writeAll(list: SavedBasket[], storage: (Pick<Storage, "setItem"> & Part
 /** Saves (or replaces, by id) one basket: "off" when there is no storage, "full" when it refuses the write. */
 export function writeSaved(b: SavedBasket, storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): SaveResult {
   return writeAll([...readSaved(storage).filter((x) => x.id !== b.id), b], storage);
+}
+
+/** Replaces one saved basket where it stands in the list (desk/cap-weight: the cap weights last served, written
+ * in the background, never move a basket); nothing when it is not saved here. */
+export function updateSaved(b: SavedBasket, storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): SaveResult {
+  const list = readSaved(storage);
+  if (!list.some((x) => x.id === b.id)) return "ok";
+  return writeAll(list.map((x) => (x.id === b.id ? b : x)), storage);
 }
 
 /** Forgets one saved basket. */

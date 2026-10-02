@@ -1,6 +1,7 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
 import { addLeg, saveRefusal, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
+import { capAvailability, heldBasket, priceParams, recordedLegs, shareCountsOf, updateSaved, weightingOf, type ShareCounts } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -179,5 +180,92 @@ describe("basket weights", () => {
     s.setItem(SAVED_BASKETS_KEY, "[]");
     seedPreset(s);
     expect(readSaved(s)).toEqual([]);
+  });
+});
+
+// ── desk/cap-weight ─────────────────────────────────────────────────────────
+
+const READY: ShareCounts = { state: "ready", provider: "Yahoo", dates: { NVDA: "2026-10-01", AVGO: "2026-09-30", TSM: "2026-10-01" } };
+
+describe("cap weight (desk/cap-weight)", () => {
+  it("the preset is cap-weighted, its typed weights at 10% each; an older save without a weighting has typed weights", () => {
+    expect(weightingOf(PRESET)).toBe("cap");
+    expect(PRESET.legs.every((l) => l.weight === "10")).toBe(true);
+    expect(weightingOf({})).toBe("target");
+    expect(weightingOf({ weighting: "target" })).toBe("target");
+  });
+
+  it("a basket can be cap-weighted when every name has a stored count; otherwise it says why, naming the names", () => {
+    expect(capAvailability(["NVDA", "TSM", "AVGO"], READY)).toEqual({ state: "ok", provider: "Yahoo", as_of: "2026-09-30" });
+    expect(capAvailability(["NVDA", "ORCL"], READY)).toEqual({
+      state: "unavailable",
+      reason: "Cap weight is unavailable. It needs a stored share count for every name: ORCL has none (counts are stored for the preset baskets' names).",
+    });
+    expect(capAvailability(["SMCI", "NVDA", "ORCL"], READY).state === "unavailable" && capAvailability(["SMCI", "NVDA", "ORCL"], READY)).toMatchObject({
+      reason: expect.stringContaining("SMCI and ORCL have none"),
+    });
+    expect(capAvailability([], READY)).toEqual({ state: "unavailable", reason: "Cap weight is unavailable. The basket holds no name yet." });
+    expect(capAvailability(["NVDA"], { state: "loading" })).toEqual({ state: "loading" });
+    // An old database: the served awaiting reason, in its words.
+    const old = "Awaiting refresh: share counts are not stored in this database yet; the next full refresh reads them from Yahoo.";
+    expect(capAvailability(["NVDA"], { state: "unavailable", reason: old })).toEqual({ state: "unavailable", reason: `Cap weight is unavailable. ${old}` });
+  });
+
+  it("reads the served counts, an awaiting answer's reason, or a failed request's words", () => {
+    expect(shareCountsOf({ data: { provider: "Yahoo", counts: [{ symbol: "NVDA", as_of: "2026-10-01" }] }, isError: false, error: null })).toEqual({ state: "ready", provider: "Yahoo", dates: { NVDA: "2026-10-01" } });
+    expect(shareCountsOf({ isError: true, error: { message: "x", unavailable: { reason: "Awaiting refresh: none." } } })).toEqual({ state: "unavailable", reason: "Awaiting refresh: none." });
+    expect(shareCountsOf({ isError: true, error: { message: "The data service did not answer.", unavailable: null } })).toEqual({
+      state: "unavailable",
+      reason: "The stored share counts could not be read: The data service did not answer.",
+    });
+    expect(shareCountsOf({ isError: false, error: null })).toEqual({ state: "loading" });
+  });
+
+  it("a cap-weighted basket is asked as its tickers with weighting=cap; while the counts are read, not at all; without them, at its typed weights", () => {
+    const b: SavedBasket = { id: "local-1", name: "Two", legs: [{ symbol: "NVDA", name: null, weight: "50" }, { symbol: "TSM", name: null, weight: "50" }], saved_at: "", weighting: "cap" };
+    const ok = capAvailability(["NVDA", "TSM"], READY);
+    expect(priceParams(b, ok)).toEqual({ legs: "NVDA,TSM", method: "hold", notional: "1000000", weighting: "cap" });
+    expect(priceParams(b, { state: "loading" })).toBeNull();
+    expect(priceParams(b, { state: "unavailable", reason: "x" })).toEqual({ legs: "NVDA:50,TSM:50", method: "hold", notional: "1000000" });
+    // Typed weights ignore the counts.
+    expect(priceParams({ ...b, weighting: undefined }, ok)).toEqual({ legs: "NVDA:50,TSM:50", method: "hold", notional: "1000000" });
+    expect(priceParams({ ...b, legs: [] }, ok)).toBeNull();
+  });
+
+  it("the basket as held: a cap-weighted answer's weights at the last close, for exactly the basket's names", () => {
+    const b: SavedBasket = { ...PRESET, legs: PRESET.legs.slice(0, 2) };
+    const p = { weighting: "cap", legs: [{ symbol: "NVDA", weight_now: 0.7734 }, { symbol: "AVGO", weight_now: 0.2266 }] };
+    expect(heldBasket(b, p).legs.map((l) => l.weight)).toEqual([77.3, 22.7]);
+    expect(heldBasket(b, { ...p, weighting: "target" })).toBe(b);
+    expect(heldBasket(b, { ...p, legs: [...p.legs].reverse() })).toBe(b);
+    expect(heldBasket(b, undefined)).toBe(b);
+  });
+
+  it("Position Monitor records a cap-weighted basket at the cap weights last served, in percent; typed weights otherwise", () => {
+    const b: SavedBasket = { ...PRESET, legs: PRESET.legs.slice(0, 2), cap_weights: { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 0.75, AVGO: 0.25 } } };
+    expect(recordedLegs(b).map((l) => [l.symbol, l.weight])).toEqual([["NVDA", 75], ["AVGO", 25]]);
+    expect(recordedLegs({ ...b, weighting: undefined })).toBe(b.legs);
+    expect(recordedLegs({ ...b, cap_weights: undefined })).toBe(b.legs);
+    expect(recordedLegs({ ...b, cap_weights: { ...b.cap_weights!, weights: { NVDA: 1 } } })).toBe(b.legs);
+  });
+
+  it("the weighting and the snapshot are saved and read back; a bad one makes the entry unreadable; a background write keeps the order", () => {
+    const st = memory();
+    const a: SavedBasket = { ...PRESET };
+    const c: SavedBasket = { ...PRESET, id: "local-2", name: "Other", weighting: undefined };
+    writeSaved(a, st);
+    writeSaved(c, st);
+    expect(readSaved(st).map((x) => [x.id, weightingOf(x)])).toEqual([["local-1", "cap"], ["local-2", "target"]]);
+    const snap = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 0.446 } };
+    expect(updateSaved({ ...a, cap_weights: snap }, st)).toBe("ok");
+    expect(readSaved(st).map((x) => x.id)).toEqual(["local-1", "local-2"]);
+    expect(readSaved(st)[0].cap_weights).toEqual(snap);
+    // A basket no longer saved here is not written back.
+    removeSaved("local-2", st);
+    expect(updateSaved(c, st)).toBe("ok");
+    expect(readSaved(st).map((x) => x.id)).toEqual(["local-1"]);
+    st.setItem(SAVED_BASKETS_KEY, JSON.stringify([{ ...a, weighting: "equal" }, { ...a, id: "local-3", cap_weights: { as_of: "x", prices_as_of: "y", weights: { NVDA: "big" } } }]));
+    expect(readSaved(st)).toEqual([]);
+    expect(unreadableSaved(st)).toHaveLength(2);
   });
 });
