@@ -50,16 +50,19 @@ function heads(table: Element): { text: string; def: string | null; tab: string 
     });
 }
 
-/** A table's heads against the glossary ids expected, in order. */
-function expectHeads(table: Element | null, expected: [string, string][]) {
+/** A table's heads against the glossary ids expected, in order: one id, or the ids whose sentences the head shows in turn. */
+function expectHeads(table: Element | null, expected: [string, string | readonly string[]][]) {
   expect(table, expected.map(([t]) => t).join(", ")).not.toBeNull();
   const got = heads(table!);
   expect(got.map((h) => h.text)).toEqual(expected.map(([t]) => t));
   for (const [i, [text, id]] of expected.entries()) {
-    expect(got[i].def, text).toBe(GLOSSARY[id].text);
+    expect(got[i].def, text).toBe((typeof id === "string" ? [id] : id).map((k) => GLOSSARY[k].text).join("\n"));
     expect(got[i].tab, `${text}: a Tab stop`).toBe("0");
   }
 }
+
+/** Codex R-04: an outcome column's own sentence, then where its outcomes count from. */
+const fromEntry = (id: string) => [id, "entry", "entry-rule"] as const;
 
 describe("every Desk column head carries its definition (desk/pdf-polish item 7)", () => {
   it("Basket & Hedge: the legs, against the Nasdaq and the S&P, liquidity, hedge with an ETF, the stress test", async () => {
@@ -124,9 +127,9 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
     await waitFor(() => expect(rail.querySelector("table.es-table")).not.toBeNull());
     expectHeads(rail.querySelector("table.es-table"), [
       ["Regime", "col-es-regime"],
-      ["N", "col-es-n"],
-      ["Up", "col-es-up"],
-      ["Median", "col-es-median"],
+      ["N", fromEntry("col-es-n")],
+      ["Up", fromEntry("col-es-up")],
+      ["Median", fromEntry("col-es-median")],
     ]);
     fireEvent.click(within(rail).getByTestId("dk-advanced"));
     const adv = await screen.findByRole("region", { name: "Advanced" });
@@ -134,10 +137,10 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
     expectHeads(adv.querySelector("table.es-wide"), [
       ["Event", "col-es-event"],
       ["Regime", "col-es-regime"],
-      ["1 week", "col-es-h5"],
-      ["2 weeks", "col-es-h10"],
-      ["1 month", "col-es-h20"],
-      ["3 months", "col-es-h60"],
+      ["1 week", fromEntry("col-es-h5")],
+      ["2 weeks", fromEntry("col-es-h10")],
+      ["1 month", fromEntry("col-es-h20")],
+      ["3 months", fromEntry("col-es-h60")],
     ]);
   });
 
@@ -148,10 +151,10 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
     expectHeads(card.querySelector("table.lg-table"), [
       ["Signal", "col-signal"],
       ["Last fired", "col-last-fired"],
-      ["Times", "col-times"],
-      ["Up a month later", "col-up-month"],
-      ["Median", "col-median"],
-      ["Vs normal", "col-vs-normal"],
+      ["Times", fromEntry("col-times")],
+      ["Up a month later", fromEntry("col-up-month")],
+      ["Median", fromEntry("col-median")],
+      ["Vs normal", fromEntry("col-vs-normal")],
       ["Verdict", "col-verdict"],
       ["Now", "col-now-firing"],
     ]);

@@ -34,6 +34,8 @@ export const LEDGER_HEADS = [
   ["col-verdict", "Verdict"],
   ["col-now-firing", "Now"],
 ] as const;
+/** The heads whose figures are outcomes counted from each firing's entry (Codex R-04). */
+const OUTCOME_HEADS: ReadonlySet<string> = new Set(["col-times", "col-up-month", "col-median", "col-vs-normal"]);
 const FILTER_IDS: readonly Filter[] = ["all", "firing", "reliable", "spx", "cross"];
 
 /** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
@@ -242,7 +244,8 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                 <tr>
                   {LEDGER_HEADS.map(([id, label]) => (
                     <th key={id} scope="col">
-                      <Term ids={[id]}>{label}</Term>
+                      {/* Codex R-04: the outcome columns count from each firing's entry, and say how entry is set. */}
+                      <Term ids={OUTCOME_HEADS.has(id) ? [id, "entry", "entry-rule"] : [id]}>{label}</Term>
                     </th>
                   ))}
                 </tr>

@@ -29,6 +29,9 @@ export function edgeDef(target: string | null | undefined): string {
   return `How much better or worse than a typical period of the same length ${who} did after these events. The verdict is Reliable only if the whole range sits on one side of zero.`;
 }
 
+/** Codex R-04: an outcome column says where its outcomes count from (kit/glossary.ts `entry`, `entry-rule`). */
+const ENTRY = ["entry", "entry-rule"] as const;
+
 /** "Edge vs a normal period", its §1.4 lowercase "vs" inside the uppercase label, carrying its hover. */
 function EdgeLabel({ target }: { target: string | null | undefined }) {
   return (
@@ -143,13 +146,13 @@ export default function StudyRail({
               <Term ids={["col-es-regime"]}>Regime</Term>
             </th>
             <th scope="col">
-              <Term ids={["col-es-n"]}>N</Term>
+              <Term ids={["col-es-n", ...ENTRY]}>N</Term>
             </th>
             <th scope="col">
-              <Term ids={["col-es-up"]}>Up</Term>
+              <Term ids={["col-es-up", ...ENTRY]}>Up</Term>
             </th>
             <th scope="col">
-              <Term ids={["col-es-median"]}>Median</Term>
+              <Term ids={["col-es-median", ...ENTRY]}>Median</Term>
             </th>
           </tr>
         </thead>

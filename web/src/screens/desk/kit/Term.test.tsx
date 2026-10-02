@@ -16,6 +16,19 @@ describe("hover definitions (desk/usability item 11, §14.11)", () => {
     expect(GLOSSARY.rsi.text).not.toMatch(/last 14 sessions/);
   });
 
+  it("Codex R-04: outcomes count from each event's entry, as the engine sets it", () => {
+    // src/desk/event_study.py entry_delay_vec: the first session whose target fixing is at or after every input is
+    // known; a defer_as_target target (gold) enters the next session at the earliest. src/desk/series.py: the S&P is
+    // fixed and known at the close, FRED known at the next open, the VIX at 16:15, gold and the dollar at 17:00, WTI
+    // at 13:00 on the eighth business day.
+    expect(GLOSSARY.entry.text).toBe("Entry is the session outcomes count from: the first whose target value is fixed no earlier than every input is known, and for a gold target the next at the earliest.");
+    expect(GLOSSARY["entry-rule"].text).toBe("For an S&P target, a signal on S&P closes enters on its own session, one on FRED, VIX, dollar or gold data the next, and one on weekly WTI the eighth.");
+    for (const id of ["col-es-n", "col-es-up", "col-es-median", "col-es-h5", "col-es-h10", "col-es-h20", "col-es-h60", "col-times", "col-up-month", "col-median"]) {
+      expect(GLOSSARY[id].text, id).toMatch(/entry/);
+      expect(GLOSSARY[id].text, id).not.toMatch(/sessions later|sessions after (those|each) (events|firing)\b/);
+    }
+  });
+
   it("each definition is one plain sentence", () => {
     for (const [id, t] of Object.entries(GLOSSARY)) {
       expect(t.text.endsWith("."), id).toBe(true);

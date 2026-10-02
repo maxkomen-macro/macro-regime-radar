@@ -11,7 +11,10 @@
  * v1's verdicts at 20 sessions (api/desk_v2.py verdict_v1, event_study.py
  * judge_exclusion), and vs normal is the served excess median (api/desk_v2.py
  * vs_normal). Every row on the card targets the S&P (api/desk_catalog.py
- * TECHNICALS_ALLOWLIST), so the sentences name it.
+ * TECHNICALS_ALLOWLIST), so the sentences name it, and reads only the S&P's
+ * close, so each outcome counts from the firing's own close (Codex R-04:
+ * event_study.py entry_delay_vec gives 0 when the inputs are known by the
+ * target's fixing).
  */
 
 import type { Verdict } from "../data/types";
@@ -31,7 +34,7 @@ export const SIGNAL_KEY: readonly SignalKeyEntry[] = [
   { term: "Reliable", verdict: "reliable", text: "At least ten independent episodes, and the S&P's edge over a normal month stays on one side of zero across the whole 90% range, with under 3% of resampled histories showing none or the opposite." },
   { term: "Suggestive", verdict: "suggestive", text: "At least ten outcomes, and the edge over a normal period points the same way at one week, two weeks and a month, without passing the Reliable test." },
   { term: "No edge", verdict: "no_edge", text: "At least ten outcomes, but the edge over a normal period neither passes the Reliable test nor points the same way at one week, two weeks and a month." },
-  { term: "Too few", verdict: "insufficient", text: "Fewer than ten outcomes a month later, too few to score." },
+  { term: "Too few", verdict: "insufficient", text: "Fewer than ten firings with a complete 20-session outcome from the firing's close, too few to score." },
   { term: "vs normal", text: "The median move a month after the signal less the median one-month move from every evaluable session of the study's sample, in percentage points." },
 ];
 
