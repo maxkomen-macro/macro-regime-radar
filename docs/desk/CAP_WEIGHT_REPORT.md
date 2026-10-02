@@ -26,7 +26,9 @@ through the API's own functions (`api/desk_basket.price_answer` and
 read on 2026-10-01 through the full refresh's own check
 (`src/market_data/share_counts.checked_count`). The deployed API prices
 from EODHD, whose adjusted closes may differ from Yahoo's in the last
-digits.
+digits; cap weight's market values read each provider's own close (EODHD's
+as traded, Yahoo's split-adjusted Close), the splits taken out (overnight
+round 2, Codex R-01).
 
 ## What the page does now
 
@@ -94,23 +96,33 @@ step 2 and step 3 cap-weighted, `08`–`09` the same basket at equal weight,
 
 ## Method
 
-- **Weight at the start**: `w_i = S_i × P_i(start) / Σ_j S_j × P_j(start)`,
-  `S_i` the stored share count, `P_i(start)` the name's close on the
+- **Weight at the start**: `w_i = S_i × M_i(start) / Σ_j S_j × M_j(start)`,
+  `S_i` the stored share count, `M_i(start)` the name's close on the
   basket's start (the first XNYS session every name has a close; for the AI
-  Infrastructure 10, CoreWeave's first close, Mar 28, 2025). The close is
-  the split- and dividend-adjusted one the index is priced from, so a count
-  and a close are on one share basis across a split. Using today's counts
-  with the start's adjusted close is the approximation the label states
-  ("current share counts"); a dividend payer's start value is understated by
-  the dividends paid since (about 2% for AVGO and TSM over the 18 months).
-- **Held** (the default): the weights become share counts at the start and
-  never change, so the holdings stay proportional to the companies' share
-  counts and the weights move with each company's value, as a cap-weighted
-  index behaves between rebalances.
+  Infrastructure 10, CoreWeave's first close, Mar 28, 2025), as traded, on
+  today's share basis: the provider's own close (EODHD's; Yahoo's Close in
+  the fixtures) divided by the splits since (`market_prices`). Overnight
+  round 2 (Codex R-01): until then this was the split- and
+  dividend-adjusted close the index is priced from, which took the
+  dividends paid since out of the past and read a dividend payer's value
+  low (TSM 1.7%, AVGO 1.2%). The splits are read from the ratio of the
+  close as traded to the adjusted close: a session's move of 5% or more
+  is taken out as a split (every split and stock dividend), a smaller one is
+  a dividend and stays in. Prices cannot tell a cash dividend of 5% or more
+  paid at once from a split, so it is read as one, the adjusted close's
+  reading of that one dividend (none of the preset's names paid one in the
+  window). Using today's counts with the start's close is the approximation
+  the label states ("current share counts").
+- **Held** (the default): the basket stays cap-weighted. Each dividend is
+  reinvested across the basket at its weights, as a total-return index does,
+  so the holdings stay proportional to the companies' share counts, the
+  weights are the market values on every session, and a session's return is
+  the names' total returns (their adjusted closes) at the previous session's
+  cap weights.
 - **Monthly**: reset to cap weights at the close of each month's first
-  index session after the start (as asked). With one set of counts, a reset
-  to `S_i × P_i(t) / Σ` changes no holding, so the monthly cap-weighted index
-  is the held one (pinned to 1e-12 by `tests/test_desk_basket.py`); only the
+  index session after the start (as asked). A reset to `S_i × M_i(t) / Σ`
+  changes nothing, so the monthly cap-weighted index is the held one, with
+  dividends too (pinned to 1e-12 by `tests/test_desk_basket.py`); only the
   rebalance count differs (19 here, the start and 18 months' first sessions).
 - **Liquidity's dollars**: a basket bought today, at the last close's market
   values (the weights a cap-weighted basket holds now), not the start's.
@@ -132,28 +144,32 @@ step 2 and step 3 cap-weighted, `08`–`09` the same basket at equal weight,
 
 ## The AI Infrastructure 10's cap weights at the start (Mar 28, 2025)
 
-Counts: Yahoo, read Oct 1, 2026. Closes: Yahoo's adjusted closes on Mar 28,
-2025 (the API reads EODHD's).
+Counts: Yahoo, read Oct 1, 2026. Closes: Yahoo's closes as traded on Mar 28,
+2025 (split-adjusted, dividends left in; the API reads EODHD's own close).
+Recomputed in overnight round 2 for Codex R-01; round 1's figures, from the
+adjusted closes, were NVDA 55.35%, AVGO 16.72%, TSM 17.65%.
 
 | Ticker | Name | Shares outstanding | Close on Mar 28, 2025 | Market value | Cap weight at the start | Cap weight at the last close (Sep 23, 2026) | Equal weight |
 |---|---|---:|---:|---:|---:|---:|---:|
-| NVDA | NVIDIA | 24,147.0M | $109.39 | $2,641.5B | 55.35% | 44.60% | 10.00% |
-| AVGO | Broadcom | 4,773.6M | $167.19 | $798.1B | 16.72% | 13.88% | 10.00% |
-| AMD | AMD | 1,632.5M | $103.22 | $168.5B | 3.53% | 8.22% | 10.00% |
-| TSM | TSMC | 5,186.5M | $162.41 | $842.3B | 17.65% | 18.97% | 10.00% |
-| MU | Micron | 1,129.4M | $88.10 | $99.5B | 2.08% | 9.91% | 10.00% |
-| ANET | Arista Networks | 1,261.2M | $77.94 | $98.3B | 2.06% | 2.10% | 10.00% |
-| VRT | Vertiv | 385.0M | $74.12 | $28.5B | 0.60% | 0.78% | 10.00% |
-| CEG | Constellation Energy | 354.3M | $203.72 | $72.2B | 1.51% | 0.77% | 10.00% |
+| NVDA | NVIDIA | 24,147.0M | $109.67 | $2,648.2B | 55.12% | 44.60% | 10.00% |
+| AVGO | Broadcom | 4,773.6M | $169.12 | $807.3B | 16.80% | 13.88% | 10.00% |
+| AMD | AMD | 1,632.5M | $103.22 | $168.5B | 3.51% | 8.22% | 10.00% |
+| TSM | TSMC | 5,186.5M | $165.25 | $857.1B | 17.84% | 18.97% | 10.00% |
+| MU | Micron | 1,129.4M | $88.44 | $99.9B | 2.08% | 9.91% | 10.00% |
+| ANET | Arista Networks | 1,261.2M | $77.94 | $98.3B | 2.05% | 2.10% | 10.00% |
+| VRT | Vertiv | 385.0M | $74.25 | $28.6B | 0.59% | 0.78% | 10.00% |
+| CEG | Constellation Energy | 354.3M | $205.39 | $72.8B | 1.51% | 0.77% | 10.00% |
 | CRWV | CoreWeave | 458.9M | $40.00 | $18.4B | 0.38% | 0.33% | 10.00% |
 | NBIS | Nebius | 238.4M | $22.31 | $5.3B | 0.11% | 0.44% | 10.00% |
-| | **Basket** | | | **$4,772.7B** | **100.00%** | **100.00%** | **100%** |
+| | **Basket** | | | **$4,804.3B** | **100.00%** | **100.00%** | **100%** |
 
 ## Every figure on the page, before and after
 
 "Before" is the preset as it was the default until this branch, at equal
 weight (10% each); "after" is the preset cap-weighted, its new default; both
-bought and held, $1,000,000, prices through Sep 23, 2026.
+bought and held, $1,000,000, prices through Sep 23, 2026. The cap-weighted
+figures were recomputed in overnight round 2 after Codex R-01 (market values
+from the close as traded); the equal-weight ones did not change.
 
 ### Step 1 (Basket)
 
@@ -168,11 +184,11 @@ bought and held, $1,000,000, prices through Sep 23, 2026.
 
 | Card lead | Before: equal weight | After: cap weight |
 |---|---|---|
-| Basket index | Up 346.5% since Mar 28, 2025 and +98.6% over the last year; above both its 50- and 200-day averages since Sep 17. | Up 155.8% since Mar 28, 2025 and +46.7% over the last year; above both its 50- and 200-day averages since Sep 17. |
-| Momentum and risk | RSI(14) is 58, the index is 10.9% below its Jun 22, 2026 peak and the last 21 sessions moved at 43% a year. | RSI(14) is 59, the index is 2.9% below its Jun 2, 2026 peak and the last 21 sessions moved at 34% a year. |
-| Against the Nasdaq and the S&P (1Y) | Over the last year (since Sep 22, 2025) the basket returned +98.6%, against +23.7% for QQQ and +16.4% for SPY; over a year it has moved 2.23× QQQ, correlation 0.78. | Over the last year (since Sep 22, 2025) the basket returned +46.7%, against +23.7% for QQQ and +16.4% for SPY; over a year it has moved 1.61× QQQ, correlation 0.87. |
+| Basket index | Up 346.5% since Mar 28, 2025 and +98.6% over the last year; above both its 50- and 200-day averages since Sep 17. | Up 155.8% since Mar 28, 2025 and +46.6% over the last year; above both its 50- and 200-day averages since Sep 17. |
+| Momentum and risk | RSI(14) is 58, the index is 10.9% below its Jun 22, 2026 peak and the last 21 sessions moved at 43% a year. | RSI(14) is 59, the index is 3.0% below its Jun 2, 2026 peak and the last 21 sessions moved at 34% a year. |
+| Against the Nasdaq and the S&P (1Y) | Over the last year (since Sep 22, 2025) the basket returned +98.6%, against +23.7% for QQQ and +16.4% for SPY; over a year it has moved 2.23× QQQ, correlation 0.78. | Over the last year (since Sep 22, 2025) the basket returned +46.6%, against +23.7% for QQQ and +16.4% for SPY; over a year it has moved 1.61× QQQ, correlation 0.87. |
 | Relative strength (1Y) | Basket ÷ benchmark, 100 on Sep 24: against QQQ at 159, above its 50-day average; against SPY at 169, above its 50-day average. | Basket ÷ benchmark, 100 on Sep 24: against QQQ at 119, above its 50-day average; against SPY at 127, above its 50-day average. |
-| Contribution to return | MU added 111.7 of the index's 346.5 points since Mar 28; CEG added the least, 3.0. | NVDA added 58.7 of the index's 155.8 points since Mar 28; CEG added the least, 0.4. |
+| Contribution to return | MU added 111.7 of the index's 346.5 points since Mar 28; CEG added the least, 3.0. | NVDA added 58.6 of the index's 155.8 points since Mar 28; CRWV added the least, 0.4. |
 | Concentration | MU, NBIS and AMD are 63% of the basket at the last close; it holds like 6.1 equal-weight names, and its names' average pairwise correlation is 0.47. | NVDA, TSM and AVGO are 77% of the basket at the last close; it holds like 3.7 equal-weight names, and its names' average pairwise correlation is 0.47. |
 | Liquidity | At $1,000,000 the slowest name to trade is CEG: 0.00063 days at 20% of its 20-day average dollar volume. | At $1,000,000 the slowest name to trade is TSM: 0.00022 days at 20% of its 20-day average dollar volume. |
 
@@ -182,12 +198,12 @@ bought and held, $1,000,000, prices through Sep 23, 2026.
 | Total return since the start | +346.5% | +155.8% |
 | Index, Sep 23, 2026 | 446.5 | 255.8 |
 | 1-day change (Sep 22 → 23) | −2.2% | −1.6% |
-| 50-day average (index vs it) | 413.0 (+8.1%) | 242.3 (+5.6%) |
+| 50-day average (index vs it) | 413.0 (+8.1%) | 242.2 (+5.6%) |
 | 200-day average (index vs it) | 338.2 (+32.0%) | 216.4 (+18.2%) |
 | Trend | above both averages since Sep 17, 2026 | above both averages since Sep 17, 2026 |
-| 1-year return (since Sep 22, 2025) | +98.6% | +46.7% |
+| 1-year return (since Sep 22, 2025) | +98.6% | +46.6% |
 | RSI (14), Sep 23 | 58.0 | 58.9 |
-| From peak (peak date) | −10.9% (2026-06-22) | −2.9% (2026-06-02) |
+| From peak (peak date) | −10.9% (2026-06-22) | −3.0% (2026-06-02) |
 | Deepest drawdown (date) | −33.6% (2026-07-29) | −18.4% (2026-07-29) |
 | 21-day realized vol | 42.8% | 33.7% |
 | Beta / correlation to QQQ, 1 year | 2.23 / 0.78 | 1.61 / 0.87 |
@@ -213,43 +229,43 @@ Per name (step 1's Now column, and step 2's contribution and liquidity rows):
 
 | Ticker | Weight now: equal → cap | Since start (both) | Contribution, points: equal → cap | 20-day ADV | At target / at cap weight | Days at 20%: equal → cap |
 |---|---:|---:|---:|---:|---:|---:|
-| NVDA | 4.6% → 44.6% | +106.1% | +10.6 → +58.7 | $29.2B | $100.0K / $446.0K | 0.000017 days → 0.000076 days |
-| AVGO | 4.8% → 13.9% | +112.3% | +11.2 → +18.8 | $9.9B | $100.0K / $138.8K | 0.000051 days → 0.00007 days |
-| AMD | 13.3% → 8.2% | +495.4% | +49.5 → +17.5 | $11.1B | $100.0K / $82.2K | 0.000045 days → 0.000037 days |
-| TSM | 6.2% → 19.0% | +175.0% | +17.5 → +30.9 | $4.3B | $100.0K / $189.7K | 0.00012 days → 0.00022 days |
-| MU | 27.3% → 9.9% | +1116.7% | +111.7 → +23.3 | $24.8B | $100.0K / $99.1K | 0.00002 days → 0.00002 days |
+| NVDA | 4.6% → 44.6% | +106.1% | +10.6 → +58.6 | $29.2B | $100.0K / $446.0K | 0.000017 days → 0.000076 days |
+| AVGO | 4.8% → 13.9% | +112.3% | +11.2 → +18.9 | $9.9B | $100.0K / $138.8K | 0.000051 days → 0.00007 days |
+| AMD | 13.3% → 8.2% | +495.4% | +49.5 → +17.4 | $11.1B | $100.0K / $82.2K | 0.000045 days → 0.000037 days |
+| TSM | 6.2% → 19.0% | +175.0% | +17.5 → +31.0 | $4.3B | $100.0K / $189.7K | 0.00012 days → 0.00022 days |
+| MU | 27.3% → 9.9% | +1116.7% | +111.7 → +23.2 | $24.8B | $100.0K / $99.1K | 0.00002 days → 0.00002 days |
 | ANET | 5.8% → 2.1% | +161.1% | +16.1 → +3.3 | $982.0M | $100.0K / $21.0K | 0.00051 days → 0.00011 days |
 | VRT | 7.5% → 0.8% | +235.6% | +23.6 → +1.4 | $1.4B | $100.0K / $7.8K | 0.00037 days → 0.000029 days |
 | CEG | 2.9% → 0.8% | +29.5% | +3.0 → +0.4 | $792.5M | $100.0K / $7.7K | 0.00063 days → 0.000048 days |
-| CRWV | 4.9% → 0.3% | +117.3% | +11.7 → +0.5 | $2.4B | $100.0K / $3.3K | 0.00021 days → 0.0000068 days |
+| CRWV | 4.9% → 0.3% | +117.3% | +11.7 → +0.4 | $2.4B | $100.0K / $3.3K | 0.00021 days → 0.0000068 days |
 | NBIS | 22.8% → 0.4% | +915.7% | +91.6 → +1.0 | $3.3B | $100.0K / $4.4K | 0.00015 days → 0.0000068 days |
 
 ### Step 3 (Hedge it)
 
 | Card lead | Before: equal weight | After: cap weight |
 |---|---|---|
-| Hedge with an ETF | SMH fits the basket best (R² 0.74 over a year): short $1,233,779 of it against $1,000,000 and the basket's volatility falls from 57% to 29%, 49% less. | SMH fits the basket best (R² 0.83 over a year): short $847,494 of it against $1,000,000 and the basket's volatility falls from 37% to 15%, 59% less. |
-| Stress test | With the table's hedge, short $1,233,779 of SMH: if QQQ falls 10% the basket loses $223,092 unhedged and makes $222 hedged; if SPY falls 10% the basket loses $286,219 unhedged and makes $6,534 hedged. | With the table's hedge, short $847,494 of SMH: if QQQ falls 10% the basket loses $160,857 unhedged and loses $7,461 hedged; if SPY falls 10% the basket loses $218,536 unhedged and loses $17,441 hedged. |
+| Hedge with an ETF | SMH fits the basket best (R² 0.74 over a year): short $1,233,779 of it against $1,000,000 and the basket's volatility falls from 57% to 29%, 49% less. | SMH fits the basket best (R² 0.83 over a year): short $847,384 of it against $1,000,000 and the basket's volatility falls from 37% to 15%, 59% less. |
+| Stress test | With the table's hedge, short $1,233,779 of SMH: if QQQ falls 10% the basket loses $223,092 unhedged and makes $222 hedged; if SPY falls 10% the basket loses $286,219 unhedged and makes $6,534 hedged. | With the table's hedge, short $847,384 of SMH: if QQQ falls 10% the basket loses $160,835 unhedged and loses $7,458 hedged; if SPY falls 10% the basket loses $218,520 unhedged and loses $17,452 hedged. |
 
 | ETF | Rank: equal → cap | R² 1Y | R² 60D | Hedge ratio | Short | Vol left | Vol cut |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| SMH | 1 → 1 | 0.74 → 0.83 | 0.77 → 0.92 | 1.23× → 0.85× | $1.2M → $847.5K | 29% → 15% | −49% → −59% |
+| SMH | 1 → 1 | 0.74 → 0.83 | 0.77 → 0.92 | 1.23× → 0.85× | $1.2M → $847.4K | 29% → 15% | −49% → −59% |
 | XLK | 3 → 2 | 0.71 → 0.83 | 0.72 → 0.85 | 1.82× → 1.27× | $1.8M → $1.3M | 31% → 15% | −46% → −59% |
 | QQQ | 4 → 3 | 0.60 → 0.75 | 0.59 → 0.72 | 2.23× → 1.61× | $2.2M → $1.6M | 36% → 19% | −37% → −50% |
-| SOXX | 2 → 4 | 0.73 → 0.74 | 0.79 → 0.84 | 1.06× → 0.69× | $1.1M → $687.1K | 30% → 19% | −48% → −49% |
+| SOXX | 2 → 4 | 0.73 → 0.74 | 0.79 → 0.84 | 1.06× → 0.69× | $1.1M → $687.0K | 30% → 19% | −48% → −49% |
 | SPY | 5 → 5 | 0.42 → 0.59 | 0.29 → 0.45 | 2.86× → 2.19× | $2.9M → $2.2M | 44% → 24% | −24% → −36% |
 | IWM | 6 → 6 | 0.35 → 0.35 | 0.32 → 0.33 | 1.81× → 1.17× | $1.8M → $1.2M | 46% → 30% | −19% → −19% |
 | IGV | 7 → 7 | 0.04 → 0.09 | 0.01 → 0.00 | 0.36× → 0.35× | $361.7K → $346.6K | 56% → 35% | −2% → −5% |
-| XLU | 8 → 8 | 0.01 → 0.00 | 0.01 → 0.00 | 0.33× → 0.06× | $327.0K → $61.4K | 57% → 37% | −0% → −0% |
+| XLU | 8 → 8 | 0.01 → 0.00 | 0.01 → 0.00 | 0.33× → 0.06× | $327.0K → $61.7K | 57% → 37% | −0% → −0% |
 
 Top pick: SMH → SMH; basket volatility on the top pick's window 57% → 37%.
 
 | Stress (top pick's short held as the table recommends) | Basket move | Unhedged | Short leg | Hedged |
 |---|---:|---:|---:|---:|
 | QQQ −10%, equal weight (short $1,233,779 of SMH) | −22.3% | −$223,092 | $223,314 | $222 |
-| QQQ −10%, cap weight (short $847,494 of SMH) | −16.1% | −$160,857 | $153,396 | −$7,461 |
+| QQQ −10%, cap weight (short $847,384 of SMH) | −16.1% | −$160,835 | $153,377 | −$7,458 |
 | SPY −10%, equal weight (short $1,233,779 of SMH) | −28.6% | −$286,219 | $292,754 | $6,534 |
-| SPY −10%, cap weight (short $847,494 of SMH) | −21.9% | −$218,536 | $201,095 | −$17,441 |
+| SPY −10%, cap weight (short $847,384 of SMH) | −21.9% | −$218,520 | $201,069 | −$17,452 |
 
 PROTOTYPE cards (illustrative outputs, live inputs): "Hedge with options"
 reads top ETF SMH both ways, hedge ratio 1.23× → 0.85×, R² 0.74 → 0.83; its
@@ -537,7 +553,7 @@ are fixed in `ac312b3b` but the last, which is the deploy window above.
 | 2 | low–medium | Position Monitor recorded a cap-weighted basket at its typed (equal) weights when no answer had been served yet | `recordedLegs` returns null there and Save refuses with the reason; tested |
 | 3 | low | Cap-weight reset custom typed weights to equal, and Save made the loss permanent | Cap-weight keeps the typed weights (scaled to 100% only if needed) and is a true toggle; a drop scales, never resets; tested |
 | 4 | low | An add while the counts were read said "stays cap-weighted" for any name; an add blamed the new name for another's missing count; a failed counts request flipped the basket to typed weights | An add never changes the weighting; the note is built from the availability and names the right name |
-| 5 | low | The start's market value, from the dividend-adjusted close, reads low for dividend payers | Stated in the engine's docstring and in this report (Method) |
+| 5 | low | The start's market value, from the dividend-adjusted close, reads low for dividend payers | Stated in round 1; fixed in overnight round 2 (Codex R-01, `f0079da4`): the close as traded |
 | 6 | low | Wording: the workflow's "the step above" now meant the new step; validate_db named the wrong module and counted fewer set-aside rows than the API; a fully set-aside table read "no share count is stored yet"; a set-aside name was refused as having none; the inventory showed the counts as "derived" with no reader; step 3 read "a saved basket at exactly 100% is hedged here" while a cap-weighted basket waited on the counts | Each reworded or aligned; the share-count step moved after the Desk daily series |
 | 7 | low | Web before API leaves Cap-weight unavailable with the old stub's sentence for the deploy window | Documented in the deploy sequence (the page stays priced, at equal weight) |
 
@@ -546,9 +562,11 @@ are fixed in `ac312b3b` but the last, which is the deploy window above.
 1. **A multi-class company keeps its listed class** (CRWV, NBIS), as the S&P
    and the Nasdaq count only listed shares; Yahoo's all-class market cap is
    named beside it, not used.
-2. **The start's market value uses the adjusted close** the index is priced
-   from (one share basis across splits); the dividend understatement is
-   stated above.
+2. **The start's market value uses the close as traded** on today's share
+   basis, and the basket stays cap-weighted with dividends reinvested across
+   it (overnight round 2, Codex R-01; round 1 used the adjusted close and
+   stated the dividend understatement). A one-session move of 5% or more in
+   the ratio to the adjusted close is read as a split.
 3. **Monthly resets on each month's first session**, as asked; the report
    and the page say it changes nothing with one set of counts.
 4. **Liquidity reads today's cap weights** for a cap-weighted basket (the
@@ -574,7 +592,9 @@ are fixed in `ac312b3b` but the last, which is the deploy window above.
     never changes the weighting** (both from the review): an analyst's custom
     weights survive a look at cap weight, and a custom ticker makes cap
     weight unavailable rather than switching the basket off it.
-12. **CLAUDE.md is not edited** (the brief). Suggested lines for its owner:
+12. **CLAUDE.md is not edited in round 1** (the brief). Suggested lines for
+    its owner, added in overnight round 2, as asked, in their own commit
+    `de49eb5f`:
     under Data Source Rules, "The preset baskets' share counts live in
     `share_counts` (desk/cap-weight): Yahoo's, read by the full refresh's
     'Store share counts' step (`src/market_data/share_counts.py`), checked
