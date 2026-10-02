@@ -51,7 +51,8 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   effn: { forms: ["Effective names"], text: "Effective names is 1 divided by the sum of the squared weights: how many equal positions the basket's concentration amounts to." },
   peak: { forms: ["From peak"], text: "From peak is how far the basket index sits below its highest close since the basket's history starts." },
   adv: { forms: ["days to trade", "Days to trade", "Days at 20%", "Liquidity", "20-day avg $ volume", "ADV"], text: "Liquidity is read as days to trade: how many sessions buying or selling the position takes at 20% of each name's average daily dollar volume (ADV) over the last 20 sessions." },
-  hedgeratio: { forms: ["Hedge ratio", "hedge ratio"], text: "The hedge ratio is the dollars of the ETF to short per dollar of basket: the basket's beta to the ETF over one year, or 60 days when younger." },
+  // Codex R-08: src/desk/basket.py hedge_rows fits on the last 252 paired daily returns (WINDOWS "1y"), else the last 60.
+  hedgeratio: { forms: ["Hedge ratio", "hedge ratio"], text: "The hedge ratio is the dollars of ETF to short per dollar of basket: the basket's beta to the ETF over the last 252 daily returns both have, else the last 60." },
   conc: { forms: ["Concentration", "concentration"], text: "Concentration is how much of the basket rides on a few names: the top three weights, and the effective number of equal positions it amounts to." },
 
   // ── Column heads (desk/pdf-polish item 7) ──────────────────────────────
@@ -80,7 +81,8 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-r2-1y": { forms: [], text: "R² 1Y is the share of the basket's daily-return variance the ETF's daily returns explain over the last 252 returns both have, from 0 to 1." },
   "col-r2-60d": { forms: [], text: "R² 60D is the share of the basket's daily-return variance the ETF's daily returns explain over the last 60 returns both have, from 0 to 1." },
   "col-short": { forms: [], text: "Short is the dollars of the ETF to sell short: the hedge ratio times the basket's notional." },
-  "col-vol-left": { forms: [], text: "Vol left is the basket's annualized volatility after the short: the standard deviation of its daily return less the hedge ratio times the ETF's, times √252." },
+  "col-fit": { forms: [], text: "Fit is the window the row's hedge ratio, short and volatilities come from: 1Y, the last 252 daily returns both have, or 60D, the last 60 when 1Y has no fit." },
+  "col-vol-left": { forms: [], text: "Vol left is the basket's annualized volatility after the short, over the row's Fit window: the standard deviation of its daily return less the hedge ratio times the ETF's, times √252." },
   "col-vol-cut": { forms: [], text: "Vol cut is the change the short makes to the basket's annualized volatility, as a share of it: vol left over the basket's own volatility, minus one, so −44% means 44% less." },
   "col-if": { forms: [], text: "If is the move tested: QQQ or SPY falling 10%." },
   "col-st-basket": { forms: [], text: "Basket is the basket's move in that case: its beta to the benchmark times the benchmark's move." },

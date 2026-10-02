@@ -4,7 +4,8 @@
  * SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by the R² of the basket's daily
  * returns on each (one year; 60 days beside it), each with its hedge ratio
  * (beta), the dollars to short for the notional, the volatility left after
- * the short and the cut; the top pick highlighted. The stress test is linear
+ * the short and the cut, from the row's fit (Codex R-08: the last 252 paired
+ * daily returns, else the last 60); the top pick highlighted. The stress test is linear
  * in the fitted betas: the basket if QQQ or SPY falls 10%, unhedged and
  * hedged with the short the table recommends for the top pick, held as it is
  * (Codex R-15), and the card says which short that is. Then the options slot:
@@ -50,6 +51,9 @@ function HedgeCard({ title, sub, lead, state, className, badge, children }: { ti
 
 const r2 = (v: number | null) => (fin(v) ? num(v, 2) : "—");
 
+/** Codex R-08: the row's basis as its column prints it, the window its hedge ratio comes from (src/desk/basket.py hedge_rows). */
+export const fitWords = (basis: HedgeEtf["basis"] | undefined): string => (basis === "1y" ? "1Y" : basis === "60d" ? "60D" : "—");
+
 function EtfTable({ rows, top }: { rows: HedgeEtf[]; top: string | null }) {
   return (
     <div className="bh-scroll">
@@ -66,6 +70,10 @@ function EtfTable({ rows, top }: { rows: HedgeEtf[]; top: string | null }) {
             </th>
             <th scope="col">
               <Term ids={["col-r2-60d"]}>R² 60D</Term>
+            </th>
+            {/* Codex R-08: the window each row's hedge ratio, short and volatilities come from. */}
+            <th scope="col">
+              <Term ids={["col-fit"]}>Fit</Term>
             </th>
             <th scope="col">
               <Term ids={["hedgeratio"]}>Hedge ratio</Term>
@@ -91,6 +99,7 @@ function EtfTable({ rows, top }: { rows: HedgeEtf[]; top: string | null }) {
               </th>
               <td>{r2(e.r2_1y)}</td>
               <td>{r2(e.r2_60d)}</td>
+              <td>{fitWords(e.basis)}</td>
               <td title={e.reason ?? undefined}>{fin(e.hedge_ratio) ? `${num(e.hedge_ratio, 2)}×` : "—"}</td>
               <td>{fin(e.short_usd) ? usd(e.short_usd, true) : "—"}</td>
               <td>{fin(e.residual_vol) ? pctPlain(e.residual_vol, 0) : "—"}</td>

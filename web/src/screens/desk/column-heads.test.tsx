@@ -99,6 +99,7 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
       ["ETF", "col-etf"],
       ["R² 1Y", "col-r2-1y"],
       ["R² 60D", "col-r2-60d"],
+      ["Fit", "col-fit"],
       ["Hedge ratio", "hedgeratio"],
       ["Short", "col-short"],
       ["Vol left", "col-vol-left"],
