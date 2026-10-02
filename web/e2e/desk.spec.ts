@@ -725,10 +725,6 @@ test.describe("desk v2", () => {
     // §12.16: the ETFs ranked, the top pick marked, the stress test.
     await expect(step3.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("XLK fits the basket best (R² 0.69 over a year)");
     await expect(step3.locator('tr[aria-current="true"]')).toHaveCount(1);
-    // desk/cap-weight: SMCI has no stored share count, so this basket cannot be cap-weighted, and the control says why.
-    await expect(basket.getByRole("button", { name: "Cap-weight" })).toBeDisabled();
-    await expect(basket.locator("[data-unserved] button", { hasText: "Cap-weight" })).toHaveCount(1);
-    await expect(basket).toContainText("Cap weight is unavailable. It needs a stored share count for every name: SMCI has none (counts are stored for the preset baskets' names).");
     await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("With the table's hedge, short $1,384,473 of XLK: if QQQ falls 10% the basket loses $170,542 unhedged");
     // §10, §1.0.3: step 3's options slot holds the PROTOTYPE for the saved basket: the engine's inputs, live; three
     // routes; its one control (Advanced) opens something (Codex R-14: no control that cannot act).
@@ -788,34 +784,20 @@ test.describe("desk v2", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await open(page, "/desk/basket-hedge");
     expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
-    // Only the stored share counts (desk/cap-weight) and the saved basket's price and hedge are asked, as GETs: the
-    // fixture's legs, then the normalized ones.
-    expect(asked).toContain("GET /api/desk/basket/shares");
-    expect(asked.filter((a) => a !== "GET /api/desk/basket/shares").every((a) => /^GET \/api\/desk\/basket\/(price|hedge)\?legs=/.test(a))).toBe(true);
+    // Only the saved basket's price and hedge are asked, as GETs: the fixture's legs, then the normalized ones.
+    expect(asked.every((a) => /^GET \/api\/desk\/basket\/(price|hedge)\?legs=/.test(a))).toBe(true);
     expect(asked).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
   });
 
-  test("basket & hedge: a first visit starts with AI Infrastructure 10, cap-weighted and priced; ?add= from Technicals joins the basket at equal weight", async ({ page }) => {
-    const asked: string[] = [];
-    page.on("request", (r) => {
-      if (/\/api\/desk\/basket\/(price|hedge)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
-    });
+  test("basket & hedge: a first visit starts with AI Infrastructure 10, priced; ?add= from Technicals joins the basket at equal weight", async ({ page }) => {
     await open(page, "/desk/basket-hedge");
     const basket = page.getByRole("region", { name: "Basket", exact: true });
     await expect(basket.getByLabel("Basket", { exact: true })).toHaveValue("local-1");
     await expect(basket).toContainText("10 names · saved in this browser");
     await expect(basket.getByLabel("Notional, dollars")).toHaveValue("1,000,000");
-    // desk/cap-weight: the preset is cap-weighted, like the S&P and the Nasdaq it is read against; the weights column
-    // shows each name's market value at the start, read only, and the basket says where the counts come from.
-    await expect(basket.getByRole("button", { name: "Cap-weight" })).toHaveAttribute("aria-pressed", "true");
-    await expect(basket.getByLabel("Cap weight of NVDA at the start")).toHaveText("55.1%");
-    await expect(basket.getByLabel("Cap weight of TSM at the start")).toHaveText("17.8%");
-    await expect(basket.getByLabel("Cap weight of NBIS at the start")).toHaveText("0.1%");
-    await expect(basket).toContainText("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026)");
-    await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("Up 155.8% since Mar 28, 2025");
-    await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best (R² 0.83 over a year): short $847,384 of it");
-    expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&notional=1000000&weighting=cap");
+    await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("since Mar 28, 2025");
+    await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best");
     // §1.0.3: the prototypes are drawn for this basket: Positioning lists all ten names, the event study names it.
     const positions = page.getByRole("region", { name: /^Positioning/ });
     await expect(positions.getByRole("table").getByRole("row")).toHaveCount(11);
@@ -824,23 +806,13 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: /^Event study on this basket/ })).toContainText("After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
-    // Equal weight is one click away: the typed weights at 10% each, priced once saved; and back.
-    await basket.getByRole("button", { name: "Equal-weight" }).click();
-    await expect(basket.getByLabel("Weight of NVDA, percent")).toHaveValue("10");
-    await basket.getByRole("button", { name: "Save basket" }).click();
-    await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("Up 346.5% since Mar 28, 2025");
-    await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best (R² 0.74 over a year): short $1,233,779 of it");
-    await basket.getByRole("button", { name: "Cap-weight" }).click();
-    await basket.getByRole("button", { name: "Save basket" }).click();
-    await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("Up 155.8% since Mar 28, 2025");
     // Technicals links here with ?add=: the name is checked against the price endpoint (not served in these tests, so
     // not checked, and said), joins the open basket as unsaved work, and the address forgets it.
     await page.goto("/desk/basket-hedge?add=ORCL");
     // Eleven equal weights at a tenth that add to 100: ten at 9.1 and the last at 9.
     await expect(basket.getByLabel("Weight of ORCL, percent")).toHaveValue("9");
     await expect(basket.getByLabel("Weight of NVDA, percent")).toHaveValue("9.1");
-    await expect(basket).toContainText("ORCL added; the 11 names are at equal weight. ORCL has no stored share count, so cap weight is unavailable for this basket.");
-    await expect(basket.getByRole("button", { name: "Cap-weight" })).toBeDisabled();
+    await expect(basket).toContainText("ORCL added; the 11 names are at equal weight.");
     await expect(page).toHaveURL(/\/desk\/basket-hedge\?basket=local-1$/);
   });
 

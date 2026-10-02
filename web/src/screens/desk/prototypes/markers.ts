@@ -7,10 +7,7 @@
  */
 
 import hedgeAnswers from "../../../fixtures/desk/basket-hedge.json" with { type: "json" };
-import priceAnswers from "../../../fixtures/desk/basket-price.json" with { type: "json" };
-import shareCounts from "../../../fixtures/desk/basket-shares.json" with { type: "json" };
-import type { BasketPriceResponse } from "../data/types";
-import { capAvailability, heldBasket, priceParams } from "../basket/weights";
+import { legsKey, methodOf, notionalOf } from "../basket/weights";
 import { grouped, ordinal, signed } from "../kit/format";
 import { inputsFrom, type HedgeAnswer } from "./basket-inputs";
 import { basketStudy } from "./basket-study";
@@ -26,16 +23,11 @@ function protectionMarkers(): string[] {
 }
 
 /** The first-visit preset's routes (the basket a fresh browser opens), priced from the fixture server's
- * /basket/hedge answer for the request the page makes for it (cap-weighted since desk/cap-weight, the fixture
- * world storing every name's count) and sized by the weights it holds: each structure's cost and payoff in dollars
- * (the ETF's ticker is also a served benchmark's, so it is no marker). */
+ * /basket/hedge answer for it: each structure's cost and payoff in dollars (the ETF's ticker is also a served
+ * benchmark's, so it is no marker). */
 function optionsMarkers(): string[] {
-  const counts = { state: "ready" as const, provider: shareCounts.provider, dates: Object.fromEntries(shareCounts.counts.map((c) => [c.symbol, c.as_of])) };
-  const params = priceParams(DRAWN_FOR, capAvailability(DRAWN_FOR.legs.map((l) => l.symbol), counts));
-  if (!params) return [];
-  const key = `${params.legs}|${params.method}|${params.notional}${params.weighting === "cap" ? "|cap" : ""}`;
-  const answer = (hedgeAnswers as { answers: Record<string, HedgeAnswer> }).answers[key];
-  const b = heldBasket(DRAWN_FOR, (priceAnswers as unknown as { answers: Record<string, BasketPriceResponse> }).answers[key]);
+  const b = DRAWN_FOR;
+  const answer = (hedgeAnswers as { answers: Record<string, HedgeAnswer> }).answers[`${legsKey(b.legs)}|${methodOf(b)}|${notionalOf(b)}`];
   const i = inputsFrom(answer, b);
   if (!i) return [];
   const h = hedge(i);

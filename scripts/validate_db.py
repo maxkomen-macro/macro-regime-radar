@@ -39,12 +39,6 @@ provenance (Codex R-14, api/provenance.py), a row no committed refresh wrote, or
 after the New York date of the refresh that committed it, fails for tier 1 and is
 reported for any other; a store not yet migrated reads as the migration would leave it.
 
-The preset baskets' share counts (`share_counts`, desk/cap-weight) are advisory
-(ADVISORY_TABLES): a full refresh whose share counts changed publishes, but the
-table being absent or empty, a partial or failed fetch (its watermark), a date
-that moved earlier, rows that fell, a row the API sets aside, or a query on the
-table that cannot run is a warning, never a failure.
-
 Output: a JSON report (--json), a GitHub Step Summary table (--summary, or
 $GITHUB_STEP_SUMMARY), and exit 0 only when the verdict is "pass". A stale
 verdict fails the run unless --allow-stale REASON documents why, in which
@@ -87,16 +81,6 @@ DATE_COLUMNS = {
     "asset_prices": "date",
     # desk/event-study: the Desk's daily series (src/market_data/desk_history.py)
     "desk_series": "date",
-    # desk/cap-weight: the preset baskets' share counts (src/market_data/share_counts.py), advisory
-    "share_counts": "as_of",
-}
-# desk/cap-weight: tables a refresh publishes when they change but whose state never fails a database.
-# Absent, partly fetched, regressed, emptied or holding a row the API sets aside: each is a warning, and a
-# query on them that cannot run is a warning too (never "not executed"). Basket & Hedge's cap weight is
-# the only reader, and it says it is unavailable, with the reason, when the counts are not there.
-ADVISORY_TABLES = {"share_counts"}
-ADVISORY_FINGERPRINT_SQL = {
-    "share_counts": "SELECT symbol, shares_outstanding, as_of, source FROM share_counts ORDER BY symbol",
 }
 # Rolling-window tables shrink by design (intraday trimmed to 30 days, news
 # aged out); their freshness is judged by max date, never by row count.
@@ -110,10 +94,9 @@ FORWARD_TABLES = {"event_calendar"}
 # publish its rows or the next run (which downloads the published DB) forgets
 # the spend, so new ledger rows count as a change in the modes that enrich.
 MODE_TABLES = {
-    # Codex R-20: desk_series_runs too, so a refresh that only restores rows' provenance publishes;
-    # desk/cap-weight: share_counts, so a refresh whose only news is a new share count publishes it
+    # Codex R-20: desk_series_runs too, so a refresh that only restores rows' provenance publishes
     "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices", "desk_series",
-             "desk_series_runs", "share_counts"],
+             "desk_series_runs"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also capture the official close after the
@@ -268,25 +251,6 @@ def _mandatory(out: dict, name: str, key: str | None, query):
     return value
 
 
-def _advisory(out: dict, name: str, query):
-    """desk/cap-weight: one check on an advisory table (ADVISORY_TABLES). A
-    check that cannot run is named in out["advisory_not_executed"], which
-    validate() reports as a warning, never as "not executed": an advisory
-    table never fails a database."""
-    try:
-        return query()
-    except sqlite3.Error as exc:
-        out.setdefault("advisory_not_executed", []).append(f"{name} ({type(exc).__name__}: {exc})")
-        return None
-
-
-# desk/cap-weight: share_counts rows the API sets aside on read (api/desk_basket.desk_share_counts): no symbol, a
-# count that is not a positive finite number, a read date that is not a YYYY-MM-DD calendar date or is after the
-# run's New York date (the `?`), or no source; the rows the API reads are api/freshness's one predicate (Codex R-05).
-SHARE_COUNTS_UNREADABLE = f"SELECT COUNT(*) FROM share_counts WHERE NOT {freshness_mod.SHARE_COUNTS_READABLE_SQL}"
-SHARE_COUNTS_OLDEST_READ = f"SELECT MIN(as_of) FROM share_counts WHERE {freshness_mod.SHARE_COUNTS_READABLE_SQL}"
-
-
 def inspect(path: Path, as_of: str | None = None) -> dict:
     out: dict = {"path": str(path), "exists": path.exists(), "size": path.stat().st_size if path.exists() else 0}
     if not path.exists():
@@ -310,13 +274,7 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
                 # Codex R-17: each table's newest date is a mandatory check, on both snapshots, and
                 # the column must exist (SQLite reads "date" in double quotes as a string literal when
                 # the table has no such column, so a missing one compared the word itself)
-                has_col = col in {r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')}
-                if t in ADVISORY_TABLES:  # desk/cap-weight: reported, never failing
-                    if has_col:
-                        mx = _advisory(out, f"{t} newest {col}", lambda t=t, col=col: conn.execute(f'SELECT MAX("{col}") FROM "{t}"').fetchone()[0])
-                    else:
-                        out.setdefault("advisory_not_executed", []).append(f"{t} newest {col} (the table has no {col} column)")
-                elif has_col:
+                if col in {r[1] for r in conn.execute(f'PRAGMA table_info("{t}")')}:
                     mx = _mandatory(out, f"{t} newest {col}", None, lambda t=t, col=col: conn.execute(f'SELECT MAX("{col}") FROM "{t}"').fetchone()[0])
                 else:
                     out.setdefault("checks_not_executed", []).append(f"{t} newest {col} (the table has no {col} column)")
@@ -339,9 +297,6 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
                 out["fingerprints"][t] = _mandatory(out, f"{t} fingerprint", None, lambda sql=sql: _fingerprint(conn, sql))
         if "asset_prices" in out["tables"]:  # Codex R-02: every column, volume included, and the layout
             out["fingerprints"]["asset_prices"] = _mandatory(out, "asset_prices fingerprint", None, lambda: _asset_prices_fingerprint(conn))
-        for t, sql in ADVISORY_FINGERPRINT_SQL.items():  # desk/cap-weight: a change publishes; a failure only warns
-            if t in out["tables"]:
-                out["fingerprints"][t] = _advisory(out, f"{t} fingerprint", lambda sql=sql: _fingerprint(conn, sql))
         if "desk_series" in out["tables"]:  # Codex R-20: content and readability-deciding provenance
             cut_fp = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()
             desk_fp = _mandatory(out, "desk_series fingerprint", None, lambda: _desk_fingerprints(conn, cut_fp))
@@ -360,19 +315,7 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
             "asset_prices_date": None,
             "desk_series_date": None,
             "desk_series_latest": None,
-            # desk/cap-weight: the oldest share-count read among the rows the API reads, and how many rows are
-            # stored (api/freshness reports their state, never judged; Codex R-05: a row the API sets aside, one
-            # dated after the run's day among them, never dates them)
-            "share_counts_as_of": None,
-            "share_counts_rows": 0,
         }
-        if "share_counts" in out["tables"]:
-            cut_sc = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()
-            out["fresh"]["share_counts_as_of"] = _advisory(out, "share_counts oldest read", lambda: conn.execute(
-                SHARE_COUNTS_OLDEST_READ, (cut_sc,)).fetchone()[0])
-            out["fresh"]["share_counts_rows"] = out["tables"]["share_counts"]["rows"]
-            out["share_counts_unreadable"] = _advisory(out, "share_counts unreadable rows", lambda: int(conn.execute(
-                SHARE_COUNTS_UNREADABLE, (cut_sc,)).fetchone()[0]))
         if "asset_prices" in out["tables"]:
             out["fresh"]["asset_prices_date"] = _mandatory(out, "asset_prices newest daily closes", None, lambda: conn.execute(
                 "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
@@ -554,18 +497,6 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
                 # nothing new as `unknown`; a stale one says it is behind (V-11)
                 if st["state"] != "close" and not (st["state"] == "unknown" and st["id"] in reported):
                     warnings.append(f"{st['id']} {st['state']}: {st['reason']} ({_desk_tier_note(st['id'][5:])})")
-        # desk/cap-weight: the share counts are advisory. The step creates the table even when every
-        # fetch fails, so a table that is absent or empty, or a partial or failed fetch, is reported and
-        # never fails the database (Basket & Hedge then says cap weight is unavailable, and why).
-        if "share_counts" not in cur["tables"]:
-            warnings.append("share_counts: not stored; the full refresh's share-count step stores the preset baskets' "
-                            "counts, and cap weight is unavailable until then (advisory, never blocking)")
-        elif cur["tables"]["share_counts"]["rows"] == 0:
-            warnings.append("share_counts: no count stored; cap weight is unavailable until a full refresh reads them "
-                            "(advisory, never blocking)")
-        sc_mark = (cur.get("watermarks") or {}).get("share_counts") or {}
-        if sc_mark.get("status") in ("partial", "error"):
-            warnings.append(f"share_counts {sc_mark['status']}: {sc_mark.get('detail')} (advisory, never blocking)")
 
     # Stamps ahead of the clock are a fault, never freshness (review P2-3).
     horizon = (now + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -587,8 +518,7 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             continue
         mx = info.get("max")
         if mx and re.match(r"^\d{4}-\d{2}-\d{2}", str(mx)) and str(mx)[:10] > horizon:
-            (warnings if t in ADVISORY_TABLES else failures).append(f"{t}: max date {mx} is in the future"
-                                                                    + (" (advisory, never blocking)" if t in ADVISORY_TABLES else ""))
+            failures.append(f"{t}: max date {mx} is in the future")
     # Bounded value sanity on the tables every screen reads. Verifier V-33: each check on its
     # own (it was one block, which an error in any query, a regimes table without the
     # probability columns say, skipped whole with a warning), and one that cannot run is
@@ -629,14 +559,6 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
                             "because the previous snapshot's per-series check was not executed")
     elif previous is None:
         warnings.append("no previous snapshot given: the row-loss, date-regression and change comparisons did not run")
-    # desk/cap-weight: the advisory table's own reports, never a failure
-    if cur.get("share_counts_unreadable"):
-        warnings.append(f"share_counts: {cur['share_counts_unreadable']} row(s) the API sets aside (no symbol or source, a count "
-                        "that is not a positive number, or a read date malformed or after today) (advisory, never blocking)")
-    for name in cur.get("advisory_not_executed") or []:
-        warnings.append(f"advisory check not run: {name} (never blocking)")
-    for name in ((prev or {}).get("advisory_not_executed") or []) if prev and not prev.get("error") else []:
-        warnings.append(f"advisory check not run on the previous snapshot: {name} (never blocking)")
     if cur.get("asset_prices_non_numeric"):
         failures.append(f"asset_prices: {cur['asset_prices_non_numeric']} row(s) with a non-numeric close")
     if cur.get("asset_prices_malformed_dates"):
@@ -682,14 +604,9 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             if judged["max"] and judged_prev["max"] and str(judged["max"]) < str(judged_prev["max"]):
                 if t in FORWARD_TABLES:
                     warnings.append(f"{t}: max date moved earlier {p['max']} → {info['max']} (a scheduled event was rescheduled)")
-                elif t in ADVISORY_TABLES:
-                    warnings.append(f"{t}: max date moved earlier {judged_prev['max']} → {judged['max']} (advisory, never blocking)")
                 else:
                     failures.append(f"{t}: max date regressed {judged_prev['max']} → {judged['max']}")
-            if t in ADVISORY_TABLES:
-                if judged["rows"] < judged_prev["rows"]:
-                    warnings.append(f"{t}: rows fell {judged_prev['rows']} → {judged['rows']} (advisory, never blocking)")
-            elif t not in TRIMMED_TABLES and judged_prev["rows"] > 20 and judged["rows"] < 0.8 * judged_prev["rows"]:
+            if t not in TRIMMED_TABLES and judged_prev["rows"] > 20 and judged["rows"] < 0.8 * judged_prev["rows"]:
                 failures.append(f"{t}: rows fell {judged_prev['rows']} → {judged['rows']} (more than a fifth)")
             fp_cur = (cur.get("fingerprints") or {}).get(t)
             fp_prev = (prev.get("fingerprints") or {}).get(t)

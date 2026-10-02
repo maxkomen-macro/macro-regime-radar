@@ -397,8 +397,6 @@ SOURCE_BY_ID: dict[str, str] = {
     "live_quotes": "EODHD relay",
     "vix_delayed": "EODHD REST (delayed)",
     "lbo_all_in_rate": "derived: FEDFUNDS + BAMLH0A0HYM2",
-    # desk/cap-weight: the preset baskets' share counts, read by the full refresh (src/market_data/share_counts.py)
-    "share_counts": "Yahoo shares outstanding (stored by the full refresh)",
 }
 SOURCE_BY_KIND: dict[str, str] = {
     "fred": "FRED",
@@ -450,7 +448,6 @@ FEEDS: dict[str, list[str]] = {
     "live_quotes": [TAPE, "Watchlist"],
     "vix_delayed": [TAPE],
     "lbo_all_in_rate": ["Tools · LBO calculator"],
-    "share_counts": ["Desk · Basket & Hedge (cap weight)"],
 }
 
 

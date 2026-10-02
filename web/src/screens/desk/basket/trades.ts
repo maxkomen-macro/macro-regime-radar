@@ -5,7 +5,7 @@
  * whose numbers are not all served says what is missing instead. Pure.
  */
 
-import type { BasketHedgeResponse, BasketIndex, BasketLegPriced, BasketMethod, BasketPriceResponse, BasketWeighting, CapWeights, ComparePoint, StressRow, TrendState } from "../data/types";
+import type { BasketHedgeResponse, BasketIndex, BasketLegPriced, BasketMethod, BasketPriceResponse, ComparePoint, StressRow, TrendState } from "../data/types";
 import { dayLong, dayShort, grouped, num, nyToday, pct, pctPlain } from "../kit/format";
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -16,25 +16,9 @@ export function listWords(items: readonly string[]): string {
   return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/** How the basket is held, as a sentence; a cap-weighted basket's in its own words (desk/cap-weight). */
-export function methodSentence(m: BasketMethod | undefined, w: BasketWeighting | undefined = "target"): string {
-  // desk/cap-weight, round 2 (R2-01): the dividend policy is said, since it differs from typed weights' (each name's own).
-  if (w === "cap")
-    return m === "monthly"
-      ? "Reset to cap weights at each month's first session; with one set of share counts and the dividends reinvested across the basket, each reset leaves the holdings as they were, so the index is the held one."
-      : "Bought at each company's market value at the start and held, its dividends reinvested across the basket as an index fund's are, so each name's weight stays its company's share of the basket's market value.";
+/** How the basket is held, as a sentence. */
+export function methodSentence(m: BasketMethod | undefined): string {
   return m === "monthly" ? "Rebalanced to its target weights at each month's last session." : "Bought and held: the share counts are fixed at the start, so the weights drift with price.";
-}
-
-/** desk/cap-weight: the label a cap-weighted basket carries, from the counts' provider and oldest read. */
-export function capLabel(provider: string, asOf: string): string {
-  return `Cap-weighted: market value at the start, current share counts (${provider}, as of ${dayLong(asOf)})`;
-}
-
-/** The label of a served cap-weighted answer (§12.15 `cap_weights`); null for typed weights. */
-export function capLabelOf(p: { weighting?: BasketWeighting; cap_weights?: CapWeights | null } | undefined): string | null {
-  const c = p?.weighting === "cap" ? p.cap_weights : null;
-  return c && c.provider && dayLong(c.as_of) ? capLabel(c.provider, c.as_of) : null;
 }
 
 /** Why the index starts where it does: the names whose first close it is, or the start of the history. */
@@ -248,12 +232,6 @@ export function stressShortWords(h: BasketHedgeResponse): string | null {
 
 // ── Step 1: the basket (§10) ──────────────────────────────────────────────
 
-/** A cap-weighted answer's weights in words: "cap-weighted, the largest NVDA at 55% at the start". */
-export function capWeightsWords(p: BasketPriceResponse | undefined): string {
-  const top = [...(p?.legs ?? [])].filter((l) => fin(l.target_weight)).sort((a, b) => (b.target_weight as number) - (a.target_weight as number))[0];
-  return top ? `cap-weighted, the largest ${top.symbol} at ${pctPlain(top.target_weight as number, 0)} at the start` : "cap-weighted";
-}
-
 /** "10% each", or "the largest NVDA at 22%": the saved weights in words. */
 export function weightsWords(legs: readonly { symbol: string; weight: number | string }[]): string {
   const w = legs.map((l) => ({ s: l.symbol, v: Number(l.weight) }));
@@ -263,21 +241,17 @@ export function weightsWords(legs: readonly { symbol: string; weight: number | s
   return `the largest ${top.s} at ${num(top.v, Number.isInteger(top.v) ? 0 : 1)}%`;
 }
 
-/** The basket card's lead: what the basket is, and, once priced, what it has done since its start. A cap-weighted
- * basket (desk/cap-weight) says so, with its largest weight once priced; one priced at its typed weights because
- * cap weight is unavailable says that too. */
+/** The basket card's lead: what the basket is, and, once priced, what it has done since its start. */
 export function basketLead(
   b: { name: string; legs: readonly { symbol: string; weight: number | string }[] },
   method: BasketMethod,
   notional: number,
   p: BasketPriceResponse | undefined,
-  weighting: BasketWeighting = "target",
 ): string {
   const n = b.legs.length;
   if (!n) return `${b.name} holds no name yet: add tickers, then Save to price it.`;
   const held = method === "monthly" ? "rebalanced monthly" : "bought and held";
-  const words = weighting !== "cap" ? weightsWords(b.legs) : !p ? "cap-weighted" : p.weighting === "cap" ? capWeightsWords(p) : `${weightsWords(b.legs)} (cap weight is unavailable)`;
-  const head = `${b.name} holds ${n} ${n === 1 ? "name" : "names"}, ${words}, ${held}, ${usd(notional)}`;
+  const head = `${b.name} holds ${n} ${n === 1 ? "name" : "names"}, ${weightsWords(b.legs)}, ${held}, ${usd(notional)}`;
   if (!p || !p.start || !fin(p.total_return)) return `${head}.`;
   return `${head}: ${upDown(p.total_return).toLowerCase()} since ${dayLong(p.start)}, the first session every name has a price (${startWhy(p)}).`;
 }

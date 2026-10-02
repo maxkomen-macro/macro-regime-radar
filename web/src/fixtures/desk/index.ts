@@ -24,7 +24,6 @@ import studyHorizons from "./study-horizons.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
 import basketPrice from "./basket-price.json" with { type: "json" };
 import basketHedge from "./basket-hedge.json" with { type: "json" };
-import basketShares from "./basket-shares.json" with { type: "json" };
 import technicalsGLD from "./technicals-GLD.json" with { type: "json" };
 import technicalsNVDA from "./technicals-NVDA.json" with { type: "json" };
 import studyGold60 from "./studies/gold-w60-z2.0-up-none-spx.json" with { type: "json" };
@@ -70,8 +69,6 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/sectors": sectors,
   // desk/usability §12.17: the instruments this store prices, the stock search fallback
   "/instruments": instruments,
-  // desk/cap-weight §12.18: the stored share counts (Yahoo's, as the full refresh stores them; PROVENANCE.md)
-  "/basket/shares": basketShares,
 };
 
 const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;
@@ -128,18 +125,15 @@ const DEFERRED: Readonly<Record<string, string>> = {
 const BASKET_REASON = "Baskets are kept in this browser; there is no server basket store.";
 
 /** §12.15 (desk/books): the basket answers the fixtures carry, by the request the page makes,
- * `legs|method|notional`, and `|cap` after it for a cap-weighted basket (desk/cap-weight), whose legs are
- * tickers alone (scripts/desk_basket_fixture.py writes them from real closes and stored counts). */
+ * `legs|method|notional` (scripts/desk_basket_fixture.py writes them from real closes). */
 const BASKET_ANSWERS: Record<string, Record<string, unknown>> = {
   "/basket/price": (basketPrice as { answers: Record<string, unknown> }).answers,
   "/basket/hedge": (basketHedge as { answers: Record<string, unknown> }).answers,
 };
 
-/** A basket request's fixture key: its legs as sent, the method (hold when absent), the notional (1000000 when absent),
- * and `|cap` when it asks cap weight. */
+/** A basket request's fixture key: its legs as sent, the method (hold when absent), the notional (1000000 when absent). */
 export function basketKey(u: URL): string {
-  const cap = u.searchParams.get("weighting") === "cap" ? "|cap" : "";
-  return `${u.searchParams.get("legs") ?? ""}|${u.searchParams.get("method") ?? "hold"}|${u.searchParams.get("notional") ?? "1000000"}${cap}`;
+  return `${u.searchParams.get("legs") ?? ""}|${u.searchParams.get("method") ?? "hold"}|${u.searchParams.get("notional") ?? "1000000"}`;
 }
 
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
