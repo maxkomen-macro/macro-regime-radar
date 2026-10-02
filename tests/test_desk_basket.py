@@ -345,3 +345,91 @@ def test_the_stress_says_why_when_the_three_share_too_few_returns():
     r = bk.stress(lv, {"SPY": gapped}, "SMH", lv, "60d", 1e6, cal, cutoff=cal[-1], hedge_ratio=1.0)[0]
     assert r["unhedged_usd"] is None and r["window"]["n"] == 58
     assert r["reason"] == "needs 60 daily returns the basket, SMH and SPY all have; there are 58"
+
+
+# ── desk/cap-weight: weights from share counts × the start's closes ─────────
+
+def test_hand_checked_cap_weights_from_known_shares_and_prices():
+    """A has 300 shares at 10 and B 50 at 20 on the start: market values 3,000 and 1,000, so 75% and 25%."""
+    r = bk.price_basket(two_stocks(), None, "hold", 1000.0, sessions=CAL, adv_sessions=5, shares_outstanding={"A": 300, "B": 50})
+    a, b = r["legs"]
+    assert r["weighting"] == "cap" and a["target_weight"] == pytest.approx(0.75) and b["target_weight"] == pytest.approx(0.25)
+    assert a["shares_outstanding"] == 300 and a["value_start"] == pytest.approx(3000.0) and b["value_start"] == pytest.approx(1000.0)
+    # Bought: A 750 / 10 = 75 shares, B 250 / 20 = 12.5, proportional to the counts (300 : 50).
+    assert a["shares_now"] == pytest.approx(75.0) and b["shares_now"] == pytest.approx(12.5)
+    # The index is the two companies' market value over its value at the start:
+    # (300·11 + 50·20) / 4000 = 1.075; 4700 / 4000; 4500 / 4000; (300·13 + 50·22) / 4000 = 1.25.
+    assert r["index"] == pytest.approx([100.0, 107.5, 117.5, 112.5, 125.0]) and r["total_return"] == pytest.approx(0.25)
+    # At the last close the weights are the market values there: 3900 / 5000 and 1100 / 5000.
+    assert a["weight_now"] == pytest.approx(0.78) and b["weight_now"] == pytest.approx(0.22)
+    # Contribution: A 75 × 3 / 1000 = 0.225; B 12.5 × 2 / 1000 = 0.025.
+    assert a["contribution"] == pytest.approx(0.225) and b["contribution"] == pytest.approx(0.025)
+    # Concentration reads the weights at the last close: 1 / (0.78² + 0.22²) = 1 / 0.6568.
+    assert r["concentration"]["effective_n"] == pytest.approx(1 / 0.6568) and r["concentration"]["top3"] == ["A", "B"]
+    # Liquidity: a basket bought at the last close, at its market values: A $780 / (0.2 × 1000) = 3.9 days,
+    # B $220 / (0.2 × 400) = 2.75 days.
+    assert a["dollars"] == pytest.approx(780.0) and a["days_to_trade"] == pytest.approx(3.9)
+    assert b["dollars"] == pytest.approx(220.0) and b["days_to_trade"] == pytest.approx(2.75)
+    assert r["liquidity"]["basket_days"] == pytest.approx(3.9) and r["liquidity"]["binding"] == "A"
+    # Typed weights say so, and carry no counts.
+    t = bk.price_basket(two_stocks(), {"A": 0.75, "B": 0.25}, "hold", 1000.0, sessions=CAL, adv_sessions=5)
+    assert t["weighting"] == "target" and t["legs"][0]["shares_outstanding"] is None and t["legs"][0]["value_start"] is None
+    # Held, the typed 75/25 basket is the cap-weighted one: the same index (they start at the same weights).
+    assert t["index"] == pytest.approx(r["index"])
+
+
+def test_the_monthly_cap_reset_is_each_months_first_session_and_changes_no_holding():
+    """Monthly, a cap-weighted basket resets to cap weights at the close of each month's first session after the
+    start: Feb 2 here (the typed basket resets on Jan 30, January's last). With one set of counts the reset leaves
+    every holding as it was, so the index is the held one."""
+    held = bk.price_basket(two_stocks(), None, "hold", 1000.0, sessions=CAL, adv_sessions=5, shares_outstanding={"A": 300, "B": 50})
+    r = bk.price_basket(two_stocks(), None, "monthly", 1000.0, sessions=CAL, adv_sessions=5, shares_outstanding={"A": 300, "B": 50})
+    assert r["rebalances"] == 2 and r["periods"] == [{"from": "2026-01-28", "to": "2026-02-02"}, {"from": "2026-02-02", "to": "2026-02-03"}]
+    assert r["index"] == pytest.approx(held["index"], abs=1e-12)
+    assert [l["shares_now"] for l in r["legs"]] == pytest.approx([75.0, 12.5])
+    assert sum(l["contribution"] for l in r["legs"]) == pytest.approx(r["total_return"])
+    typed = bk.price_basket(two_stocks(), {"A": 0.75, "B": 0.25}, "monthly", 1000.0, sessions=CAL, adv_sessions=5)
+    assert typed["periods"][0] == {"from": "2026-01-28", "to": "2026-01-30"}
+
+
+def test_over_three_months_the_monthly_cap_index_is_the_held_one():
+    rng = np.random.default_rng(7)
+    hist = {s: H(CAL, 50 * np.cumprod(1 + rng.normal(0, 0.02, len(CAL)))) for s in ("A", "B", "C")}
+    counts = {"A": 5e9, "B": 2e8, "C": 7e8}
+    held = bk.price_basket(hist, None, "hold", 1e6, sessions=CAL, shares_outstanding=counts)
+    monthly = bk.price_basket(hist, None, "monthly", 1e6, sessions=CAL, shares_outstanding=counts)
+    # Jan 2 is the start; Feb 2 and Mar 2 are the months' first sessions.
+    assert monthly["rebalances"] == 3 and [p["from"] for p in monthly["periods"]] == ["2026-01-02", "2026-02-02", "2026-03-02"]
+    assert monthly["index"] == pytest.approx(held["index"], rel=1e-12)
+    # Each name's weight at the last close is its market value there, both ways.
+    mv = {s: counts[s] * hist[s].close[-1] for s in counts}
+    for legs in (held["legs"], monthly["legs"]):
+        assert [l["weight_now"] for l in legs] == pytest.approx([mv[s] / sum(mv.values()) for s in ("A", "B", "C")])
+
+
+def test_cap_weight_starts_at_the_market_values_of_the_start_not_of_the_first_dates():
+    """A name that lists later sets the start (Codex R-03): every weight is read on that session's closes."""
+    h = {"OLD": H(D5, [10, 11, 12, 11, 13]), "NEW": H(D5[2:], [5, 6, 7])}
+    r = bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"OLD": 100, "NEW": 600})
+    assert r["start"] == "2026-01-30"
+    # OLD 100 × 12 = 1,200 and NEW 600 × 5 = 3,000 on Jan 30: 2/7 and 5/7.
+    assert [l["target_weight"] for l in r["legs"]] == pytest.approx([1200 / 4200, 3000 / 4200])
+
+
+@pytest.mark.parametrize("shares, words", [
+    ({"A": 300}, "cap weight needs a share count for every name; B has none"),
+    ({}, "cap weight needs a share count for every name; A, B have none"),
+    ({"A": 300, "B": 0}, "the share count of B is not a positive number"),
+    ({"A": 300, "B": float("nan")}, "the share count of B is not a positive number"),
+    ({"A": 300, "B": True}, "the share count of B is not a positive number"),
+    ({"A": 300, "B": 50, "C": 10}, "the share counts and the histories name different symbols"),
+])
+def test_a_missing_or_bad_share_count_is_refused_naming_the_name(shares, words):
+    with pytest.raises(bk.BasketError) as ei:
+        bk.price_basket(two_stocks(), None, "hold", 1000.0, sessions=CAL, shares_outstanding=shares)
+    assert str(ei.value) == words
+
+
+def test_cap_weight_takes_counts_not_weights():
+    with pytest.raises(bk.BasketError, match="takes share counts, not weights"):
+        bk.price_basket(two_stocks(), {"A": 0.5, "B": 0.5}, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 1, "B": 1})

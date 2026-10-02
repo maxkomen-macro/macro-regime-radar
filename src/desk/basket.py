@@ -19,6 +19,18 @@ The method, in the order the page states it:
   observation included when it is one; R-06), at the basket's last index
   session that month, the counts are reset so each name is back at its target
   weight of the basket's value that day.
+- **Cap weight** (desk/cap-weight; `shares_outstanding` in place of the
+  weights): each name's weight at the start is its market value there over
+  the basket's, `w_i = S_i × P_i(start) / Σ_j S_j × P_j(start)`, from one
+  share count per name (the stored current counts) and the start's closes
+  (the same split- and dividend-adjusted closes the index is priced from, so
+  a count and a close are on one share basis across a split). Held, the
+  holdings stay proportional to the share counts, as a cap-weighted index
+  behaves between rebalances. Monthly, the counts are reset to cap weights at
+  the close of each month's first index session after the start; with one
+  set of share counts that reset changes no holding, so the monthly index is
+  the held one. The liquidity's dollars are a basket bought today, at the
+  market values of the last close.
 - **Contribution to return** of a name: the sum over holding periods of its
   share count times its price change, over the notional, so the names add up
   to the index's return exactly.
@@ -49,6 +61,9 @@ import numpy as np
 
 METHODS = ("hold", "monthly")
 DEFAULT_METHOD = "hold"
+# desk/cap-weight: the weights typed for the basket (`target`), or market value from share counts (`cap`)
+WEIGHTINGS = ("target", "cap")
+DEFAULT_WEIGHTING = "target"
 DEFAULT_NOTIONAL = 1_000_000.0
 ADV_SESSIONS = 20
 PARTICIPATION = 0.20
@@ -93,6 +108,30 @@ def check_weights(weights: Mapping[str, float]) -> dict[str, float]:
     if abs(total - 1.0) > WEIGHT_TOLERANCE:
         raise BasketError(f"the weights add to {total * 100:.6g}%, not 100%")
     return out
+
+
+def check_shares(shares: Mapping[str, float], symbols: Sequence[str]) -> np.ndarray:
+    """desk/cap-weight: one share count per name, in `symbols`' order, each
+    finite and positive; a name without one is named."""
+    missing = [s for s in symbols if s not in shares]
+    if missing:
+        raise BasketError(f"cap weight needs a share count for every name; {', '.join(missing)} "
+                          f"{'has' if len(missing) == 1 else 'have'} none")
+    if set(shares) - set(symbols):
+        raise BasketError("the share counts and the histories name different symbols")
+    out = []
+    for s in symbols:
+        n = shares[s]
+        if isinstance(n, bool) or not isinstance(n, (int, float)) or not (math.isfinite(n) and n > 0):
+            raise BasketError(f"the share count of {s} is not a positive number")
+        out.append(float(n))
+    return np.array(out)
+
+
+def cap_weights(counts: np.ndarray, closes: np.ndarray) -> np.ndarray:
+    """Market-value weights on one session: each count × its close, over the sum."""
+    mv = np.asarray(counts, dtype=float) * np.asarray(closes, dtype=float)
+    return mv / mv.sum()
 
 
 def on_calendar(levels: Mapping[str, float], sessions: Sequence[str]) -> np.ndarray:
@@ -145,15 +184,24 @@ def _on_calendar_matrix(histories: Mapping[str, History], symbols: Sequence[str]
     return px, off
 
 
-def rebalance_rows(cal: Sequence[str], index_rows: Sequence[int], method: str) -> list[int]:
+def rebalance_rows(cal: Sequence[str], index_rows: Sequence[int], method: str, *, cap: bool = False) -> list[int]:
     """Calendar rows where the share counts are set: the start, and for the
     monthly method each completed month's month-end (its last XNYS session by
     the calendar), at the basket's last index session in that month; the
-    final observation is one when it is the month's last session (Codex R-06)."""
+    final observation is one when it is the month's last session (Codex R-06).
+    For a cap-weighted basket (desk/cap-weight) the monthly resets are each
+    later month's first session, at the basket's first index session in that
+    month."""
     if method not in METHODS:
         raise BasketError(f"the method {method!r} is not one of {', '.join(METHODS)}")
     rows = [int(index_rows[0])]
-    if method == "monthly":
+    if method == "monthly" and cap:
+        seen = {cal[rows[0]][:7]}
+        for r in index_rows:
+            if cal[r][:7] not in seen:
+                seen.add(cal[r][:7])
+                rows.append(int(r))
+    elif method == "monthly":
         last = int(index_rows[-1])
         ends = {d[:7]: d for d in month_end_sessions(cal)}
         by_month: dict[str, int] = {}
@@ -180,22 +228,36 @@ def pairwise_mean_corr(returns: np.ndarray) -> float | None:
     return float(np.mean(c[iu]))
 
 
-def price_basket(histories: Mapping[str, History], weights: Mapping[str, float], method: str = DEFAULT_METHOD,
-                 notional: float = DEFAULT_NOTIONAL, *, sessions: Sequence[str], adv_sessions: int = ADV_SESSIONS) -> dict:
+def price_basket(histories: Mapping[str, History], weights: Mapping[str, float] | None, method: str = DEFAULT_METHOD,
+                 notional: float = DEFAULT_NOTIONAL, *, sessions: Sequence[str], adv_sessions: int = ADV_SESSIONS,
+                 shares_outstanding: Mapping[str, float] | None = None) -> dict:
     """The basket priced as one index. `weights` are fractions adding to 1,
     keyed like `histories`, in the basket's order; `sessions` is the XNYS
     calendar over the histories, running at least one session into the month
     after the last close (so a month-end is known). Returns plain numbers and
     ISO dates (see the module docstring for every rule). `adv_sessions` is the
-    dollar-volume window (20; a test may shorten it)."""
-    w = check_weights(weights)
-    if set(w) != set(histories):
-        raise BasketError("the weights and the histories name different symbols")
+    dollar-volume window (20; a test may shorten it).
+
+    desk/cap-weight: with `shares_outstanding` (one count per name, in the
+    unit of its price) and `weights` None, the basket is cap-weighted: its
+    weights at the start are market values there, and the order is the
+    histories'."""
+    cap = shares_outstanding is not None
+    if cap:
+        if weights is not None:
+            raise BasketError("a cap-weighted basket takes share counts, not weights")
+        symbols = list(histories)
+        if not symbols:
+            raise BasketError("a basket needs at least one name")
+        counts = check_shares(shares_outstanding, symbols)
+    else:
+        w = check_weights(weights or {})
+        if set(w) != set(histories):
+            raise BasketError("the weights and the histories name different symbols")
+        symbols = list(w)
     if not (isinstance(notional, (int, float)) and math.isfinite(notional) and notional > 0):
         raise BasketError("the notional is not a positive number")
     cal = _check_calendar(sessions)
-    symbols = list(w)
-    target = np.array([w[s] for s in symbols])
     px, off = _on_calendar_matrix(histories, symbols, cal)
     present = np.all(np.isfinite(px), axis=1)
     idx = np.flatnonzero(present)
@@ -217,7 +279,9 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
         gap_session = cal[i0 - 1]
         binding = sorted(s for j, s in enumerate(symbols) if not np.isfinite(px[i0 - 1, j]))
     missing = [cal[i] for i in range(i0, i_end + 1) if not present[i]]
-    rows = rebalance_rows(cal, idx, method)
+    rows = rebalance_rows(cal, idx, method, cap=cap)
+    # The weights the basket starts at: the typed targets, or the market values on the start's closes.
+    target = cap_weights(counts, px[i0]) if cap else np.array([w[s] for s in symbols])
 
     # Share counts per holding period, the basket's value on every index session, and contributions.
     value = np.full(len(cal), np.nan)
@@ -226,7 +290,7 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
     periods = []
     for k, r in enumerate(rows):
         if k > 0:
-            shares = target * value[r] / px[r]
+            shares = (cap_weights(counts, px[r]) if cap else target) * value[r] / px[r]
         seg_end = rows[k + 1] if k + 1 < len(rows) else i_end
         seg = idx[(idx >= r) & (idx <= seg_end)]
         value[seg] = px[seg] @ shares
@@ -250,6 +314,8 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
     # a dollar volume (Codex R-05); the basket's figure needs every name's (R-04).
     adv_rows = list(range(max(0, i_end - adv_sessions + 1), i_end + 1))
     adv_window = {"start": cal[adv_rows[0]], "end": cal[adv_rows[-1]]}
+    # The weights a basket bought at the last close holds: the targets, or the market values there (desk/cap-weight).
+    buy = cap_weights(counts, px[i_end]) if cap else target
     legs = []
     worst: tuple[float, str] | None = None
     missing_adv: list[str] = []
@@ -259,7 +325,7 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
         vals = [dv_at.get(cal[r]) for r in adv_rows]
         have = [v for v in vals if v is not None and math.isfinite(v) and v > 0]
         adv = float(np.mean(have)) if len(adv_rows) == adv_sessions and len(have) == adv_sessions else None
-        dollars = float(target[j] * notional)
+        dollars = float(buy[j] * notional)
         days = dollars / (PARTICIPATION * adv) if adv else None
         if adv is None:
             missing_adv.append(s)
@@ -280,6 +346,9 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
             "adv_window": {**adv_window, "n": len(have)},
             "adv_missing": adv_sessions - len(have),
             "days_to_trade": days,
+            # desk/cap-weight: the count and the market value at the start's close (None for typed weights)
+            "shares_outstanding": float(counts[j]) if cap else None,
+            "value_start": float(counts[j] * px[i0, j]) if cap else None,
         })
     liquidity_reason = None
     if missing_adv:
@@ -289,6 +358,7 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float],
                             "the basket's figure needs every name's")
     return {
         "method": method,
+        "weighting": "cap" if cap else "target",
         "notional": float(notional),
         "start": start,
         "start_kind": kind,
