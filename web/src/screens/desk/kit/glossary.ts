@@ -97,8 +97,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-season-up": { forms: [], text: "Up is the share of those years in which the month's return was above zero." },
   "col-season-years": { forms: [], text: "Years is how many complete months of that calendar month are stored." },
   // Sectors (api/desk_items_etf.py).
-  "col-leading": { forms: [], text: "Leading is the sector ETF with the highest 60-session log return relative to SPY's, of the eleven." },
-  "col-lagging": { forms: [], text: "Lagging is the sector ETF with the lowest 60-session log return relative to SPY's, of the eleven." },
+  // Codex R-07: ranked only among the sectors with a return (api/desk_items_etf.py leadership: log_ret needs both closes).
+  "col-leading": { forms: [], text: "Leading is the sector ETF with the highest 60-session log return relative to SPY's, among the sectors with a usable return, a close stored at both ends of the window." },
+  "col-lagging": { forms: [], text: "Lagging is the sector ETF with the lowest 60-session log return relative to SPY's, among the sectors with a usable return, a close stored at both ends of the window." },
   "col-pattern": { forms: [], text: "Pattern says whether the six cyclical sector ETFs lead the three defensive ones over 60 sessions, or the reverse, by more than 1%." },
   "col-above-50": { forms: [], text: "How many of the 11 sector ETFs closed above their 50-day average, the mean of their last 50 closes." },
   "col-above-200": { forms: [], text: "How many of the 11 sector ETFs closed above their 200-day average, the mean of their last 200 closes." },
