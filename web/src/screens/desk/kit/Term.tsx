@@ -150,7 +150,8 @@ export function placeTip(anchor: Tip["anchor"], size: { width: number; height: n
 /** The Desk's one definition tooltip, plus the hidden sentences the terms describe themselves by. */
 export function TermTip() {
   const [tip, setTip] = useState<Tip | null>(null);
-  // Codex R-11: null while the tip is measured (hidden, unclamped), then where it goes.
+  // Codex R-11: null while the tip is measured (hidden, unclamped, and at the left margin, so its width is its sentences'
+  // own up to the cap, never the strip left of a term near the right edge), then where it goes.
   const [place, setPlace] = useState<(TipPlace & { bodyMax: number }) | null>(null);
   const tipRef = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -284,7 +285,7 @@ export function TermTip() {
           className="dk-term-tip"
           data-testid="dk-term-tip"
           data-above={place?.above || undefined}
-          style={place ? { left: place.left, top: place.top, maxWidth: tipWidth(viewport().width) } : { left: tip.anchor.left, top: 0, maxWidth: tipWidth(viewport().width), visibility: "hidden" }}
+          style={place ? { left: place.left, top: place.top, maxWidth: tipWidth(viewport().width) } : { left: TIP_MARGIN, top: 0, maxWidth: tipWidth(viewport().width), visibility: "hidden" }}
         >
           <div className="dk-term-tip-body" style={place ? { maxHeight: place.bodyMax } : undefined}>
             {tip.text.split("\n").map((line) => (

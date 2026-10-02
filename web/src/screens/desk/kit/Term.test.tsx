@@ -162,6 +162,37 @@ describe("Codex R-11: the tip is measured and placed inside the window", () => {
     expect(placeTip({ left: 20, top: 40, bottom: 600 }, { width: 300, height: 900 }, phone)).toEqual({ left: 20, top: 8, maxHeight: 640 - 16, above: false });
   });
 
+  it("measured at the left margin: a term near the right edge of a 390 px window keeps its tip's full width", () => {
+    const vw = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 390 });
+    // A fixed box shrinks to fit: its sentences' width up to the cap, or the room right of where it starts.
+    const proto = HTMLElement.prototype.getBoundingClientRect;
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (!this.classList.contains("dk-term-tip")) return proto.call(this);
+      const left = parseFloat(this.style.left) || 0;
+      const width = Math.min(300, 390 - left);
+      return { left, top: 0, right: left + width, bottom: 120, width, height: 120, x: left, y: 0, toJSON: () => ({}) } as DOMRect;
+    };
+    try {
+      render(
+        <>
+          <Stat label="2s10s" value="+52 bp" />
+          <TermTip />
+        </>,
+      );
+      const term = screen.getByText("2s10s").closest(".dk-term")!;
+      term.getBoundingClientRect = () => ({ top: 100, bottom: 115, left: 337, right: 357, width: 20, height: 15, x: 337, y: 100, toJSON: () => ({}) }) as DOMRect;
+      act(() => {
+        fireEvent.pointerOver(term);
+      });
+      // The whole 300 px, its right edge 8 px inside the window (measured where the term is, it took 53 px).
+      expect(screen.getByRole("tooltip")).toHaveStyle({ left: "82px" });
+    } finally {
+      HTMLElement.prototype.getBoundingClientRect = proto;
+      Object.defineProperty(window, "innerWidth", { configurable: true, value: vw });
+    }
+  });
+
   it("the pointer on its way into the tip, a finger in it and its own scroll keep it; leaving it hides it", () => {
     render(
       <>

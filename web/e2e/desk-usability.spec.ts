@@ -514,12 +514,15 @@ test.describe("desk usability", () => {
     const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: "dark" });
     const p = await phone.newPage();
     const tip = p.getByTestId("dk-term-tip");
-    const inside = async (w: number, h: number) => {
+    // Inside the window by its 8 px margin; a tip of three or more sentences takes its full width (300 px, or the
+    // window less the margins), wherever its term sits.
+    const inside = async (w: number, h: number, full = true) => {
       const box = (await tip.boundingBox())!;
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(w);
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.y + box.height).toBeLessThanOrEqual(h);
+      expect(box.x).toBeGreaterThanOrEqual(8);
+      expect(box.x + box.width).toBeLessThanOrEqual(w - 8 + 0.5);
+      expect(box.y).toBeGreaterThanOrEqual(8 - 0.5);
+      expect(box.y + box.height).toBeLessThanOrEqual(h - 8 + 0.5);
+      if (full) expect(box.width).toBeGreaterThanOrEqual(Math.min(300, w - 16) - 1);
     };
     // R-10: a Ledger row's title is a term; a tap on it shows the sentence and leaves the row closed.
     await open(p, "/desk/signal-ledger");
@@ -529,7 +532,13 @@ test.describe("desk usability", () => {
     await expect(tip).toContainText(GLOSSARY.curve.text);
     await p.waitForTimeout(300);
     await expect(p).toHaveURL(/\/desk\/signal-ledger/);
+    await inside(390, 844, false);
+    // The rightmost head: its tip keeps its full width, inside the window.
+    await p.locator("thead abbr.dk-term", { hasText: "Now" }).tap();
+    await expect(tip).toContainText(GLOSSARY["col-now-firing"].text);
     await inside(390, 844);
+    await p.getByRole("heading", { level: 1 }).tap();
+    await expect(tip).toHaveCount(0);
     // A tap elsewhere in the row still opens it.
     await row.locator("td").first().tap();
     await expect(p).toHaveURL(/\/desk\/event-study/);
