@@ -112,6 +112,10 @@ describe("Macro tab", () => {
     expect(card).toHaveTextContent(/Today\s*\+0\.44\s*SPY vs TLT · Sep 23\s*A year ago\s*\+0\.04\s*Sep 23, 2025\s*Flipped\s*Jan 2026\s*to positive on Jan 7, 2026/);
     expect(card).toHaveTextContent("60 daily log returns to Sep 23 · SPY vs TLT, adjusted closes · Yahoo");
     expect(card).not.toHaveTextContent(/hedging|was working|Read for the desk/);
+    // desk/pdf-polish 5: the owner's line, right under the title.
+    const note = card.querySelector(".mc-sb-note");
+    expect(note?.textContent).toBe("TLT is a long-term Treasury bond ETF; its price falls when yields rise.");
+    expect(note?.previousElementSibling).toHaveClass("dk-card-head");
   });
   it("a stock–bond window with a missing close says why, with no number (no forward fill)", async () => {
     const reason = "fewer than 60 complete daily return pairs in the window to 2026-09-23";

@@ -234,6 +234,9 @@ function Curve({ m, state }: { m: MacroResponse | undefined; state: State }) {
 
 type StockBondBlock = NonNullable<MacroResponse["stock_bond"]>;
 
+/** desk/pdf-polish 5: the line under "Do bonds still hedge stocks?". */
+export const TLT_NOTE = "TLT is a long-term Treasury bond ETF; its price falls when yields rise.";
+
 /** "SPY vs TLT": the served pair. */
 const pair = (sb: StockBondBlock) => `${sb.stock?.etf ?? "SPY"} vs ${sb.bond?.etf ?? "TLT"}`;
 
@@ -259,6 +262,8 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-sb" aria-busy={quiet}>
       <CardHead id="mc-sb" title="Do bonds still hedge stocks?" sub="60-day correlation of daily returns, one year" />
+      {/* desk/pdf-polish 5: what the bond side is, under the title, the owner's words. */}
+      <p className="mc-sb-note">{TLT_NOTE}</p>
       <LoadingLine busy={quiet} />
       {sb ? (
         <>
