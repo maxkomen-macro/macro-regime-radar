@@ -362,3 +362,40 @@ Before → after, for the strings a reader sees:
 | `e2e/accuracy-iteration.spec.ts` | Not rerun: this round changes nothing it reads (the banner, freshness stamps, Methodology). |
 
 Servers for these gates: my Vite on :5173 (started for the R-11 e2e, restarted at `0bdd8e38` for the stamp). No API was needed, since the Desk e2e routes `/api/desk` in the page.
+
+## Codex review loop
+
+The brief's loop: `codex exec`, read-only sandbox, in this folder, in the background. The prompt was `~/Downloads/CODEX_REVIEWER_PROMPT.md`, then "The brief follows; do not wait for it.", then the owner's re-review brief (base `365290ec`, every commit to HEAD, images skipped, D1–D4, new IDs from R-14). The full output is in `/tmp/codex-a-round-N.md`. The owner's review was round 1, so this loop's first round is round 2. Nothing was committed while Codex ran.
+
+### Round 2 (`/tmp/codex-a-round-2.md`)
+
+Command: `codex exec -s read-only -C <this folder> --ephemeral --color never -`, stdin as above. It ran from 02:06 to 02:17 ET and exited 0. Codex reviewed `365290ec..1099996c`: 13 commits, 21 files, images skipped. It used source tracing, read-only SQLite queries and an in-memory DOM probe, and ran no build, test suite or browser.
+
+Codex's re-review of round 1: R-01 to R-10 and R-13 **confirmed**, each against the code that computes the value; R-12 deferred, as instructed; R-11 **incomplete**, see R-14. It also found D1 to D4 held. The only files changed outside the Desk component tree were this report, the Desk e2e tests and `desk2.css`, whose changes touch only the tooltip's selectors. No API, model, coefficient, threshold or stored-history change.
+
+| ID | Severity | Codex's claim | What was done | Commit |
+|---|---|---|---|---|
+| R-14 | low | An open tooltip does not reposition or reclamp when the window changes size. Its repro: a definition opened at 390 × 844, then the window shrunk to 360 tall, kept `top: 626px`, `maxHeight: 190px` (`web/src/screens/desk/kit/Term.tsx:247-254`). | Confirmed in the code: `TermTip` listened for scroll only. The scroll handler, now `follow` (`kit/Term.tsx:242`), also runs on the window's `resize` (`:257`). A resized window or a turned phone measures and places the open tip again inside the new window, and hides it once its term has left the window. Tests: jsdom (`Term.test.tsx:196`: 844 → 640 px follows the reflowed term; 260 px hides it), and the 390 px e2e (`desk-usability.spec.ts:513`: the Status tip at 844 px, then inside a 600 px window after the resize). | `161a17db` |
+
+`VERDICT: safe to push` (Codex, round 2, at `1099996c`).
+
+**Found while round 2 ran, not by Codex.** A 390 px browser check of my R-11 change showed that its measuring pass put the hidden tip at its term's left edge. Near the right edge the tip shrank to the strip beside its term and was placed at that width. On the Signal Ledger, the Now head's tip was 77 px wide and 308 px tall, against the window's edge. It is now measured at the left margin (`kit/Term.tsx:291`), so its width is its sentences' own, up to 300 px or the window less the margins. The Now tip is 300 px wide at x 82, 8 px inside the edge. Tests: a jsdom case (`Term.test.tsx:165`) lays the tip out shrink-to-fit and fails on the old pass (checked by putting the old line back). The 390 px e2e now checks the 8 px margins and the full width, the rightmost head included. Commit `92107ea1`.
+
+**The loop stopped after round 2**, on its "safe to push" verdict, as the brief says. So no round 3 ran, and Codex did not review the two commits after that verdict (`92107ea1`, `161a17db`). Both change only the tooltip's placement in `kit/Term.tsx`, with their tests, and the gates below cover them.
+
+**Code HEAD: `161a17db`** (`92107ea1` and `161a17db` on `1099996c`). This section is the commit after it (docs only). Not pushed.
+
+### Gates (at `161a17db`)
+
+| Gate | Result |
+|---|---|
+| Scoped: `Term.test.tsx`, before each commit | 20, then 21 passed; tsc clean |
+| Web gate: `tsc -b --noEmit`, `vitest run`, `vite build` | tsc clean; **vitest 1,833 passed (147 files)**; build ✓ |
+| Desk e2e: `e2e/desk.spec.ts` + `e2e/desk-usability.spec.ts`, `--workers=1`, my Vite on :5173 (stamp `desk/pdf-polish@161a17d`) | **85 passed**, 4.8 min |
+| Python tests that scan the web tree (`test_desk_v2_pipeline.py`, `test_env_template.py`, `test_desk_contract.py`), `git archive` of `161a17db` with a scratch DB copy | **147 passed, 2 skipped** |
+
+### Processes this part started, and stopped
+
+- My Vite dev server on 127.0.0.1:5173: started for the R-11 e2e (stamp `0fd4c7c`), restarted at `0bdd8e38` and at `161a17db` so each stamp named HEAD. Stopped at the end.
+- Codex round 2: one `codex exec` process, read-only, run in the background. It exited 0 before any further commit.
+- No API was started in this part: the Desk e2e routes `/api/desk` in the page. Ports 8001 and 5174 were never contacted. Another session's Codex, on `mrr-cap-weight`, was seen running and left alone. No `.env` or key was copied in, and `CLAUDE.md` was not changed.
