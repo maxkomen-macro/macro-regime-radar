@@ -14,6 +14,10 @@ owner pushes after typing `PUSH OK desk/cap-weight`. One commit per item:
 | 6 | `ac312b3b` | The review's findings (below, "Review"); its subject says "desk/cap-weight 6" |
 | 7 | (this report's commit) | This report and its screenshots (`docs/desk/shots/desk-cap-weight/`) |
 
+Overnight round 2 (the last section) merged desk/pdf-polish, added the
+CLAUDE.md lines and ran the independent review; its commits are listed
+there.
+
 **Where the numbers come from.** This machine holds no EODHD token (by
 design: the local API runs with the relay off and cannot spend the
 production quota), so every basket figure in this report, and in the
@@ -176,7 +180,7 @@ from the close as traded); the equal-weight ones did not change.
 | | Before: equal weight | After: cap weight |
 |---|---|---|
 | Lead | AI Infrastructure 10 holds 10 names, 10% each, bought and held, $1,000,000: up 346.5% since Mar 28, 2025, the first session every name has a price (CRWV's first close). | AI Infrastructure 10 holds 10 names, cap-weighted, the largest NVDA at 55% at the start, bought and held, $1,000,000: up 155.8% since Mar 28, 2025, the first session every name has a price (CRWV's first close). |
-| Method hint | share counts fixed at the start; weights drift with price | bought at each company's market value at the start; held, it stays cap-weighted |
+| Method hint | share counts fixed at the start; weights drift with price | bought at each company's market value at the start; held, with dividends reinvested across it, it stays cap-weighted |
 | Weights column | Weight (typed): 10% each | At start (served): the table above |
 | Label | total 100% | Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026) |
 
@@ -615,3 +619,186 @@ are fixed in `ac312b3b` but the last, which is the deploy window above.
   longer stored list.
 - Historical share counts (each name's count on the start date, from its
   filings) would remove the "current share counts" approximation.
+- The provider's own corporate actions (EODHD's splits, `api/providers/eodhd.py`
+  `splits`, one call per name, cached) would place a move of 5% to 40% in the
+  ratio of the close as traded to the adjusted close, where cap weight now
+  refuses (overnight round 2, R2-02); no preset name has had one in the
+  window (the largest is 0.39%).
+
+## Overnight round 2
+
+Run unattended on Oct 2, 2026, from 00:35 ET, in this worktree, ports 8001
+and 5174 only, nothing pushed, `data/macro_radar.db` never staged.
+
+### The merge with desk/pdf-polish
+
+desk/pdf-polish was finished: its tip's `docs/desk/PDF_POLISH_REPORT.md`
+has "Follow-up: the owner's decisions on the open calls" and "Follow-up
+gates (at `c71f1b4e`)". **A_TIP = `365290ec`** (`365290ec02a6e8e2d923a6f39e0a2bd93042e15f`).
+`git merge --no-ff desk/pdf-polish` made **`f604610d`** (parents
+`a0643046`, this branch, and `365290ec`). The two conflicts were the ones
+the plan above named, on lines both branches changed:
+
+- `web/src/screens/desk/basket/BasketHedgePage.tsx`: the imports merged
+  by themselves (`capLabel` from `./trades`, `Term`/`defineTerms` from
+  `../kit/Term`). The weights column's head keeps A's hover and this
+  branch's label: `<Term ids={[capped ? "col-weight-cap" :
+  "col-weight"]}>{capped ? "At start" : "Weight"}</Term>`.
+- `web/src/screens/desk/basket/BasketTrades.tsx`: the import line keeps
+  both sides; the liquidity table's dollars head is `<Term ids={[cap ?
+  "col-at-cap-weight" : "col-at-target"]}>{cap ? "At cap weight" : "At
+  target"}</Term>`.
+
+The plan's alternative (a new glossary entry) was taken for both heads,
+because A's two sentences describe the typed weights ("Weight is the share
+of the basket you set for each name…", "…at its target weight of the
+basket's notional"), which a cap-weighted basket does not have. Two
+entries were added to `kit/glossary.ts`:
+
+- `col-weight-cap`: "At start is each name's cap weight on the basket's
+  start: its stored share count times its close that day, over the
+  basket's sum."
+- `col-at-cap-weight`: "The dollars the name holds in a cap-weighted
+  basket bought at the last close: its market-value weight there times the
+  notional."
+
+`column-heads.test.tsx` keeps A's test unchanged (the saved sample
+baskets, typed weights: "Weight", "At target") and gains one for the
+cap-weighted preset (first visit: "At start" and "At cap weight", each with
+its own sentence and Tab stop).
+
+Checks: file by file (`git diff --stat`), what the merge adds on top of A
+is exactly this branch's change set, and what it adds on top of this branch
+is exactly A's, plus the resolution (one line in `BasketHedgePage.tsx`,
+four in `glossary.ts`, 23 in the test). Every `Term` id A put in the two
+conflicted files is in the merge.
+
+### Gates on the merge
+
+- **Web** (at `f604610d`): `tsc -b` clean; vitest **147 files, 1,839
+  tests, all passed** (A's column-heads test and the new cap-weighted one
+  among them); `vite build` clean.
+- **Full pytest** (at `de49eb5f`, the merge plus the CLAUDE.md lines; same
+  command, `DESK_DB` and interpreter as round 1): **1,920 passed, 3
+  skipped, 11 failed** in 16 min, the same 11 as at `ac312b3b`.
+- **Desk e2e** (`desk.spec.ts`, `desk-usability.spec.ts`, one worker, Vite
+  on 5174 from this worktree stamped `desk/cap-weight@de49eb5`, the API on
+  8001 from a `git archive` copy whose `api/`, `src/` and `scripts/` match
+  HEAD byte for byte, relay off, no token): **84/84 passed** (4.7 min; 84 since A added one).
+
+### The 11 pytest failures
+
+They do not come from the separate yfinance environment. That environment
+(this worktree's `.venv`) holds only yfinance, pandas, numpy and
+exchange_calendars: it has no pytest and no fastapi
+(`.venv/bin/python -m pytest` answers "No module named pytest"), so no test
+has ever run in it; it only fetched Yahoo's share counts for the fixtures.
+Every pytest run used `../macro-regime-radar/.venv/bin/python` (Python
+3.13.9). Run again there on their own, the 11 fail the same way (11
+failed in 29 s), and round 1 found them failing identically on the base
+`001321cd` with the same database. What they are:
+
+- Ten read this worktree's `data/macro_radar.db` (downloaded Oct 1, closes
+  through Sep 30, regimes through Aug 2026), which is newer than the store
+  their pins were written on:
+  - `test_desk_v2_technicals` (4): the S&P's newest close and RSI/MACD
+    dates pinned at Sep 23 / Sep 21, served at Sep 30;
+  - `test_desk_v2_overview` null slope (2) and `test_desk_v2_regime`
+    newest label (1): the Aug 2026 regimes row's odds are 0.425 in this
+    database, and the pins hold the 0.4246 an earlier refresh stored;
+  - `test_desk_v2_regime` stats `[published]` (1): a Goldilocks month the
+    pin holds as pending has its S&P return complete on the newer closes;
+  - `test_asset_history` (2): written for a local database without
+    `asset_prices` (this one has the table, so `/api/allocation` answers
+    200, and validate_db, at the test's pinned Sep 21, reads its Sep 30
+    rows as dated in the future).
+- One is timing: `test_generations` hold-back checks the worker's status
+  50 ms after the second build fails; on this machine, with this 31 MB
+  database, the worker records the hold just after (its own log line,
+  "held back: flaky failed (attempt 1 of 3)", is in the captured log).
+
+### CLAUDE.md
+
+The two lines decision 12 suggested, added to the root `CLAUDE.md` in their
+own commit `de49eb5f`: "Share counts (desk/cap-weight)" under Data Source
+Rules, after the news pipeline, and "Cap weight (desk/cap-weight)" in the
+FastAPI section, after Basket & Hedge. No other change to the file.
+
+### The independent review (Codex)
+
+Codex CLI 0.159.3 (`codex exec`, its configured model, reasoning high), run
+in the background from this folder with `-s read-only`, the prompt on stdin
+(`-`): the kickoff in `~/Downloads/CODEX_REVIEWER_PROMPT.md` verbatim, then
+"The brief follows; do not wait for it.", then the brief with the round's
+base. Full output in `/tmp/codex-b-round-N.md`; nothing was committed while
+a round ran. Following the kickoff's line about `../mrr-review`, Codex ran
+its read-only commands from that worktree, reading this branch's commits by
+their SHA (`git show de49eb5f:…`); the sandbox was read-only and it reported
+both worktrees clean. The brief's database (`./data/macro_radar.db`) holds no
+`share_counts` and none of the ten names' closes, so Codex checked the
+numbers on synthetic inputs and the fixtures, not on stored data.
+
+**Round 1** (base `365290ec`, A_TIP, so A's own commits were out of scope;
+reviewed `de49eb5f`; 00:54–01:12 ET):
+`VERDICT: not safe to push — R-01, R-02 blocking`. Five findings, all
+introduced by this branch, all confirmed and fixed; Codex withdrew a sixth
+candidate (price and hedge answered on different share counts) itself,
+because the shell already refetches answers from mixed generations.
+
+| ID | Severity | Finding | What I did |
+|---|---|---|---|
+| R-01 | blocking | Cap weights used the dividend-adjusted closes, so the start's weights were not the market values the label names | Fixed, `f0079da4`. The market values read each name's close as traded on today's share basis (`market_prices`: EODHD's own close, Yahoo's Close in the fixtures, the splits taken out of its ratio to the adjusted close); the basket stays cap-weighted on every session, each dividend reinvested across it, so monthly still equals held (D4). Tests: Codex's case with an ordinary 2% dividend (50/50 at the start, +50%), a 4-for-1 split and a reverse split, three months of dividends and a split with monthly equal to held, the refusals, and `history_of` keeping EODHD's close. Codex's own case pays $20 on $100 in one day, exactly a 5-for-4 step: prices cannot tell the two apart, so this fix read a one-day move of 5% or more as a split (round 2, R2-02, replaced that rule with a refusal). Figures: NVDA 55.35% → 55.12% at the start, AVGO 16.72% → 16.80%, TSM 17.65% → 17.84%; 1-year +46.7% → +46.6%; the SMH short $847,494 → $847,384; the equal-weight answers byte-identical |
+| R-02 | blocking | A snapshot with the same dates and other weights never replaced the stored one, so Position Monitor recorded stale weights | Fixed, `98dadb2e`: the snapshot carries when this browser received it, and with the same dates and other weights the later answer replaces (an earlier one never does, so two windows still settle). Tests: Codex's 60/40 → 80/20 case through what Position Monitor records, and the page writing it |
+| R-03 | high | The background write replaced the whole saved basket from the page's own copy and could undo another window's save | Fixed, `98dadb2e`: `writeSnapshot` reads the basket again and changes only its snapshot, only while it is still cap-weighted with the same names. Test: Codex's repro (renamed and re-weighted in another window) |
+| R-04 | high | Import treated a cap-weighted basket as a duplicate of the same basket at typed weights | Fixed, `5321d779`, for the weighting (test: Codex's repro). Codex's fix also named the method and the notional; that part is the same before this branch (desk/books) and is listed below, not fixed |
+| R-05 | high | Future-dated share counts read as current in Data status though the basket sets them aside | Fixed, `ff96dfcd`: the freshness dates the counts by the rows the basket reads (one SQL predicate, `api/freshness.SHARE_COUNTS_READABLE_SQL`, also behind validate_db's set-aside count); none readable reads as unavailable. Tests: Codex's repro, and stores with a future row and with every row set aside |
+
+Gates after round 1's fixes (tip `ff96dfcd`, the report's figures then
+updated in `2f27bf13`): web `tsc -b` clean, vitest 147 files and **1,842
+tests passed**, `vite build` clean; the Python suites the fixes touch, 366
+passed; full pytest **1,928 passed, 3 skipped, the same 11 failed** (16 min; the 8 more passed are the new tests); Desk e2e **84/84 passed** (stamp `desk/cap-weight@ff96dfc`).
+
+**Round 2** (base `de49eb5f`, the tip round 1 reviewed; reviewed `2f27bf13`;
+01:59–02:26 ET): `VERDICT: not safe to push — R-01 blocking`. Codex
+recomputed the AI Infrastructure 10's start weights itself from the closes
+and the counts (NVDA 55.121482%, AVGO 16.804035%, TSM 17.839536%, …, the
+report's table at its two decimals) and ran 170 synthetic comparisons against the
+engine, all passing. Its four findings, numbered R-01 to R-04 again, are
+R2-01 to R2-04 here.
+
+| ID | Severity | Finding | What I did |
+|---|---|---|---|
+| R2-01 | blocking | Cap-weighted "hold" re-weights every session (each dividend reinvested across the basket), so it is not the start weights held (D1); Codex's fix: the existing hold engine from the start weights, the dividend policy reconciled with D4 | **Rejected**, with the evidence, its point taken. Codex's policy (each name's dividends kept in that name; monthly resets to market values) breaks D4 on the preset: after 18 months monthly − held = **+0.0101 index points** (255.805145 against 255.795085), and the held basket's weights at the last close leave the companies' market values (TSM 19.18% against 18.97%, NVDA 44.42% against 44.60%). The branch's policy keeps D1 (the only trade is the dividends' reinvestment: on a session without a dividend the reset changes nothing) and D4 exactly, and it is how the adjusted closes of SPY and QQQ, the funds the basket is read against, reinvest their own dividends. The two policies differ on the preset by 0.0055 index points and $65 of the SMH short. The point taken: the page did not say the policy; it now does ("held, its dividends reinvested across the basket as an index fund's are"), `e9e58e73`; the policy is pinned on Codex's own case (150.505, not 150), `4b849710` |
+| R2-02 | blocking | The 5% rule read a cash dividend of 5% or more as a split and moved the start's weights (Codex's $20 on $100: 55.6/44.4) | Fixed, `f8503cca`: a move under 5% is a dividend, one of 40% or more a split, and one in between (a 5-for-4 split, a stock dividend, a large special) refuses cap weight with the reason; only moves after the basket's start count. Tests: Codex's case refused, moves of 5%, 25% and 39% refused, a 2-for-1 and a reverse split taken out, a move before the start ignored. A refusal leaves the basket priced at its typed weights, with the API's words under the legs, as a basket without stored counts is (decision 5), `cd5366da`. The preset's largest move in the window is 0.39% (TSM), so its figures did not change (the fixtures moved by float rounding only, 6e-12 relative) |
+| R2-03 | blocking | A missing close as traded borrowed a later session's ratio and dated a start weight with it | Fixed, `f8503cca` (the page's fallback, `cd5366da`): no market value is borrowed. At the start or the last close a missing one refuses, naming the name and the date (Codex's case); in between, the session keeps the holdings (a dividend waits a session to be reinvested; no other effect). EODHD's close is the field every bar is built from, so the API never meets one |
+| R2-04 | high | SQLite's `trim()` removes spaces only, so a tab-only source read as current to the freshness while the basket set it aside | Fixed, `4d45bce7`: the predicate trims Python's own whitespace (`STRIP_WHITESPACE`, pinned to `str.isspace()`). Test: Codex's tab-only source and an ideographic-space symbol, set aside by both |
+
+Gates after round 2's fixes (tip `cd5366da`): web `tsc -b` clean, vitest
+147 files and **1,844 tests passed**, `vite build` clean; the Python suites
+the fixes touch, 367 passed, and the policy test of `4b849710` with its
+file (41); full pytest **1,930 passed, 3 skipped, 10 failed** (collected at
+`4d45bce7`, whose Python `cd5366da` leaves unchanged but for that one test:
+the 11 above less `test_generations`, whose timing held this run); Desk e2e
+**84/84 passed** (stamp `desk/cap-weight@cd5366d`).
+
+### Listed, not fixed (before this branch)
+
+- **Import identity ignores the method and the notional** (the wider half
+  of R-04): two baskets with the same name and legs, one held and one
+  rebalanced monthly (or at another notional), are one basket to an import,
+  as they were in desk/books. A one-line change in `sameBasket`
+  (`weights.ts`), but outside this task.
+- **Two saved baskets can share a name**, and the selector lists names
+  only: an import adds a basket with a taken name when its legs differ (as
+  before), and now also when its weighting differs (R-04).
+
+### Not run
+
+- Layer 3 of the Desk engine's native regression gate
+  (`scripts/desk_native_ab.py`): it checks the base out into a temporary
+  git worktree outside this folder, which this run may not create. Its
+  subject is the event-study engine, which never imports
+  `src/desk/basket.py` (only `api/desk_basket.py` and the fixture script
+  do); layers 1 and 2 (`tests/test_desk_native_regression.py`) ran in every
+  full pytest.
+- `tests/test_streamlit_backports.py` (needs Streamlit), as in round 1.
