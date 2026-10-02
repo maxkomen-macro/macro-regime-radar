@@ -264,6 +264,17 @@ export function trainingShare(m: RecessionMetrics): string | null {
   return pct > 0 && pct < 0.5 ? "under 1%" : `${Math.round(pct)}%`;
 }
 
+/** Codex R-27: the 2008 peak of the served probability history (its maximum dated in 2008 and that month), or
+ * null when the history holds no 2008 point. No number is typed here. */
+export function peak2008(series: readonly DatedValue[] | null | undefined): { value: number; date: string } | null {
+  let best: { value: number; date: string } | null = null;
+  for (const p of series ?? []) {
+    if (!String(p.date).startsWith("2008-") || !Number.isFinite(p.value)) continue;
+    if (best == null || p.value > best.value) best = { value: p.value, date: p.date };
+  }
+  return best;
+}
+
 function ledeMid(share: string | null): string {
   const sample = share ? `recession months are ${share} of its training months, and it` : "it";
   return ` scores recession odds for this month from inputs three months old; ${sample} is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. `;
@@ -324,9 +335,12 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
 
   // Rule 4: the band and its range, without the number (the h1 carries it).
   const range = bandRange(label);
+  // Codex R-27: the 2008 peak from the served history, or no clause at all.
+  const peak = peak2008(series);
+  const peakClause = peak ? `, and 2008 peaked at ${fmtProb(peak.value, "percent", 1)} in ${fmtMonYr(peak.date)}` : "";
   const note = share
-    ? `Sits in the ${label} band${range ? ` (${range})` : ""}; recession months are ${share} of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.`
-    : `Sits in the ${label} band${range ? ` (${range})` : ""}; the model is class-balanced, so this is not a calibrated probability, and 2008 peaked near 89%.`;
+    ? `Sits in the ${label} band${range ? ` (${range})` : ""}; recession months are ${share} of the training months (class-balanced, so not a calibrated probability)${peakClause}.`
+    : `Sits in the ${label} band${range ? ` (${range})` : ""}; the model is class-balanced, so this is not a calibrated probability${peakClause}.`;
 
   // Rule 5.
   const footnote = [`Logistic model on ${m.model_features.length} FRED inputs, lagged 3 months`];

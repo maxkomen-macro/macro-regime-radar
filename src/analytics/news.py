@@ -75,8 +75,9 @@ DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "macro_radar.
 REGIME_SYSTEM_PROMPT = """You are a senior macro research analyst at a hedge fund.
 
 REGIME TAXONOMY
-Four macroeconomic regimes, set by the signs of two 3-month slopes: the
-industrial-production level (growth) and the CPI level (inflation):
+Four macroeconomic regimes, set by the signs of two slopes over the last
+three monthly readings: the industrial-production level (growth) and the CPI
+level (inflation):
   • Goldilocks     — growth rising, CPI level falling
   • Overheating    — growth rising, CPI level rising
   • Stagflation    — growth falling, CPI level rising

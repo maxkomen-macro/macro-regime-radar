@@ -134,7 +134,7 @@ const SUBHEAD = "Recession odds for this month, up 1.4 points in three months.";
 const LEDE =
   "The logistic model scores recession odds for this month from inputs three months old; recession months are 7% of its training months, and it is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. Macro ahead of markets: credit pricing and the model disagree. This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 const LEDE_MORE = "The divergence is material and requires judgment.";
-const NOTE = "Sits in the Low Risk band (under 20%); recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.";
+const NOTE = "Sits in the Low Risk band (under 20%); recession months are 7% of the training months (class-balanced, so not a calibrated probability).";
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
 // Iteration 1 step 5 (G4): three visible sentences (data-copy-max 3: the tail
 // and the headline are different numbers); the lag sentence sits behind Details.
@@ -168,9 +168,8 @@ const SENS_LEAD = "Move the model's five inputs and watch 11.6% respond.";
 /** X3: the unchanged scenario is named as a scenario, beside the model's own reading. */
 const SCENARIO_EYEBROW = "Scenario at current readings · inputs unchanged";
 const INCOMPLETE = "The model's current inputs are incomplete in this snapshot; nothing honest to seed the sliders with.";
-/** Codex R-14: a hypothetical score; the second sentence only while the sliders are untouched. */
-const SCENARIO_CAPTION =
-  "Hypothetical score of these inputs under the fitted coefficients and scaler. Untouched, they hold the latest readings, which the headline scores about three months later.";
+/** Codex R-14 (rounds 1 and 2): untouched, the rounded latest-available inputs as a hypothetical; moved, a hypothetical score. */
+const SCENARIO_CAPTION = "Rounded latest-available inputs evaluated under the current fitted coefficients: a hypothetical, not a forecast.";
 const SCENARIO_CAPTION_TOUCHED = "Hypothetical score of these inputs under the fitted coefficients and scaler.";
 const SLIDER_LABELS = ["Yield curve 2s10s", "Unemployment rate", "HY credit spread", "Industrial production YoY", BREAKEVEN];
 const SEEDED_VALUETEXT = ["+35 bps", "4.1%", "270 bps", "1.0%", "0.0pp"];
@@ -830,8 +829,8 @@ describe("RecessionScreen (checklist 07 E.1)", () => {
     expect(text(sensitivity())).toContain("+37.4pp vs the model's headline 11.6%");
     // Codex R-14: once a slider moves, the inputs are no longer the latest readings: no "Untouched" sentence.
     expect(text(sensitivity())).toContain(SCENARIO_CAPTION_TOUCHED);
-    expect(text(sensitivity())).not.toContain("Untouched, they hold the latest readings");
-    expect(text(sensitivity())).not.toContain("will score");
+    expect(text(sensitivity())).not.toContain(SCENARIO_CAPTION);
+    expect(text(sensitivity())).not.toMatch(/will score|three months later/);
     expect(text(sensitivity())).not.toContain("-1.2pp");
     expect(text(modelFigure())).toContain("11.6%");
 

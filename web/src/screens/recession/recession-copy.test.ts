@@ -12,7 +12,7 @@
  * copy rules, never the mockup's or the baseline's figures.
  */
 import { describe, expect, it } from "vitest";
-import { bandRange, featureCurrent, featureLabel, headlineIndex, heroCopy, labelTone, lastMonths, lastYears, pillToneFor, priorPoint, riseStreak, stripSummary, trainingShare } from "./recession-copy";
+import { bandRange, featureCurrent, featureLabel, headlineIndex, heroCopy, labelTone, lastMonths, lastYears, peak2008, pillToneFor, priorPoint, riseStreak, stripSummary, trainingShare } from "./recession-copy";
 import type { DatedValue, RecessionMetrics } from "../../api/types";
 
 /* ── fixtures (Sep 2026) ─────────────────────────────────────────────────── */
@@ -270,13 +270,31 @@ describe("heroCopy (checklist 07 C.1 rules 1 to 6)", () => {
     expect(heroCopy(recessionFixture({ divergence_score: null, divergence_label: "Aligned" })).ledeText).toContain("tell one story");
   });
 
-  it("rule 4: the note names the served band and its range with the base rate and the 2008 peak, without the number", () => {
+  it("rule 4: the note names the served band and its range with the base rate, without the number; this history holds no 2008, so no peak", () => {
     const c = heroCopy(BASE);
-    expect(c.note).toBe("Sits in the Low Risk band (under 20%); recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.");
+    expect(c.note).toBe("Sits in the Low Risk band (under 20%); recession months are 7% of the training months (class-balanced, so not a calibrated probability).");
     expect(c.note).toContain("Low Risk band (under 20%)");
-    expect(c.note).toContain("2008 peaked near 89%");
+    expect(c.note).not.toContain("2008");
     expect(c.note).not.toContain("11.6");
-    expect(heroCopy(recessionFixture({ recession_label: "High Risk" })).note).toBe("Sits in the High Risk band (40% and above); recession months are 7% of the training months (class-balanced, so not a calibrated probability) and 2008 peaked near 89%.");
+    expect(heroCopy(recessionFixture({ recession_label: "High Risk" })).note).toBe("Sits in the High Risk band (40% and above); recession months are 7% of the training months (class-balanced, so not a calibrated probability).");
+  });
+
+  it("Codex R-27: the 2008 peak is the served history's 2008 maximum and its month, never a typed number", () => {
+    const with2008 = (top: number, month: string): DatedValue[] => [
+      { date: "2007-12-31", value: 99.9 }, // outside 2008: never the peak
+      { date: "2008-03-31", value: 41.2 },
+      { date: month, value: top },
+      { date: "2008-06-30", value: 60.5 },
+      { date: "2009-03-31", value: 100 },
+      ...probSeries(),
+    ];
+    const served = recessionFixture({ recession_prob_series: with2008(97.38568026111693, "2008-12-31") });
+    expect(peak2008(served.recession_prob_series)).toEqual({ value: 97.38568026111693, date: "2008-12-31" });
+    expect(heroCopy(served).note).toBe("Sits in the Low Risk band (under 20%); recession months are 7% of the training months (class-balanced, so not a calibrated probability), and 2008 peaked at 97.4% in Dec 2008.");
+    // Another history, another number: nothing is typed.
+    expect(heroCopy(recessionFixture({ recession_prob_series: with2008(88.6, "2008-10-31") })).note).toContain("2008 peaked at 88.6% in Oct 2008.");
+    expect(peak2008([])).toBeNull();
+    expect(peak2008(undefined)).toBeNull();
   });
 
   it("Codex R-13: the training share comes from the served metadata, and without it the claim is left out", () => {
@@ -298,7 +316,7 @@ describe("heroCopy (checklist 07 C.1 rules 1 to 6)", () => {
       expect(trainingShare(m)).toBeNull();
       expect(heroCopy(m).ledeText).not.toMatch(/recession months are|7%/);
       expect(heroCopy(m).ledeText).toContain("from inputs three months old; it is class-balanced, so scores are not calibrated probabilities.");
-      expect(heroCopy(m).note).toBe("Sits in the Low Risk band (under 20%); the model is class-balanced, so this is not a calibrated probability, and 2008 peaked near 89%.");
+      expect(heroCopy(m).note).toBe("Sits in the Low Risk band (under 20%); the model is class-balanced, so this is not a calibrated probability.");
     }
     expect(trainingShare(recessionFixture({ training_n: 1000, training_recession_months: 3 }))).toBe("under 1%");
   });

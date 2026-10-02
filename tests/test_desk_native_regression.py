@@ -89,6 +89,25 @@ BASE_VIX = replace(registry.BY_KEY["vix"], source="fred", series_id="VIXCLS",
                    note="CBOE close via FRED VIXCLS; settles 16:15 ET, so a VIX-dated event enters the target the next session.")
 
 
+# Codex R-20 (round 2): the engine's provenance sentence for the regime source was reworded ("3-month ... slopes"
+# became "the slopes over the last three monthly readings"), one string and no computation. The golden holds the
+# base's sentence; layer 2 maps exactly the new sentence back to it, so every number the engine returns is still
+# pinned to the base's, and the test requires the sentence to occur (the mapping is never vacuous).
+REWORDED = {
+    "regimes table (src/regime.py: a rule on the INDPRO and CPI slopes over the last three monthly readings, one row per month), read as stored":
+    "regimes table (src/regime.py: a rule on 3-month INDPRO and CPI slopes, one row per month), read as stored",
+}
+
+
+def _as_base_text(text: str) -> tuple[str, int]:
+    """The canonical JSON with each reviewed rewording mapped back to the base's sentence; how many were mapped."""
+    hits = 0
+    for new, old in REWORDED.items():
+        hits += text.count(json.dumps(new))
+        text = text.replace(json.dumps(new), json.dumps(old))
+    return text, hits
+
+
 @pytest.fixture()
 def base_vix(monkeypatch):
     monkeypatch.setitem(registry.BY_KEY, "vix", BASE_VIX)
@@ -99,12 +118,14 @@ def test_heads_pinned_output_matches_the_golden(synth, base_vix):
     VIX read as the base registry declared it, BASE_VIX)."""
     conn = es._connect(synth)
     moved = {}
+    reworded = 0
     try:
         for name, spec in _golden()["queries"].items():
             q = es.parse_slug(spec["slug"]) if "slug" in spec else es.Query(**spec["kwargs"])
             assert es.slug_for(es.validate(q)) == name
             try:
-                text = _canonical(_run_pinned(conn, q))
+                text, hits = _as_base_text(_canonical(_run_pinned(conn, q)))
+                reworded += hits
             except es.NotStored as exc:
                 text = f"NotStored:{exc.series}"
             except es.StudyError as exc:
@@ -114,6 +135,7 @@ def test_heads_pinned_output_matches_the_golden(synth, base_vix):
     finally:
         conn.close()
     assert moved == {}, f"native output moved from the golden (a blocking finding, A-18): {sorted(moved)}"
+    assert reworded > 0, "the reviewed rewording never occurred: REWORDED no longer matches the engine's sentence"
 
 
 # ── layer 1: the traced path ────────────────────────────────────────────────

@@ -277,7 +277,15 @@ test.describe("recession (checklist 07 E.3)", () => {
     expect(pill).toBe(m.recession_label);
     const noteLine = hero(page).locator(".mrr-hero-note");
     await expect(noteLine).toContainText(`Sits in the ${pill} band`);
-    await expect(noteLine).toContainText("2008 peaked near 89%");
+    // Codex R-27: the 2008 peak is read from the served history (its 2008 maximum and month), never typed.
+    const in2008 = ((m.recession_prob_series ?? []) as { date: string; value: number }[]).filter((p) => String(p.date).startsWith("2008-"));
+    if (in2008.length) {
+      const best = in2008.reduce((a, b) => (b.value > a.value ? b : a));
+      const mon = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(best.date.slice(5, 7)) - 1];
+      await expect(noteLine).toContainText(`2008 peaked at ${best.value.toFixed(1)}% in ${mon} 2008`);
+    } else {
+      await expect(noteLine).not.toContainText("2008 peaked");
+    }
     note("band", pill);
   });
 

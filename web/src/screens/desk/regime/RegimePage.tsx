@@ -213,8 +213,8 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
       {c && oddsWords(c) ? <p className="rg-classifier">{oddsWords(c)}</p> : null}
       {c ? (
         <StatRow cols={3}>
-          <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, 3-mo slope" />
-          <Stat label="Inflation" value={i ? capitalize(i) : undefined} awaiting={!i} tone={trendTone("inflation", i)} sub="CPI, 3-mo slope" />
+          <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, slope over the last three monthly readings" />
+          <Stat label="Inflation" value={i ? capitalize(i) : undefined} awaiting={!i} tone={trendTone("inflation", i)} sub="CPI, slope over the last three monthly readings" />
           <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} reading` : undefined} />
         </StatRow>
       ) : (
@@ -413,12 +413,12 @@ export function mom(x: number): string {
 
 /**
  * §5: "a print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
- * <falling|rising> → <flips_to>; it updates the regime shown as soon as it
- * publishes, and event studies tag sessions with it two months later
- * (<first_effective_month>)." Codex R-12: since D2 the page shows the newest
- * stored row, so a print changes the regime shown when it publishes; the
- * served `first_effective_month` is only the event-study tagging month (the
- * engine's K−2). `<=` flips a rising axis to falling, `>` a falling axis to
+ * <falling|rising> → <flips_to>. The regime shown updates once both CPI and
+ * industrial production for the month are stored; event studies tag sessions
+ * with it from <first_effective_month as Mon YYYY>." Codex R-12, R-26: since D2
+ * the page shows the newest stored row, which src/regime.py writes only when
+ * both monthly inputs are stored; the served `first_effective_month` is the
+ * event-study tagging month (the engine's K−2), named as served. `<=` flips a rising axis to falling, `>` a falling axis to
  * rising (v3 §9.3); the operator prints as ≤ or >. Null without a threshold.
  */
 export function flipWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "threshold_mom" | "operator" | "flips_to" | "first_effective_month">): string | null {
@@ -428,7 +428,7 @@ export function flipWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "thresho
   const to = p.operator === "<=" ? "falling" : "rising";
   const when = monthYear(p.first_effective_month);
   const flips = typeof p.flips_to === "string" && p.flips_to ? ` → ${p.flips_to}` : "";
-  return `a print ${p.operator === "<=" ? "≤" : ">"} ${x < 0 ? "−" : ""}${mom(x)}% m/m flips ${what} to ${to}${flips}; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later${when ? ` (${when})` : ""}.`;
+  return `a print ${p.operator === "<=" ? "≤" : ">"} ${x < 0 ? "−" : ""}${mom(x)}% m/m flips ${what} to ${to}${flips}. The regime shown updates once both CPI and industrial production for the month are stored${when ? `; event studies tag sessions with it from ${when}` : ""}.`;
 }
 
 /** The date's color: the regime it would flip to, with red read as caution (D12: red is for down and negative numbers only). */
@@ -471,7 +471,7 @@ export function publishedPrintWords(kind: "cpi" | "indpro", p: PublishedPrint | 
 }
 
 /** Codex R-05: what follows a published row's label: the month event studies tag sessions with it from (Codex R-12:
- * not when it is shown, which is as soon as it publishes) and the prints that made it. */
+ * not when it is shown, which is once both monthly inputs are stored) and the prints that made it. */
 export function publishedTail(row: PublishedRow): string {
   const prints = [publishedPrintWords("cpi", row.cpi), publishedPrintWords("indpro", row.indpro)].filter(Boolean);
   const from = monthYear(row.first_effective_month) ? ` (event studies tag sessions with it from ${monthYear(row.first_effective_month)})` : "";

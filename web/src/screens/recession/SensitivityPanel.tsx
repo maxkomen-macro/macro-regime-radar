@@ -31,7 +31,8 @@ import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
 /** The null-value glyph the result line prints (U+2014), never an em-dash aside. */
 const DASH = "—";
 export const SCENARIO_CAPTION = "Hypothetical score of these inputs under the fitted coefficients and scaler.";
-export const SCENARIO_UNTOUCHED = "Untouched, they hold the latest readings, which the headline scores about three months later.";
+/** Codex R-14 (round 2): the untouched panel's caption, a hypothetical with no promise about a future headline. */
+export const SCENARIO_UNTOUCHED = "Rounded latest-available inputs evaluated under the current fitted coefficients: a hypothetical, not a forecast.";
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
@@ -297,12 +298,9 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                       {scenario.data.baseline_prob != null ? fmtProb(scenario.data.baseline_prob, "percent", 1) : `${DASH}%`}
                     </div>
                   )}
-                  {/* Codex R-14: a hypothetical score, never a forecast of the headline; the second sentence holds only
-                      while the sliders are untouched (inputs null: every field still equals the seed). */}
-                  <Caption>
-                    {SCENARIO_CAPTION}
-                    {inputs == null ? ` ${SCENARIO_UNTOUCHED}` : null}
-                  </Caption>
+                  {/* Codex R-14: a hypothetical score, never a forecast of the headline. Untouched (inputs null: every
+                      field still equals the seed) the inputs are the rounded latest-available readings. */}
+                  <Caption>{inputs == null ? SCENARIO_UNTOUCHED : SCENARIO_CAPTION}</Caption>
                 </>
               ) : (
                 <div style={{ marginTop: 8 }}>
