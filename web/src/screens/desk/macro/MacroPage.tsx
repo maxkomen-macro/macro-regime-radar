@@ -298,9 +298,10 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
               ]}
               grid={false}
               zero
+              // Codex R-13: each band says what its sign of correlation means, never whether a hedge works.
               bands={[
-                { from: 0, to: 1, fill: "rgba(232, 180, 71, 0.10)", label: "bonds move WITH stocks · no hedge", labelColor: DESK_ACCENTS.amber },
-                { from: -1, to: 0, fill: "rgba(38, 220, 160, 0.08)", label: "bonds move AGAINST stocks · hedge works", labelColor: DESK_ACCENTS.green, labelAt: "bottom" },
+                { from: 0, to: 1, fill: "rgba(232, 180, 71, 0.10)", label: "positive correlation: bonds move with stocks", labelColor: DESK_ACCENTS.amber },
+                { from: -1, to: 0, fill: "rgba(38, 220, 160, 0.08)", label: "negative correlation: bonds offset stocks", labelColor: DESK_ACCENTS.green, labelAt: "bottom" },
               ]}
               series={[{ key: "corr", values: series.map((p) => (fin(p.corr) ? p.corr : null)), color: DESK_ACCENTS.blue, width: 2 }]}
               endDot="corr"

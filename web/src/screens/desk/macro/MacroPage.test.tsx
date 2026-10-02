@@ -277,6 +277,9 @@ describe("Macro tab", () => {
     const sb = await screen.findByRole("region", { name: /Do bonds still hedge/ });
     await waitFor(() => expect(sb.querySelectorAll(".dk-chart-band")).toHaveLength(2));
     expect([...sb.querySelectorAll<SVGTextElement>(".dk-chart-band")].map((t) => t.style.fill)).toEqual(["#e8b447", "#26dca0"]);
+    // Codex R-13: the bands say what the sign means, not whether a hedge works.
+    expect([...sb.querySelectorAll(".dk-chart-band")].map((t) => t.textContent)).toEqual(["positive correlation: bonds move with stocks", "negative correlation: bonds offset stocks"]);
+    expect([...sb.querySelectorAll(".dk-chart-band")].map((t) => t.textContent).join(" ")).not.toMatch(/hedge/i);
     const credit = screen.getByRole("region", { name: /^Credit/ });
     expect(credit.querySelector<SVGTextElement>(".dk-chart-point")?.style.fill).toBe("#8b929e");
   });
