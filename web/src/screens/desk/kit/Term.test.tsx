@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { GLOSSARY, splitTerms } from "./glossary";
 import { Term, TermTip, defineTerms, termsIn, writtenId } from "./Term";
 import { Stat } from "./ui";
@@ -191,6 +191,62 @@ describe("keyboard, touch and written definitions (desk/pdf-polish item 7)", () 
     // A tap on the term alone (no pointerover first) shows it too.
     touch(term, "pointerdown");
     expect(screen.getByRole("tooltip")).toHaveTextContent(GLOSSARY.curve.text);
+  });
+
+  it("Codex R-10: a tap on a term inside a row shows its sentence and does not open the row; a mouse click still does", () => {
+    const opened = vi.fn();
+    const pressed = vi.fn();
+    render(
+      <>
+        <table>
+          <tbody>
+            <tr tabIndex={0} onClick={opened}>
+              <th>{defineTerms("2s10s +2σ steepening")}</th>
+              <td>Sep 23</td>
+            </tr>
+          </tbody>
+        </table>
+        <button type="button" onClick={pressed}>
+          <span>Gold call</span> <Term ids={["nav"]}>4% NAV</Term>
+        </button>
+        <TermTip />
+      </>,
+    );
+    const pointer = (el: Element, type: string, pointerType: string) => {
+      const e = new MouseEvent(type, { bubbles: true, cancelable: true });
+      Object.defineProperty(e, "pointerType", { value: pointerType });
+      act(() => {
+        el.dispatchEvent(e);
+      });
+    };
+    const tap = (el: Element) => {
+      pointer(el, "pointerdown", "touch");
+      act(() => {
+        fireEvent.click(el);
+      });
+    };
+    const title = screen.getByText("2s10s +2σ steepening");
+    tap(title);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(GLOSSARY.curve.text);
+    expect(opened).not.toHaveBeenCalled();
+    // The rest of the row still opens it with a tap; a mouse click on the term does too (hover showed the sentence).
+    tap(screen.getByText("Sep 23"));
+    expect(opened).toHaveBeenCalledTimes(1);
+    pointer(title, "pointerdown", "mouse");
+    act(() => {
+      fireEvent.click(title);
+    });
+    expect(opened).toHaveBeenCalledTimes(2);
+    // A monitored position's button: a tap on its NAV shows the definition, and its focus keeps that sentence.
+    const nav = screen.getByText("4% NAV");
+    tap(nav);
+    act(() => {
+      fireEvent.focusIn(screen.getByRole("button"));
+    });
+    expect(pressed).not.toHaveBeenCalled();
+    expect([...screen.getByRole("tooltip").querySelectorAll("p")].map((p) => p.textContent)).toEqual([GLOSSARY.nav.text]);
+    tap(screen.getByText("Gold call"));
+    expect(pressed).toHaveBeenCalledTimes(1);
   });
 
   it("a control that holds terms shows their sentences when it takes the focus; a pointer over the control alone shows none", () => {

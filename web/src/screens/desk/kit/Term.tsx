@@ -11,6 +11,8 @@
  * reaches every definition (a term inside a control, a link, a button or a
  * focusable row, is not: the control takes the focus), and a tap shows the
  * sentence on a touch screen until a tap elsewhere, a focus change or Escape.
+ * A tap on a term inside a control shows the sentence and goes no further:
+ * the row around it is not opened (Codex R-10).
  * A page may also write a definition from its data (`def`: a month, a
  * target's name); while a term shows it, it joins the hidden list too.
  */
@@ -115,6 +117,8 @@ export function TermTip() {
     let current: Element | null = null;
     // The sentences on show: a term's own, or those a focused control holds.
     let shown = "";
+    // Codex R-10: the term a touch or pen pointer last went down on, so the click that follows shows its sentence only.
+    let tapped: Element | null = null;
     const show = (el: Element, own?: string) => {
       const text = own ?? el.getAttribute("data-def");
       if (!text) return;
@@ -141,6 +145,8 @@ export function TermTip() {
       // desk/pdf-polish 7: a control that holds terms (a monitored row, a Ledger row) shows their sentences when it
       // takes the focus, as a pointer shows them over the terms themselves.
       if (e.type !== "focusin" || !target || target === current || typeof target.matches !== "function" || !target.matches(CONTROL)) return;
+      // The control that holds the term just shown (a tapped one) keeps that term's sentence (Codex R-10).
+      if (current && target.contains(current)) return;
       const held = [...new Set([...target.querySelectorAll(".dk-term")].flatMap((t) => (t.getAttribute("data-def") ?? "").split("\n")).filter(Boolean))];
       if (held.length) show(target, held.join("\n"));
     };
@@ -153,10 +159,23 @@ export function TermTip() {
     };
     // A tap (or a click) on a term shows its sentence; anywhere else, it hides the one showing.
     const down = (e: Event) => {
-      const el = (e.target as Element | null)?.closest?.(".dk-term");
+      const el = (e.target as Element | null)?.closest?.(".dk-term") ?? null;
+      const type = (e as PointerEvent).pointerType;
+      tapped = el && (type === "touch" || type === "pen") ? el : null;
       if (el) {
         if (el !== current) show(el);
       } else if (current) hide();
+    };
+    // Codex R-10: the click a tap on a term inside a control (a Ledger row, a monitored position, a label) makes is
+    // stopped before the control sees it, so the tap shows the sentence and opens nothing. A mouse, which shows the
+    // sentence on hover, still clicks through; so do the keyboard and a tap anywhere else in the row.
+    const click = (e: MouseEvent) => {
+      const el = (e.target as Element | null)?.closest?.(".dk-term");
+      if (!el || el !== tapped) return;
+      tapped = null;
+      if (!el.parentElement?.closest(CONTROL)) return;
+      e.preventDefault();
+      e.stopPropagation();
     };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") hide();
@@ -173,6 +192,7 @@ export function TermTip() {
     document.addEventListener("pointerover", over);
     document.addEventListener("pointerout", out);
     document.addEventListener("pointerdown", down);
+    document.addEventListener("click", click, true);
     document.addEventListener("focusin", over);
     document.addEventListener("focusout", out);
     document.addEventListener("keydown", key);
@@ -181,6 +201,7 @@ export function TermTip() {
       document.removeEventListener("pointerover", over);
       document.removeEventListener("pointerout", out);
       document.removeEventListener("pointerdown", down);
+      document.removeEventListener("click", click, true);
       document.removeEventListener("focusin", over);
       document.removeEventListener("focusout", out);
       document.removeEventListener("keydown", key);
