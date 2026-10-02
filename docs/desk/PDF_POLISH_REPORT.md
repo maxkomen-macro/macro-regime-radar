@@ -268,15 +268,17 @@ Taken at the build stamp `desk/pdf-polish@33a075c` (checked in the page's `<meta
 | Desk e2e: `e2e/desk.spec.ts` + `e2e/desk-usability.spec.ts`, `--workers=1`, my Vite on :5173 (stamp checked), fixtures routed in-page | `33a075c` | **84 passed** (the 83 before this branch, plus its keyboard-and-tap test), 4.7 min |
 | Python tests that read files this branch changed (`test_web_fresh_report.py`, `test_desk_contract.py`, `test_desk_v2_envelope.py`, `test_desk_v2_study.py`, `test_desk_v2_pipeline.py`) | `git archive` of `33a075c` with a scratch DB copy (`MRR_WEB_NODE_MODULES` set to this worktree's) | **250 passed, 2 skipped** (`desk_scratch.db` is not in an archive tree; the audit's copy is not this store) |
 
-The first full Desk e2e run, at item 7's first commit, was 82 passed and 1 failed: the null-answer test listed "From 1-year high", the label of the card item 3c removed. That list now names the Signals card's "1-year return", folded into item 3's commit. The non-Desk e2e suites were not run. Item 1's string is pinned in `e2e/accuracy-iteration.spec.ts`, which was updated to the new words but not run, since it needs the live-API setup the freshness branch used.
+The first full Desk e2e run, at item 7's first commit, was 82 passed and 1 failed: the null-answer test listed "From 1-year high", the label of the card item 3c removed. That list now names the Signals card's "1-year return", folded into item 3's commit. The non-Desk e2e suites were not run. Item 1's string is pinned in `e2e/accuracy-iteration.spec.ts`, which was updated to the new words. It was not run in this round, but was in the Follow-up below: its A3d check of the banner passes on all 8 routes.
 
 ## Not done, and the owner's calls
 
-1. A stock's Technicals page keeps its Risk card (decision 9). One line removes it: `TechnicalsPage.tsx:918`, plus the stock grid's `.te-grid-stock .te-risk` rule.
-2. The Position Monitor page's Monitored card still reads "how far each is from being wrong · live" (decision 6).
-3. The served options card (not shown while `vol` is deferred) says "more expensive", not "richer" (decision 7).
+Items 1, 2, 3 and 5 below were decided by the owner after this report; see the Follow-up section at the end.
+
+1. A stock's Technicals page keeps its Risk card (decision 9). **Decided: keep it.**
+2. The Position Monitor page's Monitored card still reads "how far each is from being wrong · live" (decision 6). **Decided: the Overview's words, without "· live"; done in `c71f1b4e`.**
+3. The served options card (not shown while `vol` is deferred) says "more expensive", not "richer" (decision 7). **Decided: "richer" / "cheaper"; done in `c71f1b4e`.**
 4. The VIX tile's live-quote stamp is the tape's, ET on a 24-hour clock (decision 3).
-5. The PROTOTYPE cards' tables have no column hovers (decision 13).
+5. The PROTOTYPE cards' tables have no column hovers (decision 13). **Decided: leave them.**
 6. The Signal Ledger's own footnote "vs normal compares each study to its own baseline over its own sample." is unchanged; item 3b named only the Technicals card's box.
 
 ## Processes this session started, and stopped
@@ -286,3 +288,32 @@ The first full Desk e2e run, at item 7's first commit, was 82 passed and 1 faile
 - No other process was started, stopped, restarted or reused. Ports 8001 and 5174 were never contacted, and a Vite on :5194 belonging to another job was left alone.
 - `web/node_modules` was installed in this worktree (`npm ci`; gitignored). No `.env` or key was copied in.
 - `CLAUDE.md` was not changed, per the brief. The shared stash holds an entry named "CLAUDE.md area-notes split, not part of desk/pdf-polish" that predates this session; it was not touched. For a later CLAUDE.md pass: Desk terms are Tab stops and tappable (`kit/Term.tsx`), column heads take their sentence by glossary id (`col-*`, `mx-*`), and every Desk clock is New York time (`format.ts` `etTime`, `etDayTime`).
+
+## Follow-up: the owner's decisions on the open calls
+
+**New HEAD after the follow-up: `c71f1b4e`** (one commit on `6cd184a0`, "fix(desk): the owner's calls on the open items: Monitored's small text, "richer" when options are served"). This section is the commit after it (docs only). Not pushed. Roll back with `git revert c71f1b4e` (web only).
+
+| # | Decision | What was done |
+|---|---|---|
+| 1 | 3c: keep the Risk card on a single stock's Technicals page (`?symbol=`); it stays off the S&P view | No code change: the card renders only on a stock's page (`TechnicalsPage.tsx:918`). On the S&P's page, the grid places its seven cards (`TechnicalsPage.test.tsx`, "desk/pdf-polish 3c"). Recorded here as the owner's decision, not an open call. |
+| 2 | 2g: the Position Monitor's Monitored card takes the Overview's small text; "· live" only if its values update from live quotes | The values are stored data, so "· live" is dropped. `useLevels` (`positions/usePositionStore.ts:35-41`) reads `/api/desk/technicals` and `/api/desk/macro`. `levelsFrom` (`positions/monitor.ts:29-38`) takes the S&P's newest stored close (`price`, `date`) and `/macro`'s 2s10s (`curve["2s10s_bp"]`). Both are plain Desk queries (`data/api.ts:246-256`, stale after 60 s, refetched on a new visit or with the generation), and none reads the relay's quotes: `useQuotes` is read on the Desk only by the Overview's VIX tile. Before: "how far each is from being wrong · live". After: "your positions vs. their exit levels" (`PositionMonitorPage.tsx:194`). |
+| 3 | The options card once option data is live: "more expensive" → "richer" ("cheaper" for the opposite) | One sentence, `putsVsCalls` (`kit/format.ts:48-53`), now printed by both states: served (`TechnicalsPage.tsx:104`) and PROTOTYPE (`prototypes/ProtectionCard.tsx:125`). Before, served: "Puts are 6.8 vol points more expensive than calls." / "Calls are N vol points more expensive than puts.". After, both states: "Puts are 6.8 vol points richer than calls." / "Puts are N vol points cheaper than calls." (zero reads "richer", as the PROTOTYPE did). |
+| 4 | Leave the PROTOTYPE cards' tables without hovers | No change. |
+| 5 | Run `e2e/accuracy-iteration.spec.ts` if it can run without the EODHD key or a `.env` | It runs without the key or a `.env`: **35 of 38 pass**, every A3 freshness test among them. That includes A3d, which pins item 1's banner, "Most recent stored close: Sep 14", on all 8 routes. It needs: the Vite dev server (`E2E_BASE_URL`), and the API on :8000 serving a populated store with its rate limits raised, run alone. Here that was a `git archive` of the commit with a scratch copy of `data/macro_radar.db` and `RATE_LIMIT_PER_CLIENT_PER_MIN`, `_BURST`, `RATE_LIMIT_GLOBAL_PER_MIN`, `_BURST` = 100000. The three failures: **A2** needs the EODHD relay. With `EODHD_API_TOKEN` in the API's environment (or the repo-root `.env` the API reads), the relay serves the delayed VIX quote, and the Dashboard's VIX card prints it as `data-metric="vix-live"` (`dashboard/KeyLevels.tsx:131`). Without it: `vix-live: no [data-metric="vix-live"] on any view`. **A1 /app/methodology at 1672 and at 390** fail on the base too, with or without the key. The page's "Standard methods" section says "temperature 0.7" (`methodology/MethodologyScreen.tsx:630`, added by fix/freshness `d1e73a64`, on `main` before this branch), and the spec counts any number without a nearby `[data-stamp]` as an unstamped card. This branch changes no Methodology or stamp file. Giving that section a stamp, or exempting reference text from A1, is the owner's call; neither was done here. |
+
+Screenshots at 1440 px, stamp `desk/pdf-polish@c71f1b4`: `shots/desk-pdf-polish/08-followup-position-monitor-monitored.png` (tonight's data, positions from the fixtures' browser store) and `shots/desk-pdf-polish/08-followup-options-card-served.png`. The second shows the card as served, from the §12 fixtures with `/technicals`' `vol` block served (`src/test/desk-variants.ts` `servedTechnicals`), because tonight's API defers it.
+
+![](shots/desk-pdf-polish/08-followup-position-monitor-monitored.png)
+
+![](shots/desk-pdf-polish/08-followup-options-card-served.png)
+
+### Follow-up gates (at `c71f1b4e`)
+
+| Gate | Result |
+|---|---|
+| Scoped: Technicals, Position Monitor, prototypes, kit, the ban list, column heads | 26 files, **248 passed** |
+| Web gate: `tsc -b --noEmit`, `vitest run`, `vite build` | tsc clean; **vitest 1,820 passed (147 files)**, the new `putsVsCalls` test included; build ✓. The first full run had one failure: `BasketHedgePage.test.tsx` "Codex R-04 … ten NVDA legs" ran 7.2 s against vitest's 5 s limit under the full suite's load. The file passed alone twice (40 of 40) and in a second full run; this commit touches nothing it renders. |
+| Desk e2e: `e2e/desk.spec.ts` + `e2e/desk-usability.spec.ts`, my Vite on :5173 (stamp `desk/pdf-polish@c71f1b4`) | **84 passed**, 4.8 min |
+| `e2e/accuracy-iteration.spec.ts`, alone, my Vite on :5173 (stamp `desk/pdf-polish@c71f1b4`) and my API on :8000, no key | **35 passed, 3 failed** (1.9 min): A2 needs the EODHD relay (`vix-live`); A1 Methodology at 1672 and 390 fails on the base too ("temperature 0.7", no stamp). Decision 5 has the detail. |
+
+Servers: my API on :8000 (a `git archive` of `c71f1b4e`, a scratch DB copy, no keys, the rate limits raised for the run) and my Vite on :5173 were started for these gates and stopped afterwards. Nothing else was started, stopped or reused.
