@@ -131,6 +131,9 @@ describe("Technicals tab", () => {
     // The four badges are drawn as the card draws them.
     expect([...panel.querySelectorAll("dt .dk-pill")].map((p) => p.getAttribute("data-verdict"))).toEqual(["reliable", "suggestive", "no_edge", "insufficient"]);
     expect(panel).toHaveTextContent("The S&P's 50-day average moves above its 200-day average, from below.");
+    // Codex R-02: Wilder-smoothed averages with a 14-session period, never "the last 14 sessions".
+    expect(SIGNAL_KEY.find((k) => k.term === "RSI")?.text).toMatch(/Wilder-smoothed .* 14-session period/);
+    expect(panel).not.toHaveTextContent("last 14 sessions");
     fireEvent.click(key);
     expect(card.querySelector(".te-key")).toBeNull();
     // item 7: the three column heads carry their definitions.

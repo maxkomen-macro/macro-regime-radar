@@ -21,7 +21,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   steep: { forms: ["steepening", "flattening"], text: "Steepening means the 10-year yield is rising against the 2-year, so 2s10s widens; flattening is the reverse." },
   front: { forms: ["Front end"], text: "The front end is the short end of the Treasury curve; here, the 3-month bill yield." },
   bp: { forms: ["basis points", "bp"], text: "A basis point (bp) is one hundredth of a percentage point: 25 bp is 0.25 percentage points." },
-  rsi: { forms: ["RSI"], text: "The relative strength index scores the last 14 sessions' gains against their losses from 0 to 100; above 70 reads as stretched up, below 30 as stretched down." },
+  rsi: { forms: ["RSI"], text: "The relative strength index weighs Wilder-smoothed average gains against average losses with a 14-session period, from 0 to 100; above 70 reads as stretched up, below 30 as stretched down." },
   realized: { forms: ["realized volatility", "Realized volatility", "realized vol", "Realized vol"], text: "Realized volatility is how much the price actually moved: the standard deviation of the last 21 daily log returns, annualized." },
   implied: { forms: ["implied volatility", "Implied volatility", "implied vol", "Implied vol", "IV"], text: "Implied volatility is the size of move option prices assume over their life, annualized; set against realized volatility it shows whether options are rich or cheap." },
   skew: { forms: ["skew", "Skew", "SKEW"], text: "Skew is how much more the market pays for puts than for calls the same distance from the price: the price of crash protection." },

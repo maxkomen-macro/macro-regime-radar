@@ -10,6 +10,12 @@ describe("hover definitions (desk/usability item 11, §14.11)", () => {
       expect(termsIn(`a ${printed} b`), printed).toHaveLength(1);
   });
 
+  it("Codex R-02: RSI is Wilder-smoothed with a 14-session period, not a 14-session window", () => {
+    expect(GLOSSARY.rsi.text).toContain("Wilder-smoothed");
+    expect(GLOSSARY.rsi.text).toContain("14-session period");
+    expect(GLOSSARY.rsi.text).not.toMatch(/last 14 sessions/);
+  });
+
   it("each definition is one plain sentence", () => {
     for (const [id, t] of Object.entries(GLOSSARY)) {
       expect(t.text.endsWith("."), id).toBe(true);
