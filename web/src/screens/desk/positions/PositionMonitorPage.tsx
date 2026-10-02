@@ -385,8 +385,11 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const basketId = search.get("basket");
   const localBasket = basketId ? (readSaved().find((b) => b.id === basketId) ?? null) : null;
   // desk/cap-weight: a cap-weighted basket is recorded at the cap weights last served for it; with none served yet
-  // its weights are not known here (`legs` null), and Save says so rather than record the typed ones.
-  const sent = localBasket ? { name: localBasket.name, instrument: `${localBasket.name} basket`, legs: recordedLegs(localBasket) } : null;
+  // its weights are not known here (`legs` null), and Save says so rather than record the typed ones. Round 3 (R3-01):
+  // sent from a page that priced it at its typed weights (cap weight unavailable there, `weighting=target`), it is
+  // recorded at those, the weights that page showed, never at cap weights served earlier.
+  const typedSent = search.get("weighting") === "target";
+  const sent = localBasket ? { name: localBasket.name, instrument: `${localBasket.name} basket`, legs: typedSent ? localBasket.legs : recordedLegs(localBasket) } : null;
   const capNotServed = sent && sent.legs === null ? `${sent.name} is cap-weighted, and no cap weights have been served for it in this browser yet: open it on Basket & Hedge until it is priced, then send it again.` : null;
   const tech = useTechnicals();
   const [store, change] = usePositionStore();

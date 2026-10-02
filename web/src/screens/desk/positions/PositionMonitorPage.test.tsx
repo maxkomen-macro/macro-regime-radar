@@ -306,8 +306,8 @@ describe("Position Monitor tab", () => {
 
   // desk/cap-weight: a cap-weighted basket is recorded at the cap weights last served for it, never at its typed ones.
   const capBasket = { id: "local-1", name: "Two", legs: [{ symbol: "NVDA", name: null, weight: "50" }, { symbol: "TSM", name: null, weight: "50" }], saved_at: "2026-09-30T00:00:00Z", weighting: "cap" };
-  const sendAndSave = async () => {
-    renderTab("/desk/position-monitor?basket=local-1");
+  const sendAndSave = async (route = "/desk/position-monitor?basket=local-1") => {
+    renderTab(route);
     await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("Two basket"));
     fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "2s10s" } });
     answer();
@@ -322,6 +322,19 @@ describe("Position Monitor tab", () => {
       await sendAndSave();
       await waitFor(() => expect(stored()).toHaveLength(1));
       expect(stored()[0]).toMatchObject({ subject: { kind: "basket", legs: [{ symbol: "NVDA", weight: 70 }, { symbol: "TSM", weight: 30 }], benchmark: null } });
+    } finally {
+      localStorage.removeItem(SAVED_BASKETS_KEY);
+    }
+  });
+
+  it("round 3 (R3-01): sent from a page that priced it at its typed weights, a cap-weighted basket is recorded at those, never at older cap weights", async () => {
+    // Codex's case: 80/20 served earlier, then cap weight refused (or the counts gone), so the page priced it at 50/50.
+    const snap = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 0.8, TSM: 0.2 } };
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([{ ...capBasket, cap_weights: snap }]));
+    try {
+      await sendAndSave("/desk/position-monitor?basket=local-1&weighting=target");
+      await waitFor(() => expect(stored()).toHaveLength(1));
+      expect(stored()[0]).toMatchObject({ subject: { kind: "basket", legs: [{ symbol: "NVDA", weight: 50 }, { symbol: "TSM", weight: 50 }], benchmark: null } });
     } finally {
       localStorage.removeItem(SAVED_BASKETS_KEY);
     }

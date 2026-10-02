@@ -388,6 +388,18 @@ describe("Basket & Hedge tab", () => {
     // The choice is kept: the saved basket stays cap-weighted, and no cap weights are recorded for it.
     expect(stored()[0].weighting).toBe("cap");
     expect(stored()[0].cap_weights).toBeUndefined();
+    // Round 3 (R3-01): the address says the basket is priced at its typed weights, and Send to Position Monitor carries
+    // it, so Position Monitor records the weights shown here.
+    const address = () => new URLSearchParams((screen.getByTestId("loc").textContent ?? "").split("?")[1] ?? "");
+    await waitFor(() => expect([address().get("basket"), address().get("weighting")]).toEqual(["local-1", "target"]));
+    expect(screen.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?basket=local-1&weighting=target");
+    // Round 3 (R3-03): asked again on request: refused again here, so still priced at its typed weights.
+    const capAsked = () => calls.filter((c) => c.startsWith("GET /api/desk/basket/price") && c.endsWith("weighting=cap")).length;
+    const before = capAsked();
+    fireEvent.click(within(b).getByRole("button", { name: "Try cap weight again" }));
+    await waitFor(() => expect(capAsked()).toBe(before + 1));
+    await waitFor(() => expect(within(b).getByRole("button", { name: "Try cap weight again" })).toBeInTheDocument());
+    await waitFor(() => expect(index).toHaveTextContent("Up 346.5% since Mar 28, 2025"));
   });
 
   it("Codex R-02: an answer with the same dates as the stored cap weights and other weights replaces them, so Position Monitor records what the page shows", async () => {

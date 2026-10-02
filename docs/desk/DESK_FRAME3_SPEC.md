@@ -1020,12 +1020,18 @@ the basket (a custom ticker), or on a database the full refresh has not
 reached, the control is unavailable with the reason (`data-unserved`), a
 name added without a count returns the basket to equal weight and says so,
 and a saved cap-weighted basket is priced at its typed weights and says why.
+So is one the API refuses to cap-weight (a move of 5% or more in a name's
+close as traded against its adjusted close after the start, a split or a
+large distribution prices cannot tell apart, or a missing close on the start
+or the last close), with the API's words and **Try cap weight again**; the
+refusal lapses when another data generation answers.
 **Equal-weight** returns to typed weights, at equal weight. Everything below
 step 1 is computed from the weights chosen: the index, its returns and
 technicals, the beta and correlation, the contribution, the concentration,
 the liquidity, the hedge ranking, the hedge ratio and short, the volatility
 left and cut, and the stress test. Send to Position Monitor records a
-cap-weighted basket at the cap weights last served for it.
+cap-weighted basket at the cap weights last served for it, and one the page
+priced at its typed weights at those (the address carries `weighting=target`).
 
 **How the basket trades** (step 2). Each card leads with one plain sentence
 stating its answer with its numbers, then its stats and body, all served
@@ -1973,7 +1979,7 @@ ceiling. No block envelopes.
 |---|---|---|---|---|---|
 | `method` | `"hold"` \| `"monthly"` | required | — | — | A: the request's |
 | `weighting` | `"target"` \| `"cap"` | required | — | — | A: the request's (desk/cap-weight) |
-| `cap_weights` | `{provider, source, as_of, start, legs: [{symbol, shares_outstanding, as_of, close_start, value_start, weight_start}]}` | required, nullable | shares; USD; fraction | `as_of`: the oldest read among the names | S `share_counts` (§12.18) and N `price_basket`: each name's weight at `start` is its share count × its close there as traded on today's share basis (`close_start`: the provider's own close divided by the splits since, never the dividend-adjusted close, Codex R-01) over the basket's sum (`value_start`, `weight_start`, equal to `legs[].target_weight`), then held, each dividend reinvested across the basket at its weights (a total-return index: the weights stay the market values, a session's return is the names' adjusted returns at those weights); monthly, reset to cap weights at each later month's first index session, which changes nothing; null for `target`. The page's label: "Cap-weighted: market value at the start, current share counts (<provider>, as of <as_of>)" |
+| `cap_weights` | `{provider, source, as_of, start, legs: [{symbol, shares_outstanding, as_of, close_start, value_start, weight_start}]}` | required, nullable | shares; USD; fraction | `as_of`: the oldest read among the names | S `share_counts` (§12.18) and N `price_basket`: each name's weight at `start` is its share count × its close there as traded on today's share basis (`close_start`: the provider's own close, never the dividend-adjusted close, Codex R-01; a move of 5% or more in its ratio to the adjusted close after `start` is refused 422 `unsupported` in words, R3-02) over the basket's sum (`value_start`, `weight_start`, equal to `legs[].target_weight`), then held, each dividend reinvested across the basket at its weights (a total-return index: the weights stay the market values, a session's return is the names' adjusted returns at those weights); monthly, reset to cap weights at each later month's first index session, which changes nothing; null for `target`. The page's label: "Cap-weighted: market value at the start, current share counts (<provider>, as of <as_of>)" |
 | `notional` | number | required | USD | — | A |
 | `provider`, `source` | string | required | — | — | A: `"EODHD"`, and the source in words |
 | `freq` | `"daily"` | required | — | — | A |

@@ -117,11 +117,15 @@ function Action({ page, pathTo }: { page: DeskPage; pathTo: (slug: string) => st
       </Link>
     );
   if (page.action === "link") return <PageLink page={page} pathTo={pathTo} />;
-  // §10: a basket kept in this browser is the subject sent; the page writes the open one in the address.
-  const basket = new URLSearchParams(location.search).get("basket");
+  // §10: a basket kept in this browser is the subject sent; the page writes the open one in the address, and
+  // (desk/cap-weight, round 3, R3-01) `weighting=target` when it priced a cap-weighted basket at its typed weights, so
+  // Position Monitor records the weights the page showed.
+  const sp = new URLSearchParams(location.search);
+  const basket = sp.get("basket");
+  const sendTo = basket ? withParam(pathTo("position-monitor"), "basket", basket) : pathTo("position-monitor");
   if (page.action === "send")
     return (
-      <Link className="dk-btn" data-kind="light" to={basket ? withParam(pathTo("position-monitor"), "basket", basket) : pathTo("position-monitor")} data-testid="dk-act">
+      <Link className="dk-btn" data-kind="light" to={basket && sp.get("weighting") === "target" ? withParam(sendTo, "weighting", "target") : sendTo} data-testid="dk-act">
         Send to Position Monitor →
       </Link>
     );

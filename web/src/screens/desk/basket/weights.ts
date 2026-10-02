@@ -274,14 +274,29 @@ function listOf(items: readonly string[]): string {
 export interface CapRefusal {
   names: string;
   reason: string;
+  /** Round 3 (R3-03): the generation the refusal was answered on (null when it named none), and when it arrived. */
+  generation: string | null;
+  at: number;
 }
 
 /** The refusal a failed cap-weighted request carries (a 422 `unsupported` whose words are about cap weight), as the
- * page says it; null for any other failure, which the page shows as it is. */
-export function capRefusalOf(e: { status?: number; body?: { error?: string } | null; message?: string } | null | undefined, names: string): CapRefusal | null {
+ * page says it, received at `at`; null for any other failure, which the page shows as it is. */
+export function capRefusalOf(
+  e: { status?: number; body?: { error?: string } | null; message?: string; generationId?: string | null } | null | undefined,
+  names: string,
+  at: number,
+): CapRefusal | null {
   if (!e || e.status !== 422 || e.body?.error !== "unsupported" || !e.message || !/^cap weight/i.test(e.message)) return null;
   const words = e.message.charAt(0).toUpperCase() + e.message.slice(1);
-  return { names, reason: /[.!?]$/.test(words) ? words : `${words}.` };
+  return { names, reason: /[.!?]$/.test(words) ? words : `${words}.`, generation: e.generationId ?? null, at };
+}
+
+/** Round 3 (R3-03): a refusal holds for the generation it was answered on. It lapses once an answer received after it
+ * comes from another generation (the stored data it was refused on has changed), so cap weight is asked again; one
+ * received before it, or from the same generation, never lapses it, so a refused basket is not asked in a loop. */
+export function refusalLapsed(refused: CapRefusal, answers: readonly { data?: { generation_id?: unknown } | null; dataUpdatedAt: number }[]): boolean {
+  if (!refused.generation) return false;
+  return answers.some((a) => !!a.data && a.dataUpdatedAt > refused.at && typeof a.data.generation_id === "string" && a.data.generation_id !== refused.generation);
 }
 
 /** Whether a basket of these names can be cap-weighted: every name needs a stored share count (§12.18), and the API
