@@ -3,15 +3,15 @@
  * "Stored close behind the bell"): when /api/freshness says `market_daily`
  * is stale, every route says so in plain words, once, under the top bar:
  *
- *   "The newest stored close is Sep 14; the Sep 18 close is not stored yet."
+ *   "Most recent stored close: Sep 14"   (desk/pdf-polish item 1)
  *
- * Both dates come from the server (`market_daily.as_of` and the session's
- * last completed day); nothing is aged here. The line is a status line (G4,
- * `data-copy="status"`): one rendered line at every width. Below 768 px the
- * phone form ("Stored close Sep 14; Sep 18 not stored yet.") is the visible
- * line and the full sentence stays for screen readers; the server's reason
- * is the title, and the drawer carries the rest. A seeded snapshot prints
- * nothing here (its states are unknown until the live report arrives).
+ * The date comes from the server (`market_daily.as_of`); nothing is aged
+ * here. The line is a status line (G4, `data-copy="status"`): one rendered
+ * line at every width. Below 768 px the phone form is the visible line (the
+ * same words since desk/pdf-polish) and the full one stays for screen
+ * readers; the server's reason is the title, and the drawer carries the
+ * rest. A seeded snapshot prints nothing here (its states are unknown until
+ * the live report arrives).
  */
 
 import type { ShellStatus } from "./shell-status";
