@@ -8,7 +8,7 @@
  *
  * Fixture odds are invented for the cases (never the mockup's 64 / 35); the
  * lead-word thresholds are the ones DashboardScreen.tsx:236-240 already used
- * (under 10 pp a coin flip, under 25 pp contested, else clear).
+ * (under 10 pp a narrow lead, under 25 pp contested, else clear; fix/freshness 4: never a coin flip).
  */
 import { describe, expect, it } from "vitest";
 import { heroCopy } from "./hero-copy";
@@ -41,7 +41,7 @@ const odds = (g: number, o: number, s: number, r: number): Partial<Regime> => ({
 });
 
 const CLAUSE = "Recession Risk here is the classifier's fourth quadrant; the NBER recession model is a separate reading, shown in the summary.";
-const SUBHEAD_SHAPE = /^A (?:coin flip with|contested lead over|clear lead over) (?:Goldilocks|Overheating|Stagflation|Recession Risk) at \d+% of the same four-way odds\.$/;
+const SUBHEAD_SHAPE = /^A (?:narrow lead over|contested lead over|clear lead over) (?:Goldilocks|Overheating|Stagflation|Recession Risk) at \d+% of the same four-way odds\.$/;
 
 /** Every hero string except the disambiguation clause (rule 4 names the model, without a number). */
 function heroStrings(copy: ReturnType<typeof heroCopy>): string[] {
@@ -52,19 +52,19 @@ describe("heroCopy (checklist 03 C.1, decision 4)", () => {
   it("headline is the regime label and the pill is the dominant whole percent; nothing else prints it", () => {
     const copy = heroCopy(regime());
     expect(copy.headline).toBe("Goldilocks");
-    expect(copy.pill).toBe("58% probability");
+    expect(copy.pill).toBe("58% odds");
     // Rule 1: the dominant figure appears in the pill only.
     for (const s of [copy.subhead, copy.lede, copy.ledeClause ?? "", ...copy.footnote]) expect(s).not.toContain("58%");
     // Whole percents: 0.577 rounds to 58, as fmtWholePct does.
-    expect(heroCopy(regime({ prob_goldilocks: 0.577 })).pill).toBe("58% probability");
+    expect(heroCopy(regime({ prob_goldilocks: 0.577 })).pill).toBe("58% odds");
     // The label is spelled out as served, never abbreviated.
     const rr = heroCopy(regime({ label: "Recession Risk", ...odds(0.3, 0.12, 0.09, 0.49) }));
     expect(rr.headline).toBe("Recession Risk");
-    expect(rr.pill).toBe("49% probability");
+    expect(rr.pill).toBe("49% odds");
   });
 
-  it("lead word: coin flip under 10 pp, contested under 25 pp, clear otherwise (boundaries 9 / 10 / 24 / 25)", () => {
-    expect(heroCopy(regime(odds(0.52, 0.03, 0.02, 0.43))).subhead).toBe("A coin flip with Recession Risk at 43% of the same four-way odds.");
+  it("lead word: narrow under 10 pp, contested under 25 pp, clear otherwise (boundaries 9 / 10 / 24 / 25)", () => {
+    expect(heroCopy(regime(odds(0.52, 0.03, 0.02, 0.43))).subhead).toBe("A narrow lead over Recession Risk at 43% of the same four-way odds.");
     expect(heroCopy(regime(odds(0.53, 0.02, 0.02, 0.43))).subhead).toBe("A contested lead over Recession Risk at 43% of the same four-way odds.");
     expect(heroCopy(regime(odds(0.6, 0.02, 0.02, 0.36))).subhead).toBe("A contested lead over Recession Risk at 36% of the same four-way odds.");
     expect(heroCopy(regime(odds(0.61, 0.02, 0.01, 0.36))).subhead).toBe("A clear lead over Recession Risk at 36% of the same four-way odds.");
@@ -75,7 +75,7 @@ describe("heroCopy (checklist 03 C.1, decision 4)", () => {
       [odds(0.6, 0.29, 0.06, 0.05), "A clear lead over Overheating at 29% of the same four-way odds."],
       [odds(0.55, 0.05, 0.33, 0.07), "A contested lead over Stagflation at 33% of the same four-way odds."],
       [{ label: "Recession Risk", ...odds(0.3, 0.12, 0.09, 0.49) }, "A contested lead over Goldilocks at 30% of the same four-way odds."],
-      [{ label: "Stagflation", ...odds(0.04, 0.4, 0.46, 0.1) }, "A coin flip with Overheating at 40% of the same four-way odds."],
+      [{ label: "Stagflation", ...odds(0.04, 0.4, 0.46, 0.1) }, "A narrow lead over Overheating at 40% of the same four-way odds."],
     ];
     for (const [over, expected] of cases) {
       const copy = heroCopy(regime(over));
@@ -119,10 +119,10 @@ describe("heroCopy (checklist 03 C.1, decision 4)", () => {
 
   it("lede is the D5 paragraph verbatim, with the dash placeholder when a trend is null", () => {
     expect(heroCopy(regime()).lede).toBe(
-      "Goldilocks means growth trending up while inflation stays calm: the equity-friendly quadrant. The call rests on a growth trend of +0.31 and an inflation trend of -0.42; model confidence of 47% is a separate reading of how firmly the classifier holds the call.",
+      "Goldilocks means industrial production rising while the CPI level falls over the last three monthly readings: the equity-friendly quadrant. The call rests on a growth trend of +0.31 and an inflation trend of -0.42; model confidence of 47% is a separate reading of how firmly the classifier holds the call.",
     );
     expect(heroCopy(regime({ label: "Overheating", ...odds(0.2, 0.55, 0.15, 0.1) })).lede).toMatch(
-      /^Overheating means growth and inflation both running hot: real assets lead, duration suffers\. The call rests on/,
+      /^Overheating means industrial production and the CPI level both rising over the last three monthly readings: real assets lead, duration suffers\. The call rests on/,
     );
     const noGrowth = heroCopy(regime({ growth_trend: null }));
     expect(noGrowth.lede).toContain(`a growth trend of ${DASH} and an inflation trend of -0.42;`);

@@ -230,14 +230,14 @@ export default function RegimeLabScreen() {
       id: "next-3m",
       label: "Next 3 months",
       value: tr
-        ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")}`
+        ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")} (hand-set priors)`
         : pending(transitions, MISSING.transitions),
     },
     {
       id: "next-6m",
       label: "Next 6 months",
       value: tr
-        ? `Stays ${tr.current_regime} ${fmtProb(stay6m(tr), "percent")}${six ? ` · highest-risk path → ${six.to} ${fmtProb(six.probability, "percent")}` : ""}`
+        ? `Stays ${tr.current_regime} ${fmtProb(stay6m(tr), "percent")}${six ? ` · highest-risk path → ${six.to} ${fmtProb(six.probability, "percent")}` : ""} (hand-set priors)`
         : pending(transitions),
     },
     {

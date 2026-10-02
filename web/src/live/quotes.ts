@@ -22,7 +22,10 @@ import { useEffect, useSyncExternalStore } from "react";
 export interface LiveQuote {
   s: string;
   p: number;
-  /** EODHD's own day-change % / day-change $ — passed through, never recomputed. */
+  /** Day-change % / day-change $, served by the relay: EODHD's own on forex,
+   * crypto and REST rows; on a US tick, the relay's against the symbol's
+   * previous regular-session close (api/stream.py, fix/freshness 1). Null when
+   * the relay has no previous close for the tick's session. Never computed here. */
   dc: number | null;
   dd: number | null;
   /** Tick time, ms epoch. */
@@ -273,6 +276,12 @@ const getStatus = () => status;
 /** Latest quotes by symbol — repaints at most twice per second. */
 export function useQuotes(): ReadonlyMap<string, LiveQuote> {
   return useSyncExternalStore(subscribe, getQuotes);
+}
+
+/** One symbol's quote (fix/freshness 7): re-renders only when that symbol's quote changes, so a large screen can
+ * read the VIX without repainting on every US tick (the snapshot keeps each unchanged entry's identity). */
+export function useQuote(symbol: string): LiveQuote | undefined {
+  return useSyncExternalStore(subscribe, () => quotesSnapshot.get(symbol));
 }
 
 /** Relay + upstream feed status, for honest live/idle labelling. */

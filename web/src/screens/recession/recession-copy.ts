@@ -254,8 +254,32 @@ export function featureCurrent(name: string, m: RecessionMetrics): string {
 
 const LEDE_HEAD = "The ";
 const LEDE_TERM = "logistic model";
-const LEDE_MID = " scores twelve-month odds against a ~15% historical base rate; Elevated starts at 20%, High Risk at 40%. ";
-const LEDE_TAIL = " This is the recession model's own probability, not the classifier's Recession Risk odds (the Regime context row).";
+/** Codex R-13: the training sample's recession share from the served metadata (`training_recession_months` of
+ * `training_n`, "7%" on 2026-10-01), or null when the response does not carry it. */
+export function trainingShare(m: RecessionMetrics): string | null {
+  const n = m.training_n;
+  const k = m.training_recession_months;
+  if (n == null || k == null || !(n > 0) || !(k >= 0) || k > n) return null;
+  const pct = (k / n) * 100;
+  return pct > 0 && pct < 0.5 ? "under 1%" : `${Math.round(pct)}%`;
+}
+
+/** Codex R-27: the 2008 peak of the served probability history (its maximum dated in 2008 and that month), or
+ * null when the history holds no 2008 point. No number is typed here. */
+export function peak2008(series: readonly DatedValue[] | null | undefined): { value: number; date: string } | null {
+  let best: { value: number; date: string } | null = null;
+  for (const p of series ?? []) {
+    if (!String(p.date).startsWith("2008-") || !Number.isFinite(p.value)) continue;
+    if (best == null || p.value > best.value) best = { value: p.value, date: p.date };
+  }
+  return best;
+}
+
+function ledeMid(share: string | null): string {
+  const sample = share ? `recession months are ${share} of its training months, and it` : "it";
+  return ` scores recession odds for this month from inputs three months old; ${sample} is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. `;
+}
+const LEDE_TAIL = " This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 
 /** The divergence clause (X4, verbatim): the served label, then whether the
  * two readings agree, by the server's ±20 materiality band. `more` is the
@@ -284,10 +308,10 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   // Rule 2: the three-month change at 0.1 resolution, or the NBER sentence.
   const change = i >= 0 ? deltaPoints(series, i, 3) : null;
   let subhead: string;
-  if (!change) subhead = "Twelve-month odds from the NBER-trained model.";
-  else if (change.delta > 0) subhead = `Twelve-month odds, up ${change.delta.toFixed(1)} points in three months.`;
-  else if (change.delta < 0) subhead = `Twelve-month odds, down ${Math.abs(change.delta).toFixed(1)} points in three months.`;
-  else subhead = "Twelve-month odds, unchanged over three months.";
+  if (!change) subhead = "Recession odds for this month, scored from inputs three months old.";
+  else if (change.delta > 0) subhead = `Recession odds for this month, up ${change.delta.toFixed(1)} points in three months.`;
+  else if (change.delta < 0) subhead = `Recession odds for this month, down ${Math.abs(change.delta).toFixed(1)} points in three months.`;
+  else subhead = "Recession odds for this month, unchanged over three months.";
 
   // Rule 3: X4 with its three edits; the Jargon affordance on "logistic model".
   // G4: the visible lede is the model sentence, the divergence word and the
@@ -295,13 +319,15 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
   // sentence is `ledeMore`. `ledeText` stays the whole paragraph.
   const div = divergenceParts(m);
   const divergence = div.more ? `${div.head.slice(0, -1)}. ${div.more}` : div.head;
-  const ledeText = `${LEDE_HEAD}${LEDE_TERM}${LEDE_MID}${divergence}${LEDE_TAIL}`;
+  const share = trainingShare(m);
+  const mid = ledeMid(share);
+  const ledeText = `${LEDE_HEAD}${LEDE_TERM}${mid}${divergence}${LEDE_TAIL}`;
   const lede = createElement(
     Fragment,
     null,
     LEDE_HEAD,
     createElement(Jargon, { term: "recession model" }, LEDE_TERM),
-    LEDE_MID,
+    mid,
     div.head,
     LEDE_TAIL,
   );
@@ -309,7 +335,12 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
 
   // Rule 4: the band and its range, without the number (the h1 carries it).
   const range = bandRange(label);
-  const note = `Sits in the ${label} band${range ? ` (${range})` : ""}; the historical base rate runs ~15% and 2008 peaked near 89%.`;
+  // Codex R-27: the 2008 peak from the served history, or no clause at all.
+  const peak = peak2008(series);
+  const peakClause = peak ? `, and 2008 peaked at ${fmtProb(peak.value, "percent", 1)} in ${fmtMonYr(peak.date)}` : "";
+  const note = share
+    ? `Sits in the ${label} band${range ? ` (${range})` : ""}; recession months are ${share} of the training months (class-balanced, so not a calibrated probability)${peakClause}.`
+    : `Sits in the ${label} band${range ? ` (${range})` : ""}; the model is class-balanced, so this is not a calibrated probability${peakClause}.`;
 
   // Rule 5.
   const footnote = [`Logistic model on ${m.model_features.length} FRED inputs, lagged 3 months`];

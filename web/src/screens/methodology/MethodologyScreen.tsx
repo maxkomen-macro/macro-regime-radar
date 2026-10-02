@@ -29,7 +29,8 @@
 
 import { Link } from "react-router-dom";
 import { Card, SectionHeader, Tag } from "../../components";
-import { useSignalsLatest } from "../../api/queries";
+import { useRecessionProbability, useSignalsLatest } from "../../api/queries";
+import type { RecessionMetrics } from "../../api/types";
 import { fmtMonYr } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
@@ -46,11 +47,11 @@ import { useFreshReport } from "../shared/useFreshReport";
 const STAMP_UNDER_HEAD = { marginTop: -8, marginBottom: 10 } as const;
 const RULES_LABEL = referenceLabel("Fixed model rules and thresholds from the model configuration; reference content with no publication cadence.");
 
-const REGIME_DEFS: { name: string; color: string; def: string }[] = [
-  { name: "Goldilocks", color: "var(--r-goldilocks)", def: "Growth trending up while inflation stays calm: the equity-friendly quadrant." },
-  { name: "Overheating", color: "var(--r-overheating)", def: "Growth and inflation both running hot: real assets lead, duration suffers." },
-  { name: "Stagflation", color: "var(--r-stagflation)", def: "Inflation hot while growth stalls: the hardest tape; cash and commodities defend." },
-  { name: "Recession Risk", color: "var(--r-recession)", def: "Growth rolling over with inflation fading: quality bonds and defensives lead." },
+export const REGIME_DEFS: { name: string; color: string; def: string }[] = [
+  { name: "Goldilocks", color: "var(--r-goldilocks)", def: "Industrial production rising while the CPI level falls over the last three monthly readings: the equity-friendly quadrant." },
+  { name: "Overheating", color: "var(--r-overheating)", def: "Industrial production and the CPI level both rising over the last three monthly readings: real assets lead, duration suffers." },
+  { name: "Stagflation", color: "var(--r-stagflation)", def: "The CPI level rising while industrial production falls: the hardest tape; cash and commodities defend." },
+  { name: "Recession Risk", color: "var(--r-recession)", def: "Industrial production and the CPI level both falling over the last three monthly readings: quality bonds and defensives lead." },
 ];
 
 const SIGNAL_NAMES: Record<string, string> = {
@@ -77,6 +78,7 @@ const CONTENTS: { id: string; label: string; kind: "read" | "data" | "model" | "
   { id: "backtests", label: "Backtests and evidence", kind: "model" },
   { id: "ramps", label: "Meaning ramps and vocabularies", kind: "reference" },
   { id: "data", label: "Data and sources", kind: "data" },
+  { id: "standard", label: "What is standard and what is built here", kind: "reference" },
   { id: "limits", label: "What the model can and cannot claim", kind: "limits" },
 ];
 
@@ -124,6 +126,43 @@ const prose: React.CSSProperties = {
   textWrap: "pretty",
 };
 
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+const NUMBER_WORDS = ["no", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+/** "2003-04" → "April 2003". */
+function monthLongYear(ym: string): string {
+  const [y, m] = ym.split("-").map(Number);
+  return y && m ? `${MONTH_NAMES[m - 1]} ${y}` : ym;
+}
+
+/** One recession as its years: "2008–09", or "2020" within one year. */
+function episodeYears(e: { start: string; end: string }): string {
+  const a = e.start.slice(0, 4);
+  const b = e.end.slice(0, 4);
+  return a === b ? a : `${a}–${b.slice(2)}`;
+}
+
+/** fix/freshness 4: the recession model's training sample in words, from the served metadata (the numbers move as
+ * data arrive, so none is typed here): "Trained on April 2003 to September 2026 (n = 281 months), with 20 recession
+ * months across two recessions (2008–09, 2020)." */
+export function trainingWords(m: RecessionMetrics | undefined): string {
+  const w = m?.training_window;
+  if (!w || !m?.training_n) return "Trained on the months where all five inputs exist (from April 2003, when the breakevens begin).";
+  const eps = m.training_recessions ?? [];
+  const count = eps.length < NUMBER_WORDS.length ? NUMBER_WORDS[eps.length] : String(eps.length);
+  const recs = m.training_recession_months != null ? `, with ${m.training_recession_months} recession months across ${count} recession${eps.length === 1 ? "" : "s"}${eps.length ? ` (${eps.map(episodeYears).join(", ")})` : ""}` : "";
+  return `Trained on ${monthLongYear(w.start)} to ${monthLongYear(w.end)} (n = ${m.training_n} months)${recs}.`;
+}
+
+/** Codex R-13: how many recessions the model's sample holds, from the served episodes; without the metadata only
+ * the claim that needs none. */
+export function recessionSampleWords(m: RecessionMetrics | undefined): string {
+  const eps = m?.training_recessions;
+  if (!eps || !m?.training_n) return "The recession model has no out-of-sample test.";
+  const count = eps.length < NUMBER_WORDS.length ? NUMBER_WORDS[eps.length] : String(eps.length);
+  return `The recession model has ${count} recession${eps.length === 1 ? "" : "s"} in its sample and no out-of-sample test.`;
+}
+
 function ModuleLink({ to, children }: { to: string; children: React.ReactNode }) {
   return (
     <Link to={to} style={{ ...mono, fontSize: "var(--fs-meta)", letterSpacing: "var(--ls-micro)", color: "var(--link)" }}>
@@ -134,6 +173,7 @@ function ModuleLink({ to, children }: { to: string; children: React.ReactNode })
 
 export default function MethodologyScreen() {
   const signals = useSignalsLatest();
+  const recession = useRecessionProbability();
   const report = useFreshReport();
   const { isNarrow, bp, shellCompact } = useBreakpoint();
   const twoUp = isNarrow ? "minmax(0,1fr)" : "repeat(2,minmax(0,1fr))";
@@ -255,7 +295,7 @@ export default function MethodologyScreen() {
             right={
               <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
                 <ProvenanceTag kind="statistical" />
-                <span>4-way softmax over growth and inflation trends</span>
+                <span>a sign rule on two slopes, with softmax odds</span>
               </span>
             }
           />
@@ -272,12 +312,16 @@ export default function MethodologyScreen() {
           {/* G4 (Iteration 1 step 5): two visible caption sentences, the third
               behind Details; the module links sit on their own line. */}
           <Caption>
-            Monthly, from z-scored growth (industrial production, FRED INDPRO) and inflation (CPI) trends through a
-            temperature-0.7 softmax; the four probabilities always sum to 100%. The header badge shows the dominant
-            stored probability; conviction is a separate heuristic and is always labeled.
+            Monthly: the least-squares slopes of the industrial-production (FRED INDPRO) and CPI (CPIAUCSL) index levels
+            over the last three stored rows; their signs pick the quadrant. The odds are a softmax at temperature 0.7 over
+            ±|z| scores, each slope z-scored against its full history, so they sum to 100%, the label leads, and nothing is fitted.
           </Caption>
           <Disclosure variant="quiet" title="Details" style={{ marginTop: 2 }}>
-            <Caption style={{ marginTop: 0 }}>Shares under 1% print as &lt;1%, never as a false 0%.</Caption>
+            <Caption style={{ marginTop: 0 }}>
+              A regime scores +|z| on an axis whose sign it matches and −|z| on one it does not; the odds are a strength
+              score, not a fitted probability. Conviction is a separate heuristic and is always labeled. Shares under 1%
+              print as &lt;1%, never as a false 0%.
+            </Caption>
           </Disclosure>
           <div style={{ marginTop: 2 }}>
             <ModuleLink to="/app/dashboard">Dashboard →</ModuleLink> <ModuleLink to="/app/regime-lab">Regime Lab →</ModuleLink>
@@ -378,12 +422,13 @@ export default function MethodologyScreen() {
             <Card>
               <div style={eyebrowStyle}>Recession model</div>
               <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
-                A class-balanced logistic regression trained on NBER recession months. Inputs: the 2s10s curve,
-                unemployment, the high-yield spread, industrial-production growth and the 10Y − 5Y breakeven spread
-                (T10YIE − T5YIE), standing in for the Conference Board leading index (USSLIND), which stopped
-                publishing in February 2020. Features enter with a 3-month lag so the fit never peeks. The model retrains
-                in-process from stored FRED series; there is no saved artifact. Its probability is the model&apos;s own,
-                distinct from the classifier&apos;s Recession Risk odds.{" "}
+                A class-balanced logistic regression trained on NBER recession months: recession odds for this month,
+                scored from inputs three months old. Inputs: the 2s10s curve, unemployment, the high-yield spread,
+                industrial-production growth and the 10Y − 5Y breakeven spread (T10YIE − T5YIE), standing in for the
+                Philadelphia Fed&apos;s leading index for the US (USSLIND), discontinued after February 2020.{" "}
+                {trainingWords(recession.data)} It is fitted and scored on the same history (in-sample), class-balanced, so
+                its scores are not calibrated probabilities, and it is refit for every data generation; there is no saved
+                artifact. Its score is the model&apos;s own, distinct from the classifier&apos;s Recession Risk odds.{" "}
                 <ModuleLink to="/app/recession">Recession →</ModuleLink>
               </p>
             </Card>
@@ -409,8 +454,8 @@ export default function MethodologyScreen() {
             <Card>
               <div style={eyebrowStyle}>Allocation and LBO engines</div>
               <p style={{ ...prose, fontSize: "var(--fs-body-s)", marginTop: 6 }}>
-                Allocation: ~24 years of monthly returns for ten asset classes, index-spliced before ETF inceptions,
-                cut by stored regime months; seven optimizers (long-only, 40% cap) run only when the current regime
+                Allocation: ~24 years of monthly returns for ten asset classes, three of them index-spliced before ETF
+                inception (SPY from the S&amp;P 500, IWM from the Russell 2000, GLD from gold futures), cut by stored regime months; seven optimizers (long-only, 40% cap) run only when the current regime
                 has 24 contiguous months of covariance history. LBO: server-side deal math. Cash for debt service is 60% of
                 EBITDA; it pays interest first, scheduled amortization is a floor and the remainder sweeps to debt,
                 so a higher rate lowers the IRR. IRR by bisection on NPV; the financing rate defaults to Fed Funds
@@ -474,7 +519,7 @@ export default function MethodologyScreen() {
               </div>
             </Card>
             <Card>
-              <div style={eyebrowStyle}>Recession-probability bands</div>
+              <div style={eyebrowStyle}>Recession-odds bands</div>
               <div style={{ display: "grid", gap: 6, marginTop: 8 }}>
                 <LegendRow swatch="var(--pos)" label="< 20%" detail="Low Risk" />
                 <LegendRow swatch="var(--warn-hot)" label="20–40%" detail="Elevated" />
@@ -561,6 +606,36 @@ export default function MethodologyScreen() {
           </Card>
         </section>
 
+        {/* ── Standard vs built here (fix/freshness 4) ───────────────────── */}
+        <section id="standard">
+          <SectionHeader
+            style={headWrap}
+            title="What is standard and what is built here"
+            right={
+              <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 8, alignItems: "baseline" }}>
+                <ProvenanceTag kind="reference" />
+                <span>where each method comes from</span>
+              </span>
+            }
+          />
+          <Card>
+            <p style={prose}>
+              <b style={{ color: "var(--text)" }}>Standard methods.</b> The growth × inflation quadrant is a common frame
+              for the macro cycle. A logistic regression on NBER recession dates is a standard recession model. The hedge
+              ratios are ordinary least-squares betas, the event study&apos;s intervals come from a block bootstrap, and RSI
+              (Wilder, 14 sessions) and MACD (12, 26, 9) follow their usual definitions.
+            </p>
+            <p style={{ ...prose, marginTop: 10 }}>
+              <b style={{ color: "var(--text)" }}>Built here.</b> The regime rule and its odds (the sign rule on
+              three-row slopes, the ±|z| softmax at temperature 0.7 and the conviction heuristic); the breakeven-spread
+              stand-in for the discontinued leading index; the known-at timing rules that tag each event with the label
+              known at the time; the verdict thresholds (Reliable, Suggestive, No edge, Too few); and the data and
+              freshness architecture: the stored database shipped as a release asset behind a validation gate, results
+              rebuilt per data generation, and per-series freshness words.
+            </p>
+          </Card>
+        </section>
+
         {/* ── Limits ──────────────────────────────────────────────────── */}
         <section id="limits">
           <SectionHeader style={headWrap} title="What the model can and cannot claim" right="Limits · read before acting on any number" />
@@ -568,7 +643,8 @@ export default function MethodologyScreen() {
             <p style={prose}>
               <b style={{ color: "var(--text)" }}>It can claim</b> that, on the stored monthly data, the economy sits in
               one of four quadrants with stated odds; that five monitored series stand at a stated distance from fixed
-              thresholds; that a logistic model trained on NBER dates assigns a stated 12-month recession probability;
+              thresholds; that a logistic model trained on NBER dates scores stated recession odds for this month from inputs
+              three months old;
               that credit spreads sit at a stated percentile of their own history; and that, historically, SPY behaved
               in a stated way after similar readings, with sample sizes shown.
             </p>
@@ -576,7 +652,8 @@ export default function MethodologyScreen() {
               <b style={{ color: "var(--text)" }}>It cannot claim</b> a forecast of returns, the timing of a regime
               change, or causation. Playbooks, analogues and scenario rules are reference content and stress
               sketches, not measured outcomes. Small-sample backtests are anecdotes. Monthly inputs mean the regime
-              read can lag the tape by weeks, and the freshness line says exactly how many. Every number here is a
+              read can lag the tape by weeks, and the freshness line says exactly how many. The inflation axis tracks
+              whether the CPI level rose, not whether inflation accelerated. {recessionSampleWords(recession.data)} Every number here is a
               claim with its date attached; the desk reads state conclusions, and the audit trail underneath is how a
               reader checks them.
             </p>

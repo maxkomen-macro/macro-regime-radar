@@ -258,19 +258,22 @@ test.describe("desk v2", () => {
     // On the audit's levels (2s10s now 25 bp, falsified at 15): entered at 55, 10 of 40 bp of room is left, 25%.
     await seedPositions(page, [ndx, spx, { ...curve, entry_value: 55, original_room: 40 }]);
     await open(page, "/desk/overview");
-    // §2: the K−2 row governing today (a September session reads the July row).
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · July data");
-    // The audit's values (§2.2, §2.1): the July row is Goldilocks; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Goldilocks");
-    await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("12%");
-    await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Live · Sep 23");
-    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("15.2");
+    // fix/freshness 3a (D2): the newest stored row, the Dashboard's label and month.
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Aug 2026 data");
+    // The audit's values (§2.2, §2.1): the August row is Overheating; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("Overheating");
+    await expect(page.getByRole("region", { name: "Regime" })).toContainText("odds 42%");
+    await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("11.6%");
+    // fix/freshness 3c: closes say Close · <date>, never Live (no relay quote in this test, so the VIX is the stored close).
+    await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Close · Sep 23");
+    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("15.18");
+    await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("Close · Sep 23");
     await expect(page.getByTestId("dk-live")).toHaveCount(4);
     // Nothing is firing in the audit's snapshot, so the line names no signal.
     await expect(page.getByTestId("ov-since")).toContainText("regime unchanged");
     await expect(page.getByTestId("ov-since")).not.toContainText("firing");
-    // Tones render (verifier V-1): Goldilocks green, room amber under 30% and green at 50% or more.
-    await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(38, 220, 160)");
+    // Tones render (verifier V-1): Overheating amber, room amber under 30% and green at 50% or more.
+    await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(232, 180, 71)");
     const rows = page.getByTestId("dk-mon-row");
     await expect(rows.nth(0).locator(".dk-mon-room")).toHaveCSS("color", "rgb(232, 180, 71)");
     await expect(rows.nth(1).locator(".dk-mon-room")).toHaveCSS("color", "rgb(38, 220, 160)");
@@ -287,7 +290,7 @@ test.describe("desk v2", () => {
   test("overview: a failed /overview keeps every label and says Couldn't load · Retry on each tile (§14.12)", async ({ page }) => {
     await open(page, "/desk/overview", { "/api/desk/overview": { status: 503, body: { error: "generation warming" } } });
     for (const name of ["Regime", "Recession · logistic model", "S&P 500 · trend", "Vol · VIX"]) await expect(page.getByRole("region", { name }).getByTestId("dk-failed")).toHaveText("Couldn't load · Retry");
-    await expect(page.getByText("Goldilocks")).toHaveCount(0);
+    await expect(page.getByText("Overheating")).toHaveCount(0);
     await expect(page.getByTestId("dk-live")).toHaveCount(0);
   });
 
@@ -447,17 +450,18 @@ test.describe("desk v2", () => {
     }
   });
 
-  test("regime: the July row governs a September session, the latest print sits beside it, the recession score says what month it is for (§5)", async ({ page }) => {
+  test("regime: the newest row (the Dashboard's label) leads, its month beside it, the recession score says what month it is for (§5, fix/freshness 3a)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/regime");
-      await expect(page.locator("body")).toContainText("Live · July data");
+      await expect(page.locator("body")).toContainText("Live · Aug 2026 data");
       const where = page.getByRole("region", { name: /Where we are/ });
-      await expect(where.locator(".rg-latest")).toHaveText("Latest print: Aug 2026");
+      await expect(where.locator(".rg-latest")).toHaveText("Aug 2026 data");
+      await expect(where.locator(".rg-big")).toHaveText("Overheating");
       const rec = page.getByRole("region", { name: /Recession score/ });
       await expect(rec.locator(".rg-rec-for")).toHaveText("score for Aug\u00a02026 · inputs through May\u00a02026");
       await expect(rec).toContainText("High risk · above 40%");
-      if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · July data");
+      if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · Aug 2026 data");
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }

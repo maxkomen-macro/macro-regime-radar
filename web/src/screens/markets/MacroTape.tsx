@@ -15,8 +15,9 @@
  * as-of stamp (M2, `tapeStatusLine`).
  *
  * Every figure is served or a formatted served value: `dc` / `dd` are the
- * feed's own day-change fields (never arithmetic; a quote with a price but no
- * day change prints the dash), 1W / 1M / the sparkline come from the stored
+ * relay's day-change fields (EODHD's own on FX, crypto and REST rows, the
+ * relay's against the previous regular close on a US tick; never arithmetic
+ * here: a quote with a price but no day change prints the dash), 1W / 1M / the sparkline come from the stored
  * daily bars, the as-of stamp from the quote or the newest bar's date.
  * `rowOf` and the cell renderers live at module level so the 2 Hz quote
  * snapshots allocate nothing new per row (G17).
@@ -320,7 +321,7 @@ const lastCell = (r: TapeRowData): ReactNode => {
   );
 };
 
-// The feed's own day change, never arithmetic: a quote with a price but a
+// The relay's day change, never arithmetic here: a quote with a price but a
 // null `dc` prints the dash rather than falling back to the stored return.
 const dayPctCell = (r: TapeRowData): ReactNode => {
   const v = r.quote ? r.quote.dc : storedClose(r)?.ret_1d;
@@ -418,9 +419,11 @@ const DAY_PCT: TapeColumn = {
   mono: true,
   render: dayPctCell,
 };
-const DAY_DOLLAR: TapeColumn = {
+// fix/freshness 6: the macro tape mixes dollars, FX rates and index points, so the head says "Day Δ" and each
+// dollar cell carries its own "$" (fmtDayDollar); the single names read the same column.
+const DAY_DELTA: TapeColumn = {
   key: "dd",
-  label: "Day Δ$",
+  label: "Day Δ",
   align: "right",
   mono: true,
   render: dayDollarCell,
@@ -580,14 +583,14 @@ export default function MacroTape({
   const macroFit = useMemo(
     () =>
       fitTapeColumns(
-        [symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, WEEK, MONTH, SPARK, AS_OF],
+        [symbolColumn, LAST, DAY_PCT, DAY_DELTA, WEEK, MONTH, SPARK, AS_OF],
         tapeW,
       ),
     [symbolColumn, tapeW],
   );
   const singlesFit = useMemo(
     () =>
-      fitTapeColumns([symbolColumn, LAST, DAY_PCT, DAY_DOLLAR, AS_OF], tapeW),
+      fitTapeColumns([symbolColumn, LAST, DAY_PCT, DAY_DELTA, AS_OF], tapeW),
     [symbolColumn, tapeW],
   );
   const macroColumns = macroFit.cols;
@@ -716,8 +719,9 @@ export default function MacroTape({
         ) : null}
         <Caption>
           Twelve large-cap tech, semis, and crypto-adjacent names as market
-          thermometers; biggest day move on top. Off-hours the board holds at
-          the last close until the next session opens.
+          thermometers; biggest day move on top. Trades the feed marks
+          extended-hours or closed are held, and delayed quotes timestamped
+          outside the session do not replace a regular-session quote.
         </Caption>
       </div>
 
@@ -735,13 +739,14 @@ export default function MacroTape({
           {statusLine.full}
         </Caption>
         <Caption style={{ marginTop: 0 }}>
-          Day moves come straight from the exchange feed&apos;s own day-change
-          figures; never recomputed here. 1W / 1M and sparklines come from the
-          stored daily candles
+          Day moves: each US trade is measured by the relay against the
+          previous regular-session close; FX, crypto and the VIX carry the
+          feed&apos;s own day change. Nothing is recomputed here. 1W / 1M and
+          sparklines come from the stored daily candles
           {storedThrough ? ` through ${fmtDate(storedThrough)}` : ""}; crypto,
           FX, VIX and single names have no stored history yet, so those columns
-          print a dash. A dash under Day % means the feed sent a price without a
-          day change (off-hours REST fill); the as-of stamp says when.
+          print a dash. A dash under Day % means the relay has no previous close
+          for that session yet; the as-of stamp says when.
           {droppedLabel ? " Columns this width cannot show whole are named above the board; they return as the window widens." : ""}
           {/* Cadence + cross-surface reconciliation: the VIX row is a quote off
               this feed, while the Dashboard's VIX spike card reads the monthly

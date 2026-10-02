@@ -3,7 +3,7 @@
  * docs/redesign-v2/checklists/07-recession.md B.0).
  *
  * Order of <main> children, all inside `.mrr-rec`: the hero row (TabHero
- * `#recession-hero`, whose h1 is the served 12-month probability with the
+ * `#recession-hero`, whose h1 is the served recession odds for this month (scored from inputs three months old) with the
  * served `recession_label` as the pill, the three-month change as the
  * subhead, the semicircle gauge over the 24M / Full history probability line
  * as the signature visual, beside SummaryCard `#recession-summary` with the
@@ -30,7 +30,7 @@ import { useRecessionProbability, useRegimeLatest } from "../../api/queries";
 import type { RecessionMetrics, RecessionScenarioRequest, Regime } from "../../api/types";
 import { fmtBps, fmtMonYr, fmtProb, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
 import { DASH } from "../dashboard/hero-copy";
-import { RECESSION_INPUT_IDS } from "../shared/fresh-state";
+import { RECESSION_INPUT_IDS, type FreshLabel } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { Metric, ODDS_METRIC, SRC, Stamp, type OddsKey } from "../shared/Stamp";
 import { HeroChartFrame } from "../shared/HeroChart";
@@ -71,7 +71,7 @@ const STRIP_TARGET = "/app/recession#model";
 const STRIP_SUFFIX = "Opens the model inputs";
 
 const PILL_TITLE = "The recession model's own band: Low Risk under 20%, Elevated 20 to 40%, High Risk 40% and above";
-const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a different model from the recession probability above";
+const REGIME_ROW_TITLE = "The four-way classifier's leading regime and its odds; a separate classifier from the recession model above";
 const THRESHOLDS = "2s10s < 0 · HY > 400 bps · unemployment +0.3 pp in 3m";
 const THRESHOLDS_TITLE = "Reference levels used in the desk read. Not model thresholds and not alert rules; none are served by the API.";
 
@@ -107,6 +107,15 @@ function labelOdds(r: Regime): number | null {
   const key = REGIME_PROB[r.label];
   const v = key ? r[key] : null;
   return typeof v === "number" ? v : null;
+}
+
+/** fix/freshness 3b: the hero chip's label. The word is the month the scored inputs come from (served
+ * `inputs_through`); the newest data date rides after it. Without the month, the newest date alone. */
+export function inputsChip(m: RecessionMetrics | null, fresh: FreshLabel): FreshLabel {
+  const month = m?.inputs_through ? fmtMonYr(`${m.inputs_through}-01`) : null;
+  if (!month) return fresh;
+  const latest = [fresh.word, fresh.muted].filter(Boolean).join(" ");
+  return { ...fresh, word: month, muted: latest ? `· latest data ${latest}` : null };
 }
 
 /* ── screen ────────────────────────────────────────────────────────────── */
@@ -153,7 +162,9 @@ export default function RecessionScreen() {
     actions: HERO_ACTIONS,
     // No absence before an answer: the chip waits for the payload (or its
     // error) instead of printing "Unavailable" while the request is pending.
-    freshness: m || q.isError ? [{ noun: "Model inputs", label: fresh }] : undefined,
+    // fix/freshness 3b: the score reads inputs three months old, so the chip names their month first and the
+    // newest data date after it: "Inputs through Jun 2026 · latest data Sep 28".
+    freshness: m || q.isError ? [{ noun: "Inputs through", label: inputsChip(m, fresh) }] : undefined,
   };
   let hero: ReactNode;
   if (m && copy) {
@@ -184,6 +195,7 @@ export default function RecessionScreen() {
                   prob={prob}
                   label={m.recession_label}
                   tone={labelTone(m.recession_label)}
+                  scoredMonth={m.probability_month ?? m.recession_prob_series?.at(-1)?.date ?? null}
                   maxWidth={Math.min(gaugeWidth(box.w), Math.floor(box.h / GAUGE_ASPECT))}
                 />
               )}
@@ -226,7 +238,7 @@ export default function RecessionScreen() {
   const rows: SummaryRow[] = [
     {
       id: "probability",
-      label: "12-month probability",
+      label: "Recession odds · this month",
       value: val(
         (x) => (
           <>

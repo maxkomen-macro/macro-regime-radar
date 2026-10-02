@@ -1,7 +1,9 @@
 /**
  * US 10Y Treasury card (redesign Phase 3, checklist 03 B.6): the one served
- * rate history (`UST10Y.history`, 90 daily closes) as a gradient sparkline
- * under the same value and 1W change the strip prints. Direction, not
+ * rate history (`UST10Y.history`: the true-dated daily closes of the last 90
+ * days from the Desk store, fix/freshness 2; one value per month only when
+ * that store is behind) as a gradient sparkline under the same value and
+ * change the strip prints ("1W" only on a true week). Direction, not
  * valence: green is up, red is down, for yields too.
  *
  * Iteration 1 (G2): the sparkline takes the height the card has, not a fixed
@@ -19,6 +21,7 @@ import { fmtBps, fmtPct } from "../../lib/format";
 import { StateNote, monoNoteStyle } from "../shared/screen-ui";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
+import { rateChange } from "../shared/rate-change";
 import { DASH } from "./hero-copy";
 
 export interface TenYearCardProps {
@@ -69,7 +72,8 @@ function FillSparkline({ values, color }: { values: number[]; color: string }) {
 
 export default function TenYearCard({ credit }: TenYearCardProps) {
   const ten = credit.data?.series.find((s) => s.label === "UST10Y");
-  const dir = ten?.change_1w_bps != null ? (ten.change_1w_bps >= 0 ? "pos" : "neg") : null;
+  const chg = rateChange(ten);
+  const dir = chg ? (chg.bps >= 0 ? "pos" : "neg") : null;
   const color = dir === "pos" ? "var(--pos)" : dir === "neg" ? "var(--neg)" : "var(--text-3)";
   const report = useFreshReport();
 
@@ -106,11 +110,11 @@ export default function TenYearCard({ credit }: TenYearCardProps) {
             DASH
           )}
         </span>
-        {ten?.change_1w_bps != null ? (
+        {chg ? (
           <span style={{ fontFamily: "var(--font-ui)", fontSize: 15, fontWeight: 500, fontVariantNumeric: "tabular-nums", color }}>
-            {fmtBps(ten.change_1w_bps)}{" "}
-            <span className="mrr-tag" data-tone="muted" title="Change over one week">
-              1W
+            {fmtBps(chg.bps)}{" "}
+            <span className="mrr-tag" data-tone="muted" title={chg.title}>
+              {chg.tag}
             </span>
           </span>
         ) : null}
@@ -126,7 +130,9 @@ export default function TenYearCard({ credit }: TenYearCardProps) {
           as-of word is the server's DGS10 state from the credit payload's own
           block, never the month-stamped row date (FRESHNESS_CONTRACT §3). */}
       <div style={{ ...monoNoteStyle, marginTop: 8 }}>
-        10-year Treasury yield · daily close ·{" "}
+        {/* Codex R-08: an older API serves no history_basis, so its sampling is unknown: "stored history". */}
+        10-year Treasury yield ·{" "}
+        {ten?.history_basis === "monthly" ? "one value per month" : ten?.history_basis === "daily" ? "daily closes, 90 days" : "stored history"} ·{" "}
         <Stamp source={`${SRC.fred} ${ten?.series_id ?? "DGS10"}`} label={report.series(ten?.series_id ?? "DGS10", credit.data?.freshness)} style={{ fontSize: 12 }} />
       </div>
     </Card>

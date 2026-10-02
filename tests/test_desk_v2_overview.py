@@ -106,7 +106,38 @@ def test_the_overview_shape(served, monkeypatch):
     s = d["since_last_close"]["data"]
     assert (s["comparison_session"], s["prev_session"]) == ("2026-09-18", "2026-09-17")
     assert s["refreshed_at_utc"] == "2026-09-19T05:07:11Z"
+    assert s["oldest_behind"] is None  # every contributor current on Sep 18
     assert client.get("/api/desk/overview?x=1").status_code == 422
+
+
+def test_the_refresh_time_is_the_last_run_and_a_series_left_behind_is_named(install_worker, monkeypatch, overview_path, tmp_path):
+    """fix/freshness 3d: refreshed_at_utc is when the full refresh last ran the Desk store (the summary
+    watermark's checked_at), not its advanced_at, which moves only when the laggard series does; the series
+    the run left behind is named on its own (the oldest of the data-status contributors not current)."""
+    copy = tmp_path / "macro_radar.db"
+    copy.write_bytes(overview_path.read_bytes())
+    with sqlite3.connect(copy) as conn:
+        conn.execute("UPDATE source_watermarks SET advanced_at = '2026-09-10T05:07:11Z', checked_at = '2026-09-30T16:52:45Z' "
+                     "WHERE source = 'desk_series'")
+    _serve(install_worker, monkeypatch, copy, items=ITEMS)
+    _at(monkeypatch, 2026, 9, 30, 21, 0)  # the synthetic store's daily series end Sep 18: behind by then
+    d = _overview()
+    s = d["since_last_close"]["data"]
+    assert s["refreshed_at_utc"] == "2026-09-30T16:52:45Z"
+    behind = [c for c in d["data_status"]["data"]["contributors"] if c["state"] != "current"]
+    assert behind, "the synthetic store is behind on Sep 30"
+    oldest = min(behind, key=lambda c: (c["observation_date"] or "", c["series"]))
+    assert s["oldest_behind"] == {"series": oldest["series"], "observation_date": oldest["observation_date"],
+                                  "state": oldest["state"], "reason": oldest["reason"]}
+
+
+def test_oldest_behind_picks_the_oldest_of_those_behind():
+    rows = [{"series": "DGS10", "observation_date": "2026-09-28", "state": "current", "reason": "a"},
+            {"series": "GC=F", "observation_date": "2026-09-25", "state": "stale", "reason": "b"},
+            {"series": "^VIX", "observation_date": "2026-09-24", "state": "stale", "reason": "c"}]
+    assert desk_v2.oldest_behind({"contributors": rows}) == {"series": "^VIX", "observation_date": "2026-09-24", "state": "stale", "reason": "c"}
+    assert desk_v2.oldest_behind({"contributors": rows + [{"series": "T10Y2Y", "observation_date": None, "state": "missing", "reason": "d"}]})["series"] == "T10Y2Y"
+    assert desk_v2.oldest_behind({"contributors": rows[:1]}) is None
 
 
 def test_active_signals_follow_r6(served, monkeypatch):
@@ -173,22 +204,48 @@ def test_the_vix_change_is_between_the_two_sessions(served, monkeypatch, overvie
     assert _overview()["since_last_close"]["data"]["vol_change_pts"] is None
 
 
-def test_the_regime_comparison_and_the_k_minus_2_selection(served, monkeypatch):
-    _at(monkeypatch, 2026, 9, 18, 21, 0)
-    d = _overview()
-    s, tile = d["since_last_close"]["data"], d["tiles"]["regime"]["data"]
-    assert tile["print"] == "2026-07" and s["regime_to"] == tile["label"] and s["regime_changed"] is False
-    # the synthetic labels change every six months from 1996-05: 2026-04 and 2026-05 differ
-    _at(monkeypatch, 2026, 7, 1, 21, 0)
-    s = _overview()["since_last_close"]["data"]
-    assert (s["comparison_session"], s["prev_session"]) == ("2026-07-01", "2026-06-30")
-    assert s["regime_from"] != s["regime_to"] and s["regime_changed"] is True
-    _at(monkeypatch, 2026, 10, 1, 21, 0)  # K−2 = 2026-08: not stored
-    d = _overview()
-    assert d["tiles"]["regime"] == {"status": "awaiting", "data": None, "unavailable": {
-        "reason": "Awaiting refresh: this could not be computed from the current data.", "until": None}}
-    s = d["since_last_close"]["data"]
-    assert s["regime_to"] is None and s["regime_from"] is not None and s["regime_changed"] is None
+def test_the_regime_tile_is_the_newest_row_whatever_the_session(served, monkeypatch):
+    """fix/freshness 3a (D2): the tile is the newest stored row, the label and month the Dashboard shows, never
+    the K−2 row of the session's month, so it does not move at a month boundary (the synthetic store's newest row is
+    2026-07, Goldilocks). The store keeps no CPI or INDPRO watermark, so it cannot date when that row became known:
+    since-last-close names the label and says nothing about a change."""
+    for args, sessions in (((2026, 9, 18, 21, 0), ("2026-09-18", "2026-09-17")), ((2026, 7, 1, 21, 0), ("2026-07-01", "2026-06-30")),
+                           ((2026, 10, 1, 21, 0), ("2026-10-01", "2026-09-30"))):
+        _at(monkeypatch, *args)
+        d = _overview()
+        s, tile = d["since_last_close"]["data"], d["tiles"]["regime"]["data"]
+        assert (s["comparison_session"], s["prev_session"]) == sessions
+        assert (tile["print"], tile["label"], tile["months_in"]) == ("2026-07", "Goldilocks", 3)
+        assert (s["regime_from"], s["regime_to"], s["regime_changed"]) == (None, "Goldilocks", None)
+
+
+def test_since_last_close_dates_the_newest_row_by_when_the_store_learned_it():
+    """fix/freshness 3a: the newest row changed since the last close only when the store learned it (the later of
+    the CPI and INDPRO watermark advances) after the previous session's close; then it is read against the row before."""
+    item = {"rows": [{"month": "2026-07", "label": "Goldilocks"}, {"month": "2026-08", "label": "Overheating"}],
+            "newest_known_at": "2026-09-22T14:48:02Z"}
+    assert desk_v2.regime_since(item, "2026-09-29") == ("Overheating", "Overheating", False)
+    assert desk_v2.regime_since(item, "2026-09-22") == ("Overheating", "Overheating", False)  # learned before the 16:00 ET close
+    assert desk_v2.regime_since(item, "2026-09-21") == ("Goldilocks", "Overheating", True)
+    same = {**item, "rows": [{"month": "2026-07", "label": "Overheating"}, item["rows"][1]]}
+    assert desk_v2.regime_since(same, "2026-09-21") == ("Overheating", "Overheating", False)
+    assert desk_v2.regime_since({**item, "newest_known_at": None}, "2026-09-29") == (None, "Overheating", None)
+    assert desk_v2.regime_since({"rows": [], "newest_known_at": None}, "2026-09-29") == (None, None, None)
+
+
+def test_the_newest_row_is_dated_by_both_of_its_inputs():
+    from api import desk_items_macro as items
+
+    conn = sqlite3.connect(":memory:")
+    conn.execute(WATERMARKS_DDL)
+    rows = [{"month": "2026-08", "label": "Overheating"}]
+    assert items.newest_known_at(conn, rows) is None  # no watermark for either input
+    conn.execute("INSERT INTO source_watermarks VALUES ('fred:CPIAUCSL', '2026-08-01', 0, '2026-09-15T13:00:00Z', 'x', 'ok', NULL)")
+    assert items.newest_known_at(conn, rows) is None  # INDPRO not stored for August yet
+    conn.execute("INSERT INTO source_watermarks VALUES ('fred:INDPRO', '2026-08-01', 0, '2026-09-17T14:00:00Z', 'x', 'ok', NULL)")
+    assert items.newest_known_at(conn, rows) == "2026-09-17T14:00:00Z"
+    conn.execute("UPDATE source_watermarks SET last_obs = '2026-07-01' WHERE source = 'fred:INDPRO'")
+    assert items.newest_known_at(conn, rows) is None  # a watermark on another month dates nothing
 
 
 def test_the_regime_run_stops_at_a_missing_month():
@@ -196,7 +253,10 @@ def test_the_regime_run_stops_at_a_missing_month():
                                                       ("2025-11", "B"), ("2025-12", "B"), ("2026-01", "B"))]
     assert desk_v2.regime_run(rows, "2026-01") == (3, "2025-11")
     assert desk_v2.regime_run(rows, "2025-09") == (2, "2025-08")
-    assert desk_v2.k_minus_2("2026-01-05") == "2025-11" and desk_v2.k_minus_2("2026-09-18") == "2026-07"
+    # The K−2 rule stays the engine's, for events (fix/freshness 3a); the tile no longer selects by it.
+    from api import desk_v2_macro as v2m
+
+    assert v2m.print_for(date(2026, 1, 5)) == "2025-11" and v2m.print_for(date(2026, 9, 18)) == "2026-07"
 
 
 # ── Codex round 2, R-03: a direction only from a finite stored slope ────────
@@ -211,20 +271,20 @@ def test_a_direction_is_read_only_from_a_finite_slope(trend, word):
         rows = [{**row, axis: trend}]
         if word is None:
             with pytest.raises(env.Awaiting) as exc:
-                desk_v2.regime_tile(rows, "2026-09-18")
+                desk_v2.regime_tile(rows)
             assert exc.value.reason == env.BLOCK_FAILED_REASON
         else:
-            tile = desk_v2.regime_tile(rows, "2026-09-18")
+            tile = desk_v2.regime_tile(rows)
             assert tile[axis.removesuffix("_trend")] == word and tile["label"] == "Goldilocks"
 
 
-def _without_a_slope(src: Path, dst: Path, axis: str, value) -> Path:
-    """A byte copy of `src` whose 2026-07 regimes row (the K−2 print for
-    2026-09-18) stores `value` for `axis`."""
+def _without_a_slope(src: Path, dst: Path, axis: str, value, month: str = "2026-07") -> Path:
+    """A byte copy of `src` whose `month` regimes row (the newest stored row the
+    tile shows: 2026-07 on the synthetic store) stores `value` for `axis`."""
     dst.write_bytes(src.read_bytes())
     with sqlite3.connect(dst) as conn:
-        n = conn.execute(f"UPDATE regimes SET {axis} = ? WHERE substr(date, 1, 7) = '2026-07'", (value,)).rowcount
-    assert n == 1, "one stored 2026-07 row"
+        n = conn.execute(f"UPDATE regimes SET {axis} = ? WHERE substr(date, 1, 7) = ?", (value, month)).rowcount
+    assert n == 1, f"one stored {month} row"
     return dst
 
 
@@ -250,12 +310,24 @@ PUBLISHED = Path(os.environ.get("DESK_PUBLISHED_DB", Path(__file__).resolve().pa
 @pytest.mark.skipif(not PUBLISHED.exists(), reason="no published copy at data/macro_radar.db (DESK_PUBLISHED_DB)")
 @pytest.mark.parametrize("axis", ["growth_trend", "inflation_trend"])
 def test_on_a_scratch_copy_of_the_published_store_a_null_slope_awaits(install_worker, monkeypatch, tmp_path, axis):
-    """Codex's repro: the published copy's 2026-07 row (Goldilocks) with one slope NULL."""
+    """Codex's repro, on the row the tile shows since fix/freshness 3a (D2): the published copy's newest row
+    (2026-08, Overheating, the Dashboard's label) with one slope NULL."""
+    # Codex R-22: which store this is is read from the file itself, never from the tile under test, so a tile
+    # that stops being ready fails here instead of skipping.
+    from contextlib import closing
+
+    with closing(sqlite3.connect(f"file:{PUBLISHED}?mode=ro", uri=True)) as conn:
+        row = conn.execute("SELECT substr(date, 1, 7), label, growth_trend, inflation_trend FROM regimes ORDER BY date DESC LIMIT 1").fetchone()
+    if row is None or row[:2] != ("2026-08", "Overheating") or row[2] is None or row[3] is None:
+        pytest.skip(f"not the audit's store: its newest regimes row is {row[:2] if row else None}, not ('2026-08', 'Overheating') with both slopes")
+    newest = row[0]
     _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
     _at(monkeypatch, 2026, 9, 18, 21, 0)
     tile = _overview()["tiles"]["regime"]
-    assert tile["status"] == "ready" and tile["data"]["label"] == "Goldilocks" and tile["data"]["print"] == "2026-07"
-    _serve(install_worker, monkeypatch, _without_a_slope(PUBLISHED, tmp_path / "macro_radar.db", axis, None), items=ITEMS)
+    assert tile["status"] == "ready", tile
+    assert tile["data"]["print"] == newest
+    assert tile["data"]["label"] == "Overheating" and tile["data"]["odds"] == pytest.approx(0.4246)
+    _serve(install_worker, monkeypatch, _without_a_slope(PUBLISHED, tmp_path / "macro_radar.db", axis, None, month=newest), items=ITEMS)
     _regime_awaits(_overview())
 
 

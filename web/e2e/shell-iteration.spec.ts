@@ -28,7 +28,7 @@ const TWELVE = ["SPY", "QQQ", "IWM", "EEM", "DIA", "TLT", "GLD", "XLF", "XLE", "
 const ROUTES = [...TABS.map((t) => `/app/${t.slug}`), `/app/${METHODOLOGY_SLUG}`];
 const NO_STRIP = new Set(["/app/recession", `/app/${METHODOLOGY_SLUG}`]);
 const DESK_WIDTHS = [1672, 1440, 1280, 1024];
-const STRIP_NAME = "Market strip and data freshness";
+const STRIP_NAME = "Market strip";
 
 /** Seed localStorage on the first document of the test only, so a reload keeps
  * whatever the app itself wrote afterwards. */
@@ -56,7 +56,7 @@ async function open(page: Page, route = "/app/dashboard"): Promise<void> {
 const toggleBtn = (page: Page) => page.getByTestId("sidebar-toggle");
 const rail = (page: Page) => page.getByTestId("sidebar-rail");
 const strip = (page: Page) => page.getByRole("region", { name: STRIP_NAME });
-const freshDrawer = (page: Page) => page.getByRole("dialog", { name: "Data freshness" });
+const freshDrawer = (page: Page) => page.getByRole("dialog", { name: "Data status" });
 /** Shell nav links: anything linking to an /app/ route outside <main>. */
 const shellNavLinks = (page: Page) => page.locator("a[href^='/app/']:not(main a)");
 
@@ -409,7 +409,7 @@ async function expectStripByRoute(page: Page, route: string): Promise<void> {
 
 async function openAndCloseDrawer(page: Page, entry: Locator): Promise<void> {
   await expect(entry).toBeVisible();
-  await expect(entry).toHaveAccessibleName(/^Data freshness/);
+  await expect(entry).toHaveAccessibleName(/^Data status/);
   await entry.click();
   const drawer = freshDrawer(page);
   await expect(drawer).toBeVisible();
@@ -428,8 +428,9 @@ test.describe("S4 strip by route and the sidebar freshness entry", () => {
 
       const sidebar = page.locator("#mrr-sidebar");
       await expect(sidebar).toBeVisible();
-      // The existing footer text stays.
-      await expect(sidebar).toContainText(/market data|Reconnecting to feeds|Data service unavailable|Validated snapshot/);
+      // fix/freshness 8 / Codex R-28: the footer reads "Data status" over the markets as-of (or the service words).
+      await expect(sidebar.getByTestId("sidebar-freshness")).toContainText(/^Data status/);
+      await expect(sidebar.getByTestId("sidebar-freshness")).toContainText(/Markets · |Data service unavailable|Validated snapshot|Snapshot · as of/);
       await expect(sidebar).toContainText(/v\d+\.\d+\.\d+/);
       await expect(sidebar).toContainText(/Saved in this browser|Won't be saved in this browser/);
       const entry = sidebar.getByTestId("sidebar-freshness");
@@ -456,7 +457,7 @@ test.describe("S4 strip by route and the sidebar freshness entry", () => {
       await expectStripByRoute(page, route);
       const menu = page.locator("button[aria-controls='mobile-nav-list']");
       await menu.click();
-      const entry = page.locator("#mobile-nav-list").getByRole("button", { name: /^Data freshness/ });
+      const entry = page.locator("#mobile-nav-list").getByRole("button", { name: /^Data status/ });
       await expect(entry).toHaveCount(1);
       await entry.click();
       const drawer = freshDrawer(page);

@@ -169,11 +169,15 @@ export interface SinceLastClose {
   regime_changed?: boolean | null;
   regime_from: string | null;
   regime_to: string | null;
+  /** When the full refresh last ran the Desk store (fix/freshness 3d: the Data Pipeline's last refresh). */
   refreshed_at_utc: string | null;
+  /** fix/freshness 3d: the Desk series behind with the oldest observation, null when every one is current. */
+  oldest_behind?: { series: string; observation_date: string | null; state: "stale" | "missing"; reason: string } | null;
 }
 
-/** A regime row as served (§12.1, §12.6): the stored row stamped K−2 for the current session month K
- * (`print`, "YYYY-MM"), its trends, and the run of equal labels ending there. */
+/** A regime row as served (§12.1, §12.6): the newest stored regimes row (`print`, "YYYY-MM"), the label
+ * the Dashboard shows (fix/freshness 3a, D2), its trends, the run of equal labels ending there, and the
+ * classifier's odds for that label (null for Recession Risk: the Desk never shows its recession odds). */
 export interface RegimeRow {
   label: string;
   print?: string;
@@ -181,6 +185,7 @@ export interface RegimeRow {
   inflation?: string;
   months_in: number | null;
   since?: string;
+  odds?: number | null;
   freq?: string;
   source?: string;
 }
@@ -586,7 +591,7 @@ export interface NextPrint {
   operator: "<=" | ">";
   flips_to: string | null;
   first_effective_month: string;
-  /** desk/fill-compute: the axis on the row the card reads from (the K−2 row WHERE WE ARE shows). */
+  /** desk/fill-compute: the axis on the row the card reads from (the newest stored row WHERE WE ARE shows). */
   from_direction?: "rising" | "falling" | null;
   /** When the series has already printed `reference_month`: that print's m/m change and the axis it gave the next row. */
   printed_mom?: number | null;
@@ -646,7 +651,7 @@ export interface RegimeChange {
 }
 
 export interface RegimeResponse extends Envelope {
-  /** The K−2 row governing today, and the newest stored row beside it (`latest_print`, shown, never used to classify). */
+  /** The newest stored row (fix/freshness 3a, D2), and `latest_print`, the same month. */
   current?: Partial<RegimeRow> & {
     latest_print?: string;
     /** desk/fill-compute: the home page's classifier on the newest row, its dominant label and odds (null for Recession Risk), and whether it is this label. */
@@ -675,7 +680,7 @@ export interface RegimeResponse extends Envelope {
     freq?: string;
     source?: string;
   };
-  /** §12.6 (desk/fill-compute; Codex R-05): `basis` is the K−2 row `current` shows; `published`, the stored rows after it;
+  /** §12.6 (desk/fill-compute; Codex R-05): `basis` is the row `current` shows (the newest stored row); `published`, the stored rows after it;
    * the upcoming prints read from `upcoming_from`, the newest row, each against its own month and release. */
   next_prints?: {
     basis?: { month: string; label: string } | null;

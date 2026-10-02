@@ -24,7 +24,7 @@
  * The tape is fed by the EODHD relay (web/src/live/quotes.ts → api/stream.py):
  * crypto and FX stream around the clock, US equities during NYSE hours,
  * 15-min-delayed REST rows fill the gaps, and every row states what it is.
- * Every number on the page is a served field (the feed's own day-change
+ * Every number on the page is a served field (the relay's day-change
  * figures, the stored bars' ret_1d / ret_1w / ret_1m, the weekly pipeline's
  * metrics) or a formatted served value; nothing is re-derived in the browser.
  * Hooks are called once here and passed down; SingleName and ChartPanel keep
@@ -40,7 +40,9 @@ import type { CandleRange, DailyBar, SearchHit } from "../../api/types";
 import { LIVE_WINDOW_MS, streamWord, useQuotes, useStreamStatus, type LiveQuote, type StreamStatus } from "../../live/quotes";
 import { fmtBps, fmtDate, fmtPct, fmtSignedPct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
-import { monDD, stampLabel } from "../shared/fresh-state";
+import { rateChange } from "../shared/rate-change";
+import { stampLabel } from "../shared/fresh-state";
+import { pricedMonths } from "../shared/priced-when";
 import { useFreshReport } from "../shared/useFreshReport";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { Caption, MISSING, StateNote, metaStyle, missingNote, useHashScroll, useSnapshotMode } from "../shared/screen-ui";
@@ -160,7 +162,7 @@ function streamStrip(status: StreamStatus, quotes: ReadonlyMap<string, LiveQuote
     detail,
     onClick: openFreshness,
     ariaHasPopup: "dialog",
-    ariaLabel: `${title}. ${detail}. Open the data freshness breakdown.`,
+    ariaLabel: `${title}. ${detail}. Open the data status breakdown.`,
   };
 }
 
@@ -465,6 +467,7 @@ export default function MarketsScreen() {
   const vixWord = freshReport.series("vix_delayed").word;
   const vixText = vixQ ? `VIX ${vixQ.p.toFixed(2)} (delayed quote)` : "";
   const ten = credit.data?.series.find((x) => x.label === "UST10Y");
+  const tenChange = rateChange(ten);
   const usOpen = nyseSessionOpen();
   // "Live" means a US symbol actually ticked over the socket inside the live
   // window; a connected-but-silent feed is not live (crypto ticking at night
@@ -477,7 +480,8 @@ export default function MarketsScreen() {
       const q = quotes.get(d.symbol);
       return q?.src === "ws" && q.t != null && now - q.t < LIVE_WINDOW_MS;
     });
-  const pricedDate = priced.data?.length ? priced.data.map((p) => p.date).reduce((a, b) => (a > b ? a : b)) : null;
+  // fix/freshness 4: the pricing block's observation months, never its run date.
+  const pricedMonth = priced.data?.length ? pricedMonths(priced.data) : null;
 
   const sectorReads: SectorRead[] = SECTORS.map(({ symbol, name }) => {
     const bars = barsBySymbol.get(symbol);
@@ -516,8 +520,8 @@ export default function MarketsScreen() {
             spy?.delayed ? " (15-minute delayed quotes)" : ""
           }.`;
   const why = usLive
-    ? "Day moves are the exchange feed's own figures. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence."
-    : "Off-hours the board holds the last quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence.";
+    ? "Day moves are measured against each name's previous regular-session close. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence."
+    : "Outside the regular session, trades the feed marks extended-hours or closed are held, and delayed quotes timestamped outside the session do not replace a regular-session quote. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
   // A3 (Iteration 1 step 6): the tape reads the server's live_quotes state
   // and the candles its market_daily state (§5 words: "Live", "Delayed 15
   // min", "Close · Sep 18", "Sep 14 · 4 sessions behind"). The weekly pricing
@@ -530,7 +534,7 @@ export default function MarketsScreen() {
       noun: "Priced",
       label: freshReport.seeded
         ? freshReport.series("market_daily")
-        : stampLabel(pricedDate ? `Week ending ${monDD(pricedDate)}` : null, "The weekly pricing block's newest stamp; the freshness report does not judge this feed."),
+        : stampLabel(pricedMonth, "Each priced metric's own observation month; the freshness report does not judge this block."),
     },
   ];
 
@@ -545,11 +549,13 @@ export default function MarketsScreen() {
         <Metric id="ust10y" value={ten.value_pct}>
           {fmtPct(ten.value_pct)}
         </Metric>
-        {ten.change_1w_bps != null ? (
+        {tenChange ? (
           <>
             {" · "}
-            <span style={{ color: dirColor(ten.change_1w_bps) }}>{fmtBps(ten.change_1w_bps)}</span>
-            {" 1w"}
+            <span style={{ color: dirColor(tenChange.bps) }} title={tenChange.title}>
+              {fmtBps(tenChange.bps)}
+            </span>
+            {tenChange.basis === "1w" ? " 1w" : ` ${tenChange.tag}`}
           </>
         ) : null}
       </>

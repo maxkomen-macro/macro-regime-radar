@@ -34,9 +34,12 @@ import type {
 import { fmtDate } from "../../lib/format";
 import { makeClient, renderWithProviders, stubFetch } from "../../test/utils";
 
+/** fix/freshness 7: the relay's VIX quote a test hands the Dashboard (none by default). */
+const liveVix = vi.hoisted(() => ({ quote: undefined as undefined | { s: string; p: number; dc: number | null; dd: number | null; t: number | null; delayed: boolean; src: "ws" | "rest" } }));
 vi.mock("../../live/quotes", () => ({
   LIVE_WINDOW_MS: 120_000,
   useQuotes: () => new Map(),
+  useQuote: (s: string) => (s === "VIX" ? liveVix.quote : undefined),
   useWatch: () => {},
   watch: () => () => {},
   useStreamStatus: () => ({ socket: "closed", feeds: {}, stale: {}, degraded: false, degradedReasons: [], lastBatchAt: null, attempts: 0, everOpened: false }),
@@ -144,18 +147,25 @@ const RECESSION: RecessionMetrics = {
   current_inputs: {},
 };
 
-const series = (series_id: string, label: string, value_pct: number, change_1w_bps: number, closes: number[]): CreditSeries => ({
+/** fix/freshness 2: the served shape. DGS10 and HY come from the true-dated
+ * daily store (a real week, "1w"); IG is still one stored row per month
+ * ("month_end", against August). */
+const series = (series_id: string, label: string, value_pct: number, change_bps: number, closes: number[], basis: "1w" | "month_end" = "1w"): CreditSeries => ({
   series_id,
   label,
   date: DAILY_DATE,
   value_pct,
   value_bps: Math.round(value_pct * 100),
-  change_1w_bps,
+  change_bps,
+  change_basis: basis,
+  change_from: basis === "1w" ? "2026-09-07" : "2026-08",
+  change_1w_bps: basis === "1w" ? change_bps : null,
   history: dated(["2026-09-09", "2026-09-10", PRIOR_DATE, DAILY_DATE], closes),
+  history_basis: basis === "1w" ? "daily" : "monthly",
 });
 const CREDIT: CreditOAS = {
   as_of: DAILY_DATE,
-  series: [series("DGS10", "UST10Y", 4.21, 5, [4.11, 4.14, 4.17, 4.21]), series("BAMLC0A0CM", "IG", 0.83, -2, [0.86, 0.85, 0.84, 0.83]), series("BAMLH0A0HYM2", "HY", 2.94, 4, [2.89, 2.9, 2.92, 2.94])],
+  series: [series("DGS10", "UST10Y", 4.21, 5, [4.11, 4.14, 4.17, 4.21]), series("BAMLC0A0CM", "IG", 0.83, -2, [0.86, 0.85, 0.84, 0.83], "month_end"), series("BAMLH0A0HYM2", "HY", 2.94, 4, [2.89, 2.9, 2.92, 2.94])],
 };
 const FEDFUNDS = { series_id: "FEDFUNDS", date: PRIOR_MONTH, value: 4.33 };
 const VIX = { series_id: "VIXCLS", date: DAILY_DATE, value: 16.42 };
@@ -184,7 +194,7 @@ const FRESHNESS: Freshness = {
 
 /** Em-dash asides (tidied to semicolons on screen) and a <strong> span in the closing sentence. */
 const NARRATIVE =
-  "Goldilocks leads the four-way split at 58% odds \u2014 the NBER model reads 13.7% over twelve months. Growth is steady while inflation eases. " +
+  "Goldilocks leads the four-way split at 58% odds \u2014 the NBER model reads 13.7% for this month, from inputs three months old. Growth is steady while inflation eases. " +
   "Conditions favour <strong>risk assets</strong>, though valuations limit upside \u2014 drawdown risk rises from current spread levels.";
 const TAKEAWAY_SENTENCE = "Conditions favour risk assets, though valuations limit upside; drawdown risk rises from current spread levels.";
 const TAKEAWAY: Takeaway = {
@@ -288,9 +298,9 @@ async function awaitSection(id: string): Promise<HTMLElement> {
 }
 const strip = async () => within(summary()).findByRole("button", { name: /Open the alert feed\.$/ });
 
-const LABELS_WATCH = ["Model regime", "Model probability", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", "Watch", "Invalidates", "NBER recession model"];
+const LABELS_WATCH = ["Model regime", "Leading odds", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", "Watch", "Invalidates", "NBER recession model"];
 const LABELS_TRIGGERED = LABELS_WATCH.map((l) => (l === "Watch" ? "Triggered" : l));
-const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession model · 12m"];
+const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds · this month"];
 const IDS_IN_ORDER = ["regime-hero", "regime-summary", "signals", "key-levels", "markets-glance", "whats-priced", "us10y", "macro-calendar", "macro-charts", "read-through"];
 
 beforeEach(() => {
@@ -314,12 +324,12 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(within(hero()).getByText("Current regime")).toBeInTheDocument();
     const pill = hero().querySelector(".mrr-pill") as HTMLElement;
     expect(pill).not.toBeNull();
-    expect(text(pill)).toBe("58% probability");
+    expect(text(pill)).toBe("58% odds");
     expect(pill).toHaveAttribute("data-tone", "mint");
     expect(h1.parentElement?.contains(pill)).toBe(true); // beside the headline
     expect(within(hero()).getByRole("heading", { level: 2 })).toHaveTextContent("A clear lead over Recession Risk at 31% of the same four-way odds.");
     const heroText = text(hero());
-    expect(heroText).toContain("Goldilocks means growth trending up while inflation stays calm: the equity-friendly quadrant.");
+    expect(heroText).toContain("Goldilocks means industrial production rising while the CPI level falls over the last three monthly readings: the equity-friendly quadrant.");
     expect(heroText).toContain("The call rests on a growth trend of +0.31 and an inflation trend of -0.42; model confidence of 47% is a separate reading of how firmly the classifier holds the call.");
     expect(heroText).toContain("Recession Risk here is the classifier's fourth quadrant; the NBER recession model is a separate reading, shown in the summary.");
     expect(within(hero()).getByRole("button", { name: "model confidence" })).toHaveClass("jargon");
@@ -372,7 +382,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
   it("the hero section text never contains the recession model's probability", async () => {
     renderDashboard();
     await awaitHero();
-    await waitFor(() => expect(text(summary())).toContain("13.7% over 12m"));
+    await waitFor(() => expect(text(summary())).toContain("13.7% for this month, from inputs three months old"));
     const heroText = text(hero());
     expect(heroText).not.toContain("13.7");
     expect(heroText).not.toMatch(/over 12m/);
@@ -385,16 +395,16 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await awaitHero();
     expect(within(summary()).getByRole("heading", { level: 2 })).toHaveTextContent("Model & market summary");
     await waitFor(() => expect(dts()).toEqual(LABELS_WATCH));
-    expect(text(ddFor("Model probability"))).toBe("58%");
+    expect(text(ddFor("Leading odds"))).toBe("58%");
     expect(text(ddFor("Model confidence"))).toBe("Medium (47%)");
     expect(text(ddFor("Odds"))).toContain("GL 58%");
     expect(ddFor("Odds").querySelector(".mrr-odds")).not.toBeNull();
     await waitFor(() => expect(text(ddFor("Model vs market"))).toBe("Aligned · +8 on ±100"));
-    await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path \u2192 Recession Risk 12%"));
+    await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path \u2192 Recession Risk 12% (hand-set priors)"));
     await waitFor(() => expect(text(ddFor("What changed"))).toBe("Switched from Recession Risk in Jul 2026 · 3 months in"));
     expect(text(ddFor("Watch"))).toBe("Inflation pressure (78% of trigger)");
     expect(text(ddFor("Invalidates"))).toBe("CPI > 4.00% YoY · 2s10s < 0.00% · VIX > 30");
-    expect(text(ddFor("NBER recession model"))).toBe("13.7% over 12m · Low Risk (a separate model from the 31% Recession Risk regime odds)");
+    expect(text(ddFor("NBER recession model"))).toBe("13.7% for this month, from inputs three months old · Low Risk (a separate model from the 31% Recession Risk regime odds)");
     expect(text(ddFor("NBER recession model"))).toContain("a separate model");
     // The D22 caption lives in the quiet disclosure under the rows.
     const about = within(summary()).getByRole("button", { name: /About model vs market/ });
@@ -520,7 +530,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await waitFor(() => expect(section.querySelectorAll("article")).toHaveLength(5));
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent(/^Monitored signals$/i);
     expect(text(section)).toContain("Bars show distance to trigger · Clear <50% · Watch ≥50% · Triggered = threshold crossed.");
-    expect(text(section)).toContain("5 signals · latest Sep 01, 2026");
+    expect(text(section)).toContain("5 signals · Sep 2026 print");
     expect(within(section).getByRole("link", { name: /View all signals/ })).toHaveAttribute("href", "/app/methodology#signals");
 
     const expected: [string, string, string, string, string, boolean, string][] = [
@@ -555,7 +565,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     stubFetch(routes({ "/api/signals/latest": () => SIGNALS_MISSING }));
     renderDashboard();
     const section = await awaitSection("signals");
-    await waitFor(() => expect(text(section)).toContain("4 signals · latest Sep 01, 2026"));
+    await waitFor(() => expect(text(section)).toContain("4 signals · Sep 2026 print"));
     const articles = [...section.querySelectorAll("article")];
     expect(articles).toHaveLength(5);
     const card = articles.find((a) => text(a.querySelector("h3")) === "Unemployment spike") as HTMLElement;
@@ -594,12 +604,13 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(t).toContain("VIX · Cboe volatility index · daily close.");
     expect(t).toContain("+0.31");
     expect(t).toContain("-0.42");
-    expect(t).toContain("3-month slope of the industrial-production z-score; feeds the regime call.");
-    expect(t).toContain("3-month slope of the CPI z-score; feeds the regime call.");
+    expect(t).toContain("Slope of the industrial-production level over the last three monthly readings; its sign feeds the regime call, and the odds use it z-scored against its history.");
+    expect(t).toContain("Slope of the CPI level over the last three monthly readings; its sign feeds the regime call, and the odds use it z-scored against its history.");
     await waitFor(() => expect(text(kl)).toContain("+52 bps"));
     expect(text(kl)).toContain(`The 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the 61st percentile of the model's monthly history. Below 0 is an inversion, the classic pre-recession shape.`);
     expect(text(kl)).toContain("13.7%");
-    expect(text(kl)).toContain("13.7% sits in the Low Risk band (Elevated starts at 20%, High at 40%). The model trains on NBER dates; inputs through Aug 2026.");
+    // fix/freshness 4: inputs through the served (lagged) month; this fixture serves none, so data_as_of's month.
+    expect(text(kl)).toContain("13.7% sits in the Low Risk band (Elevated starts at 20%, High at 40%). The model scores this month from inputs three months old, trained on NBER dates; inputs through Aug 2026.");
     expect(kl.querySelectorAll("article, .mrr-hero")).toHaveLength(0);
 
     // The US 10Y card prints the same value, its weekly change and the sparkline.
@@ -611,12 +622,12 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     // Iteration 1 step 6 (A1): the provenance line ends in the card's stamp,
     // DGS10's own as-of word (the fixture's report carries no series: unknown),
     // never the month-stamped row date.
-    expect(text(ten)).toContain("10-year Treasury yield · daily close · FRED DGS10 · As of unknown");
+    expect(text(ten)).toContain("10-year Treasury yield · daily closes, 90 days · FRED DGS10 · As of unknown");
     expect(ten.querySelector("[data-stamp]")?.textContent).toBe("FRED DGS10 · As of unknown");
     expect(ten.querySelector("svg path")).not.toBeNull();
     expect(within(ten).getByRole("link", { name: /View rates/ })).toHaveAttribute("href", "/app/credit#financing");
     // And the summary NBER row prints the same recession figure as the tile.
-    await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7% over 12m/));
+    await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7% for this month, from inputs three months old/));
   });
 
   it("macro charts: three accordion buttons closed on load (the regime odds moved to the hero, D1); clicking the first opens its chart", async () => {
@@ -631,7 +642,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     // The decorative glyph (aria-hidden) leads each button; the title follows.
     expect(buttons.map((b) => text(b))).toEqual([
       expect.stringMatching(/^\u25b8\s*Yield curve 2s10s · model history/),
-      expect.stringMatching(/^\u25b8\s*Recession model probability · history/),
+      expect.stringMatching(/^\u25b8\s*Recession model odds · history/),
       expect.stringMatching(/^\u25b8\s*Credit spreads · 90 days/),
     ]);
     expect(byId("chart-regime-panel")).toBeNull();
@@ -647,7 +658,78 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     fireEvent.click(buttons[2]);
     expect(buttons[0]).toHaveAttribute("aria-expanded", "false");
     expect(buttons[2]).toHaveAttribute("aria-expanded", "true");
-    expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series, monthly observations.");
+    expect(text(byId("chart-credit-panel"))).toContain("high-yield at 294 bps, investment-grade at 83 bps; spreads widen when credit stress builds. FRED BAML series: high-yield daily observations, investment-grade one value per month (its newest).");
+  });
+
+  it("fix/freshness 8: the summary card's header carries Data status › beside its as-of stamps, opening the breakdown", async () => {
+    const openFreshness = vi.fn();
+    renderDashboard({ actions: { openFreshness } });
+    const card = await awaitSection("regime-summary");
+    const stamps = card.querySelector(".mrr-summary-stamp") as HTMLElement;
+    const link = within(stamps).getByRole("button", { name: "Data status ›" });
+    expect(link).toHaveAttribute("aria-haspopup", "dialog");
+    // Codex R-31: closed, the drawer is not mounted, so the button names no control and says it is collapsed.
+    expect(link).not.toHaveAttribute("aria-controls");
+    expect(link).toHaveAttribute("aria-expanded", "false");
+    // At the right of the header: the stamps' row, after both stamps.
+    const kids = [...(stamps.firstElementChild as HTMLElement).children];
+    expect(kids[kids.length - 1]).toBe(link);
+    expect(kids.filter((k) => k.hasAttribute("data-stamp")).length).toBe(2);
+    fireEvent.click(link);
+    expect(openFreshness).toHaveBeenCalledTimes(1);
+    // Nothing on the Current regime card.
+    expect(within(byId("regime-hero") as HTMLElement).queryByRole("button", { name: /Data status/ })).toBeNull();
+  });
+
+  it("Codex R-31: with the drawer open the summary's Data status names it in aria-controls and reads expanded", async () => {
+    renderDashboard({ actions: { freshnessOpen: true } });
+    const card = await awaitSection("regime-summary");
+    const link = within(card.querySelector(".mrr-summary-stamp") as HTMLElement).getByRole("button", { name: "Data status ›" });
+    expect(link).toHaveAttribute("aria-controls", "freshness-drawer");
+    expect(link).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("Codex R-08: an older API serves no history_basis, so the 10Y card says stored history, never daily closes", async () => {
+    const legacy: CreditOAS = { ...CREDIT, series: CREDIT.series.map(({ history_basis: _drop, ...rest }) => rest as CreditSeries) };
+    stubFetch(routes({ "/api/credit/oas": () => legacy }));
+    renderDashboard();
+    const ten = await awaitSection("us10y");
+    await waitFor(() => expect(text(ten)).toContain("4.21%"));
+    expect(text(ten)).toContain("10-year Treasury yield · stored history · FRED DGS10");
+    expect(text(ten)).not.toContain("daily closes");
+  });
+
+  it("fix/freshness 7: without a quote the VIX card prints the FRED close by its true date, labeled Close, never the month stamp", async () => {
+    renderDashboard();
+    const kl = await awaitSection("key-levels");
+    await waitFor(() => expect(text(kl)).toContain("16.42"));
+    // The fixture's VIXCLS row is dated to its day (Sep 14), so that is the close's date.
+    expect(text(kl)).toContain("FRED · Close · Sep 14");
+    expect(text(kl)).toContain("VIX · Cboe volatility index · daily close.");
+    expect(kl.querySelector("[data-metric='vix']")?.textContent).toBe("16.42");
+    expect(text(kl)).not.toContain("FRED · EODHD");
+  });
+
+  it("fix/freshness 7: with the relay's VIX quote the card prints the tape's number and the tape's own stamp, and the read-through reads the same value", async () => {
+    const q = { s: "VIX", p: 26.4, dc: 3.1, dd: 0.8, t: Date.UTC(2026, 9, 1, 14, 15), delayed: true, src: "rest" as const };
+    liveVix.quote = q;
+    try {
+      const { asOfCell } = await import("../markets/tape");
+      renderDashboard();
+      const kl = await awaitSection("key-levels");
+      await waitFor(() => expect(kl.querySelector("[data-metric='vix-live']")?.textContent).toBe("26.40"));
+      expect(text(kl)).toContain(`EODHD VIX · ${asOfCell(q).text}`);
+      expect(text(kl)).toContain("VIX · Cboe volatility index · delayed quote.");
+      // The section's sources name EODHD only while a tile reads it.
+      expect(text(kl)).toContain("FRED · EODHD");
+      expect(text(kl)).not.toContain("16.42");
+      const rt = await awaitSection("read-through");
+      await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7%/));
+      fireEvent.click(within(rt).getByRole("button", { name: /Current read-through/ }));
+      expect(text(rt)).toContain("the VIX sits at 26.40 (stressed)");
+    } finally {
+      liveVix.quote = undefined;
+    }
   });
 
   it("read-through disclosures are closed on load; opening shows the two paragraphs and the Methodology link", async () => {
@@ -676,7 +758,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     const paragraphs = [...panel.querySelectorAll("p")].map((p) => text(p));
     expect(paragraphs).toHaveLength(2);
     expect(paragraphs[0]).toBe(
-      `The drivers on file: the 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the VIX sits at 16.42 (subdued), and high-yield spreads run 294 bps (+4 bps on the week). Growth trend reads +0.31 and inflation trend -0.42; both are 3-month slopes of z-scored macro data.`,
+      `The drivers on file: the 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the VIX sits at 16.42 (subdued), and high-yield spreads run 294 bps (+4 bps on the week). Growth trend reads +0.31 and inflation trend -0.42; both are slopes of the index levels over the last three monthly readings, z-scored against their history for the odds.`,
     );
     expect(paragraphs[1]).toBe(
       "What would change the read: a CPI print above 4.00% YoY trips Inflation pressure, a 2s10s close below 0.00% trips Curve inversion risk, and a VIX close above 30.00 trips the vol signal. None of the 5 monitored signals is triggered; 1 sits in Watch.",
@@ -686,7 +768,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(method).toHaveAttribute("aria-expanded", "true");
     const link = within(rt).getByRole("link", { name: /Full methodology/ });
     expect(link).toHaveAttribute("href", "/app/methodology");
-    expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("The regime is a 4-way softmax classifier over z-scored growth (industrial production) and inflation (CPI) trends");
+    expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("The regime is set by the signs of the slopes of the industrial-production and CPI levels over the last three monthly readings");
     expect(text(byId(method.getAttribute("aria-controls") as string))).toContain("Nothing on this screen is re-derived in the browser.");
   });
 
@@ -750,7 +832,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(screen.queryByText(/Regime unavailable/)).toBeNull();
     expect(screen.queryByText("Unavailable")).toBeNull();
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Goldilocks");
-    expect(text(hero().querySelector(".mrr-pill"))).toBe("58% probability");
+    expect(text(hero().querySelector(".mrr-pill"))).toBe("58% odds");
   });
 
   it("route #whats-priced selects the What's priced tab", async () => {
@@ -803,7 +885,7 @@ describe("DashboardScreen signal cards without a row (checklist 10 C #1 and #2)"
     stubFetch(routes({ "/api/signals/latest": () => ({ date: MONTH, signals: [] }) }));
     renderDashboard();
     const section = await awaitSection("signals");
-    await waitFor(() => expect(text(section)).toContain("0 signals · latest Sep 01, 2026"));
+    await waitFor(() => expect(text(section)).toContain("0 signals · Sep 2026 print"));
     const articles = [...section.querySelectorAll("article")];
     expect(articles).toHaveLength(5);
     for (const a of articles) {

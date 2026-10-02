@@ -139,16 +139,30 @@ export interface DatedValue {
 export interface CreditSeries {
   series_id: string;
   label: string;
+  /** The newest observation's own date (never the month stamp). */
   date: string;
   value_pct: number;
   value_bps: number;
+  /** fix/freshness 2: the change and what it is measured against. "1w": a true
+   * seven-calendar-day change (true-dated daily store), `change_from` the prior
+   * observation's date; "month_end": against the previous month's stored row,
+   * `change_from` "YYYY-MM". Read through `rateChange` (shared/rate-change.ts). */
+  change_bps?: number | null;
+  change_basis?: "1w" | "month_end" | null;
+  change_from?: string | null;
+  /** Set only when the change is a true week; kept for older readers. */
   change_1w_bps: number | null;
   history: DatedValue[];
+  /** "daily": true-dated observations; "monthly": one stored row per month. */
+  history_basis?: "daily" | "monthly" | null;
 }
 
 export interface CreditOAS {
   as_of: string | null;
   series: CreditSeries[];
+  /** fix/freshness 8: the 30Y Treasury (FRED DGS30 from the Desk store), its own field so no Credit chart draws it.
+   * null when the store holds no eligible DGS30; absent on an older API (the strip then hides the card). */
+  ust30y?: CreditSeries | null;
   /** B3: the five BAML series and DGS10 (FRESHNESS_CONTRACT §6). */
   freshness?: Record<string, SeriesState> | null;
 }
@@ -174,6 +188,16 @@ export interface RecessionMetrics {
   data_as_of: string;
   curve_shape: Record<string, number | null>;
   current_inputs: Record<string, number | null>;
+  /** fix/freshness 3b, 4: the month the headline is the score for ("YYYY-MM"), the month of the
+   * three-month-lagged inputs it was scored from, and the month of each current reading. */
+  probability_month?: string | null;
+  inputs_through?: string | null;
+  current_input_months?: Record<string, string> | null;
+  /** fix/freshness 4: the training sample (months, size, recession months, each recession as a run of months). */
+  training_window?: { start: string; end: string } | null;
+  training_n?: number | null;
+  training_recession_months?: number | null;
+  training_recessions?: { start: string; end: string }[] | null;
   /** B3: per-series state for the model's inputs (FRESHNESS_CONTRACT §6). */
   freshness?: Record<string, SeriesState> | null;
 }
@@ -183,10 +207,12 @@ export interface PricedMetric {
   metric: string;
   label: string;
   unit: string;
-  /** Week-end Friday stamp from the derived-metrics pipeline. */
+  /** The run that wrote the level (every full refresh), not the observation. */
   date: string;
   value: number;
   mom_chg: number | null;
+  /** fix/freshness 4: the observation's own month ("YYYY-MM"). */
+  observation_month?: string | null;
 }
 
 export interface Surprise {

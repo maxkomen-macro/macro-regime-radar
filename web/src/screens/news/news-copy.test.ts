@@ -310,7 +310,7 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     expect(feedHealth({ usingFallback: false, loading: true, feedInfo: none, feed: [], newestFallback: null })).toEqual({
       tone: "gray",
       title: "Reading feed health…",
-      detail: "Opens the data freshness breakdown",
+      detail: "Opens the data status breakdown",
     });
   });
 });

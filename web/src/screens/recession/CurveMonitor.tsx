@@ -169,8 +169,8 @@ export default function CurveMonitor({ m, status, range, onRangeChange }: CurveM
       <SectionHeader
         layout="panel"
         title="Curve monitor"
-        description="2s10s daily, 30 years stored, recessions shaded"
-        right={<MetaWithStamp meta="FRED · daily" stamp={<Stamp source={SRC.fred} label={curveFresh} />} />}
+        description="2s10s at each month-end, 30 years stored, recessions shaded"
+        right={<MetaWithStamp meta="FRED · month-end" stamp={<Stamp source={SRC.fred} label={curveFresh} />} />}
         actions={
           <Segmented
             mono

@@ -1541,7 +1541,7 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             "evaluability": ("a session counts, for events and the baseline alike, when the shock's z exists, the condition is computable, "
                              "the target has a value and the lagged regime label exists; every baseline candidate takes the same entry delay "
                              "and the same completeness rules as an event, with its regime from the signal date"),
-            "regime_source": "regimes table (src/regime.py: a rule on 3-month INDPRO and CPI slopes, one row per month), read as stored",
+            "regime_source": "regimes table (src/regime.py: a rule on the INDPRO and CPI slopes over the last three monthly readings, one row per month), read as stored",
             "regime_lag_months": REGIME_LAG_MONTHS,
             "regime_rule": f"a session in month K takes the row stamped K−{REGIME_LAG_MONTHS} months (that row needs data published mid K−1); earlier sessions are Unlabeled, reported in their own row, outside the totals",
             "regime_revision_caveat": "every regimes row is rewritten by each full refresh, so a historical label reflects today's FRED revisions of INDPRO and CPI, not what was knowable then",

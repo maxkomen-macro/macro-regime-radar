@@ -20,7 +20,9 @@ import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
 import { bandWord, dayLong, dayShort, isFiniteNumber as fin, monthYear, num, pctPlain, rowWords, utcTime, year } from "../kit/format";
-import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine, FailedLine, FailedScope, useLoadFailed } from "../kit/ui";
+import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, StampBadge, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine, FailedLine, FailedScope, useLoadFailed } from "../kit/ui";
+import { useQuotes } from "../../../live/quotes";
+import { vixShown, type VixShown } from "../../shared/vix-shown";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import { REGIME_TONE } from "../kit/palette";
@@ -51,6 +53,9 @@ export function sinceItems(s: SinceLastClose): { key: string; text: string; tag?
   else if (s.regime_changed === false) out.push({ key: "regime", text: "regime unchanged" });
   const at = utcTime(s.refreshed_at_utc);
   if (at) out.push({ key: "refresh", text: `data refreshed ${at}` });
+  // fix/freshness 3d: the refresh time is the last run's; a series that run left behind is named on its own.
+  const b = s.oldest_behind;
+  if (b && b.series) out.push({ key: "behind", text: b.observation_date && dayShort(b.observation_date) ? `${b.series} behind, through ${dayShort(b.observation_date)}` : `${b.series} not stored` });
   return out;
 }
 
@@ -94,6 +99,11 @@ function SinceLine({ data, failed, unserved }: { data: SinceLastClose | undefine
   );
 }
 
+
+/** The regime tile's sub-line (fix/freshness 3a): "Growth rising, inflation rising · odds 42% · rule-based"; a part not served is left out. */
+export function regimeSub(r: NonNullable<OverviewTiles["regime"]>): string {
+  return [r.growth && r.inflation ? `Growth ${r.growth}, inflation ${r.inflation}` : null, fin(r.odds) ? `odds ${pctPlain(r.odds)}` : null, "rule-based"].filter(Boolean).join(" · ");
+}
 
 /** "Above 50 & 200", from the served state (§2, §12.1); a mixed state reads its two flags. */
 type TrendTile = NonNullable<OverviewTiles["trend"]>;
@@ -150,6 +160,10 @@ function Tile({ label, state, badge, value, tone, sub, unserved }: { label: stri
 
 function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: boolean }) {
   const t = data?.tiles;
+  // fix/freshness 3c: the VIX the Markets tape shows (one quote store), else the stored close (^VIX, served);
+  // shared/vix-shown.ts, the same code the Dashboard's VIX card runs (item 7).
+  const quotes = useQuotes();
+  const vix = vixShown(t?.vol, quotes.get("VIX"));
   // Each tile is its own block (§12.1); the whole answer served awaiting makes every tile unavailable.
   const off = {
     regime: useBlockUnserved(data, "tiles.regime"),
@@ -168,29 +182,32 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
         value={t?.regime?.label}
         // §1.3's exception (v2 D-36): the tile carries its regime's color.
         tone={t?.regime ? REGIME_TONE[t.regime.label] : undefined}
-        sub={t?.regime ? [t.regime.growth && t.regime.inflation ? `Growth ${t.regime.growth}, inflation ${t.regime.inflation}` : null, "rule-based, two-month lag"].filter(Boolean).join(" · ") : null}
+        // fix/freshness 3a (D2): the newest stored row, the label and month the Dashboard shows, with its odds.
+        sub={t?.regime ? regimeSub(t.regime) : null}
       />
-      <Tile label="Recession · logistic model" unserved={off.recession} state={state(t?.recession && fin(t.recession.score) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.score) ? pctPlain(t.recession.score) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
+      <Tile label="Recession · logistic model" unserved={off.recession} state={state(t?.recession && fin(t.recession.score) ? t.recession : null)} badge={<LiveBadge />} value={t?.recession && fin(t.recession.score) ? pctPlain(t.recession.score, 1) : null} sub={t?.recession ? recessionWords(t.recession) : null} />
       <Tile
         label="S&P 500 · trend"
         unserved={off.trend}
         state={state(t?.trend)}
-        badge={t?.trend ? <LiveBadge parts={[dayShort(t.trend.date) || null]} /> : null}
+        // fix/freshness 3c: the trend reads daily closes, so its badge is the close's date, never Live.
+        badge={t?.trend ? <StampBadge text={`Close · ${dayShort(t.trend.date)}`} /> : null}
         value={t?.trend ? trendWords(t.trend) : null}
         sub={t?.trend ? trendSub(t.trend) || null : null}
       />
       <Tile
         label="Vol · VIX"
-        unserved={off.vol}
-        state={state(fin(t?.vol?.vix) ? t.vol : null)}
-        badge={t?.vol ? <LiveBadge parts={[dayShort(t.vol.date) || null]} /> : null}
-        value={t?.vol && fin(t.vol.vix) ? num(t.vol.vix) : null}
+        // A live quote stands on its own when /overview's vol block is not served; the close needs the block.
+        unserved={vix?.source === "quote" ? null : off.vol}
+        state={state(vix)}
+        badge={vix ? vix.live ? <LiveBadge parts={[vix.stamp]} /> : <StampBadge text={vix.stamp} /> : null}
+        value={vix ? vix.text : null}
         sub={
-          t?.vol ? (
+          vix ? (
             <>
-              {/* §2: "VIX <level> · <date> · <band>", then the gap to the S&P's 21-day realized volatility (desk/fill-compute). */}
-              {[fin(t.vol.vix) ? `VIX ${num(t.vol.vix)}` : "VIX", dayShort(t.vol.date) || null, t.vol.band ?? null].filter(Boolean).join(" · ")}
-              <span className="ov-vol-gap">{gapWords(t.vol)}</span>
+              {/* §2: "VIX <level> · <stamp> · <band>", then the gap to the S&P's 21-day realized volatility, against the VIX shown. */}
+              {[`VIX ${vix.text}`, vix.source === "quote" ? null : dayShort(vix.date) || null, vix.band].filter(Boolean).join(" · ")}
+              <span className="ov-vol-gap">{gapWords(vix)}</span>
             </>
           ) : null
         }
@@ -199,13 +216,13 @@ function Tiles({ data, failed }: { data: OverviewResponse | undefined; failed: b
   );
 }
 
-/** §2: the VIX against the S&P's 21-day realized volatility, in VIX points, dated when its session is not the level's. */
-export function gapWords(vol: NonNullable<OverviewTiles["vol"]>): string {
-  const g = vol.gap;
-  if (!g || !fin(g.gap_pts) || !fin(g.realized_21d)) return "No session has both the VIX and 21 S&P returns stored.";
-  const side = g.gap_pts >= 0 ? "above" : "below";
-  const on = g.date !== vol.date && dayShort(g.date) ? ` on ${dayShort(g.date)}` : "";
-  return `${num(Math.abs(g.gap_pts))} pts ${side} 21-day realized (${num(g.realized_21d)})${on}`;
+/** §2: the VIX shown against the S&P's 21-day realized volatility, in VIX points (fix/freshness 3c: recomputed against
+ * the VIX on the tile); the realized figure's session is named when it is not the VIX's. */
+export function gapWords(v: Pick<VixShown, "gapPts" | "realized" | "realizedDate" | "date">): string {
+  if (!fin(v.gapPts) || !fin(v.realized)) return "No session has both the VIX and 21 S&P returns stored.";
+  const side = v.gapPts >= 0 ? "above" : "below";
+  const on = v.realizedDate && v.realizedDate !== v.date && dayShort(v.realizedDate) ? `, realized to ${dayShort(v.realizedDate)}` : "";
+  return `${num(Math.abs(v.gapPts))} pts ${side} 21-day realized (${num(v.realized)})${on}`;
 }
 
 /** One active signal's sentence (§2). */
@@ -310,6 +327,23 @@ function Monitored({ pathTo }: { pathTo: (slug: string) => string }) {
   const levels = useLevels(store);
   const now = new Date();
   const rows = store.positions.filter(isOpen).map((p) => viewOf(p, levels, now));
+  // fix/freshness 6: with nothing kept (and nothing unreadable) the card is one compact line with its link, not a
+  // tall empty panel stretched to the signals' height.
+  if (!rows.length && !store.unreadable.length) {
+    return (
+      <section className="dk-card ov-monitored ov-monitored-empty" aria-labelledby="ov-mon-title" data-empty="">
+        <h2 className="dk-card-title" id="ov-mon-title">
+          Monitored
+        </h2>
+        <p className="ov-mon-empty">
+          No positions are monitored in this browser.{" "}
+          <Link className="dk-link" to={pathTo("position-monitor")}>
+            Add one in Position Monitor →
+          </Link>
+        </p>
+      </section>
+    );
+  }
   return (
     <section className="dk-card ov-monitored" aria-labelledby="ov-mon-title">
       <div className="dk-card-head">

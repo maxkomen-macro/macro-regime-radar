@@ -315,14 +315,14 @@ test.describe("news (checklist 08 E.3)", () => {
     expect(title).toMatch(STRIP_TITLE);
     const detail = await contentText(strip(page).locator("small"));
     const tone = (await strip(page).getAttribute("data-tone")) ?? "";
-    expect(await strip(page).getAttribute("aria-label")).toMatch(new RegExp(`^${escapeRe(title)}\\. .*Open the data freshness breakdown\\.$`));
+    expect(await strip(page).getAttribute("aria-label")).toMatch(new RegExp(`^${escapeRe(title)}\\. .*Open the data status breakdown\\.$`));
     note("strip", `${title} · ${detail} · tone ${tone}`);
     if (title === "Feed on time") expect(tone).toBe("mint");
     else if (/^Feed (?:delayed|stale)$|^Fallback coverage$/.test(title)) expect(tone).toBe("amber");
     else expect(tone).toBe("gray");
 
     await strip(page).click();
-    const drawer = page.getByRole("dialog", { name: "Data freshness" });
+    const drawer = page.getByRole("dialog", { name: "Data status" });
     await expect(drawer).toBeVisible();
     await expect(drawer).toHaveAttribute("id", "freshness-drawer");
     const fresh = await servedFreshness(page);

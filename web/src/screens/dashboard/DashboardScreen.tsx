@@ -38,6 +38,9 @@ import Jargon from "../shared/Jargon";
 import { Caption, MISSING, MISSING_ROW, StateNote, useHashScroll } from "../shared/screen-ui";
 import { REGIME_INPUT_IDS, SIGNAL_INPUT_IDS, marketSeries } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
+import { rateChange } from "../shared/rate-change";
+import { storedVixFromFred, vixShown } from "../shared/vix-shown";
+import { useQuote } from "../../live/quotes";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
 import TabHero from "../shared/TabHero";
 import SummaryCard, { kvLinkStyle, type StatusStripProps, type SummaryRow } from "../shared/SummaryCard";
@@ -171,13 +174,16 @@ export default function DashboardScreen() {
   const credit = useCreditOas(90);
   const fedFunds = useSeriesLatest("FEDFUNDS");
   const vix = useSeriesLatest("VIXCLS");
+  // fix/freshness 7: the VIX the tape and the Desk show (shared/vix-shown.ts): the relay's delayed quote with the
+  // tape's stamp, else the FRED close dated by its true observation date (the freshness report's series[]).
+  const vixQuote = useQuote("VIX");
   const freshness = useFreshness();
   const takeaway = useTakeaway();
   const transitions = useTransitions();
   // The glance panel (useMarketDaily, usePriced, useQuotes) and the calendar
   // card (useCalendar, useCalendarRecent) own their hooks; shared query keys
   // keep every endpoint at one request.
-  const { openAlerts } = useShellActions();
+  const { openAlerts, openFreshness, freshnessOpen = false } = useShellActions();
 
   // Hash-driven state, mirrored from the panels that own it: the deep-link
   // scroll re-runs once the hash's target is actually visible (D38).
@@ -222,6 +228,7 @@ export default function DashboardScreen() {
     }
   }, [bannerStamp]);
   const report = useFreshReport();
+  const vixRead = vixShown(storedVixFromFred(vix.data, report.f?.series?.find((s) => s.id === "VIXCLS")?.as_of), vixQuote);
   const regimeInputs = report.f?.regime?.inputs?.length ? report.f.regime.inputs.map((i) => i.series) : REGIME_INPUT_IDS;
   const macroFresh = report.group(regimeInputs);
   const inCycle = !report.seeded && (macroFresh.tone === "neutral" || macroFresh.tone === "live");
@@ -229,6 +236,7 @@ export default function DashboardScreen() {
   const bannerLive = bannerStamp != null && honest && (stampSeenAtLoad !== bannerStamp || inCycle);
 
   const hy = credit.data?.series.find((s) => s.label === "HY");
+  const hyChange = rateChange(hy);
 
   const lastAlertBySignal = useMemo(() => {
     const m = new Map<string, string>();
@@ -267,7 +275,7 @@ export default function DashboardScreen() {
     id: "next-3m",
     label: "Next 3 months",
     value: tr
-      ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")}`
+      ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")} (hand-set priors)`
       : transitions.isError
         ? <StateNote error missing={MISSING.transitions} />
         : <StateNote loading />,
@@ -294,7 +302,6 @@ export default function DashboardScreen() {
       const t = bySignal.get(name)?.threshold;
       return t != null ? t.toFixed(dp) : "its threshold";
     };
-    const vixV = vix.data?.value;
 
     // The composed read-through survives, one click down.
     readThrough = [
@@ -302,13 +309,13 @@ export default function DashboardScreen() {
         recession.data?.yield_curve_spread != null
           ? `${fmtBps(recession.data.yield_curve_spread)} (${fmtPct(bpsToPct(recession.data.yield_curve_spread))})`
           : "—"
-      }, the VIX sits at ${vixV != null ? vixV.toFixed(2) : "—"}${
-        vixV != null ? (vixV < 15 ? " (calm)" : vixV < 25 ? " (subdued)" : " (stressed)") : ""
+      }, the VIX sits at ${vixRead ? vixRead.text : "—"}${
+        vixRead?.band ? ` (${vixRead.band})` : ""
       }, and high-yield spreads run ${hy ? fmtBpsLevel(hy.value_bps) : "—"}${
-        hy?.change_1w_bps != null ? ` (${fmtBps(hy.change_1w_bps)} on the week)` : ""
+        hyChange ? ` (${fmtBps(hyChange.bps)} ${hyChange.phrase})` : ""
       }. Growth trend reads ${r.growth_trend != null ? fmtSigned(r.growth_trend) : "—"} and inflation trend ${
         r.inflation_trend != null ? fmtSigned(r.inflation_trend) : "—"
-      }; both are 3-month slopes of z-scored macro data.`,
+      }; both are slopes of the index levels over the last three monthly readings, z-scored against their history for the odds.`,
       `What would change the read: a CPI print above ${thr("cpi_hot")}% YoY trips Inflation pressure, a 2s10s close below ${thr("yield_curve_inversion")}% trips Curve inversion risk, and a VIX close above ${thr("vix_spike")} trips the vol signal. ` +
         (triggered.length > 0
           ? `${triggered.length} of the ${reporting.length} monitored signals ${triggered.length === 1 ? "is" : "are"} currently triggered.`
@@ -348,9 +355,9 @@ export default function DashboardScreen() {
       },
       {
         id: "model-probability",
-        label: "Model probability",
+        label: "Leading odds",
         value: (
-          <Metric id={ODDS_METRIC[leadKey]} value={served[leadKey]} title="Dominant stored probability of the four-way classifier">
+          <Metric id={ODDS_METRIC[leadKey]} value={served[leadKey]} title="Dominant stored odds of the four-way classifier (a strength score, not a fitted probability)">
             {fmtWholePct(lead[1])}
           </Metric>
         ),
@@ -387,7 +394,7 @@ export default function DashboardScreen() {
                   <Metric id="recession-prob" value={recession.data.recession_prob}>
                     {fmtProb(recession.data.recession_prob, "percent", 1)}
                   </Metric>{" "}
-                  over 12m · {recession.data.recession_label} (a separate model from the{" "}
+                  for this month, from inputs three months old · {recession.data.recession_label} (a separate model from the{" "}
                   <Metric id="odds-recession-risk" value={served.recession}>
                     {fmtWholePct(probs.recession)}
                   </Metric>{" "}
@@ -463,7 +470,7 @@ export default function DashboardScreen() {
   } else {
     rows.push(
       { id: "model-regime", label: "Model regime", value: regimeNote },
-      { id: "model-probability", label: "Model probability", value: regimeNote },
+      { id: "model-probability", label: "Leading odds", value: regimeNote },
       { id: "odds", label: "Odds", value: regimeNote },
       { id: "model-confidence", label: "Model confidence", value: regimeNote },
       divergenceRow,
@@ -510,9 +517,25 @@ export default function DashboardScreen() {
           rows={rows}
           status={strip}
           stamp={
-            <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
+            // fix/freshness 8: "Data status ›" at the right of the header, beside the as-of stamps, opens the
+            // per-source breakdown the strip's status card used to open.
+            <span style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 12 }}>
               <Stamp source={SRC.classifier} asOf={regime.data ? fmtMonYr(regime.data.date) : null} />
               <Stamp source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
+              <button
+                type="button"
+                className="mrr-fresh-link"
+                data-testid="summary-data-status"
+                onClick={openFreshness}
+                aria-haspopup="dialog"
+                aria-expanded={freshnessOpen}
+                // Codex R-31: the drawer mounts only while open, so the reference exists only then.
+                aria-controls={freshnessOpen ? "freshness-drawer" : undefined}
+                title="Data status: each feed, the regime month and the NYSE session"
+                style={{ marginLeft: "auto", fontSize: "var(--fs-meta, 12px)" }}
+              >
+                Data status ›
+              </button>
             </span>
           }
         >
@@ -536,7 +559,7 @@ export default function DashboardScreen() {
           description="Bars show distance to trigger · Clear <50% · Watch ≥50% · Triggered = threshold crossed."
           right={
             signals.data
-              ? `${signals.data.signals.length} signals · latest ${fmtDate(signals.data.date)}`
+              ? `${signals.data.signals.length} signals · ${fmtMonYr(signals.data.date)} print`
               : signals.isError
                 ? "signal feed unavailable"
                 : "loading"
@@ -615,7 +638,7 @@ export default function DashboardScreen() {
       </Card>
 
       {/* ── Key levels (slim row) ───────────────────────────────────── */}
-      <KeyLevels regime={regime} recession={recession} credit={credit} fedFunds={fedFunds} vix={vix} />
+      <KeyLevels regime={regime} recession={recession} credit={credit} fedFunds={fedFunds} vixRead={vixRead} />
 
       {/* ── Bottom row: glance | 10Y | calendar ─────────────────────── */}
       <div className="mrr-dash-bottom">
@@ -653,9 +676,9 @@ export default function DashboardScreen() {
           <Disclosure title="Method and provenance" right="reference" style={{ marginTop: 6 }}>
             <Card>
               <p className="mrr-prose" style={{ ...errStyle, fontSize: "var(--fs-body-s)", lineHeight: 1.6, margin: 0 }}>
-                The regime is a 4-way softmax classifier over z-scored growth (industrial production) and inflation (CPI)
-                trends, run monthly on FRED data; the four odds always sum to 100% and the header badge shows the dominant
-                stored probability. The five monitored signals compare the latest print against fixed thresholds and are
+                The regime is set by the signs of the slopes of the industrial-production and CPI levels over the last three monthly readings, run
+                monthly on FRED data; a softmax over the slopes' z-scores gives the four odds, which sum to 100%, and the
+                header badge shows the dominant stored odds (a strength score, not a fitted probability). The five monitored signals compare the latest print against fixed thresholds and are
                 scored server-side; the recession model is a logistic regression trained on NBER dates. Nothing on this
                 screen is re-derived in the browser.{" "}
                 <Link to="/app/methodology" style={{ color: "var(--link)" }}>

@@ -20,6 +20,8 @@ import Jargon from "../shared/Jargon";
 import { Caption, MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
+import { rateChange } from "../shared/rate-change";
+import type { VixShown } from "../shared/vix-shown";
 import { DASH } from "./hero-copy";
 
 export interface SeriesLatest {
@@ -33,7 +35,9 @@ export interface KeyLevelsProps {
   recession: UseQueryResult<RecessionMetrics>;
   credit: UseQueryResult<CreditOAS>;
   fedFunds: UseQueryResult<SeriesLatest>;
-  vix: UseQueryResult<SeriesLatest>;
+  /** fix/freshness 7: the VIX the card shows (shared/vix-shown.ts): the tape's quote and stamp, else the stored
+   * close by its true date. Null while neither is on hand. */
+  vixRead?: VixShown | null;
 }
 
 type Tone = "default" | "watch" | "risk" | "clear";
@@ -45,10 +49,11 @@ function recessionTone(label: string | undefined): Tone {
   return "clear";
 }
 
-export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: KeyLevelsProps) {
+export default function KeyLevels({ regime, recession, credit, fedFunds, vixRead = null }: KeyLevelsProps) {
   const r = regime.data;
   const rec = recession.data;
   const ten = credit.data?.series.find((s) => s.label === "UST10Y");
+  const tenChange = rateChange(ten);
   const snapshot = useSnapshotMode();
   // A1: each tile names its own source and as-of; the FRED dates are the
   // server's per-series states (the credit and recession payloads' own
@@ -58,7 +63,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
 
   return (
     <Card as="section" id="key-levels" variant="panel" style={{ minWidth: 0 }}>
-      <SectionHeader layout="panel" title="Key levels" right="FRED" />
+      <SectionHeader layout="panel" title="Key levels" right={vixRead?.source === "quote" ? "FRED · EODHD" : "FRED"} />
       <div className="mrr-dash-levels">
         <Card variant="tile">
           <StatTile label="Fed funds" value={fedFunds.data ? fmtPct(fedFunds.data.value) : DASH} size="sm" />
@@ -77,7 +82,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             size="sm"
           />
           <Caption>
-            3-month slope of the industrial-production <Jargon term="z-score">z-score</Jargon>; feeds the regime call.
+            Slope of the industrial-production level over the last three monthly readings; its sign feeds the regime call, and the odds use it{" "}
+            <Jargon term="z-score">z-scored</Jargon> against its history.
           </Caption>
           {classifierStamp}
         </Card>
@@ -90,7 +96,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             size="sm"
           />
           <Caption>
-            3-month slope of the CPI <Jargon term="z-score">z-score</Jargon>; feeds the regime call.
+            Slope of the CPI level over the last three monthly readings; its sign feeds the regime call, and the odds use it{" "}
+            <Jargon term="z-score">z-scored</Jargon> against its history.
           </Caption>
           {classifierStamp}
         </Card>
@@ -107,8 +114,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
                 DASH
               )
             }
-            delta={ten?.change_1w_bps != null ? `${fmtBps(ten.change_1w_bps)} 1w` : undefined}
-            direction={ten?.change_1w_bps != null && ten.change_1w_bps >= 0 ? "up" : "down"}
+            delta={tenChange ? `${fmtBps(tenChange.bps)} ${tenChange.basis === "1w" ? "1w" : tenChange.tag}` : undefined}
+            direction={tenChange != null && tenChange.bps >= 0 ? "up" : "down"}
             size="sm"
           />
           <Caption>Benchmark long rate · daily close.</Caption>
@@ -119,9 +126,10 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
           <StatTile
             label="VIX"
             value={
-              vix.data ? (
-                <Metric id="vix" value={vix.data.value}>
-                  {vix.data.value.toFixed(2)}
+              vixRead ? (
+                // The tape's metric id for a quote (vix-live), the stored close's otherwise (vix).
+                <Metric id={vixRead.source === "quote" ? "vix-live" : "vix"} value={vixRead.value}>
+                  {vixRead.text}
                 </Metric>
               ) : (
                 DASH
@@ -129,12 +137,17 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             }
             size="sm"
           />
-          {/* The stored row is month-stamped (FRED daily, B6): the true
-              observation date is the stamp's, never this caption's. */}
+          {/* fix/freshness 7: the tape's delayed quote with the tape's own stamp; without one, the FRED close
+              labeled "Close · <date>" by its true observation date (never the month stamp), keeping the
+              server's freshness state for that series. */}
           <Caption>
-            <Jargon term="VIX">VIX</Jargon> · Cboe volatility index · daily close.
+            <Jargon term="VIX">VIX</Jargon> · Cboe volatility index · {vixRead?.source === "quote" ? "delayed quote" : "daily close"}.
           </Caption>
-          <Stamp block source={SRC.fred} label={report.series("VIXCLS")} />
+          {vixRead?.source === "quote" ? (
+            <Stamp block source="EODHD VIX" asOf={vixRead.stamp} />
+          ) : (
+            <Stamp block source={SRC.fred} label={vixRead ? { ...report.series("VIXCLS"), word: vixRead.stamp } : report.series("VIXCLS")} />
+          )}
         </Card>
 
         <Card variant="tile" className="mrr-level-wide" tone={rec ? (rec.is_inverted ? "risk" : "clear") : "default"}>
@@ -157,7 +170,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
 
         <Card variant="tile" className="mrr-level-wide" tone={recessionTone(rec?.recession_label)}>
           <StatTile
-            label="Recession model · 12m"
+            label="Recession odds · this month"
             value={
               rec?.recession_prob != null ? (
                 <Metric id="recession-prob" value={rec.recession_prob}>
@@ -175,8 +188,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vix }: 
             {rec?.recession_prob != null ? (
               <>
                 {fmtProb(rec.recession_prob, "percent", 1)} sits in the {rec.recession_label} band (Elevated starts at 20%, High at 40%). The{" "}
-                <Jargon term="recession model">model</Jargon> trains on <Jargon term="NBER">NBER</Jargon> dates; inputs through{" "}
-                {fmtMonYr(rec.data_as_of)}.
+                <Jargon term="recession model">model</Jargon> scores this month from inputs three months old, trained on{" "}
+                <Jargon term="NBER">NBER</Jargon> dates; inputs through {rec.inputs_through ? fmtMonYr(`${rec.inputs_through}-01`) : fmtMonYr(rec.data_as_of)}.
               </>
             ) : recession.isError ? (
               missingNote(MISSING.recession, snapshot)

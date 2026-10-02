@@ -2,12 +2,13 @@
  "as_of": "2026-09-24",
  "generation_id": "gen-fixture-2026-09-24",
  "current": {
-  "label": "Goldilocks",
-  "print": "2026-07",
+  "label": "Overheating",
+  "print": "2026-08",
   "growth": "rising",
-  "inflation": "falling",
+  "inflation": "rising",
   "months_in": 1,
-  "since": "2026-07",
+  "since": "2026-08",
+  "odds": 0.4246,
   "freq": "monthly",
   "source": "regimes table (src/regime.py)",
   "latest_print": "2026-08",
@@ -15,7 +16,7 @@
    "month": "2026-08",
    "label": "Overheating",
    "odds": 0.4246,
-   "agrees": false
+   "agrees": true
   }
  },
  "history": [
@@ -298,30 +299,10 @@
  },
  "next_prints": {
   "basis": {
-   "month": "2026-07",
-   "label": "Goldilocks"
+   "month": "2026-08",
+   "label": "Overheating"
   },
-  "published": [
-   {
-    "month": "2026-08",
-    "label": "Overheating",
-    "first_effective_month": "2026-10",
-    "cpi": {
-     "reference_month": "2026-08",
-     "series": "CPIAUCSL",
-     "mom": 0.003960181843858157,
-     "direction": "rising",
-     "from_direction": "falling"
-    },
-    "indpro": {
-     "reference_month": "2026-08",
-     "series": "INDPRO",
-     "mom": 0.00022126169630087844,
-     "direction": "rising",
-     "from_direction": "rising"
-    }
-   }
-  ],
+  "published": [],
   "upcoming_from": {
    "month": "2026-08",
    "label": "Overheating"

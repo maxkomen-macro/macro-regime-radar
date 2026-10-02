@@ -11,7 +11,7 @@
 --tile:#0e1822;          /* inner card inside a panel (Phase 2) */
 --card-grad:linear-gradient(180deg,#0f1a24 0%,#0a131b 100%); /* hero and summary cards (Phase 2) */
 --sidebar:linear-gradient(180deg,#131e25 0%,#0d161c 100%);   /* .mrr-side */
---strip-grad:linear-gradient(180deg,#111c26,#0d1720);        /* .mrr-quote, .mrr-upd */
+--strip-grad:linear-gradient(180deg,#111c26,#0d1720);        /* .mrr-quote */
 --field:#141f29;         /* .mrr-search and the watchlist popover field */
 --popover:#111c26;       /* .mrr-popover */
 --toast:#16222d;         /* .mrr-toast */

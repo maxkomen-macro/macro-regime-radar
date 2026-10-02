@@ -188,7 +188,10 @@ def test_api_priced_groups_and_units():
     rows = client.get("/api/priced").json()
     assert isinstance(rows, list)
     if rows:
-        assert set(rows[0]) == {"group", "metric", "label", "unit", "date", "value", "mom_chg"}
+        # fix/freshness 4: observation_month, the observation's own month ("YYYY-MM"), beside the run date.
+        assert set(rows[0]) == {"group", "metric", "label", "unit", "date", "value", "mom_chg", "observation_month"}
+        for r in rows:
+            assert r["observation_month"] is None or (len(r["observation_month"]) == 7 and r["observation_month"] <= r["date"][:7])
         groups = {r["group"] for r in rows}
         assert groups <= {"Policy rate proxies", "Inflation breakevens", "Real yields (TIPS)"}
 
@@ -328,6 +331,60 @@ def test_api_credit_oas_units():
     ig = by_label["IG"]
     assert abs(ig["value_bps"] - ig["value_pct"] * 100.0) < 1e-9
     assert ig["history"] and set(ig["history"][0]) == {"date", "value"}
+
+
+def _dgs30_eligible_in_file() -> str | None:
+    """The newest DGS30 observation the Desk's rules allow, read straight from the file with its own SQL (Codex R-30):
+    a committed run's row, not after that run's day or today, a finite number, inside the route's 90-day window, and
+    not behind the series' watermark. None when there is none."""
+    import math
+    import sqlite3
+    from contextlib import closing
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    with closing(sqlite3.connect(f"file:{db.DB_PATH}?mode=ro", uri=True)) as c:
+        if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='desk_series'").fetchone():
+            return None
+        mark = c.execute("SELECT last_obs FROM source_watermarks WHERE source IN ('fred:DGS30', 'desk:DGS30') AND last_obs IS NOT NULL "
+                         "ORDER BY source = 'fred:DGS30' DESC LIMIT 1").fetchone()
+        if not mark:
+            return None
+        cols = {r[1] for r in c.execute("PRAGMA table_info(desk_series)")}
+        runs = c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='desk_series_runs'").fetchone()
+        if runs and "run_id" in cols:
+            rows = c.execute("SELECT d.date, d.value FROM desk_series d JOIN desk_series_runs r ON r.run_id = d.run_id AND r.status = 'committed' "
+                             "WHERE d.series_id = 'DGS30' AND d.date <= ? AND d.date <= r.as_of ORDER BY d.date DESC", (today.isoformat(),)).fetchall()
+        else:
+            rows = c.execute("SELECT date, value FROM desk_series WHERE series_id = 'DGS30' AND date <= ? ORDER BY date DESC", (today.isoformat(),)).fetchall()
+    newest = next((d for d, v in rows if isinstance(v, (int, float)) and math.isfinite(v)), None)
+    if newest is None or newest < mark[0] or newest < (today - timedelta(days=90)).isoformat():
+        return None
+    return newest
+
+
+def test_api_credit_oas_serves_the_30y_as_its_own_field():
+    """fix/freshness 8: the 30Y Treasury rides beside series[], never in it (no Credit chart draws it), with a
+    true week and its own state in the freshness block (the Desk's DGS30 rule)."""
+    body = client.get("/api/credit/oas").json()
+    assert "DGS30" not in {s["series_id"] for s in body["series"]}
+    u = body["ust30y"]
+    # Codex R-30: whether this file holds an eligible DGS30 is read from the file itself, never from the route.
+    eligible = _dgs30_eligible_in_file()
+    if not eligible:
+        assert u is None, "no eligible DGS30 in the file, yet the route served one"
+        return
+    assert u is not None, "the file holds an eligible DGS30, but the route served ust30y null"
+    assert (u["series_id"], u["label"], u["history_basis"]) == ("DGS30", "UST30Y", "daily")
+    assert u["date"] == eligible
+    assert abs(u["value_bps"] - u["value_pct"] * 100.0) < 1e-9
+    if u["change_basis"] == "1w":
+        from datetime import date as _date
+
+        assert 7 <= (_date.fromisoformat(u["date"]) - _date.fromisoformat(u["change_from"])).days <= 10
+    state = (body.get("freshness") or {}).get("DGS30")
+    assert state is not None and state["id"] == "DGS30" and state["as_of"] == u["date"]
 
 
 def test_api_recession_probability():

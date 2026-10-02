@@ -136,6 +136,10 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
   const location = useLocation();
   const requested = chartFromHash(location.hash);
   const hy = credit.data?.series.find((s) => s.label === "HY");
+  // fix/freshness 2: HY is read from the true-dated daily store; IG is still
+  // one stored row per month, and the caption says which is which.
+  const basisWords = (b: string | null | undefined, who: string) =>
+    b === "daily" ? `${who} daily observations` : `${who} one value per month (its newest)`;
   const ig = credit.data?.series.find((s) => s.label === "IG");
   // A1: each chart names its source and as-of under its caption.
   const report = useFreshReport();
@@ -180,7 +184,7 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
           },
           {
             id: "chart-recession",
-            title: "Recession model probability · history",
+            title: "Recession model odds · history",
             right:
               recession.data?.recession_prob_series.length != null
                 ? `${recession.data.recession_prob_series.length} monthly points`
@@ -193,20 +197,20 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                   <LineChart
                     series={[
                       {
-                        label: "P(recession, 12m)",
+                        label: "Recession odds, scored from inputs three months old",
                         color: "var(--warn-hot)",
                         points: (recession.data?.recession_prob_series ?? []).map((p) => ({ x: p.date, y: p.value })),
                       },
                     ]}
                     yFmt={(v) => `${v.toFixed(0)}%`}
-                    caption="Recession model probability history"
+                    caption="Recession model odds history"
                   />
                   <Caption>
                     Monthly stored series. Elevated starts at 20%, High at 40%. The model&apos;s current call is{" "}
                     <Metric id="recession-prob" value={recession.data?.recession_prob}>
                       {fmtProb(recession.data?.recession_prob, "percent", 1)}
                     </Metric>{" "}
-                    (the evidence card above); the plotted tail can differ while a month is partial.
+                    (the evidence card above), the line&apos;s last point.
                   </Caption>
                   <Stamp block source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
                 </>
@@ -248,8 +252,8 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                     ) : (
                       "—"
                     )}
-                    , investment-grade at {ig ? fmtBpsLevel(ig.value_bps) : "—"}; spreads widen when credit stress builds. FRED BAML series,
-                    monthly observations.
+                    , investment-grade at {ig ? fmtBpsLevel(ig.value_bps) : "—"}; spreads widen when credit stress builds. FRED BAML series:{" "}
+                    {basisWords(hy?.history_basis, "high-yield")}, {basisWords(ig?.history_basis, "investment-grade")}.
                   </Caption>
                   <Stamp block source={SRC.baml} label={report.group(CREDIT_OAS_IDS, credit.data?.freshness)} />
                 </>

@@ -77,7 +77,7 @@ export const DESK_GROUPS: DeskGroup[] = [
         slug: "data-pipeline",
         label: "Data Pipeline",
         title: "Where every number comes from",
-        blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data; prototype cards are marked. No live number is re-derived in the browser.",
+        blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote; prototype cards are marked. The browser computes only from served numbers: a position's room, a basket's weights, and the VIX tile's band and gap against that quote.",
         toggle: false,
       },
       { slug: "build-notes", label: "Build Notes", blurb: "What this Desk is, how it was checked, and what comes next.", action: "link" },

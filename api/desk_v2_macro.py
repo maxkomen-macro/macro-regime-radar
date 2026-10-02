@@ -9,10 +9,10 @@ is a worker item they look up (api/desk_items_macro.py, api/desk_pipeline.py;
 plan §0.2).
 
 What depends on "now" is computed here, per response, and never stored
-(plan §0.5): the comparison session, the K−2 row it selects (`print`, and the
-label, trends, `months_in` and `since` read from it, which move at a month
-boundary inside one generation), the next release date, each Data Pipeline
-row's status, and the validation verdict for the request's own generation.
+(plan §0.5): the next release date, each Data Pipeline row's status, and the
+validation verdict for the request's own generation. `current` and the next
+prints read the newest stored regimes row, the label the Dashboard shows
+(fix/freshness 3a, decision D2); the K−2 rule stays the engine's, for events.
 
 Stdlib only at import, like api/desk.py: no src.config, and nothing heavy.
 """
@@ -33,9 +33,11 @@ from api import desk_envelope as env
 PREFIX = "/api/desk"
 router = APIRouter(prefix=PREFIX)
 
-# The engine's lag (src/desk/event_study.REGIME_LAG_MONTHS; v2 §9.1): a session
-# in month K takes the row stamped K − 2. Mirrored, so a request reads no
-# engine; pinned equal by tests/test_desk_v2_regime.py.
+# The engine's lag (src/desk/event_study.REGIME_LAG_MONTHS; v2 §9.1): an event
+# in month K is tagged with the row stamped K − 2, the label known at the time
+# (the Regime page says so where events are tagged). Mirrored, so a request
+# reads no engine; pinned equal by tests/test_desk_v2_regime.py. Since
+# fix/freshness 3a (D2) `current` is no longer selected by it.
 REGIME_LAG_MONTHS = 2
 HISTORY_ROWS = 60
 HISTORY_NOTE = "labels as stored; revisions are not replayed."
@@ -78,8 +80,8 @@ def months_before(month: str, n: int) -> str:
 
 
 def print_for(session: date, lag: int = REGIME_LAG_MONTHS) -> str:
-    """R8: the row a session in month K reads is the one stamped K − lag (the
-    rule of event_study.regime_at)."""
+    """R8: the row an event in month K is tagged with is the one stamped
+    K − lag (the rule of event_study.regime_at)."""
     return months_before(month_of(session), lag)
 
 
@@ -98,15 +100,24 @@ def run_ending_at(rows: list[dict], month: str) -> tuple[int, str]:
         n, first = n + 1, prev
 
 
-def current_block(rows: list[dict], comparison: date, classifier: dict | None = None) -> dict:
-    """§12.6 `current.data`: the stored K−2 row for the month of the
-    comparison session. Awaiting (S-27) when that row is not stored, or does
-    not store both trends. `classifier` (desk/fill-compute) is the home page's
-    classifier reading on the newest row, and whether its label is this one."""
+def odds_for(row: dict, classifier: dict | None) -> float | None:
+    """The classifier's odds for `row`'s own label when the reading is that
+    row's (null for Recession Risk: the Desk never shows regimes.prob_recession)."""
+    if classifier is None or classifier.get("month") != row["month"] or classifier.get("label") != row["label"]:
+        return None
+    return classifier.get("odds")
+
+
+def current_block(rows: list[dict], classifier: dict | None = None) -> dict:
+    """§12.6 `current.data` (fix/freshness 3a, D2): the newest stored regimes
+    row, the one the Dashboard shows, with its classifier odds. Awaiting (S-27)
+    when nothing is stored, or the newest row does not store both trends.
+    `classifier` (desk/fill-compute) is the home page's reading on the newest
+    row, and whether its label is this one (by construction it is)."""
     from api.desk_items_macro import direction
 
-    month = print_for(comparison)
-    row = next((r for r in rows if r["month"] == month), None)
+    row = rows[-1] if rows else None
+    month = row["month"] if row is not None else None
     growth = direction(row["growth_trend"]) if row is not None else None
     inflation = direction(row["inflation_trend"]) if row is not None else None
     if growth is None or inflation is None:
@@ -119,6 +130,7 @@ def current_block(rows: list[dict], comparison: date, classifier: dict | None = 
         "inflation": inflation,
         "months_in": months_in,
         "since": since,
+        "odds": odds_for(row, classifier),
         "freq": "monthly",
         "source": REGIMES_SOURCE,
         "latest_print": rows[-1]["month"],
@@ -165,16 +177,17 @@ def release_for(times: list[str], reference_month: str, now: datetime) -> tuple[
     return None, None
 
 
-def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime, basis_month: str) -> dict:
-    """§12.6 `next_prints.data` for `basis_month`, the K−2 row `current` shows
-    (desk/fill-compute: both cards read one label). Codex R-05: the rows after
+def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime, basis_month: str | None) -> dict:
+    """§12.6 `next_prints.data` for `basis_month`, the row `current` shows
+    (desk/fill-compute: both cards read one label; the newest stored row since
+    fix/freshness 3a). Codex R-05: the rows after
     it that are already published, with the prints that made them, apart from
     the upcoming prints, each with the release of its own reference month and
     whether that release is out at `now`. Awaiting (S-27) when the item holds
     no reading from that row."""
     if not value.get("ok"):
         raise env.Awaiting(value["reason"])
-    read = value["data"]["by_basis"].get(basis_month)
+    read = value["data"]["by_basis"].get(basis_month) if basis_month else None
     if read is None:
         raise env.Awaiting(env.BLOCK_FAILED_REASON)
     out = {"basis": read["basis"], "published": read["published"], "upcoming_from": read["upcoming_from"]}
@@ -193,17 +206,16 @@ def next_prints_block(value: dict, times: dict[str, list[str]], now: datetime, b
 def regime_payload(now: datetime) -> dict:
     item = _result("desk_regime")
     rows = item["rows"]
-    comparison = cal.last_completed_session(now)
+    newest = rows[-1]["month"] if rows else None
     return {
-        "current": env.block_from("/regime", "current", lambda: current_block(rows, comparison, item.get("classifier"))),
+        "current": env.block_from("/regime", "current", lambda: current_block(rows, item.get("classifier"))),
         "history": [{"month": r["month"], "regime": r["label"]} for r in rows[-HISTORY_ROWS:]],
         "history_note": HISTORY_NOTE,
         "history_freq": "monthly",
         "history_source": REGIMES_SOURCE,
         "recession": stored_block(item["recession"]),
         "next_prints": env.block_from("/regime", "next_prints",
-                                      lambda: next_prints_block(item["next_prints"], item["release_times"], now,
-                                                                print_for(comparison))),
+                                      lambda: next_prints_block(item["next_prints"], item["release_times"], now, newest)),
         "stats": stored_block(item["stats"]),
         "changes": stored_block(item["changes"]),
     }

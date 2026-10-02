@@ -1,6 +1,6 @@
 /**
  * What's priced panel (redesign Phase 5, checklist 05 B.8): the six served
- * weekly metrics in their three served groups as tiles, each a plain table
+ * metrics (written every full refresh, each dated by its observation month) in their three served groups as tiles, each a plain table
  * with the metric name as a row header (so FED FUNDS and SOFR stay harvested),
  * the level and the month-on-month change with the StatTile glyph rule. 1W
  * and 1Y-range columns are not served (F1) and are not drawn. `useBreakpoint`
@@ -12,7 +12,8 @@ import type { CSSProperties, ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Card, SectionHeader } from "../../components";
 import type { PricedMetric } from "../../api/types";
-import { fmtDate, fmtSigned } from "../../lib/format";
+import { fmtSigned } from "../../lib/format";
+import { pricedMonths, pricedWhen } from "../shared/priced-when";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, StateNote } from "../shared/screen-ui";
 import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
@@ -57,7 +58,8 @@ function direction(mom: number | null): "up" | "down" | "flat" {
 
 export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTermNote }: Props) {
   const { isNarrow } = useBreakpoint();
-  const latest = priced.data?.length ? priced.data.map((p) => p.date).reduce((a, b) => (a > b ? a : b)) : null;
+  // fix/freshness 4: each metric's observation month, never the run that wrote it.
+  const months = priced.data?.length ? pricedMonths(priced.data) : null;
   const report = useFreshReport();
   return (
     <Card as="section" variant="panel" id="whats-priced-full" style={{ minWidth: 0 }}>
@@ -66,7 +68,7 @@ export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTer
         title="What's priced"
         description="Market-implied path for policy, inflation and real rates"
         right={
-          <MetaWithStamp meta="FRED via weekly pipeline" stamp={<Stamp source="Weekly pipeline" asOf={latest ? `latest ${fmtDate(latest)}` : null} />} />
+          <MetaWithStamp meta="FRED · each metric's own month" stamp={<Stamp source={SRC.fred} asOf={months} />} />
         }
         actions={
           <Link className="mrr-link" to="/app/methodology#data">
@@ -100,6 +102,7 @@ export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTer
                       <tr key={p.metric}>
                         <th scope="row" style={ROW_CELL}>
                           {p.label}
+                          {pricedWhen(p) ? <span style={{ color: "var(--text-3)", fontWeight: 400 }}>{` · ${pricedWhen(p)}`}</span> : null}
                         </th>
                         <td
                           style={{
@@ -148,7 +151,7 @@ export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTer
               ? "Market-implied pricing unavailable: the data service did not answer."
               : priced.isLoading
                 ? "Reading market-implied pricing…"
-                : "No priced metrics on file; the weekly pipeline has not written them yet."}
+                : "No priced metrics on file; the full refresh has not written them yet."}
           </StateNote>
         </Card>
       )}
@@ -158,7 +161,8 @@ export default function WhatsPriced({ priced, pricedGroups, groupCaptions, beTer
         </Caption>
       ) : null}
       <Caption style={{ marginTop: beTermNote ? 2 : 8 }}>
-        From the weekly derived-metrics pipeline, so levels can differ from the monthly signal prints on the dashboard.
+        Written by every full refresh from the stored FRED rows, each dated by its own observation month; levels can differ from the monthly
+        signal prints on the dashboard.
       </Caption>
     </Card>
   );

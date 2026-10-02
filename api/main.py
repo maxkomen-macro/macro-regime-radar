@@ -24,7 +24,7 @@ import os
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Literal, TypeVar
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.exception_handlers import http_exception_handler
@@ -646,16 +646,31 @@ class DatedValue(BaseModel):
 class CreditSeries(BaseModel):
     series_id: str
     label: str
+    # The newest observation's own date (desk_series, or the source watermark
+    # inside the newest month-stamped row's month), never the month stamp.
     date: str
     value_pct: float
     value_bps: float
+    # fix/freshness 2: the change and what it is measured against. "1w": a true
+    # seven-calendar-day change from desk_series, change_from the prior
+    # observation's date; "month_end": against the previous month's
+    # month-stamped row, change_from "YYYY-MM".
+    change_bps: float | None = None
+    change_basis: Literal["1w", "month_end"] | None = None
+    change_from: str | None = None
+    # Kept for older readers: set only when the change is a true week.
     change_1w_bps: float | None
     history: list[DatedValue]
+    # "daily": desk_series observations; "monthly": one month-stamped row per month.
+    history_basis: Literal["daily", "monthly"] | None = None
 
 
 class CreditOAS(BaseModel):
     as_of: str | None
     series: list[CreditSeries]
+    # fix/freshness 8: the 30Y Treasury (FRED DGS30 from desk_series), its own field so no Credit chart draws
+    # it; null when the store holds no eligible DGS30. An older API omits it.
+    ust30y: CreditSeries | None = None
     # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
     # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
     freshness: dict[str, Any] | None = None
@@ -682,6 +697,18 @@ class RecessionMetrics(BaseModel):
     data_as_of: str
     curve_shape: dict[str, float | None]  # tenors absent from raw_series are None
     current_inputs: dict[str, float | None]
+    # fix/freshness 3b, 4: the month the headline is the score for, the month of
+    # the (three-month-lagged) inputs it was scored from, and the month of each
+    # current reading the sensitivity panel starts from.
+    probability_month: str | None = None
+    inputs_through: str | None = None
+    current_input_months: dict[str, str] | None = None
+    # fix/freshness 4: the training sample, for the Methodology's words (months, size, recession months and the
+    # recessions they form, each a run of consecutive months).
+    training_window: dict[str, str] | None = None
+    training_n: int | None = None
+    training_recession_months: int | None = None
+    training_recessions: list[dict[str, str]] | None = None
     # B3: per-series state, docs/redesign-v2/FRESHNESS_CONTRACT.md; or, when the Desk store's schema
     # check failed, {"status": "awaiting", "reason": ...} in its place (verifier V-53)
     freshness: dict[str, Any] | None = None
@@ -711,9 +738,11 @@ class PricedMetric(BaseModel):
     metric: str
     label: str
     unit: str
-    date: str
+    date: str  # the run that wrote the level, not the observation
     value: float
     mom_chg: float | None
+    # fix/freshness 4: the observation's own month ("YYYY-MM").
+    observation_month: str | None = None
 
 
 class Surprise(BaseModel):
@@ -1344,7 +1373,16 @@ def api_credit_oas(
     payload = _guarded(lambda: db.credit_oas(days))
     if not payload["series"]:
         raise HTTPException(status_code=404, detail="No credit series data available.")
-    return CreditOAS(**payload, freshness=_freshness_block(CREDIT_INPUTS + ["DGS10"]))
+    block = _freshness_block(CREDIT_INPUTS + ["DGS10"])
+    ust30y = payload.get("ust30y")
+    if ust30y is not None and "status" not in block:
+        # fix/freshness 8: the 30Y is judged like the Desk's DGS30 row (the FRED daily rule on the bond calendar),
+        # dated by the observation it serves; /api/freshness carries no desk rows.
+        spec = {"id": "DGS30", **freshness_mod.DESK_REFRESH_SERIES["DGS30"]}
+        state = freshness_mod.desk_series_states(stored={"DGS30": ust30y["date"]}, specs=[spec], watermarks=_guarded(db.watermarks))[0]
+        # The block's contract (FRESHNESS_CONTRACT §6): each state's id is its key.
+        block["DGS30"] = {**state, "id": "DGS30"}
+    return CreditOAS(**payload, freshness=block)
 
 
 @api.get("/recession/probability", response_model=RecessionMetrics)

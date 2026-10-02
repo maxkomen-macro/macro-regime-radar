@@ -345,8 +345,43 @@ def get_recession_metrics() -> dict:
 
     curve_shape = _load_curve_shape()
 
+    # fix/freshness 3b, 4: which months the headline and the current readings
+    # are from, served beside them (metadata only; nothing here changes a fit).
+    # The headline scores the row three before its own month (the shift above),
+    # recession_provenance's rule; each current reading is its feature's newest
+    # stored month, the values the sensitivity panel starts from.
+    last_scored = valid_prob.index[-1]
+    inputs_row = features_df.index[features_df.index.get_loc(last_scored) - 3]
+    current_input_months = {
+        col: features_df[col].dropna().index[-1].strftime("%Y-%m")
+        for col in FEATURE_NAMES if len(features_df[col].dropna()) > 0
+    }
+    # The training sample as recession_provenance reads it (the shifted rows
+    # with every feature and a target): its months, size, recession months
+    # and the recessions those months form (runs of consecutive months).
+    training = pd.concat([X, usrec.rename("usrec")], axis=1).dropna()
+    episodes: list[dict] = []
+    for ts, flag in training["usrec"].items():
+        month = ts.strftime("%Y-%m")
+        if flag >= 0.5:
+            if episodes and episodes[-1]["_next"] == ts:
+                episodes[-1]["end"] = month
+            else:
+                episodes.append({"start": month, "end": month})
+            episodes[-1]["_next"] = ts + pd.offsets.MonthEnd(1) if ts.is_month_end else ts + pd.DateOffset(months=1)
+    for e in episodes:
+        e.pop("_next", None)
+
     return {
         "recession_prob":           recession_prob,
+        "probability_month":        last_scored.strftime("%Y-%m"),
+        "inputs_through":           inputs_row.strftime("%Y-%m"),
+        "current_input_months":     current_input_months,
+        "training_window":          ({"start": training.index[0].strftime("%Y-%m"), "end": training.index[-1].strftime("%Y-%m")}
+                                     if not training.empty else None),
+        "training_n":               int(len(training)),
+        "training_recession_months": int((training["usrec"] >= 0.5).sum()),
+        "training_recessions":      episodes,
         "recession_label":          recession_label,
         "recession_color":          recession_color,
         "yield_curve_spread":       current_spread_bps,
@@ -423,6 +458,13 @@ def _classify_prob(p: float) -> tuple[str, str]:
 def _empty_metrics() -> dict:
     return {
         "recession_prob":            None,
+        "probability_month":         None,
+        "inputs_through":            None,
+        "current_input_months":      {},
+        "training_window":           None,
+        "training_n":                0,
+        "training_recession_months": 0,
+        "training_recessions":       [],
         "recession_label":           "No data",
         "recession_color":           "#8b949e",
         "yield_curve_spread":        None,

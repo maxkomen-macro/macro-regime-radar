@@ -10,7 +10,9 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { NO_SHELL_ACTIONS, ShellActionsContext, useShellActions, type ShellActions } from "./shell-actions";
 
-const KEYS: (keyof ShellActions)[] = ["openAlerts", "openFreshness", "openPalette", "openAssistant"];
+/** The openers; `freshnessOpen` (Codex R-31) is a flag, not an action. */
+type Opener = Exclude<keyof ShellActions, "freshnessOpen">;
+const KEYS: Opener[] = ["openAlerts", "openFreshness", "openPalette", "openAssistant"];
 
 /** One button per action, plus a probe that records the context value it saw. */
 function Consumer({ onValue }: { onValue?: (v: ShellActions) => void }) {
@@ -29,7 +31,8 @@ function Consumer({ onValue }: { onValue?: (v: ShellActions) => void }) {
 
 describe("shell-actions (checklist 03 A.12)", () => {
   it("default context values are callable no-ops", () => {
-    expect(Object.keys(NO_SHELL_ACTIONS).sort()).toEqual([...KEYS].sort());
+    expect(Object.keys(NO_SHELL_ACTIONS).sort()).toEqual([...KEYS, "freshnessOpen"].sort());
+    expect(NO_SHELL_ACTIONS.freshnessOpen).toBe(false);
     expect(Object.isFrozen(NO_SHELL_ACTIONS)).toBe(true);
     for (const k of KEYS) {
       expect(typeof NO_SHELL_ACTIONS[k]).toBe("function");

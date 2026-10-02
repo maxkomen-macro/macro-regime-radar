@@ -44,12 +44,18 @@ afterEach(() => {
 describe("Overview words", () => {
   it("spells the since-last-close items in the spec's order", () => {
     // The audit's snapshot: nothing firing; the VIX (^VIX, desk/fill-compute) closes on both sessions, so its change
-    // is served (15.18 on Sep 23 against 14.21 on Sep 22); the July row both days.
-    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual(["vol up 1.0 pts", "regime unchanged", "data refreshed 05:07 UTC"]);
+    // is served (15.18 on Sep 23 against 14.21 on Sep 22); the August row both days. fix/freshness 3d: the refresh
+    // time is the full refresh's last run on the Desk store (15:52 UTC), not the laggard series' advance (05:07).
+    expect(sinceItems(fixture.since_last_close!).map((i) => `${i.text}${i.tag ? ` ${i.tag}` : ""}`)).toEqual(["vol up 1.0 pts", "regime unchanged", "data refreshed 15:52 UTC"]);
     const still = { slug: "2s10s-2sigma-steepening", label: "2s10s +2σ steepening", short: "2s10s steepening", firing_day: 10 };
-    expect(sinceItems({ ...fixture.since_last_close!, still_firing: [still], vol_change_pts: 0.8 }).map((i) => i.text)).toEqual(["2s10s steepening still firing, day 10", "vol up 0.8 pts", "regime unchanged", "data refreshed 05:07 UTC"]);
+    expect(sinceItems({ ...fixture.since_last_close!, still_firing: [still], vol_change_pts: 0.8 }).map((i) => i.text)).toEqual(["2s10s steepening still firing, day 10", "vol up 0.8 pts", "regime unchanged", "data refreshed 15:52 UTC"]);
     expect(sinceItems({ ...fixture.since_last_close!, regime_changed: true, regime_from: "Goldilocks", regime_to: "Overheating", vol_change_pts: -1.2 }).map((i) => i.text)).toContain("regime changed → Overheating");
     expect(sinceItems({ ...fixture.since_last_close!, vol_change_pts: -1.2 }).find((i) => i.key === "vol")?.text).toBe("vol down 1.2 pts");
+    // fix/freshness 3d: a Desk series the refresh left behind is named apart from the refresh time; none, nothing.
+    const behind = { series: "DGS10", observation_date: "2026-09-22", state: "stale" as const, reason: "10Y Treasury observed 2026-09-22." };
+    expect(sinceItems({ ...fixture.since_last_close!, oldest_behind: behind }).slice(-2).map((i) => i.text)).toEqual(["data refreshed 15:52 UTC", "DGS10 behind, through Sep 22"]);
+    expect(sinceItems({ ...fixture.since_last_close!, oldest_behind: { ...behind, observation_date: null, state: "missing" } }).at(-1)?.text).toBe("DGS10 not stored");
+    expect(sinceItems(fixture.since_last_close!).some((i) => i.key === "behind")).toBe(false);
     // §2: each new fire with (new); its served short name.
     expect(sinceItems({ ...fixture.since_last_close!, new_fires: [{ slug: "golden-cross", label: "S&P golden cross", short: "golden cross" }] })[0]).toEqual({ key: "new-golden-cross", text: "golden cross fired", tag: "(new)" });
   });
@@ -76,32 +82,38 @@ describe("Overview tab", () => {
     // §12.1 (B-05): the two sessions compared, by their dates.
     expect(within(since).getByText("Since last close")).toHaveAttribute("title", "the Sep 23 close against Sep 22");
     expect(since).not.toHaveTextContent(/Dollar|firing/);
-    expect(since.textContent).toContain("data refreshed 05:07 UTC");
+    expect(since.textContent).toContain("data refreshed 15:52 UTC");
     const regime = screen.getByRole("region", { name: "Regime" });
-    // §2: the K−2 row governing today (a September session reads the July row, Goldilocks as stored).
-    expect(regime).toHaveTextContent("Live · July data");
-    expect(regime).toHaveTextContent("Goldilocks");
-    // §1.3's exception (v2 D-36): the regime carries its color, Goldilocks green.
-    expect(regime.querySelector(".ov-tile-value")).toHaveAttribute("data-tone", "green");
-    expect(regime).toHaveTextContent("Growth rising, inflation falling · rule-based, two-month lag");
+    // fix/freshness 3a (D2): the newest stored row, the Dashboard's label and month (Overheating, August 2026).
+    expect(regime).toHaveTextContent("Live · Aug 2026 data");
+    expect(regime).toHaveTextContent("Overheating");
+    // §1.3's exception (v2 D-36): the regime carries its color, Overheating amber.
+    expect(regime.querySelector(".ov-tile-value")).toHaveAttribute("data-tone", "amber");
+    expect(regime).toHaveTextContent("Growth rising, inflation rising · odds 42% · rule-based");
+    expect(regime).not.toHaveTextContent("two-month lag");
     const rec = screen.getByRole("region", { name: "Recession · logistic model" });
-    expect(rec).toHaveTextContent("12%");
+    // fix/freshness 3b: one decimal, the value the app prints.
+    expect(rec).toHaveTextContent("11.6%");
     // §2: "<band> · score for <probability_month> · inputs through <inputs_through>"; no odds in words.
     expect(rec).toHaveTextContent("Low · score for Aug 2026 · inputs through May 2026");
     expect(rec).not.toHaveTextContent("one-in-eight");
     const trend = screen.getByRole("region", { name: "S&P 500 · trend" });
-    expect(trend).toHaveTextContent("Live · Sep 23");
+    // fix/freshness 3c: the trend reads daily closes, so its badge is the close's date, never Live.
+    expect(trend).toHaveTextContent("Close · Sep 23");
+    expect(trend).not.toHaveTextContent("Live");
     // §12.7 (Codex R-24): both averages null across the missing Sep 22 close, so the state is unavailable.
     expect(trend).toHaveTextContent("Unavailable");
     // §2: "since <state_since> · last cross <golden|death>, <date>".
     expect(trend).toHaveTextContent("since Sep 22, 2026 · last cross golden, Jul 1, 2025");
     const vol = screen.getByRole("region", { name: "Vol · VIX" });
-    expect(vol).toHaveTextContent("15.2");
+    // fix/freshness 3c: no live quote in this test, so the newest stored close, labeled as one, in the tape's two decimals.
+    expect(vol).toHaveTextContent("Close · Sep 23");
+    expect(vol).toHaveTextContent("15.18");
     // §2 (desk/fill-compute): the level, its day and its band (^VIX in asset_prices, as the S&P, so dated Sep 23);
-    // the gap to the S&P's 21-day realized volatility, on Sep 21 in the fixture's store (it has no Sep 22 S&P
-    // close, so no window ends on Sep 22 or 23).
-    expect(vol).toHaveTextContent("VIX 15.2 · Sep 23 · subdued");
-    expect(vol).toHaveTextContent("4.4 pts above 21-day realized (10.5) on Sep 21");
+    // the gap to the S&P's 21-day realized volatility recomputed against the VIX shown (15.18 − 10.47), the realized
+    // figure's session named (the fixture's store has no Sep 22 S&P close, so no window ends on Sep 22 or 23).
+    expect(vol).toHaveTextContent("VIX 15.18 · Sep 23 · subdued");
+    expect(vol).toHaveTextContent("4.7 pts above 21-day realized (10.5), realized to Sep 21");
     expect(vol).not.toHaveTextContent(/not specified|protection costs/);
   });
 
@@ -183,7 +195,13 @@ describe("Overview tab", () => {
     localStorage.removeItem(POSITIONS_KEY);
     stubDesk();
     renderOverview();
-    expect(await screen.findByText("No positions are monitored in this browser.")).toBeInTheDocument();
+    expect(await screen.findByText(/No positions are monitored in this browser\./)).toBeInTheDocument();
+    // fix/freshness 6: empty, the card is one compact line with its link, not a tall panel with a button.
+    const empty = screen.getByRole("region", { name: /Monitored/ });
+    expect(empty).toHaveAttribute("data-empty");
+    expect(within(empty).getByRole("link", { name: "Add one in Position Monitor →" })).toHaveAttribute("href", "/desk/position-monitor");
+    expect(within(empty).queryByRole("link", { name: "Act on this → Position Monitor" })).toBeNull();
+    expect(empty.querySelectorAll("p")).toHaveLength(1);
   });
 
   it("with no /overview every tile keeps its label and says Couldn't load · Retry, no number (§14.12)", async () => {
@@ -214,7 +232,7 @@ describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () =>
     expect(screen.getByTestId("ov-since")).toHaveTextContent("Since last close");
     expect(screen.getByTestId("ov-since")).toHaveTextContent("no previous generation to compare.");
     expect(screen.getByTestId("ov-since")).not.toHaveTextContent("Awaiting refresh");
-    expect(screen.getByRole("region", { name: "Regime" })).toHaveTextContent("Goldilocks");
+    expect(screen.getByRole("region", { name: "Regime" })).toHaveTextContent("Overheating");
   });
 
   it("a block the server could not compute badges ○ Awaiting refresh and prints its reason; the sidebar says so too (§1.7, S-27)", async () => {
@@ -230,13 +248,38 @@ describe("blocks served awaiting inside a ready answer (§12.1, §1.0.2)", () =>
   });
 });
 
-describe("the VIX's gap to realized (desk/fill-compute)", () => {
-  it("says above or below, the realized figure, and the gap's session only when it is not the level's", async () => {
+describe("the VIX's gap to realized (desk/fill-compute; fix/freshness 3c: against the VIX shown)", () => {
+  it("says above or below, the realized figure, and the realized figure's session only when it is not the VIX's", async () => {
     const { gapWords } = await import("./OverviewPage");
-    const vol = { vix: 14.21, date: "2026-09-22", gap: { date: "2026-09-22", vix: 14.21, realized_21d: 16.4, gap_pts: -2.19 } };
-    expect(gapWords(vol)).toBe("2.2 pts below 21-day realized (16.4)");
-    expect(gapWords({ ...vol, gap: { ...vol.gap, date: "2026-09-21", gap_pts: 4.4 } })).toBe("4.4 pts above 21-day realized (16.4) on Sep 21");
-    expect(gapWords({ ...vol, gap: null })).toBe("No session has both the VIX and 21 S&P returns stored.");
+    const v = { gapPts: 14.21 - 16.4, realized: 16.4, realizedDate: "2026-09-22", date: "2026-09-22" };
+    expect(gapWords(v)).toBe("2.2 pts below 21-day realized (16.4)");
+    expect(gapWords({ ...v, gapPts: 4.4, realizedDate: "2026-09-21" })).toBe("4.4 pts above 21-day realized (16.4), realized to Sep 21");
+    expect(gapWords({ ...v, gapPts: null, realized: null })).toBe("No session has both the VIX and 21 S&P returns stored.");
+  });
+});
+
+describe("the VIX the tile shows (fix/freshness 3c)", () => {
+  const vol = { vix: 15.18, date: "2026-09-23", band: "subdued" as const, band_edges: [15, 25] as [number, number], gap: { date: "2026-09-21", vix: 14.87, realized_21d: 10.47, gap_pts: 4.4 } };
+  it("reads the live quote store the Markets tape reads: the tape's number and stamp, the band and the gap against it", async () => {
+    const { vixShown } = await import("../../shared/vix-shown");
+    const { asOfCell } = await import("../../markets/tape");
+    // The relay's VIX is a 15-minute-delayed REST row (api/stream.py), 21:15 UTC on Sep 30.
+    const q = { s: "VIX", p: 16.42, dc: -1.2, dd: -0.2, t: Date.UTC(2026, 8, 30, 21, 15), delayed: true, src: "rest" as const };
+    const v = vixShown(vol, q)!;
+    expect([v.source, v.text, v.live]).toEqual(["quote", "16.42", false]);
+    expect(v.stamp).toBe(asOfCell(q).text);
+    expect(v.stamp).toBe("Sep 30, 17:15 ET · 15m");
+    expect(v.date).toBe("2026-09-30");
+    expect(v.band).toBe("subdued");
+    expect(v.gapPts).toBeCloseTo(16.42 - 10.47, 10);
+  });
+  it("without a quote, the newest stored close, labeled Close · <date>", async () => {
+    const { vixShown } = await import("../../shared/vix-shown");
+    const v = vixShown(vol, undefined)!;
+    expect([v.source, v.text, v.stamp, v.live, v.band]).toEqual(["close", "15.18", "Close · Sep 23", false, "subdued"]);
+    expect(v.gapPts).toBeCloseTo(15.18 - 10.47, 10);
+    expect(vixShown(undefined, undefined)).toBeNull();
+    expect(vixShown({ ...vol, vix: null }, undefined)).toBeNull();
   });
 });
 

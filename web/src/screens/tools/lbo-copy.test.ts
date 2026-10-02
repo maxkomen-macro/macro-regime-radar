@@ -188,7 +188,7 @@ describe("lboHero (checklist 09 C.1)", () => {
 
 describe("lboStrip (the FRED sync strip, checklist 09 B.2)", () => {
   it("loading: gray, Reading the FRED rate…", () => {
-    expect(lboStrip(q({ isLoading: true }))).toMatchObject({ tone: "gray", title: "Reading the FRED rate…", detail: "Opens the data freshness breakdown" });
+    expect(lboStrip(q({ isLoading: true }))).toMatchObject({ tone: "gray", title: "Reading the FRED rate…", detail: "Opens the data status breakdown" });
   });
 
   it("error with no data: gray, Rate feed unavailable, the stated-rate detail", () => {

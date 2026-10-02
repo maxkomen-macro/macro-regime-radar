@@ -451,7 +451,7 @@ export function feedHealth(args: { usingFallback: boolean; loading: boolean; fee
       detail: `${feed.length} stor${feed.length === 1 ? "y" : "ies"} · newest ${newestFallback ? fmtDate(newestFallback) : DASH}`,
     };
   }
-  if (loading) return { tone: "gray", title: "Reading feed health…", detail: "Opens the data freshness breakdown" };
+  if (loading) return { tone: "gray", title: "Reading feed health…", detail: "Opens the data status breakdown" };
   const newest = feedInfo.stamp ? `Newest ${feedInfo.stamp}` : "No headline stamp on file";
   switch (feedInfo.state) {
     case "current":

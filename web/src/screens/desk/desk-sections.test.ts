@@ -25,4 +25,10 @@ describe("the Desk's pages (§14.6)", () => {
     const inPage = new Set(["data-pipeline"]);
     for (const p of DESK_PAGES) if (!inPage.has(p.slug)) expect(p.action, p.slug).toBeTruthy();
   });
+
+  it("Codex R-17: Data Pipeline names the VIX tile's source as the relay's delayed quote", () => {
+    const blurb = DESK_PAGES.find((p) => p.slug === "data-pipeline")?.blurb ?? "";
+    expect(blurb).toContain("Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote");
+    expect(blurb).toContain("the VIX tile's band and gap against that quote");
+  });
 });

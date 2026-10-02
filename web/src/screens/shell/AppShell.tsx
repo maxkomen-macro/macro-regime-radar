@@ -3,7 +3,8 @@
  * seven tabs with aria-current, Methodology, the saved watchlist, a footer
  * that says in words whether market data is live) beside a main column that
  * holds the top bar (⌘K palette trigger, "Ask the analyst", the alerts
- * bell), the ticker strip with its freshness card, and
+ * bell), the ticker strip (SPY, QQQ, US 10Y, US 30Y; fix/freshness 8 moved
+ * its status card's words to the sidebar's "● Data status"), and
  * the routed screen. Below 860 px the sidebar gives way to MobileNav.
  *
  * Every behaviour of the 2026-09-05 shell survives the rebuild: Cmd+K /
@@ -12,10 +13,10 @@
  * told what the visitor is looking at; each screen mounts inside its own
  * ErrorBoundary keyed by route, behind Suspense; the page behind an open
  * overlay is inert (#shell-content); #main-content is the skip-link target;
- * the alert drawer, the palette, the assistant panel and the new freshness
+ * the alert drawer, the palette, the assistant panel and the Data status
  * drawer all mount here. The status vocabulary (Live / Delayed /
  * Reconnecting / Backend unavailable / Validated snapshot) is composed once
- * in shell-status.ts and shared by the strip card, the drawer and the footer.
+ * in shell-status.ts and shared by the drawer and the footer.
  *
  * Iteration 1 step 6 (A3): under the top bar, on every route, a one-line
  * notice states when the newest stored close is behind the bell
@@ -25,8 +26,9 @@
  * the toggle beside the wordmark, Ctrl+\ or ⌘+\ (wired beside ⌘K below) and
  * a palette action all flip one stored preference (sidebar-state.ts), and
  * focus follows to the new toggle. The strip is not rendered on Recession
- * and Methodology (S4); the sidebar's freshness entry (the rail's, and the
- * MobileNav list's below 860) opens the same drawer on every route.
+ * and Methodology (S4); the sidebar's Data status entry (the rail's, and the
+ * MobileNav list's below 860) opens the same drawer on every route, as do
+ * the Dashboard summary card's "Data status ›" and the palette's action.
  */
 
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -52,8 +54,7 @@ import { METHODOLOGY_SLUG, tabBySlug, type PaletteAction } from "./sections";
 import { composeShellStatus, regimeProbs, STATUS_COLOR } from "./shell-status";
 import { isEditableTarget, isSidebarShortcut, sidebarShortcutLabel, useSidebarCollapsed } from "./sidebar-state";
 
-/** Reference routes without the ticker strip (S4): the sidebar's freshness
- * entry is their way into the drawer. */
+/** Reference routes without the ticker strip (S4). */
 const NO_STRIP_SLUGS: ReadonlySet<string> = new Set(["recession", METHODOLOGY_SLUG]);
 
 // Route-level code splitting (2026-09-06): each screen is its own chunk, so
@@ -147,8 +148,8 @@ export default function AppShell() {
   // the Dashboard's status strip opens the alert drawer). One memoised value,
   // so a quote tick repainting the shell does not re-render every consumer.
   const shellActions = useMemo<ShellActions>(
-    () => ({ openAlerts: openDrawer, openFreshness, openPalette, openAssistant: () => setAssistantOpen(true) }),
-    [openDrawer, openFreshness, openPalette],
+    () => ({ openAlerts: openDrawer, openFreshness, openPalette, openAssistant: () => setAssistantOpen(true), freshnessOpen }),
+    [openDrawer, openFreshness, openPalette, freshnessOpen],
   );
 
   const tab = tabBySlug(slug);
@@ -156,21 +157,24 @@ export default function AppShell() {
   const activeSlug = isMethodology ? METHODOLOGY_SLUG : (tab?.slug ?? "dashboard");
   const showStrip = !NO_STRIP_SLUGS.has(activeSlug);
 
-  // The palette's one action entry (S3), desk width only.
+  // The palette's actions: "Data status" opens the drawer at every width (fix/freshness 8); the navigation toggle
+  // (S3) is desk width only.
   const paletteActions = useMemo<PaletteAction[]>(
-    () =>
-      shellCompact
+    () => [
+      { kind: "action", id: "data-status", label: "Data status", hint: "Each feed, the regime month, the NYSE session", run: openFreshness },
+      ...(shellCompact
         ? []
         : [
             {
-              kind: "action",
+              kind: "action" as const,
               id: "toggle-sidebar",
               label: sidebarCollapsed ? "Show navigation" : "Hide navigation",
               hint: sidebarShortcutLabel(),
               run: toggleSidebar,
             },
-          ],
-    [shellCompact, sidebarCollapsed, toggleSidebar],
+          ]),
+    ],
+    [shellCompact, sidebarCollapsed, toggleSidebar, openFreshness],
   );
 
   // The footer dot pulses only when data is genuinely live: the EODHD stream
@@ -304,7 +308,7 @@ export default function AppShell() {
                 route says so in plain words, once, here (Recession and
                 Methodology included, which carry no strip). */}
             <StoredCloseNotice status={status} />
-            {showStrip ? <TickerLive status={status} freshnessOpen={freshnessOpen} onOpenFreshness={openFreshness} /> : null}
+            {showStrip ? <TickerLive /> : null}
 
             <main id="main-content" tabIndex={-1} style={{ outline: "none" }}>
               {/* The key is load-bearing: it re-mounts the boundary on every tab

@@ -811,11 +811,11 @@ def generate_market_takeaway(
     if not rec_available:
         rec_context = ""
     elif rec_prob < 20:
-        rec_context = f"the 12-month recession model reads {rec_prob:.1f}% — low"
+        rec_context = f"the recession model's odds for this month, scored from inputs three months old, read {rec_prob:.1f}% — low"
     elif rec_prob < 40:
-        rec_context = f"the 12-month recession model reads {rec_prob:.1f}% — elevated"
+        rec_context = f"the recession model's odds for this month, scored from inputs three months old, read {rec_prob:.1f}% — elevated"
     else:
-        rec_context = f"the 12-month recession model reads {rec_prob:.1f}% — high, watch closely"
+        rec_context = f"the recession model's odds for this month, scored from inputs three months old, read {rec_prob:.1f}% — high, watch closely"
 
     if primary_signal == "Risk-On":
         implication = (
@@ -842,7 +842,7 @@ def generate_market_takeaway(
 
     rec_sentence = f"{rec_context[0].upper()}{rec_context[1:]}. " if rec_context else ""
     narrative = (
-        f"Markets are in <strong>{top_regime}</strong> regime ({top_prob}% probability) "
+        f"Markets are in <strong>{top_regime}</strong> regime ({top_prob}% odds) "
         f"with credit spreads at the <strong>{spread_desc}</strong> — {spread_qual}. "
         f"{div_sentence}"
         f"{rec_sentence}"

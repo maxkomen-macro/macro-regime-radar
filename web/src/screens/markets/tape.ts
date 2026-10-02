@@ -52,7 +52,8 @@ export const TAPE_GROUPS: { label: string; defs: TapeDef[] }[] = [
   {
     label: "Dollar & FX",
     defs: [
-      { symbol: "UUP", name: "US dollar", kind: "usd", feed: "us" },
+      // fix/freshness 6: each name says what the fund holds (Invesco: long USDX futures).
+      { symbol: "UUP", name: "US dollar index futures", kind: "usd", feed: "us" },
       { symbol: "EURUSD", name: "Euro / dollar · rate", kind: "fx", feed: "forex" },
       { symbol: "USDJPY", name: "Dollar / yen · rate", kind: "fx", feed: "forex" },
     ],
@@ -60,15 +61,15 @@ export const TAPE_GROUPS: { label: string; defs: TapeDef[] }[] = [
   {
     label: "Metals",
     defs: [
-      { symbol: "GLD", name: "Gold", kind: "usd", feed: "us" },
-      { symbol: "SLV", name: "Silver", kind: "usd", feed: "us" },
+      { symbol: "GLD", name: "Physical gold", kind: "usd", feed: "us" },
+      { symbol: "SLV", name: "Physical silver", kind: "usd", feed: "us" },
     ],
   },
   {
     label: "Energy & Industrial",
     defs: [
-      { symbol: "USO", name: "Oil (WTI)", kind: "usd", feed: "us" },
-      { symbol: "CPER", name: "Copper", kind: "usd", feed: "us" },
+      { symbol: "USO", name: "WTI crude futures", kind: "usd", feed: "us" },
+      { symbol: "CPER", name: "Copper futures", kind: "usd", feed: "us" },
     ],
   },
   {
@@ -125,9 +126,14 @@ export function fmtPrice(def: TapeDef, p: number): string {
   return def.kind === "usd" ? `$${n}` : n;
 }
 
+/** The day's change in the row's own units (fix/freshness 6): dollars carry the sign, then "$" ("+$2.70",
+ * "-$1,234.50"); an FX rate and the VIX (index points) print plain, so the column says "Day Δ", not "Day Δ$". */
 export function fmtDayDollar(def: TapeDef, dd: number): string {
   if (def.kind === "fx") return fmtSigned(dd, def.symbol === "EURUSD" ? 4 : 3);
-  return fmtSigned(dd, 2);
+  if (def.kind === "index") return fmtSigned(dd, 2);
+  const a = Math.abs(dd);
+  const n = a >= 1_000 ? a.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : a.toFixed(2);
+  return `${dd < 0 ? "-" : "+"}$${n}`;
 }
 
 export const ET_CLOCK = new Intl.DateTimeFormat("en-US", {

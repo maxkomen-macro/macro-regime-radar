@@ -14,8 +14,8 @@
 
 Macro Regime Radar ingests macroeconomic time series from FRED, equity / rates / commodity prices from yfinance, and breaking financial headlines from Finnhub and NewsAPI. It then runs a stack of quantitative models on top of that data:
 
-- A **4-way macro regime classifier** (Goldilocks, Overheating, Stagflation, Recession Risk) using a temperature-scaled softmax over growth and inflation trends, persisting daily probabilities for each regime
-- A **recession probability model** trained on NBER recession dates via logistic regression, surfaced through an interactive gauge with sensitivity sliders and a divergence indicator versus the yield curve signal
+- A **4-way macro regime classifier** (Goldilocks, Overheating, Stagflation, Recession Risk): the signs of the 3-month slopes of the industrial-production and CPI levels pick the quadrant, and a temperature-scaled softmax over their z-scores gives monthly odds for each regime (a strength score, not a fitted probability)
+- A **recession model** (logistic regression trained on NBER recession dates) scoring recession odds for this month from inputs three months old, surfaced through an interactive gauge with sensitivity sliders and a divergence indicator: the high-yield spread's percentile minus the regime classifier's recession odds
 - A **credit conditions module** tracking BAML OAS spreads (IG, HY, BB, B, CCC), the 30-year Treasury, LBO all-in cost, regime-conditional credit performance, percentile ranks, and Markov transition matrices (3-month and 6-month)
 - A **portfolio optimization suite** with five methods (Mean-Variance, Min Variance, Risk Parity, Black-Litterman, Hierarchical Risk Parity), CVaR / Expected Shortfall, factor decomposition (Value / Momentum / Quality / Size / LowVol), Fama-French factor data via openbb, and currency overlays
 - An **LBO calculator** modeling capital structure, debt schedules, exit multiples, and IRR (computed via binary search on NPV — `numpy.irr` is gone in modern numpy)
@@ -75,8 +75,8 @@ flowchart LR
 
 ## Features
 
-- **Regime classification** — temperature-scaled softmax classifier producing daily probabilities across four macro regimes
-- **Recession modeling** — scikit-learn logistic regression trained on NBER recession dates, with feature sensitivity sliders and a divergence indicator versus the yield curve signal
+- **Regime classification** — a sign rule on two 3-month slopes with temperature-scaled softmax odds, stored monthly across four macro regimes
+- **Recession modeling** — scikit-learn logistic regression trained on NBER recession dates (recession odds for this month, scored from inputs three months old; in-sample), with feature sensitivity sliders and a divergence indicator (high-yield spread percentile minus the classifier's recession odds)
 - **Portfolio optimization** — five methods (MVO, Min Var, Risk Parity, Black-Litterman, HRP) with CVaR / Expected Shortfall risk metrics, regime-conditional return estimation, and factor decomposition
 - **Credit analytics** — IG, HY, BB, B, CCC OAS spreads, sparklines, percentile ranks, regime performance tables, 3-month and 6-month Markov transition matrices, all-in LBO cost tracker
 - **LBO modeling** — capital structure modeling with an interest-first cash sweep (cash for debt service is 60% of EBITDA; scheduled amortization is a floor; the remainder sweeps to debt, so the financing rate moves the IRR), exit assumptions, and IRR via binary search on NPV (see `docs/lbo-model.md`)
@@ -116,13 +116,13 @@ flowchart LR
 | `BAMLH0A2HYB` | ICE BofA Single-B US High Yield Index OAS |
 | `BAMLH0A3HYC` | ICE BofA CCC and Lower US High Yield Index OAS |
 | `USREC` | NBER Recession Indicator (binary) |
-| `USSLIND` | Leading Index for the United States — historical only |
+| `USSLIND` | Philadelphia Fed Leading Index for the United States — discontinued after Feb 2020; staleness check only |
 
 Notes on FRED series choices:
 
 - **Yields use daily series** (`DGS2`, `DGS10`), not monthly averages (`GS2`, `GS10`)
 - **IG OAS** uses `BAMLC0A0CM`, not `BAMLC0A0CAAA`
-- **`USSLIND` is a frozen historical series.** FRED stopped publishing it in February 2020. The local DB has 288 rows ending `2020-02-01` and that is all the data that will ever exist. The series is preserved in config because the recession model uses it as historical training data; live recession signal computation uses `T10YIE − T5YIE` breakeven as the operative input.
+- **`USSLIND` is a frozen historical series.** It is the Philadelphia Fed's Leading Index for the United States, discontinued after February 2020: the DB has 288 rows ending `2020-02-01` and that is all the data that will ever exist. The recession model does not train on it: its fifth feature is the `T10YIE − T5YIE` breakeven spread for both training and the live reading (`src/analytics/recession.py`); the series stays in config only for the stored history and the staleness check.
 
 ### yfinance (Equity, Rates, Commodity Prices)
 

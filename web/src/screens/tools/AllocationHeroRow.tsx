@@ -252,7 +252,7 @@ export default function AllocationHeroRow() {
     // hero bars draw), the asset count and the last month of returns.
     { id: "leader", label: "Leader", value: a ? rankRow(ranked?.best) : note },
     { id: "laggard", label: "Laggard", value: a ? rankRow(ranked?.worst) : note },
-    { id: "assets", label: "Asset classes", value: a ? `${ranked?.names.length ?? 0} · index-spliced before ETF inception` : note },
+    { id: "assets", label: "Asset classes", value: a ? `${ranked?.names.length ?? 0} · SPY, IWM and GLD index-spliced before inception` : note },
     { id: "returns-through", label: "Returns through", value: a ? fmtMonYr(`${a.data_end}-01`) : note },
     { id: "risk-free", label: "Risk-free", value: a ? `${pct(a.rf_rate, 2)} Fed Funds` : note },
     { id: "optimizer", label: "Optimizer", value: optimizer ? optimizer.value : note, tone: optimizer?.tone },

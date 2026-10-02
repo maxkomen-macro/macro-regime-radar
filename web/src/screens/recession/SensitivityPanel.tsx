@@ -19,7 +19,7 @@
 import { useMemo, type ReactNode } from "react";
 import { Card, SectionHeader, Tag } from "../../components";
 import { useRecessionScenario } from "../../api/queries";
-import type { RecessionScenarioRequest } from "../../api/types";
+import type { RecessionMetrics, RecessionScenarioRequest } from "../../api/types";
 import { fmtMonYr, fmtProb, fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Jargon from "../shared/Jargon";
@@ -30,8 +30,31 @@ import { MetaWithStamp, Metric, SRC, Stamp } from "../shared/Stamp";
 
 /** The null-value glyph the result line prints (U+2014), never an em-dash aside. */
 const DASH = "—";
+export const SCENARIO_CAPTION = "Hypothetical score of these inputs under the fitted coefficients and scaler.";
+/** Codex R-14 (round 2): the untouched panel's caption, a hypothetical with no promise about a future headline. */
+export const SCENARIO_UNTOUCHED = "Rounded latest-available inputs evaluated under the current fitted coefficients: a hypothetical, not a forecast.";
 
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const month = (ym: string | undefined) => {
+  const [y, m] = (ym ?? "").split("-").map(Number);
+  return y && m ? `${MONTHS[m - 1]} ${y}` : null;
+};
+
+/** fix/freshness 4: "Latest readings: curve, HY spread and breakevens from Sep 2026, unemployment and industrial
+ * production from Aug 2026." from the served current_input_months; null without them. */
+export function latestWords(m: Pick<RecessionMetrics, "current_input_months"> | null | undefined): string | null {
+  const c = m?.current_input_months;
+  if (!c) return null;
+  const daily = month(c.yield_curve) && month(c.yield_curve) === month(c.hy_spread) && month(c.hy_spread) === month(c.lei_proxy) ? month(c.yield_curve) : null;
+  const monthly = month(c.unemployment) && month(c.unemployment) === month(c.indpro_yoy) ? month(c.unemployment) : null;
+  if (daily && monthly) return `Latest readings: curve, HY spread and breakevens from ${daily}, unemployment and industrial production from ${monthly}.`;
+  const parts = ([["curve", c.yield_curve], ["HY spread", c.hy_spread], ["breakevens", c.lei_proxy], ["unemployment", c.unemployment], ["industrial production", c.indpro_yoy]] as const)
+    .map(([k, v]) => (month(v) ? `${k} ${month(v)}` : null))
+    .filter(Boolean);
+  return parts.length ? `Latest readings: ${parts.join(", ")}.` : null;
+}
 
 export default function SensitivityPanel({ m, status, inputs, onInputsChange }: SensitivityPanelProps): JSX.Element {
   const { isNarrow } = useBreakpoint();
@@ -101,6 +124,8 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
         <div className="mrr-rec-sens">
           <Card variant="tile" padding="6px 18px 8px" style={{ minWidth: 0 }}>
             <div style={{ ...eyebrowStyle, margin: "8px 0 4px" }}>Model inputs · {inputs ? "modified by you" : "seeded from current readings"}</div>
+            {/* fix/freshness 4: which month each latest reading is from (served current_input_months). */}
+            {latestWords(m) ? <div style={{ ...capStyle, marginTop: 0, marginBottom: 6 }}>{latestWords(m)}</div> : null}
             <SliderRow
               label="Yield curve 2s10s"
               valueText={`${effective.yield_curve_bps >= 0 ? "+" : ""}${effective.yield_curve_bps} bps`}
@@ -273,11 +298,9 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
                       {scenario.data.baseline_prob != null ? fmtProb(scenario.data.baseline_prob, "percent", 1) : `${DASH}%`}
                     </div>
                   )}
-                  {/* X19 caption (RecessionScreen.tsx:573-578 before Phase 7), verbatim. */}
-                  <Caption>
-                    The headline scores 3-month-lagged inputs (the model never peeks); these sliders score the readings as if they were today&apos;s features,
-                    so the starting position sits near, not on, the headline. Same fitted coefficients, same scaler.
-                  </Caption>
+                  {/* Codex R-14: a hypothetical score, never a forecast of the headline. Untouched (inputs null: every
+                      field still equals the seed) the inputs are the rounded latest-available readings. */}
+                  <Caption>{inputs == null ? SCENARIO_UNTOUCHED : SCENARIO_CAPTION}</Caption>
                 </>
               ) : (
                 <div style={{ marginTop: 8 }}>

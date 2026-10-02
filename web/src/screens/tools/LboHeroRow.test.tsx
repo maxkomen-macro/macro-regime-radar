@@ -161,7 +161,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(stripTitle(button)).toBe("FRED rate · as of unknown");
     // Iteration 1 step 5 (G4): one status line.
     expect(stripDetail(button)).toBe("Stored through Sep 01, 2026");
-    expect(button.getAttribute("aria-label")).toMatch(/^FRED rate · as of unknown\. Stored through Sep 01, 2026\. Open the data freshness breakdown\.$/);
+    expect(button.getAttribute("aria-label")).toMatch(/^FRED rate · as of unknown\. Stored through Sep 01, 2026\. Open the data status breakdown\.$/);
     fireEvent.click(button);
     expect(openFreshness).toHaveBeenCalledTimes(1);
     expect(openAlerts).not.toHaveBeenCalled();
@@ -247,7 +247,7 @@ describe("LboHeroRow (checklist 09 E.1 row 4)", () => {
     expect(hero().querySelector(".mrr-pill")).toBeNull();
     const button = await awaitStrip("Reading the FRED rate…");
     expect(button).toHaveAttribute("data-tone", "gray");
-    expect(stripDetail(button)).toBe("Opens the data freshness breakdown");
+    expect(stripDetail(button)).toBe("Opens the data status breakdown");
   });
 
   it("a modified deal adds the Vs base case row and the hero note while the h1 stays on the default deal; a manual rate flags the Financing row; Reset removes both", async () => {

@@ -34,7 +34,7 @@ const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 const SUMMARY_LABELS = ["US 10Y", "Sectors · 1d", "Single names · 1d", "ETFs · 1w", "Dollar", "VIX · delayed", "Priced", "Top surprise"];
 const OPTIONAL_LABELS = new Set(["Single names · 1d", "ETFs · 1w", "Dollar", "VIX · delayed"]);
 /** The tape headers (C.2) at desk width and the phone set (B.7). */
-const TAPE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ$", "1W %", "1M %", "30 Sess", "As of"];
+const TAPE_HEADERS = ["Symbol · name", "Last", "Day %", "Day Δ", "1W %", "1M %", "30 Sess", "As of"];
 const TAPE_HEADERS_NARROW = ["Symbol · name", "Last", "Day %", "1M %", "As of"];
 const GROUP_LABELS = ["Equities", "Rates", "Credit", "Dollar & FX", "Metals", "Energy & Industrial", "Crypto", "Volatility"];
 /** 5+2+2+3+2+2+2+1 rows in tape.ts TAPE_GROUPS (the checklist's "18" is a miscount). */
@@ -45,8 +45,8 @@ const FUNDAMENTALS = ["Market cap", "P/E · TTM", "Fwd P/E", "Beta", "Div yield"
   // than only in the payload.
   "EPS · TTM", "P/B", "Revenue growth", "52W change"];
 const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
-/** Strip title (B.2) → the freshness card's first line (FreshnessCard.tsx). Iteration 1 step 6
- * (A3): the card prints the server's §5 word for the market series, whatever the relay's
+/** Strip title (B.2) → the markets line under the sidebar's "Data status" (fix/freshness 8; the strip's
+ * status card until then). Iteration 1 step 6 (A3): it prints the server's §5 word for the market series, whatever the relay's
  * connection word, so every title pairs with "Markets · <§5 word>" or the shell's
  * service-down and snapshot words. */
 const MARKET_WORD = /^(?:Markets · (?:Live|Delayed \d+ min|Close · [A-Z][a-z]{2} \d{2}|[A-Z][a-z]{2} \d{2} · \d+ sessions? behind|As of unknown|Snapshot · as of \S+|reading…)|Data service unavailable|Validated snapshot)/;
@@ -80,7 +80,8 @@ const research = (page: Page) => page.locator("#single-name-research");
 const tape = (page: Page) => page.locator("#watchlist");
 /** The macro tape's own table: since Iteration 1 (M3b) the single names table sits in the same panel, under it. */
 const macroTable = (page: Page) => page.locator("#watchlist table").first();
-const freshnessCard = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+/** fix/freshness 8: the markets line the strip's card showed now sits under the sidebar's "Data status". */
+const marketsLine = (page: Page) => page.locator("#mrr-sidebar [data-testid='sidebar-freshness'] .mrr-side-stamp");
 const heatTiles = (page: Page) => page.locator("#sector-heatmap [style*='var(--r-tile)']");
 const note = (type: string, description: string) => test.info().annotations.push({ type, description });
 
@@ -253,14 +254,14 @@ test.describe("markets (checklist 05 E.3)", () => {
     await expect(strip).toHaveCount(1);
     const title = await contentText(strip.locator(".mrr-status-title"));
     expect(Object.keys(CARD_LINE), `strip title ${title}`).toContain(title);
-    expect(await strip.getAttribute("aria-label")).toMatch(/\. Open the data freshness breakdown\.$/);
+    expect(await strip.getAttribute("aria-label")).toMatch(/\. Open the data status breakdown\.$/);
     expect(await strip.getAttribute("aria-label")).toMatch(new RegExp(`^${title.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\. `));
-    const cardLine = await visibleText(freshnessCard(page).locator(".mrr-upd-lines small").first());
+    const cardLine = await visibleText(marketsLine(page));
     expect(cardLine, `card "${cardLine}" vs strip "${title}"`).toMatch(CARD_LINE[title]);
     note("strip-title", `${title} ⇔ ${cardLine}`);
 
     await strip.click();
-    const drawer = page.getByRole("dialog", { name: "Data freshness" });
+    const drawer = page.getByRole("dialog", { name: "Data status" });
     await expect(drawer).toBeVisible();
     await expect(drawer).toHaveAttribute("id", "freshness-drawer");
     await expect(drawer).toHaveAttribute("aria-labelledby", "freshness-drawer-title");
@@ -481,7 +482,10 @@ test.describe("markets (checklist 05 E.3)", () => {
     expect(colHeaders).toContain("level");
     expect(colHeaders).toContain("mom");
     for (const h of lower(await section.locator("th").allTextContents())) expect(h).not.toMatch(/^1w\b|1y range/);
-    expect(lower(await section.locator("th[scope='row']").allTextContents())).toEqual(expect.arrayContaining(["fed funds", "sofr"]));
+    // fix/freshness 4: each row names its observation month ("Fed Funds · Aug 2026 average", "SOFR · Sep 2026").
+    const rowHeads = lower(await section.locator("th[scope='row']").allTextContents());
+    expect(rowHeads.some((h) => /^fed funds · [a-z]{3} \d{4} average$/.test(h)), rowHeads.join(" | ")).toBe(true);
+    expect(rowHeads.some((h) => /^sofr · [a-z]{3} \d{4}$/.test(h)), rowHeads.join(" | ")).toBe(true);
     for (const level of await section.locator("tbody td:nth-child(2)").allInnerTexts()) expect(clean(level)).toMatch(/^-?\d+\.\d\d%$/);
     await section.getByRole("link", { name: /Methodology/ }).click();
     await expect(page).toHaveURL(/\/app\/methodology#data$/);

@@ -102,18 +102,31 @@ async function finishCell(cell: Cell, def: RouteDef, width: number, state: State
   expect(failed, `${def.slug}--${width}--${state}: failed API responses`).toEqual([]);
 }
 
-const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
-const card = (page: Page) => strip(page).locator(".mrr-upd-lines");
-/** Iteration 1 S4: no strip on Recession and Methodology; the sidebar's freshness entry opens the drawer there. */
-const hasStrip = (slug: string) => slug !== "recession" && slug !== METHODOLOGY_SLUG;
-/** The freshness drawer's trigger for a route: the strip card's "Freshness ›", else the sidebar entry (the MobileNav list's below 860). */
-async function openFreshness(page: Page, slug: string, width: number): Promise<void> {
-  if (hasStrip(slug)) {
-    await strip(page).getByRole("button", { name: /^Freshness/ }).click();
-    return;
+const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
+/** fix/freshness 8: the strip's status card is gone; the sidebar's "● Data status" dot carries its worst line. */
+const dataStatusDot = (page: Page) => page.locator("#mrr-sidebar [data-testid='sidebar-freshness'] .mrr-dot");
+/** Codex R-29: below 860 the phone menu's "Data status" entry carries the same words and dot; opens the menu,
+ * checks the entry's wording and the dot's tone (or that a snapshot has no health dot), and closes the menu. */
+async function expectPhoneDataStatus(page: Page, words: string | RegExp, tone: string | null): Promise<void> {
+  await page.locator("button[aria-controls='mobile-nav-list']").click();
+  const entry = page.locator("#mobile-nav-list").getByTestId("sidebar-freshness");
+  await expect(entry).toBeVisible();
+  // A snapshot's entry starts with its ◇ mark (no health dot), then the words.
+  await expect(entry).toContainText(/^◇?Data status/);
+  await expect(entry).toContainText(words, { timeout: 20_000 });
+  if (tone) await expect(entry.locator(".mrr-dot")).toHaveAttribute("data-tone", tone);
+  else {
+    await expect(entry.locator(".mrr-dot")).toHaveCount(0);
+    await expect(entry.locator(".mrr-side-snapmark")).toHaveCount(1);
   }
+  await page.locator("button[aria-controls='mobile-nav-list']").click();
+}
+/** Iteration 1 S4: no strip on Recession and Methodology. */
+const hasStrip = (slug: string) => slug !== "recession" && slug !== METHODOLOGY_SLUG;
+/** The Data status drawer's trigger on every route (fix/freshness 8): the sidebar entry, the MobileNav list's below 860. */
+async function openFreshness(page: Page, _slug: string, width: number): Promise<void> {
   if (width < 860) await page.locator("button[aria-controls='mobile-nav-list']").click();
-  await page.getByTestId("sidebar-freshness").click();
+  await page.getByTestId("sidebar-freshness").filter({ visible: true }).first().click();
 }
 const heroPill = (page: Page, heroId: string) => page.locator(`#${heroId} .mrr-pill`);
 const stripTitle = (page: Page, summaryId: string) => page.locator(`#${summaryId} .mrr-status .mrr-status-title`);
@@ -348,13 +361,14 @@ for (const vp of [DESK, PHONE]) {
         await page.locator("main").waitFor();
         // Shell (B.7 row 1): the card, the footer, the bell; no pill anywhere (contract 6).
         // Iteration 1 S4: Recession and Methodology carry no strip; the footer states it there.
-        if (hasStrip(def.slug)) {
-          await expect(card(page)).toContainText("Data service unavailable", { timeout: 20_000 }); // FreshnessCard.tsx:72
-          await expect(card(page)).toContainText("Freshness unavailable · retrying"); // FreshnessCard.tsx:84
+        // fix/freshness 8: the strip has no status card; the sidebar's Data status says it, its dot red.
+        if (!hasStrip(def.slug)) await expect(strip(page)).toHaveCount(0);
+        if (vp.width >= 860) {
+          await expect(page.locator(".mrr-side-foot")).toContainText("Data service unavailable", { timeout: 20_000 }); // shell-status.ts marketsAsOfWords
+          await expect(dataStatusDot(page)).toHaveAttribute("data-tone", "error");
         } else {
-          await expect(strip(page)).toHaveCount(0);
+          await expectPhoneDataStatus(page, "Data service unavailable", "error");
         }
-        if (vp.width >= 860) await expect(page.locator(".mrr-side-foot")).toContainText("Data service unavailable", { timeout: 20_000 }); // shell-status.ts:163
         await expect(page.locator("header .mrr-bell")).toHaveAttribute("data-state", "error", { timeout: 20_000 });
         await expectNoRegimePill(page);
         await checkError(page, def.slug);
@@ -376,9 +390,9 @@ for (const vp of [DESK, PHONE]) {
         await page.goto(def.route, { waitUntil: "domcontentloaded" });
         await page.locator("main").waitFor();
         // The word arrives once both shell queries have failed (G11): a 20 s poll.
-        if (hasStrip(def.slug)) await expect(card(page)).toContainText("Validated snapshot", { timeout: 20_000 }); // FreshnessCard.tsx:68
-        else await expect(strip(page)).toHaveCount(0); // Iteration 1 S4
+        if (!hasStrip(def.slug)) await expect(strip(page)).toHaveCount(0); // Iteration 1 S4
         if (vp.width >= 860) await expect(page.locator(".mrr-side-foot")).toContainText("Validated snapshot", { timeout: 20_000 }); // shell-status.ts:165
+        else await expectPhoneDataStatus(page, "Validated snapshot", null);
         await expectNoRegimePill(page);
         // The drawer's first block carries SNAPSHOT_NOTE (FreshnessDrawer.tsx:111-113).
         await openFreshness(page, def.slug, vp.width);
@@ -389,7 +403,7 @@ for (const vp of [DESK, PHONE]) {
         await page.keyboard.press("Escape");
         await expect(drawer).toBeHidden();
         // Below 860 the MobileNav list stays open behind the drawer (its focus return); close it.
-        if (!hasStrip(def.slug) && vp.width < 860) await page.keyboard.press("Escape");
+        if (vp.width < 860) await page.keyboard.press("Escape");
         await checkSnapshot(page, def.slug, seededLabel);
         await settle(page, 300);
         await finishCell(cell, def, vp.width, "snapshot", { seededLabel });
@@ -413,8 +427,9 @@ test("loading cells (unseeded, API delayed) on the eight tab routes at 1672", as
       // Before hydration #root is empty (F5): wait for main, then read inside the delay window.
       await page.locator("main").waitFor();
       const mounted = Date.now() - t0;
-      if (hasStrip(def.slug)) await expect(card(page)).toContainText("Reading freshness…"); // FreshnessCard.tsx:87
-      else await expect(strip(page)).toHaveCount(0); // Iteration 1 S4: no strip on Recession and Methodology
+      // fix/freshness 8: the sidebar's Data status reads the markets line while the report loads.
+      await expect(page.locator(".mrr-side-foot")).toContainText("Markets · reading…");
+      if (!hasStrip(def.slug)) await expect(strip(page)).toHaveCount(0); // Iteration 1 S4: no strip on Recession and Methodology
       await expect(page.locator("header .mrr-bell")).toHaveAttribute("aria-label", "Reading the alert feed. Open the alert feed."); // shell-status.ts:479
       await checkLoading(page, def.slug);
       // A beat for fonts so the capture shows the settled loading paint, still inside the delay.
@@ -473,7 +488,7 @@ const EMPTY_CELLS: EmptyCell[] = [
     route: "/app/dashboard#whats-priced",
     prepare: (page) => emptyEndpoint(page, "/api/priced", []),
     check: async (page) => {
-      await expect(section(page, "whats-priced")).toContainText("No priced metrics on file; the weekly pipeline has not written them yet.", { timeout: 20_000 }); // MarketsGlance.tsx:169
+      await expect(section(page, "whats-priced")).toContainText("No priced metrics on file; the full refresh has not written them yet.", { timeout: 20_000 }); // MarketsGlance.tsx:169
     },
   },
   {
@@ -491,7 +506,7 @@ const EMPTY_CELLS: EmptyCell[] = [
     def: byTab("markets"),
     prepare: (page) => emptyEndpoint(page, "/api/priced", []),
     check: async (page) => {
-      await expect(section(page, "whats-priced-full")).toContainText("No priced metrics on file; the weekly pipeline has not written them yet.", { timeout: 20_000 }); // WhatsPriced.tsx:144
+      await expect(section(page, "whats-priced-full")).toContainText("No priced metrics on file; the full refresh has not written them yet.", { timeout: 20_000 }); // WhatsPriced.tsx:144
     },
   },
   {
@@ -605,7 +620,8 @@ const STALE_CELLS: StaleCell[] = [
       await expect(page.locator("main h1")).toHaveText(new RegExp(`^(?:${REGIMES.join("|")})$`));
       await expect(section(page, "regime-summary").locator("dt")).toHaveCount(11, { timeout: 30_000 });
       await expect(section(page, "regime-summary")).not.toContainText(NOTE_ERROR);
-      await expect(card(page)).toContainText(`Macro monthly · ${STALE_MONTH_WORD}`); // FreshnessCard.tsx (A3)
+      // fix/freshness 8: the macro print stays on the regime card's chips (above); the sidebar dot carries the worst line.
+      await expect(dataStatusDot(page)).toHaveAttribute("data-tone", /^(behind|stale)$/);
     },
   },
   {
@@ -651,11 +667,11 @@ test("stale cells at 1672: stale served states read their §5 words on the chips
       await page.goto(c.def.route, { waitUntil: "domcontentloaded" });
       await page.locator("main").waitFor();
       await c.check(page);
-      // The freshness card's macro line and the drawer rows follow the served states and verdicts (B.7 row 1; A3).
-      await expect(card(page)).toContainText(`Macro monthly · ${STALE_MONTH_WORD}`);
+      // The Data status dot and the drawer rows follow the served states and verdicts (B.7 row 1; A3; fix/freshness 8).
+      await expect(dataStatusDot(page)).toHaveAttribute("data-tone", /^(behind|stale)$/);
       // A3: the stored close behind the bell is stated once, in plain words, under the top bar.
       await expect(page.getByTestId("stored-close-notice").locator(".mrr-close-full")).toHaveText(/^The newest stored close is Aug 20; the [A-Z][a-z]{2} \d{2} close is not stored yet\.$/);
-      await strip(page).getByRole("button", { name: /^Freshness/ }).click();
+      await page.locator("#mrr-sidebar").getByTestId("sidebar-freshness").click();
       const drawer = page.locator("#freshness-drawer");
       await expect(drawer).toBeVisible();
       // Two tables since step 6: the feeds (the SLA verdict columns) first, then one row per series.

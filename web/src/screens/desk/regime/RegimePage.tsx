@@ -1,7 +1,8 @@
 /**
  * Regime (DESK_FRAME3_SPEC §5, screens/04-regime.png), read from
  * GET /api/desk/regime (§12.5): where the economy sits (the rule-based label
- * and its last five years, the row governing today beside the latest print),
+ * and its last five years, read from the newest stored row, the label the
+ * Dashboard shows: fix/freshness 3a, D2),
  * the recession score (the one fitted model, labeled as one), what each regime has meant since 1996, and what would
  * change the label (the next two prints, whose flip thresholds the engine
  * computes, and the last five changes). A symmetric 2×2; no action button.
@@ -15,7 +16,7 @@ import { droppedOf } from "../data/schema";
 import type { Read, RegimeResponse, NextPrint as NextPrintRow, PublishedPrint, PublishedRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
+import { REGIME_TAGGED_LINE, bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import "./regime.css";
@@ -163,17 +164,17 @@ function AwaitingStats({ labels, quiet }: { labels: string[]; quiet: boolean }) 
 }
 
 /**
- * desk/fill-compute: the home page's classifier odds beside this tab's rule-based label, in one line: which row each
- * reads and whether they name the same regime this month. The odds are left out when the classifier's label is
- * Recession Risk (served null: the Desk never shows the classifier's recession odds).
+ * fix/freshness 3a (D2): the label's odds on the newest stored row, said as what they are. Null when not served
+ * (Recession Risk: the Desk never shows the classifier's recession odds).
  */
-export function classifierWords(c: NonNullable<RegimeResponse["current"]>): string | null {
-  const k = c.classifier;
-  if (!k || !c.label || !monthYear(k.month) || !monthYear(c.print)) return null;
-  const odds = fin(k.odds) ? ` at ${pctPlain(k.odds)}` : "";
-  const same = k.month === c.print;
-  return `The home page's classifier puts ${k.label}${odds} for the ${monthYear(k.month)} row; this tab's rule-based label is ${c.label}${same ? "" : ` for the ${monthYear(c.print)} row, the one governing today`}. They ${k.agrees ? "agree" : "disagree"} this month.`;
+export function oddsWords(c: NonNullable<RegimeResponse["current"]>): string | null {
+  const odds = fin(c.odds) ? c.odds : c.classifier && c.classifier.label === c.label && c.classifier.month === c.print && fin(c.classifier.odds) ? c.classifier.odds : null;
+  if (odds == null || !c.label || !monthYear(c.print)) return null;
+  return `${c.label} odds ${pctPlain(odds)} on the ${monthYear(c.print)} data: a strength score from the two trends, not a fitted probability.`;
 }
+
+/** fix/freshness 3a (D2): the one line where events are tagged with a regime (kit/format.ts). */
+export const TAGGED_LINE = REGIME_TAGGED_LINE;
 
 function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State }) {
   const adv = useAdvanced();
@@ -183,12 +184,12 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
   const i = trend(c?.inflation);
   const history = Array.isArray(r?.history) ? r.history : [];
   const unserved = useBlockUnserved(r, "current");
-  if (unserved) return <UnservedCard headingId="rg-where" className="rg-card" title="Where we are" sub="rule-based · two-month lag" labels={["Growth", "Inflation", "In this regime"]} block={unserved} advanced />;
+  if (unserved) return <UnservedCard headingId="rg-where" className="rg-card" title="Where we are" sub="rule-based · newest data" labels={["Growth", "Inflation", "In this regime"]} block={unserved} advanced />;
   return (
     <Card
       id="rg-where"
       title="Where we are"
-      sub="rule-based · two-month lag"
+      sub="rule-based · newest data"
       busy={quiet}
       footer={<AdvancedPanel adv={adv} items="the two input series · every regime change since 1996 · rule text" missing="The two input series and the full list of regime changes are not served yet; the rule is in the box above." />}
     >
@@ -198,8 +199,8 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
           <p className="rg-big" data-tone={REGIME_KEY[c.label]}>
             {c.label}
           </p>
-          {/* §5: the newest stored row, shown beside the label and never used to classify it. */}
-          {monthYear(c.latest_print) ? <p className="rg-latest">Latest print: {monthYear(c.latest_print)}</p> : null}
+          {/* fix/freshness 3a (D2): the label is the newest stored row's; its month beside it. */}
+          {monthYear(c.print) ? <p className="rg-latest">{monthYear(c.print)} data</p> : null}
         </div>
       ) : c ? (
         <Awaiting>the regime label</Awaiting>
@@ -209,11 +210,11 @@ function WhereWeAre({ r, state }: { r: RegimeResponse | undefined; state: State 
           Growth {g} and inflation {i}.{fin(c.months_in) && c.months_in >= 1 ? ` ${capitalize(ordinalWord(c.months_in))} month in this regime.` : ""}
         </p>
       ) : null}
-      {c?.classifier ? <p className="rg-classifier">{classifierWords(c)}</p> : null}
+      {c && oddsWords(c) ? <p className="rg-classifier">{oddsWords(c)}</p> : null}
       {c ? (
         <StatRow cols={3}>
-          <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, 3-mo slope" />
-          <Stat label="Inflation" value={i ? capitalize(i) : undefined} awaiting={!i} tone={trendTone("inflation", i)} sub="CPI, 3-mo slope" />
+          <Stat label="Growth" value={g ? capitalize(g) : undefined} awaiting={!g} tone={trendTone("growth", g)} sub="industrial production, slope over the last three monthly readings" />
+          <Stat label="Inflation" value={i ? capitalize(i) : undefined} awaiting={!i} tone={trendTone("inflation", i)} sub="CPI, slope over the last three monthly readings" />
           <Stat label="In this regime" value={fin(c.months_in) ? `${c.months_in} mo` : undefined} awaiting={!fin(c.months_in)} sub={c.since ? `since the ${monthLong(c.since)} reading` : undefined} />
         </StatRow>
       ) : (
@@ -258,7 +259,8 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
       {rec && score != null ? (
         <>
           <p className="rg-rec-line">
-            <span className="rg-big rg-rec-big">{pctPlain(score)}</span>
+            {/* fix/freshness 3b: one decimal, the value every surface prints (the app's 9.8%, never 10%). */}
+            <span className="rg-big rg-rec-big">{pctPlain(score, 1)}</span>
             {band ? <span className="rg-rec-words">{band}.</span> : null}
           </p>
           {scoredFor ? <p className="rg-rec-for">{scoredFor}</p> : null}
@@ -272,7 +274,7 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
                 { label: "Elevated", to: edges[1], tone: "neutral" },
                 { label: `High risk · above ${pctPlain(edges[1])}`, to: 1, tone: "amber" },
               ]}
-              label={`Recession score ${pctPlain(score)}${band ? `, ${band.toLowerCase()}` : ""}`}
+              label={`Recession score ${pctPlain(score, 1)}${band ? `, ${band.toLowerCase()}` : ""}`}
               under
             />
           ) : (
@@ -286,8 +288,8 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
         <StatRow cols={3}>
           <Stat label="Inputs through" value={monthShort(rec.inputs_through)} awaiting={!monthShort(rec.inputs_through)} sub="three-month lag by design" />
           {/* §5: "—" when a year ago's month is absent (served null), never Awaiting refresh. */}
-          <Stat label="A year ago" value={rec.year_ago && fin(rec.year_ago.score) ? pctPlain(rec.year_ago.score) : "—"} sub={rec.year_ago ? monthYear(rec.year_ago.probability_month) : undefined} />
-          <Stat label="Peak since 2015" tone="amber" value={rec.peak && fin(rec.peak.score) ? pctPlain(rec.peak.score) : undefined} awaiting={!rec.peak || !fin(rec.peak.score)} sub={rec.peak ? monthYear(rec.peak.probability_month) : undefined} />
+          <Stat label="A year ago" value={rec.year_ago && fin(rec.year_ago.score) ? pctPlain(rec.year_ago.score, 1) : "—"} sub={rec.year_ago ? monthYear(rec.year_ago.probability_month) : undefined} />
+          <Stat label="Peak since 2015" tone="amber" value={rec.peak && fin(rec.peak.score) ? pctPlain(rec.peak.score, 1) : undefined} awaiting={!rec.peak || !fin(rec.peak.score)} sub={rec.peak ? monthYear(rec.peak.probability_month) : undefined} />
         </StatRow>
       ) : (
         <AwaitingStats labels={["Inputs through", "A year ago", "Peak since 2015"]} quiet={quiet} />
@@ -311,8 +313,8 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 export function meantNote(block: RegimeResponse["stats"]): string[] | null {
   const t = block?.totals;
   if (!t || !fin(t.months) || !fin(t.spx_n)) return null;
-  const lag = fin(block?.lag_months) ? block.lag_months : 2;
-  const out = [`Measured from when each regime was known: each label is paired with the month it governed, ${lag} months after its stamp, the month a session reads it for.`];
+  // fix/freshness 3a (D2): the one line where events are tagged; each label is paired with the month it governed.
+  const out = [TAGGED_LINE];
   const spx = [`S&P: ${t.spx_n} complete months of ${t.months} labels`];
   if (fin(t.spx_pending) && t.spx_pending > 0) spx.push(`${plural(t.spx_pending, "month")} not over yet`);
   if (fin(t.spx_missing) && t.spx_missing > 0) spx.push(`${plural(t.spx_missing, "month")} missing a month-end close`);
@@ -411,9 +413,13 @@ export function mom(x: number): string {
 
 /**
  * §5: "a print <operator> <threshold_mom × 100>% m/m flips <inflation|growth> to
- * <falling|rising> → <flips_to>, effective from the <first_effective_month>
- * label." `<=` flips a rising axis to falling, `>` a falling axis to rising
- * (v3 §9.3); the operator prints as ≤ or >. Null without a threshold.
+ * <falling|rising> → <flips_to>. The regime shown updates once both CPI and
+ * industrial production for the month are stored; event studies tag sessions
+ * with it from <first_effective_month as Mon YYYY>." Codex R-12, R-26: since D2
+ * the page shows the newest stored row, which src/regime.py writes only when
+ * both monthly inputs are stored; the served `first_effective_month` is the
+ * event-study tagging month (the engine's K−2), named as served. `<=` flips a rising axis to falling, `>` a falling axis to
+ * rising (v3 §9.3); the operator prints as ≤ or >. Null without a threshold.
  */
 export function flipWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "threshold_mom" | "operator" | "flips_to" | "first_effective_month">): string | null {
   if (!fin(p.threshold_mom) || (p.operator !== "<=" && p.operator !== ">")) return null;
@@ -422,7 +428,7 @@ export function flipWords(kind: "cpi" | "indpro", p: Pick<NextPrintRow, "thresho
   const to = p.operator === "<=" ? "falling" : "rising";
   const when = monthYear(p.first_effective_month);
   const flips = typeof p.flips_to === "string" && p.flips_to ? ` → ${p.flips_to}` : "";
-  return `a print ${p.operator === "<=" ? "≤" : ">"} ${x < 0 ? "−" : ""}${mom(x)}% m/m flips ${what} to ${to}${flips}${when ? `, effective from the ${when} label` : ""}.`;
+  return `a print ${p.operator === "<=" ? "≤" : ">"} ${x < 0 ? "−" : ""}${mom(x)}% m/m flips ${what} to ${to}${flips}. The regime shown updates once both CPI and industrial production for the month are stored${when ? `; event studies tag sessions with it from ${when}` : ""}.`;
 }
 
 /** The date's color: the regime it would flip to, with red read as caution (D12: red is for down and negative numbers only). */
@@ -464,10 +470,11 @@ export function publishedPrintWords(kind: "cpi" | "indpro", p: PublishedPrint | 
   return `the ${monthYear(p.reference_month)} ${SERIES_NAME[kind]} print${move} ${!from ? `left ${what} ${to}` : to === from ? `kept ${what} ${to}` : `flipped ${what} to ${to}`}`;
 }
 
-/** Codex R-05: what follows a published row's label: the month it governs from and the prints that made it. */
+/** Codex R-05: what follows a published row's label: the month event studies tag sessions with it from (Codex R-12:
+ * not when it is shown, which is once both monthly inputs are stored) and the prints that made it. */
 export function publishedTail(row: PublishedRow): string {
   const prints = [publishedPrintWords("cpi", row.cpi), publishedPrintWords("indpro", row.indpro)].filter(Boolean);
-  const from = monthYear(row.first_effective_month) ? `, the label from ${monthYear(row.first_effective_month)}` : "";
+  const from = monthYear(row.first_effective_month) ? ` (event studies tag sessions with it from ${monthYear(row.first_effective_month)})` : "";
   return `${from}${prints.length ? `: ${prints.join("; ")}` : ""}.`;
 }
 
@@ -541,7 +548,7 @@ function WouldChange({ r, state }: { r: RegimeResponse | undefined; state: State
       {quiet ? null : (
         <>
           {/* §5 (desk/fill-compute): read from the row WHERE WE ARE shows, so both cards read one label. */}
-          <p className="rg-from">{np?.basis && monthYear(np.basis.month) ? `from the ${monthYear(np.basis.month)} row · ${np.basis.label}` : "from the row governing today"}</p>
+          <p className="rg-from">{np?.basis && monthYear(np.basis.month) ? `from the ${monthYear(np.basis.month)} data · ${np.basis.label}` : "from the newest data"}</p>
           {/* Codex R-05: the rows already published after the one shown, apart from the prints still to come. */}
           {(Array.isArray(np?.published) ? np.published : []).map((row) =>
             monthYear(row.month) ? (

@@ -144,7 +144,7 @@ export function auditLandmarks(): LandmarkReport {
   return {
     header: document.querySelectorAll("header").length,
     primaryNav: document.querySelectorAll("nav[aria-label='Primary']").length,
-    strip: document.querySelectorAll("[role='region'][aria-label='Market strip and data freshness']").length,
+    strip: document.querySelectorAll("[role='region'][aria-label='Market strip']").length,
     main: document.querySelectorAll("main#main-content").length,
     sidebar: document.querySelectorAll("aside[aria-label='Sidebar']").length,
     contentinfo: document.querySelectorAll("footer, [role='contentinfo']").length,

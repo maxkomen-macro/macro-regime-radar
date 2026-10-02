@@ -64,7 +64,7 @@ SERIES.update(CREDIT_SERIES)
 # ── Recession Risk Series ───────────────────────────────────────────────────
 RECESSION_SERIES = {
     "usrec": "USREC",    # NBER recession indicator (0/1, monthly)
-    "lei":   "USSLIND",  # Conference Board LEI for US (monthly)
+    "lei":   "USSLIND",  # Philadelphia Fed Leading Index for the US (monthly), discontinued after Feb 2020; kept for the staleness check only
 }
 SERIES.update(RECESSION_SERIES)
 

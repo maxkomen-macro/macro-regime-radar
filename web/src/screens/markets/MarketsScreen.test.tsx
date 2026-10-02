@@ -129,14 +129,19 @@ const DAILY_RISK_ON = dailyBars({ XLE: { ret_1d: 0.55 }, XLI: { ret_1d: 0.15 } }
 /** One of four: XLK alone up. */
 const DAILY_RISK_OFF = dailyBars({ XLF: { ret_1d: -0.42 } });
 
-const series = (series_id: string, label: string, value_pct: number, change_1w_bps: number): CreditSeries => ({
+/** fix/freshness 2: the served shape; every fixture series is a true week ("1w"). */
+const series = (series_id: string, label: string, value_pct: number, change_bps: number): CreditSeries => ({
   series_id,
   label,
   date: DAILY_DATE,
   value_pct,
   value_bps: Math.round(value_pct * 100),
-  change_1w_bps,
+  change_bps,
+  change_basis: "1w",
+  change_from: "2026-09-11",
+  change_1w_bps: change_bps,
   history: DATES.map((date, i) => ({ date, value: value_pct - (DATES.length - 1 - i) * 0.02 })),
+  history_basis: "daily",
 });
 const CREDIT: CreditOAS = { as_of: DAILY_DATE, series: [series("DGS10", "UST10Y", 4.27, 6), series("BAMLC0A0CM", "IG", 0.79, -3), series("BAMLH0A0HYM2", "HY", 2.88, 5)] };
 
@@ -304,8 +309,8 @@ const EMPTY_PROMPT =
 const ERROR_HEADLINE = "Stored closes unavailable: the data service did not answer.";
 const DISCLOSURE_LINE =
   "Live prices via EODHD WebSocket (crypto & FX stream around the clock, US equities during NYSE hours, 15-min-delayed quotes fill the gaps) · stored candles and returns via the yfinance pipeline · macro metrics via FRED.";
-const OFF_HOURS_LEDE = "Off-hours the board holds the last quote with its timestamp. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence.";
-const LIVE_LEDE = "Day moves are the exchange feed's own figures. Stored candles feed the 1W / 1M columns and sparklines; the weekly pricing block and the surprise ranking update on their own cadence.";
+const OFF_HOURS_LEDE = "Outside the regular session, trades the feed marks extended-hours or closed are held, and delayed quotes timestamped outside the session do not replace a regular-session quote. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
+const LIVE_LEDE = "Day moves are measured against each name's previous regular-session close. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
 const BASIS = "Headline and pill read the one-day moves of the four stored sector ETFs at the Sep 18, 2026 close; the session sentence is the live tape.";
 
 beforeEach(() => {
@@ -518,7 +523,8 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(lag?.style.color).toBe("var(--neg)");
     expect(text(ddFor("Dollar"))).toBe("UUP -0.24% 1d · -0.9% 1w");
     // The stored ETFs' one-week leader and laggard, the served ret_1w as the week bars print it.
-    expect(text(ddFor("ETFs · 1w"))).toBe("Silver +3.1% leads · Oil (WTI) -2.4% lags");
+    // fix/freshness 6: the tape names say what each fund holds.
+    expect(text(ddFor("ETFs · 1w"))).toBe("Physical silver +3.1% leads · WTI crude futures -2.4% lags");
     expect(dts()).not.toContain("Single names · 1d");
     expect(text(ddFor("Priced"))).toBe("10Y breakeven 2.19% · 10Y real 1.91%");
     expect(text(ddFor("Top surprise"))).toBe("SPY rose 2.3% on the week; the largest weekly gain since June.");
@@ -581,7 +587,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(button).toHaveAttribute("data-tone", tone);
     expect(stripTitle(button)).toBe(title);
     expect(stripDetail(button)).toMatch(detail);
-    expect(button.getAttribute("aria-label")).toBe(`${title}. ${stripDetail(button)}. Open the data freshness breakdown.`);
+    expect(button.getAttribute("aria-label")).toBe(`${title}. ${stripDetail(button)}. Open the data status breakdown.`);
     expect(summary().querySelectorAll(".mrr-status")).toHaveLength(1);
   });
 
@@ -659,8 +665,9 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(within(priced).getByRole("heading", { level: 2 })).toHaveTextContent(/^What's priced$/);
     expect(text(priced)).toContain("Market-implied path for policy, inflation and real rates");
     // Iteration 1 step 6 (A1): the latest date is the section's stamp.
-    await waitFor(() => expect(text(priced)).toContain("FRED via weekly pipeline"));
-    expect(priced.querySelector("[data-stamp]")?.textContent).toBe("Weekly pipeline · latest Sep 18, 2026");
+    await waitFor(() => expect(text(priced)).toContain("FRED · each metric's own month"));
+    // fix/freshness 4: each metric's observation month (this fixture serves none), never the run date.
+    expect(priced.querySelector("[data-stamp]")?.textContent).toBe("FRED · As of unknown");
   });
 
   it("#single-name-research shows the empty prompt and no range picker until a symbol is chosen", async () => {
@@ -791,7 +798,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(t).not.toContain("null");
     expect(t).toContain("5Y breakeven sits 0.17pp above 10Y: near-term inflation concern, longer term anchored.");
     expect(t).toContain("· composed from stored data");
-    expect(t).toContain("From the weekly derived-metrics pipeline, so levels can differ from the monthly signal prints on the dashboard.");
+    expect(t).toContain("Written by every full refresh from the stored FRED rows, each dated by its own observation month; levels can differ from the monthly signal prints on the dashboard.");
     expect(t).toContain("Where the overnight rate actually sits: the hurdle every risk asset has to clear.");
     expect(within(section).getByRole("button", { name: "TIPS" })).toHaveClass("jargon");
     expect(within(section).getByRole("link", { name: /Methodology/ })).toHaveAttribute("href", "/app/methodology#data");
@@ -814,8 +821,8 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     stubFetch(routes({ "/api/priced": () => [] }));
     renderMarkets();
     const s3 = await awaitSection("whats-priced-full");
-    await waitFor(() => expect(text(s3)).toContain("No priced metrics on file; the weekly pipeline has not written them yet."));
-    expect(text(s3)).toContain("FRED via weekly pipeline");
+    await waitFor(() => expect(text(s3)).toContain("No priced metrics on file; the full refresh has not written them yet."));
+    expect(text(s3)).toContain("FRED · each metric's own month");
   });
 
   it("the tape sorts single names by day move with unquoted rows last, and the sort meta reads the live word only with US ticks", async () => {

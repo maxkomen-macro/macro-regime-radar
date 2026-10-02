@@ -27,7 +27,7 @@ const LBO_DISCLOSURE =
   // B1's cash-sweep sentences verbatim; Iteration 1 E1 names the rate's parts (never "live") and each one's as-of word (a pre-B3 payload: unknown).
   "An illustrative model for teaching and screening, not a transaction model. Taxes, capex and working capital are simplified into one assumption: cash for debt service is 60% of EBITDA. It pays interest first, scheduled amortization is a floor and the remainder sweeps to debt, so a higher rate lowers the IRR. The all-in rate is Fed funds (FEDFUNDS, a monthly average) plus the ICE BofA HY OAS (BAMLH0A0HYM2, daily) from FRED; Fed funds: As of unknown, HY spread: As of unknown.";
 const ALLOCATION_DISCLOSURE =
-  "Monthly total returns for 10 asset classes, index-spliced before ETF inceptions · computed by the same allocation engine each session · regimes from the stored classifier history.";
+  "Monthly total returns for 10 asset classes; three are index-spliced before ETF inception (SPY from the S&P 500, IWM from the Russell 2000, GLD from gold futures) · computed by the same allocation engine each session · regimes from the stored classifier history.";
 
 /* ── routes and harness ──────────────────────────────────────────────────── */
 

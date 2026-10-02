@@ -1,0 +1,111 @@
+{
+ "dashboard_recession": [
+  "9.8%",
+  "9.8%"
+ ],
+ "dashboard_regime": [
+  "Overheating"
+ ],
+ "dashboard_regime_month": [
+  "Macro regime for Aug 2026 • Model confidence: Low (21%)◆MacroAug 2026 print◆SignalsSep 28· 2 days behind◆MarketClose · Sep 30"
+ ],
+ "strip_10y": [
+  "SPY762.63-0.21%EODHD · As of unknownQQQ739.77+0.25%EODHD · As of unknownUS 10Y5.24%+28 bps1WFRED · Sep 28 · 2 days behindMarkets · Close · Sep 30Macro monthly · Aug 2026 printFreshness ›"
+ ],
+ "recession_recession": [
+  "9.8%",
+  "9.8%",
+  "9.8%",
+  "9.8%"
+ ],
+ "tape_SPY": [
+  [
+   "SPYS&P 500",
+   "$762.63",
+   "-0.21%",
+   "-$1.57",
+   "-0.7%",
+   "-0.6%",
+   "",
+   "Sep 30, 15:59 ET"
+  ]
+ ],
+ "tape_QQQ": [
+  [
+   "QQQNasdaq 100",
+   "$739.77",
+   "+0.25%",
+   "+$1.84",
+   "-0.2%",
+   "+3.2%",
+   "",
+   "Sep 30, 15:59 ET"
+  ]
+ ],
+ "tape_VIX": [
+  [
+   "VIXVIX · index",
+   "16.04",
+   "-0.19%",
+   "-0.03",
+   "—",
+   "—",
+   "—",
+   "Sep 29, 16:15 ET · 15m"
+  ]
+ ],
+ "tape_UUP": [
+  [
+   "UUPUS dollar index futures",
+   "$28.77",
+   "+0.07%",
+   "+$0.02",
+   "+0.4%",
+   "+2.3%",
+   "",
+   "Sep 30, 15:59 ET"
+  ]
+ ],
+ "tape_USO": [
+  [
+   "USOWTI crude futures",
+   "$145.66",
+   "+1.61%",
+   "+$2.31",
+   "-2.1%",
+   "+8.9%",
+   "",
+   "Sep 30, 15:59 ET"
+  ]
+ ],
+ "singles_AAPL": [
+  [
+   "AAPLApple",
+   "$333.02",
+   "+1.10%",
+   "+$3.62",
+   "Sep 30, 15:59 ET"
+  ]
+ ],
+ "desk_regime_tile": [
+  "RegimeLive · Aug 2026 dataOverheatingGrowth rising, inflation rising · odds 42% · rule-based"
+ ],
+ "desk_recession_tile": [
+  "Recession · logistic modelLive9.8%Low · score for Sep 2026 · inputs through Jun 2026"
+ ],
+ "desk_vix_tile": [
+  "Vol · VIXSep 29, 16:15 ET · 15m16.04VIX 16.04 · subdued5.2 pts above 21-day realized (10.8)"
+ ],
+ "desk_trend_tile": [
+  "S&P 500 · trendClose · Sep 29Above 50 & 200since Sep 17, 2026 · last cross golden, Jul 1, 2025"
+ ],
+ "desk_regime_page": [
+  "Where we are rule-based · newest data",
+  "Overheating",
+  "Aug 2026 data",
+  "9.8%"
+ ],
+ "desk_regime_recession": [
+  "9.8%"
+ ]
+}

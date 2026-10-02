@@ -24,8 +24,15 @@ Message protocol to browsers (JSON):
   {"type": "quotes",   "items": [Quote...]}                   coalesced ticks
   {"type": "status",   "feeds": {feed: state}, "stale": {...}, "degraded": bool}
 Browser → relay: {"action": "watch"|"unwatch", "symbols": ["AMZN", ...]}
-Quote: {"s", "p", "dc", "dd", "t", "delayed", "src"} — dc/dd are EODHD's own
-day-change % / day-change $ fields, passed through, not recomputed.
+Quote: {"s", "p", "dc", "dd", "t", "delayed", "src"} — dc/dd are the
+day-change % / day-change $. Forex and crypto frames and every REST row carry
+EODHD's own (dc/dd, change_p/change), passed through. US trade frames carry
+only {s, p, c, v, dp, ms, t}, so for a US tick the relay computes them against
+the symbol's previous regular-session close, kept from its REST rows
+(fix/freshness 1): dd = p − prev_close, dc = dd / prev_close × 100; with no
+previous close for the tick's session, dc and dd stay null. A US tick flagged
+ms "extended-hours" (or "closed") never changes the stored quote: the board
+holds the last regular-session quote until the next open (decision D1).
 """
 
 from __future__ import annotations
@@ -34,10 +41,11 @@ import asyncio
 import contextlib
 import json
 import logging
+import math
 import os
 import random
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -93,6 +101,9 @@ DYNAMIC_IDLE_SECONDS = 600
 WS_MESSAGES_PER_MIN = 30
 WS_NEW_SYMBOLS_PER_HOUR = 40
 STALE_AFTER_SECONDS = {"us": 90.0, "crypto": 120.0, "forex": 120.0}
+# EODHD's US market-status flag (`ms`: open | closed | extended-hours). A trade
+# printed outside the regular session never moves the board (D1).
+US_HOLD_STATES = frozenset({"extended-hours", "closed"})
 _SYMBOL_OK = set("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-")
 
 
@@ -121,17 +132,47 @@ def rest_interval(open_seconds: float, now: datetime | None = None) -> float:
 
 
 def _f(x: Any) -> float | None:
-    """EODHD sends numbers as strings in some feeds — parse defensively."""
+    """EODHD sends numbers as strings in some feeds — parse defensively. A
+    non-finite value ("Infinity", "NaN") is no number: it would reach the
+    browser as invalid JSON and fail the whole batch (Codex R-03)."""
     if x is None:
         return None
     try:
-        return float(x)
+        v = float(x)
     except (TypeError, ValueError):
         return None
+    return v if math.isfinite(v) else None
+
+
+# Codex R-25: a prior-session REST row anchors the next session only when it
+# is that session's regular close: stamped within this many seconds before the
+# regular close, up to and including it (early closes included).
+CLOSE_EVIDENCE_S = 300
+
+
+def regular_hours(ts: float) -> bool:
+    """Whether an epoch-seconds stamp falls inside its own New York session's
+    regular hours, open to close inclusive (early closes included); False on a
+    weekend or holiday."""
+    b = cal.session_bounds(_ny_day(ts))
+    return b is not None and b[0].timestamp() <= ts <= b[1].timestamp()
+
+
+def target_session(now: datetime) -> date:
+    """The US session a previous close is kept FOR: today when today is a
+    trading day, else the next one (Codex R-01)."""
+    d = now.astimezone(cal.NY).date()
+    return d if cal.is_trading_day(d) else cal.next_trading_day(d)
 
 
 def _iso(ts: float | None) -> str | None:
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ") if ts else None
+
+
+def _ny_day(ts: float) -> date:
+    """The New York calendar date of an epoch-seconds stamp: the session a
+    US print or REST row belongs to."""
+    return datetime.fromtimestamp(ts, tz=timezone.utc).astimezone(cal.NY).date()
 
 
 def feed_for_symbol(sym: str) -> str | None:
@@ -180,6 +221,16 @@ class QuoteHub:
         # Dynamic subscriptions: symbol → {"feed", "watchers": set[ws], "last_seen": monotonic}
         self._dynamic: dict[str, dict] = {}
         self._watch_lock = asyncio.Lock()
+        # US symbol → (previous regular-session close, the New York date of the
+        # session it is the previous close FOR). Kept from REST rows; a US tick
+        # reads it only when the tick belongs to that session.
+        self._prev_close: dict[str, tuple[float, date]] = {}
+        # How each anchor was learned (Codex R-01, R-25): ("a", ts) from a row
+        # dated the target session (its previousClose), ("b", ts) from the
+        # previous session's row stamped in the last five minutes of its
+        # regular hours (its close). An "a" anchor supersedes a "b" one;
+        # nothing else sets or overwrites either.
+        self._prev_close_how: dict[str, tuple[str, float]] = {}
         # Ops counters for /api/stream/debug — how many raw frames each feed
         # delivered, how often it (re)connected, and what got stored/flushed.
         self.stats: dict[str, Any] = {
@@ -192,6 +243,10 @@ class QuoteHub:
             "feed_last_tick_at": {"us": None, "crypto": None, "forex": None, "vix": None},
             "feed_last_change_at": {"us": None, "crypto": None, "forex": None, "vix": None},
             "ticks_stored": 0,
+            # US prints outside the regular session, held off the board (D1).
+            "us_ticks_held": 0,
+            # Codex R-04: US REST rows outside their session held against a regular-session quote.
+            "us_rest_held": 0,
             "flushes_sent": 0,
             "dynamic_subscribes": 0,
             "dynamic_unsubscribes": 0,
@@ -621,15 +676,102 @@ class QuoteHub:
                 price = a if a is not None else b
         if price is None:
             return
+        if feed == "us" and msg.get("ms") in US_HOLD_STATES:
+            # D1: a pre- or post-market print leaves the regular-session quote
+            # standing (and does not date the feed: the board's last print is
+            # the regular one).
+            self.stats["us_ticks_held"] += 1
+            return
+        t = _f(msg.get("t"))
+        dc, dd = _f(msg.get("dc")), _f(msg.get("dd"))
+        if feed == "us" and dc is None:
+            dc, dd = self._day_change(sym, price, t)
         self._update(sym, {
             "s": sym,
             "p": price,
-            "dc": _f(msg.get("dc")),
-            "dd": _f(msg.get("dd")),
-            "t": _f(msg.get("t")),
+            "dc": dc,
+            "dd": dd,
+            "t": t,
             "delayed": False,
             "src": "ws",
         })
+
+    def _day_change(self, sym: str, price: float, t_ms: float | None) -> tuple[float | None, float | None]:
+        """(dc %, dd $) of a US print against the previous regular-session
+        close of the print's own session; (None, None) without one."""
+        kept = self._prev_close.get(sym)
+        if kept is None:
+            return None, None
+        prev, session = kept
+        day = _ny_day(t_ms / 1000.0) if t_ms is not None else datetime.now(timezone.utc).astimezone(cal.NY).date()
+        if day != session:
+            return None, None
+        dd = price - prev
+        dc = dd / prev * 100.0
+        if not (math.isfinite(dc) and math.isfinite(dd)):
+            return None, None  # Codex R-03: never cache or broadcast a non-finite change
+        return round(dc, 4), round(dd, 4)
+
+    def _note_prev_close(self, sym: str, row: dict, ts: float | None, now: datetime | None) -> None:
+        """Keep a US symbol's previous regular-session close from its REST row
+        (Codex R-01). The anchor is FOR the target session (today if it is a
+        trading day, else the next one) and is accepted only from
+          (a) a row dated the target session: its previousClose, or
+          (b) a row dated the trading session immediately before the target,
+              stamped within the last CLOSE_EVIDENCE_S seconds of that
+              session's regular hours, up to and including the close (early
+              closes included): its close (Codex R-25: only that is evidence
+              the row is the session's regular close).
+        Any other row (an older session, a pre-market or mid-session or
+        after-the-close print of the prior session, a clock fault) sets
+        nothing and never overwrites a valid anchor; the anchor then waits for
+        a target-session row's previousClose. (a) supersedes (b). A new or
+        changed anchor re-prices the retained WS quote of that session
+        (Codex R-02)."""
+        if ts is None:
+            return
+        target = target_session(now or datetime.now(timezone.utc))
+        row_day = _ny_day(ts)
+        if row_day == target:
+            how, prev = "a", _f(row.get("previousClose"))
+        elif row_day == cal.previous_trading_day(target):
+            bounds = cal.session_bounds(row_day)
+            close = bounds[1].timestamp() if bounds is not None else None
+            if close is None or not (close - CLOSE_EVIDENCE_S <= ts <= close):
+                return  # Codex R-25: not evidence of that session's regular close
+            how, prev = "b", _f(row.get("close"))
+        else:
+            return  # an older session, or a clock fault
+        if prev is None or prev <= 0:
+            return  # Codex R-03: finite (via _f) and positive only
+        kept = self._prev_close.get(sym)
+        kept_how = self._prev_close_how.get(sym)
+        if kept is not None and kept[1] == target and kept_how is not None:
+            if kept_how[0] == "a" and how == "b":
+                return  # (a) supersedes (b)
+            if kept_how[0] == how and ts < kept_how[1]:
+                return  # an older row of the same kind never replaces a newer one
+        self._prev_close_how[sym] = (how, ts)
+        if kept == (prev, target):
+            return
+        self._prev_close[sym] = (prev, target)
+        self._reprice_ws(sym)
+
+    def _reprice_ws(self, sym: str) -> None:
+        """Codex R-02: when a symbol's anchor is set or changes, recompute the
+        day change of its retained WS quote for that session from the quote's
+        own price, keeping its price and timestamp, and send it again."""
+        q = self.quotes.get(sym)
+        if not q or q.get("src") != "ws" or self._feed_of(sym) != "us":
+            return
+        price = _f(q.get("p"))
+        if price is None or q.get("t") is None:
+            return
+        dc, dd = self._day_change(sym, price, q["t"])
+        if dc is None or (dc, dd) == (q.get("dc"), q.get("dd")):
+            return
+        self.quotes[sym] = {**q, "dc": dc, "dd": dd}
+        self._dirty.add(sym)
 
     # ── upstream: REST delayed quotes (VIX + off-hours seed) ─────────────────
 
@@ -647,7 +789,7 @@ class QuoteHub:
         data = r.json()
         return data if isinstance(data, list) else [data]
 
-    def _store_rest_quote(self, row: dict, *, delayed: bool) -> None:
+    def _store_rest_quote(self, row: dict, *, delayed: bool, now: datetime | None = None) -> None:
         code = str(row.get("code", ""))
         sym = code.rsplit(".", 1)[0] if "." in code else code
         if not sym:
@@ -657,6 +799,15 @@ class QuoteHub:
             return
         ts = _f(row.get("timestamp"))
         live = self.quotes.get(sym)
+        if self._feed_of(sym) == "us":
+            self._note_prev_close(sym, row, ts, now)
+            # Codex R-04: a US row stamped outside its own session's regular
+            # hours (pre-market, after the close, a closed day) never replaces
+            # a quote from a regular session; it may still seed the anchor
+            # above. With no quote yet (a restart after hours) it is stored.
+            if live and (ts is None or not regular_hours(ts)) and live.get("t") is not None and regular_hours(live["t"] / 1000.0):
+                self.stats["us_rest_held"] += 1
+                return
         # Never let a 15-min-delayed REST row clobber a fresher WS tick.
         if live and live.get("src") == "ws" and ts is not None and live.get("t"):
             if live["t"] >= ts * 1000.0:

@@ -6,9 +6,9 @@ import { useEffect, useId, useRef, useState } from "react";
 
 const DEFS: Record<string, string> = {
   regime:
-    "One of four market weather patterns the classifier can call: Goldilocks (growth up, inflation calm), Overheating (growth and inflation both hot), Stagflation (inflation hot, growth stalling), Recession Risk (growth rolling over).",
+    "One of four quadrants the classifier calls from two signs: whether the industrial-production level and the CPI level rose over the last three monthly readings. Goldilocks (production up, CPI down), Overheating (both up), Stagflation (CPI up, production down), Recession Risk (both down).",
   "model odds":
-    "The classifier's probability for each regime; the four odds always sum to 100%.",
+    "The classifier's odds for each regime: a strength score from the two trends, not a fitted probability. The four sum to 100%, and the label's odds lead by construction.",
   conviction:
     "How firmly the model holds its top call — separate from the odds themselves. Low conviction with close odds means the read could flip on one data print.",
   "2s10s":
@@ -19,12 +19,12 @@ const DEFS: Record<string, string> = {
   "high-yield":
     "Bonds rated below investment grade (BB and lower). Their spread over Treasuries is a fast gauge of credit stress.",
   "z-score":
-    "How unusual a reading is versus its own recent range, in standard deviations. ±2 is notable, ±3 is rare.",
+    "How unusual a reading is versus its own history, in standard deviations. ±2 is notable, ±3 is rare.",
   divergence:
     "Whether the recession model and market risk pricing agree. Aligned = they tell one story; a material divergence requires judgment about which read to weight.",
   NBER: "The National Bureau of Economic Research — the committee that dates official US recessions; the model trains on its dates.",
   "recession model":
-    "A logistic regression on the yield curve, unemployment, the high-yield spread, industrial production and the 10Y − 5Y breakeven spread, trained on NBER recession dates, reading the odds of recession within 12 months.",
+    "A logistic regression on the yield curve, unemployment, the high-yield spread, industrial production and the 10Y − 5Y breakeven spread, trained on NBER recession dates: recession odds for this month, scored from inputs three months old. Fitted and scored on the same history (in-sample).",
   breakeven:
     "The inflation rate at which nominal Treasuries and inflation-protected TIPS pay the same — the market's own inflation forecast for that horizon.",
   TIPS: "Treasury Inflation-Protected Securities — their yield is the real (after-inflation) interest rate the market charges.",
@@ -61,6 +61,9 @@ const DEFS: Record<string, string> = {
     "The curve of portfolios offering the highest expected return at each level of risk; anything below the curve is leaving return on the table.",
   "transition matrix":
     "Historical odds of moving from one state to another over a fixed horizon, counted from the stored monthly history.",
+  // Codex R-18: the regime matrix is not counted (fix/freshness D4); the counted definition above stays for credit states.
+  "regime transition matrix":
+    "Odds of moving from one regime to another over a fixed horizon. For the four regimes these are hand-set priors typed into the code, not counted from the stored history.",
   "risk parity":
     "Weights sized so each asset contributes equal risk; bonds get more capital than stocks because they move less.",
   "Black-Litterman":

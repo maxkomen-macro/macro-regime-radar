@@ -36,7 +36,7 @@ export const STATUS_DEFINITION: Record<CycleStatus, string> = {
   Early: "the regime is young by its own history.",
   "Mid-Cycle": "the spell sits inside its normal historical span.",
   Extended: "the spell has outlived most of its historical peers.",
-  "Long in Tooth": "the spell is among the longest on record; age alone argues for a change.",
+  "Long in Tooth": "the spell ranks in the top tenth of this regime's past spells by length; a percentile, not a forecast of a change.",
 };
 
 /** The same four definitions with the regime as subject (C.1 rule 4). */
@@ -44,7 +44,7 @@ const STATUS_SUBHEAD: Record<CycleStatus, (label: string) => string> = {
   Early: (l) => `${l} is young by its own history.`,
   "Mid-Cycle": (l) => `${l} sits inside its normal historical span.`,
   Extended: (l) => `${l} has outlived most of its historical peers.`,
-  "Long in Tooth": (l) => `${l} is among the longest spells on record; age alone argues for a change.`,
+  "Long in Tooth": (l) => `${l} ranks in the top tenth of its past spells by length; a percentile, not a forecast of a change.`,
 };
 
 /** Early and Mid-Cycle read mint, Extended and Long in Tooth amber (G3). */

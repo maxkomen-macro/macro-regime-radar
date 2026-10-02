@@ -56,7 +56,7 @@ async function open(page: Page, route: string, ms = 900): Promise<void> {
 }
 
 const header = (page: Page) => page.locator("header").first();
-const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
 const active = (page: Page) => page.evaluate(readActiveElement, 0);
 const activeType = (page: Page) => page.evaluate(() => (document.activeElement instanceof HTMLInputElement ? document.activeElement.type : ""));
 const inertShell = (page: Page) => page.locator("#shell-content").getAttribute("inert");
@@ -459,13 +459,15 @@ test("drawers and palette: focus on open, Tab contained, Escape closes and retur
   expect(await inertShell(page)).toBeNull();
   await expect(bell).toBeFocused();
 
-  const trigger = strip(page).getByRole("button", { name: /^Freshness/ });
+  // fix/freshness 8 / Codex R-28: the drawer's opener is the sidebar's "Data status" (the strip's card is gone).
+  const trigger = page.locator("#mrr-sidebar").getByTestId("sidebar-freshness");
+  await expect(trigger).toHaveAccessibleName(/^Data status/);
   await focus(trigger);
   await page.keyboard.press("Enter");
   const fresh = page.locator("#freshness-drawer");
   await expect(fresh).toBeVisible();
   await expect(fresh).toHaveAttribute("aria-modal", "true");
-  await expect(fresh.getByRole("button", { name: "Close data freshness" })).toBeFocused();
+  await expect(fresh.getByRole("button", { name: "Close data status" })).toBeFocused();
   expect(await inertShell(page)).not.toBeNull();
   await expectContained(page, fresh, 6);
   await page.keyboard.press("Escape");

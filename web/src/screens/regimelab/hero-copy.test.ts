@@ -88,7 +88,7 @@ describe("cycleHero (checklist 04 C.1)", () => {
       Early: "Goldilocks is young by its own history.",
       "Mid-Cycle": "Goldilocks sits inside its normal historical span.",
       Extended: "Goldilocks has outlived most of its historical peers.",
-      "Long in Tooth": "Goldilocks is among the longest spells on record; age alone argues for a change.",
+      "Long in Tooth": "Goldilocks ranks in the top tenth of its past spells by length; a percentile, not a forecast of a change.",
     };
     for (const status of STATUSES) {
       const s = copyOf({ status }).subhead;

@@ -36,6 +36,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   baseline: { forms: ["Vs normal", "vs normal", "a normal stretch"], text: "Normal is the study's baseline: the same horizon's move over every evaluable session of its sample, not only after events." },
   blocks: { forms: ["overlap blocks"], text: "Events whose outcome windows overlap form one block and are resampled together, so one market episode counts once." },
   interval: { forms: ["90% interval"], text: "The range the median's excess over normal falls in on 90% of resampled histories." },
+  odds: { forms: ["odds", "Odds"], text: "Regime odds are a strength score from the two trends, how far each slope sits from its own history, not a fitted probability." },
   lag: { forms: ["K−2"], text: "K−2 is the regime row stamped two months before the month in question, so a label uses only data already published by then." },
   nav: { forms: ["% NAV", "NAV"], text: "NAV is net asset value, the size of the whole book: a 4% NAV position is 4% of it." },
   dv01: { forms: ["DV01"], text: "DV01 is the money a position gains or loses when yields move one basis point." },

@@ -150,11 +150,16 @@ export function ordinal(n: number): string {
   return `${n}${suffix}`;
 }
 
-/** "July data": the month of the stored regime row a label comes from (§5: the K−2 row governing today);
- * desk/usability §14.13: said as the month's data, never as a table's "row". */
+/** "Aug 2026 data": the month of the stored regime row a label comes from (fix/freshness 3a, D2: the
+ * newest stored row, said with its year as the Dashboard says it); desk/usability §14.13: said as the
+ * month's data, never as a table's "row". */
 export function rowWords(print: string | null | undefined): string {
-  return monthLong(print) ? `${monthLong(print)} data` : "";
+  return monthYear(print) ? `${monthYear(print)} data` : "";
 }
+
+/** fix/freshness 3a (D2): the one line wherever the Desk tags events with a regime. The label shown as today's is
+ * the newest stored row's (the Dashboard's); an event carries the label known when it happened (the engine's K−2). */
+export const REGIME_TAGGED_LINE = "Events are tagged with the label known at the time: a month's print governs two months later.";
 
 /** The recession score's band in words (§5, v3 §11): "Low", "Elevated", "High risk"; "" when not served. */
 export const BAND_WORD: Record<string, string> = { low: "Low", elevated: "Elevated", high_risk: "High risk" };

@@ -11,6 +11,9 @@ export interface ShellActions {
   openFreshness: () => void;
   openPalette: () => void;
   openAssistant: () => void;
+  /** Codex R-31: whether the Data status drawer is mounted (open), so an opener names it in aria-controls only
+   * while it exists. */
+  freshnessOpen?: boolean;
 }
 
 const noop = () => {};
@@ -20,6 +23,7 @@ export const NO_SHELL_ACTIONS: ShellActions = Object.freeze({
   openFreshness: noop,
   openPalette: noop,
   openAssistant: noop,
+  freshnessOpen: false,
 });
 
 export const ShellActionsContext = createContext<ShellActions>(NO_SHELL_ACTIONS);

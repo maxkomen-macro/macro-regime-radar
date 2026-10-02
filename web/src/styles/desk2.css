@@ -575,6 +575,10 @@
   background: currentColor;
   flex: none;
 }
+/* fix/freshness 3c: a close or a delayed quote's stamp, gray: the word Live is for live ticks only. */
+.dk-live-stamp {
+  color: var(--dk-t2);
+}
 /* §1.0.2: an unavailable card's badge, "○ Not yet served", gray with a hollow dot. */
 .dk-live-off {
   color: var(--dk-t3);

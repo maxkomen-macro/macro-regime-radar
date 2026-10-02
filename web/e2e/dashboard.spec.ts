@@ -24,8 +24,8 @@ const BRANCH = git("rev-parse --abbrev-ref HEAD"); // the branch under test, nev
 const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Summary row labels in C.2 order; row 9 reads Watch, or Triggered when a signal is triggered on verify day. */
-const SUMMARY_LABELS = ["Model regime", "Model probability", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", ["Watch", "Triggered"], "Invalidates", "NBER recession model"];
-const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession model · 12m"];
+const SUMMARY_LABELS = ["Model regime", "Leading odds", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", ["Watch", "Triggered"], "Invalidates", "NBER recession model"];
+const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds · this month"];
 /** The B.5 table: option label, capture suffix and the tile symbols per tab. */
 const GLANCE_TABS = [
   { label: "Equities", file: "equities", symbols: ["SPY", "QQQ", "IWM", "EEM"] },
@@ -43,7 +43,7 @@ async function open(page: Page, route = "/app/dashboard"): Promise<void> {
 }
 
 const header = (page: Page) => page.locator("header").first();
-const strip = (page: Page) => page.getByRole("region", { name: "Market strip and data freshness" });
+const strip = (page: Page) => page.getByRole("region", { name: "Market strip" });
 const glanceGroup = (page: Page) => page.locator("#markets-glance").getByRole("group", { name: "Asset class" });
 const glanceOption = (page: Page, label: string | RegExp) => glanceGroup(page).getByRole("button", { name: label });
 
@@ -124,7 +124,7 @@ test.describe("dashboard (checklist 03 E.3)", () => {
     expect(computed.variation).toContain('"opsz" 30');
     const pill = page.locator("#regime-hero .mrr-pill");
     await expect(pill).toHaveCount(1);
-    expect(await visibleText(pill)).toMatch(/^\d+% probability$/i);
+    expect(await visibleText(pill)).toMatch(/^\d+% odds$/i);
     await expect(page.locator("main h2").first()).toContainText("of the same four-way odds");
     await expect(page.locator("#regime-hero")).toContainText("Current regime", { ignoreCase: true });
 
@@ -160,8 +160,13 @@ test.describe("dashboard (checklist 03 E.3)", () => {
       else expect(labels[i], `row ${i + 1}`).toBe(expected);
     });
 
-    const strip = page.locator('#regime-summary button[aria-haspopup="dialog"]');
+    // Codex R-28: the summary carries two dialog buttons since fix/freshness 8 (the alert strip and "Data status ›");
+    // the alert strip is the one named for the alert feed, and there is exactly one of it.
+    // the alert strip is the StatusStrip button (.mrr-status), and there is exactly one of it.
+    await expect(page.locator('#regime-summary button[aria-haspopup="dialog"]')).toHaveCount(2);
+    const strip = page.locator('#regime-summary button.mrr-status[aria-haspopup="dialog"]');
     await expect(strip).toHaveCount(1);
+    await expect(page.locator("#regime-summary .mrr-summary-stamp").getByRole("button", { name: "Data status ›" })).toHaveCount(1);
     const bell = header(page).getByRole("button", { name: /alert/i });
     await expect(bell).toHaveAttribute("aria-haspopup", "dialog");
     await expect.poll(async () => strip.getAttribute("aria-label"), { timeout: 15_000 }).toMatch(/Open the alert feed\.$/);

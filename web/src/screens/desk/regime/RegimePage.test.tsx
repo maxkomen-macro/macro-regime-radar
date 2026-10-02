@@ -12,7 +12,7 @@ import DeskShell from "../DeskShell";
 import regime from "../../../fixtures/desk/regime.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { classifierWords, flipTone, flipWords, meantNote, mom, momSigned, otherWords, printedWords, publishedPrintWords, publishedTail, REGIMES, returnWords, runs, trendTone } from "./RegimePage";
+import { TAGGED_LINE, oddsWords, flipTone, flipWords, meantNote, mom, momSigned, otherWords, printedWords, publishedPrintWords, publishedTail, REGIMES, returnWords, runs, trendTone } from "./RegimePage";
 
 type Over = Record<string, unknown>;
 /** The fixture with some blocks replaced (or removed with `undefined`). */
@@ -78,22 +78,29 @@ describe("Regime words", () => {
   });
   it("spells the flip from the served threshold and operator, never a typed one (§5)", () => {
     const p = { threshold_mom: -0.0039, operator: "<=" as const, flips_to: "Goldilocks", first_effective_month: "2026-11" };
-    expect(flipWords("cpi", p)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
-    expect(flipWords("indpro", { ...p, threshold_mom: -0.0002, flips_to: "Stagflation" })).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", p)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026.");
+    expect(flipWords("indpro", { ...p, threshold_mom: -0.0002, flips_to: "Stagflation" })).toBe("a print ≤ −0.02% m/m flips growth to falling → Stagflation. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026.");
   });
-  it("Codex R-05: published rows and upcoming prints apart, each print against its own month (the fixture's July row)", () => {
-    // The API's answer on the audit's store: from the July Goldilocks row, the August row is published with its two prints,
-    // and the upcoming prints are September's, read from the August row.
+  it("Codex R-05: published rows and upcoming prints apart, each print against its own month", () => {
+    // fix/freshness 3a (D2): the API's answer on the audit's store now reads from the newest row, the August Overheating
+    // row, so nothing after it is published and the upcoming prints are September's, read from that same row.
     const np = regime.next_prints;
-    expect(np.basis).toEqual({ month: "2026-07", label: "Goldilocks" });
+    expect(np.basis).toEqual({ month: "2026-08", label: "Overheating" });
     expect(np.upcoming_from).toEqual({ month: "2026-08", label: "Overheating" });
-    expect(publishedPrintWords("cpi", np.published[0].cpi as never)).toBe("the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising");
-    expect(publishedPrintWords("indpro", np.published[0].indpro as never)).toBe("the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising");
-    expect(publishedTail(np.published[0] as never)).toBe(
-      ", the label from Oct 2026: the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising; the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising.",
+    expect(np.published).toEqual([]);
+    // A published row still reads against its own month (the August row as the K−2 page served it, before D2).
+    const aug = {
+      month: "2026-08", label: "Overheating", first_effective_month: "2026-10",
+      cpi: { reference_month: "2026-08", series: "CPIAUCSL", mom: 0.003960181843858157, direction: "rising", from_direction: "falling" },
+      indpro: { reference_month: "2026-08", series: "INDPRO", mom: 0.00022126169630087844, direction: "rising", from_direction: "rising" },
+    };
+    expect(publishedPrintWords("cpi", aug.cpi as never)).toBe("the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising");
+    expect(publishedPrintWords("indpro", aug.indpro as never)).toBe("the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising");
+    expect(publishedTail(aug as never)).toBe(
+      " (event studies tag sessions with it from Oct 2026): the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising; the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising.",
     );
     expect(np.cpi.reference_month).toBe("2026-09");
-    expect(flipWords("cpi", np.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", np.cpi as never)).toBe("a print ≤ −0.39% m/m flips inflation to falling → Goldilocks. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026.");
     expect([momSigned(-0.0012), momSigned(0.00396)]).toEqual(["−0.12%", "+0.40%"]);
     // A series that has already printed the upcoming month (the row waits on the other): said as printed.
     const printed = { printed_mom: 0.00396, printed_direction: "rising" as const, from_direction: "falling" as const, reference_month: "2026-09" };
@@ -108,14 +115,17 @@ describe("Regime words", () => {
   });
   it("`>` flips a falling axis to rising (v3 §9.3)", () => {
     const p = { threshold_mom: 0.004, operator: ">" as const, flips_to: "Overheating", first_effective_month: "2026-11" };
-    expect(flipWords("cpi", p)).toBe("a print > 0.4% m/m flips inflation to rising → Overheating, effective from the Nov 2026 label.");
-    expect(flipWords("indpro", { ...p, threshold_mom: -0.001, flips_to: "Goldilocks" })).toBe("a print > −0.1% m/m flips growth to rising → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", p)).toBe("a print > 0.4% m/m flips inflation to rising → Overheating. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026.");
+    expect(flipWords("indpro", { ...p, threshold_mom: -0.001, flips_to: "Goldilocks" })).toBe("a print > −0.1% m/m flips growth to rising → Goldilocks. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026.");
   });
   it("prints the served precision, and nothing without a threshold; a flip not evaluable names no regime", () => {
     const p = { threshold_mom: 0.0015, operator: "<=" as const, flips_to: "Goldilocks", first_effective_month: "2026-11" };
-    expect(flipWords("cpi", p)).toBe("a print ≤ 0.15% m/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label.");
+    expect(flipWords("cpi", p)).toBe("a print ≤ 0.15% m/m flips inflation to falling → Goldilocks. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026.");
     expect(flipWords("cpi", { ...p, threshold_mom: null })).toBeNull();
-    expect(flipWords("cpi", { ...p, flips_to: null })).toBe("a print ≤ 0.15% m/m flips inflation to falling, effective from the Nov 2026 label.");
+    // Codex R-12: the regime shown changes when the print publishes; first_effective_month is only the tagging month.
+    expect(flipWords("cpi", p)).toContain("The regime shown updates once both CPI and industrial production for the month are stored");
+    expect(flipWords("cpi", { ...p, first_effective_month: null } as never)).toBe("a print ≤ 0.15% m/m flips inflation to falling → Goldilocks. The regime shown updates once both CPI and industrial production for the month are stored.");
+    expect(flipWords("cpi", { ...p, flips_to: null })).toBe("a print ≤ 0.15% m/m flips inflation to falling. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026.");
     expect([mom(0.00003), mom(0.002), mom(0)]).toEqual(["0.003", "0.2", "0"]);
   });
   it("colors by §1.3's jobs: red is only for down numbers", () => {
@@ -132,20 +142,21 @@ describe("Regime words", () => {
 describe("Regime tab", () => {
   it("where we are: the label, the lede, three stats, the strip, the rule", async () => {
     renderTab();
-    const card = await screen.findByRole("region", { name: "Where we are rule-based · two-month lag" });
-    await waitFor(() => expect(card).toHaveTextContent("Goldilocks"));
-    // §5: the Jul row (Goldilocks, as stored) governs a September session; the newest stored row (Aug, Overheating) sits beside it, never classifying.
-    // §5's lede, "<Nth> month in this regime" (desk/fill-compute), in its first month too (the audit's Q13: 1 month in).
-    expect(card).toHaveTextContent("Growth rising and inflation falling. First month in this regime.");
+    const card = await screen.findByRole("region", { name: "Where we are rule-based · newest data" });
+    await waitFor(() => expect(card).toHaveTextContent("Overheating"));
+    // fix/freshness 3a (D2): the newest stored row (Aug, Overheating), the label and month the Dashboard shows.
+    // §5's lede, "<Nth> month in this regime" (desk/fill-compute), in its first month too (Jul was Goldilocks).
+    expect(card).toHaveTextContent("Growth rising and inflation rising. First month in this regime.");
     expect(card).not.toHaveTextContent("in a row");
-    // desk/fill-compute: the home page's classifier beside this label, as served on the audit's store.
+    expect(card).not.toHaveTextContent("two-month lag");
+    // The label's odds on that row, said as what they are.
     expect(card.querySelector(".rg-classifier")).toHaveTextContent(
-      "The home page's classifier puts Overheating at 42% for the Aug 2026 row; this tab's rule-based label is Goldilocks for the Jul 2026 row, the one governing today. They disagree this month.",
+      "Overheating odds 42% on the Aug 2026 data: a strength score from the two trends, not a fitted probability.",
     );
     // §1.3's exception (v2 D-36) and §5: the label in its regime's color.
-    expect(card.querySelector(".rg-big")).toHaveAttribute("data-tone", "green");
-    expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the July reading/);
-    expect(card.querySelector(".rg-latest")?.textContent).toBe("Latest print: Aug 2026");
+    expect(card.querySelector(".rg-big")).toHaveAttribute("data-tone", "amber");
+    expect(card).toHaveTextContent(/In this regime\s*1 mo\s*since the August reading/);
+    expect(card.querySelector(".rg-latest")?.textContent).toBe("Aug 2026 data");
     const strip = within(card).getByRole("img", { name: /Regime by month from Aug 2021 to Aug 2026/ });
     const segs = [...strip.querySelectorAll("span")];
     expect(segs).toHaveLength(27);
@@ -164,25 +175,26 @@ describe("Regime tab", () => {
   it("recession: the model's score, its band, the month it is for, the gauge, the three stats and what it is (§5)", async () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /Recession score/ });
-    await waitFor(() => expect(card).toHaveTextContent("12%"));
-    expect(card.querySelector(".rg-rec-line")?.textContent).toBe("12%Low.");
+    // fix/freshness 3b: one decimal, the value the app prints for the same served score.
+    await waitFor(() => expect(card).toHaveTextContent("11.6%"));
+    expect(card.querySelector(".rg-rec-line")?.textContent).toBe("11.6%Low.");
     // A month keeps its year on the same line.
     expect(card.querySelector(".rg-rec-for")?.textContent).toBe("score for Aug\u00a02026 · inputs through May\u00a02026");
-    const gauge = within(card).getByRole("img", { name: "Recession score 12%, low" });
+    const gauge = within(card).getByRole("img", { name: "Recession score 11.6%, low" });
     expect(gauge.textContent).toBe("LowElevatedHigh risk · above 40%");
     expect([...gauge.querySelectorAll(".dk-gauge-track > span[data-tone]")].map((x) => (x as HTMLElement).style.width)).toEqual(["20%", "20%", "60%"]);
     expect(card).toHaveTextContent(/Inputs through\s*May/);
-    expect(card).toHaveTextContent(/A year ago\s*17%\s*Aug 2025/);
-    // The engine's full-precision peak, 0.95497…, prints 95% (§12.0: full precision; one rounding rule in the kit).
-    expect(card).toHaveTextContent(/Peak since 2015\s*95%\s*Jun 2020/);
+    expect(card).toHaveTextContent(/A year ago\s*17.2%\s*Aug 2025/);
+    // The engine's full-precision peak, 0.95497…, prints 95.5% (§12.0: full precision; one rounding rule in the kit).
+    expect(card).toHaveTextContent(/Peak since 2015\s*95.5%\s*Jun 2020/);
     expect(card).toHaveTextContent("What it is: a fitted model — five monthly indicators against NBER recession dates, trained Apr 2003 to Sep 2026; historical scores are in-sample.");
     expect(card.textContent).not.toMatch(/one-in-|over the next year|since 1970|Peak last cycle|Watch/);
   });
-  it("Elevated is §5's word; without a served training span the box says nothing about one; without a latest print, no line", async () => {
-    stubDesk({ "/api/desk/regime": () => served({ current: { ...regime.current, latest_print: undefined }, recession: { ...regime.recession, band: "elevated", score: 0.27, training: null } }) });
+  it("Elevated is §5's word; without a served training span the box says nothing about one; without a served month, no line", async () => {
+    stubDesk({ "/api/desk/regime": () => served({ current: { ...regime.current, print: undefined }, recession: { ...regime.recession, band: "elevated", score: 0.27, training: null } }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /Recession score/ });
-    await waitFor(() => expect(card.querySelector(".rg-rec-line")?.textContent).toBe("27%Elevated."));
+    await waitFor(() => expect(card.querySelector(".rg-rec-line")?.textContent).toBe("27.0%Elevated."));
     expect(card).toHaveTextContent("What it is: a fitted model — five monthly indicators against NBER recession dates; historical scores are in-sample.");
     expect(screen.getByRole("region", { name: /Where we are/ }).querySelector(".rg-latest")).toBeNull();
   });
@@ -190,7 +202,7 @@ describe("Regime tab", () => {
     stubDesk({ "/api/desk/regime": () => served({ recession: { ...regime.recession, year_ago: null, band: "high_risk", score: 0.46 } }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /Recession score/ });
-    await waitFor(() => expect(card.querySelector(".rg-rec-line")?.textContent).toBe("46%High risk."));
+    await waitFor(() => expect(card.querySelector(".rg-rec-line")?.textContent).toBe("46.0%High risk."));
     expect(card).toHaveTextContent(/A year ago\s*—/);
     expect(card).not.toHaveTextContent(/A year ago\s*Awaiting refresh/);
   });
@@ -200,15 +212,17 @@ describe("Regime tab", () => {
     await waitFor(() => expect(within(card).getAllByRole("row")).toHaveLength(5));
     expect(within(card).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Regime", "Months", "S&P n", "S&P median", "S&P mean", "Up", "VIX avg", "VIX days"]);
     const cur = within(card).getAllByRole("row").find((r) => r.getAttribute("aria-current") === "true");
-    // The current row is the governing (K−2) label, Goldilocks; its numbers are the API's on the audit's store, each label over
-    // the month it governed (Codex R-01): 27 labels, 26 complete months (September not over), the VIX on 539 sessions.
-    expect(cur?.textContent).toBe("Goldilocks2726+1.2%+0.6%65%16.9539");
-    expect(within(card).getAllByRole("row")[2].textContent).toBe("Overheating213212+1.3%+1.0%63%19.74463");
+    // fix/freshness 3a (D2): the current row is the newest stored row's label, Overheating; its numbers are the API's on the
+    // audit's store, each label over the month it governed (Codex R-01): 213 labels, 212 complete months, the VIX on 4463 sessions.
+    expect(cur?.textContent).toBe("Overheating213212+1.3%+1.0%63%19.74463");
+    expect(within(card).getAllByRole("row")[1].textContent).toBe("Goldilocks2726+1.2%+0.6%65%16.9539");
     expect(card).toHaveTextContent("since 1996 · measured from when each regime was known, 363 stored labels");
     // Codex R-04, R-07: the return sample and the VIX coverage apart from the label count, and what is not in them.
     const note = [...card.querySelectorAll(".rg-meant-note p")].map((p) => p.textContent);
+    // fix/freshness 3a (D2): the one line where events are tagged.
+    expect(TAGGED_LINE).toBe("Events are tagged with the label known at the time: a month's print governs two months later.");
     expect(note).toEqual([
-      "Measured from when each regime was known: each label is paired with the month it governed, 2 months after its stamp, the month a session reads it for.",
+      TAGGED_LINE,
       "S&P: 361 complete months of 363 labels; 2 months not over yet.",
       "VIX: 7568 of 7568 sessions stored; 2 stored rows set aside as off-session or invalid.",
     ]);
@@ -230,16 +244,14 @@ describe("Regime tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /What would change it/ });
     await waitFor(() => expect(card).toHaveTextContent("Oct 14"));
-    // §5 (desk/fill-compute): read from the row WHERE WE ARE shows, the July Goldilocks row, and the card says which.
-    expect(card.querySelector(".rg-from")).toHaveTextContent("from the Jul 2026 row · Goldilocks");
-    // Codex R-05: the August row, already published, with its own prints; then the upcoming prints, September's, each
-    // with its own release (the CPI's on Oct 14), read from the August row.
-    expect(card.querySelector(".rg-next-row")).toHaveTextContent(
-      "Already published: the Aug 2026 row reads Overheating, the label from Oct 2026: the Aug 2026 CPI print (+0.40% m/m) flipped inflation to rising; the Aug 2026 INDPRO print (+0.02% m/m) kept growth rising.",
-    );
-    expect(card).toHaveTextContent("next prints, from the Aug 2026 row · Overheating");
+    // §5 (desk/fill-compute): read from the row WHERE WE ARE shows, the newest, August Overheating row (fix/freshness 3a,
+    // D2), and the card says which. Nothing after it is published; the upcoming prints are September's, each with its
+    // own release (the CPI's on Oct 14).
+    expect(card.querySelector(".rg-from")).toHaveTextContent("from the Aug 2026 data · Overheating");
+    expect(card.querySelector(".rg-next-row")).toBeNull();
+    expect(card).not.toHaveTextContent("Already published");
     expect(card).toHaveTextContent(
-      /Next CPI\s*Oct 14\s*Sep 2026 print · a print ≤ −0\.39% m\/m flips inflation to falling → Goldilocks, effective from the Nov 2026 label\. Assumes growth stays rising; the Sep 2026 INDPRO print is not out yet\./,
+      /Next CPI\s*Oct 14\s*Sep 2026 print · a print ≤ −0\.39% m\/m flips inflation to falling → Goldilocks\. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026\. Assumes growth stays rising; the Sep 2026 INDPRO print is not out yet\./,
     );
     // §5: the calendar has no INDPRO release, so its date says so.
     expect(card).toHaveTextContent(/Next INDPRO\s*—\s*release date unavailable · Sep 2026 print · a print ≤ −0\.02% m\/m flips growth to falling → Stagflation/);
@@ -277,9 +289,9 @@ describe("Regime tab", () => {
     stubDesk({ "/api/desk/regime": () => served({ recession: { ...regime.recession, band: null, band_edges: [0.3, 0.6] } }) });
     renderTab();
     const card = await screen.findByRole("region", { name: /Recession score/ });
-    const gauge = await within(card).findByRole("img", { name: "Recession score 12%" });
+    const gauge = await within(card).findByRole("img", { name: "Recession score 11.6%" });
     expect(gauge.textContent).toBe("LowElevatedHigh risk · above 60%");
-    expect(card.querySelector(".rg-rec-line")?.textContent).toBe("12%");
+    expect(card.querySelector(".rg-rec-line")?.textContent).toBe("11.6%");
   });
 
   it("a different current regime moves the marked row", async () => {
@@ -336,7 +348,7 @@ describe("Regime tab", () => {
     renderTab();
     const where = await screen.findByRole("region", { name: /Where we are/ });
     await waitFor(() => expect(where).toHaveTextContent("Awaiting refresh · the regime label"));
-    expect(where).toHaveTextContent("Growth rising and inflation falling.");
+    expect(where).toHaveTextContent("Growth rising and inflation rising.");
   });
 
   it("a failed /regime keeps the stat labels and the method boxes, prints no number", async () => {
@@ -346,7 +358,7 @@ describe("Regime tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("Couldn't load · Retry"));
     expect(card).toHaveTextContent("Growth");
     expect(card).not.toHaveTextContent("Overheating");
-    expect(screen.getByRole("region", { name: /Recession score/ })).not.toHaveTextContent("12%");
+    expect(screen.getByRole("region", { name: /Recession score/ })).not.toHaveTextContent("11.6%");
     expect(screen.getByRole("region", { name: /What would change it/ })).toHaveTextContent(/Next CPI\s*—/);
     expect(screen.getByRole("main")).not.toHaveTextContent("Awaiting refresh");
     expect(screen.getByRole("region", { name: /What each regime has meant/ })).toHaveTextContent(/Regime\s*Months/);
@@ -396,7 +408,7 @@ describe("both cards read one label (desk/fill-compute): the flip text matches W
       stubDesk({
         "/api/desk/regime": () => ({
           ...regime,
-          current: { ...regime.current, label, growth: a.growth, inflation: a.inflation, latest_print: "2026-07" },
+          current: { ...regime.current, label, growth: a.growth, inflation: a.inflation, print: "2026-07", latest_print: "2026-07" },
           next_prints: { basis: { month: "2026-07", label }, published: [], upcoming_from: { month: "2026-07", label }, cpi: next("inflation", "CPIAUCSL"), indpro: next("growth", "INDPRO") },
         }),
       });
@@ -404,7 +416,7 @@ describe("both cards read one label (desk/fill-compute): the flip text matches W
       const where = await screen.findByRole("region", { name: /Where we are/ });
       await waitFor(() => expect(where.querySelector(".rg-big")).toHaveTextContent(label));
       const card = screen.getByRole("region", { name: /What would change it/ });
-      expect(card.querySelector(".rg-from")).toHaveTextContent(`from the Jul 2026 row · ${label}`);
+      expect(card.querySelector(".rg-from")).toHaveTextContent(`from the Jul 2026 data · ${label}`);
       expect(card).toHaveTextContent(`flips inflation to ${flip(a.inflation)} → ${regimeOf(a.growth, flip(a.inflation))}`);
       expect(card).toHaveTextContent(`flips growth to ${flip(a.growth)} → ${regimeOf(flip(a.growth), a.inflation)}`);
       // Never a flip to the state the label already has.
@@ -414,18 +426,19 @@ describe("both cards read one label (desk/fill-compute): the flip text matches W
   }
 });
 
-describe("the classifier line (desk/fill-compute)", () => {
+describe("the odds line (fix/freshness 3a, D2; was the classifier line, desk/fill-compute)", () => {
   const cur = { ...regime.current };
-  it("names both rows and whether they agree; says 'classifier', never the other word", () => {
-    const words = classifierWords(cur as never)!;
-    expect(words).toContain("They disagree this month.");
+  it("names the label's odds on the newest row and says what they are, never the other word", () => {
+    const words = oddsWords(cur as never)!;
+    expect(words).toBe("Overheating odds 42% on the Aug 2026 data: a strength score from the two trends, not a fitted probability.");
     expect(words).not.toMatch(/\bmodels?\b/i);
-    const same = { ...cur, print: "2026-08", label: "Overheating", classifier: { ...cur.classifier!, agrees: true } };
-    expect(classifierWords(same as never)).toBe("The home page's classifier puts Overheating at 42% for the Aug 2026 row; this tab's rule-based label is Overheating. They agree this month.");
+    // Served odds missing: the classifier's reading on the same row and label stands in; another row's never does.
+    expect(oddsWords({ ...cur, odds: null } as never)).toBe(words);
+    expect(oddsWords({ ...cur, odds: null, classifier: { ...cur.classifier!, month: "2026-07" } } as never)).toBeNull();
   });
-  it("leaves the odds out when the classifier's label is Recession Risk (served null)", () => {
-    const rr = { ...cur, classifier: { month: "2026-08", label: "Recession Risk", odds: null, agrees: false } };
-    expect(classifierWords(rr as never)).toBe("The home page's classifier puts Recession Risk for the Aug 2026 row; this tab's rule-based label is Goldilocks for the Jul 2026 row, the one governing today. They disagree this month.");
-    expect(classifierWords({ ...cur, classifier: null } as never)).toBeNull();
+  it("leaves the odds out when the label is Recession Risk (served null)", () => {
+    const rr = { ...cur, label: "Recession Risk", odds: null, classifier: { month: "2026-08", label: "Recession Risk", odds: null, agrees: true } };
+    expect(oddsWords(rr as never)).toBeNull();
+    expect(oddsWords({ ...cur, odds: null, classifier: null } as never)).toBeNull();
   });
 });

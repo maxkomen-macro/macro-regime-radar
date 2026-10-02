@@ -1,6 +1,8 @@
 /**
- * Freshness drawer (redesign Phase 1, spec §0.5): the per-source breakdown
- * behind the strip's "Freshness ›" trigger. A right-side panel on useModal
+ * Data status drawer (redesign Phase 1, spec §0.5; "Data freshness" until
+ * fix/freshness 8): the per-source breakdown behind the sidebar's "Data status"
+ * entry, the phone menu's, the Dashboard summary card's "Data status ›" and
+ * the command palette. A right-side panel on useModal
  * (focus trap, Escape, inert page, focus return), the same contract as the
  * alert drawer, so it is keyboard-reachable and readable at 390 px.
  *
@@ -178,13 +180,13 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
         <div className="mrr-drawer-body">
           <div className="mrr-drawer-head">
             <h2 id="freshness-drawer-title" className="mrr-drawer-title">
-              Data freshness
+              Data status
             </h2>
             <button
               ref={closeRef}
               type="button"
               onClick={onClose}
-              aria-label="Close data freshness"
+              aria-label="Close data status"
               title="Close · Esc"
               className="mrr-chip-btn"
               style={{ border: "none", color: STATUS_COLOR.text3, fontSize: 16, minWidth: 32, justifyContent: "center" }}
@@ -194,7 +196,7 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
           </div>
 
           {/* The old header freshness sentence, verbatim. */}
-          <div role="status" aria-label="Data freshness" className="mrr-fresh-status">
+          <div role="status" aria-label="Data status" className="mrr-fresh-status">
             {f ? (
               <>
                 {/* The drawer's summary line (G4: one rendered line). */}

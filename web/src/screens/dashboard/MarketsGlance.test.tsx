@@ -233,7 +233,9 @@ describe("MarketsGlance (checklist 03 B.5)", () => {
     const t = text(panel);
     expect(t).toContain("+0.05pp MoM");
     expect(t).toContain("-0.02pp MoM");
-    expect(t).toContain("inflation · weekly pipeline · Sep 11, 2026");
+    // fix/freshness 4: the observation month, never the run date (served observation_month; none in this fixture).
+    expect(t).not.toContain("weekly pipeline");
+    expect(t).toContain("inflation");
     expect(t).toContain("3-row teaser · full table in Markets");
     expect(t).toContain("The market's own pricing: breakevens for expected inflation, TIPS for real yields. All six metrics with the policy rate sit in Markets.");
     expect(within(panel).getByRole("button", { name: "breakevens" })).toHaveClass("jargon");
@@ -247,7 +249,7 @@ describe("MarketsGlance (checklist 03 B.5)", () => {
     await renderGlance();
     fireEvent.click(option(/^What.s priced$/));
     const panel = document.getElementById("whats-priced") as HTMLElement;
-    expect(await within(panel).findByText("No priced metrics on file; the weekly pipeline has not written them yet.")).toBeInTheDocument();
+    expect(await within(panel).findByText("No priced metrics on file; the full refresh has not written them yet.")).toBeInTheDocument();
     expect(within(panel).queryByText("SOFR")).toBeNull();
     expect(within(panel).getByRole("link", { name: "\u2192 See all in Markets" })).toHaveAttribute("href", "/app/markets#whats-priced-full");
   });
