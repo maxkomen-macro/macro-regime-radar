@@ -527,10 +527,12 @@ export function exportSaved(list: readonly SavedBasket[]): string {
   return JSON.stringify({ kind: "mrr.desk.baskets", version: 1, baskets: list }, null, 2);
 }
 
-const sameBasket = (x: SavedBasket, y: SavedBasket) => x.name === y.name && legsKey(x.legs) === legsKey(y.legs);
+/** The same basket: its name and legs, and (desk/cap-weight, Codex R-04) its weighting: a cap-weighted basket keeps
+ * typed weights as its equal-weight fallback, so its legs can match a basket at those weights that it is not. */
+const sameBasket = (x: SavedBasket, y: SavedBasket) => x.name === y.name && legsKey(x.legs) === legsKey(y.legs) && weightingOf(x) === weightingOf(y);
 
 /** A JSON file's baskets merged into the list, never replacing one. A basket
- * already here (same name and legs, under any number) is skipped. One whose
+ * already here (same name, legs and weighting, under any number) is skipped. One whose
  * id is taken here, or is not `local-<n>` (a basket a server once kept; none
  * is served now, §10), gets a fresh `local-<n>`: every browser numbers from
  * `local-1`, so collisions are the normal case. Unreadable entries are

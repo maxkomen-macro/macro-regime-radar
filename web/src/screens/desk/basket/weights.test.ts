@@ -114,6 +114,12 @@ describe("basket weights", () => {
     expect(importSaved([], JSON.stringify([{ ...a, id: "my-basket" }])).list.map((x) => x.id)).toEqual(["local-1"]);
     expect(importSaved([a], JSON.stringify({ baskets: [b, { id: 3 }] }))).toMatchObject({ added: 1, rejected: 1 });
     expect(importSaved([a], "not json")).toEqual({ list: [a], added: 0, rejected: 1, renumbered: 0, skipped: 0 });
+    // Codex R-04: a cap-weighted basket is not the basket at its typed weights, so an import adds it beside that one.
+    const r4 = importSaved([{ ...PRESET, weighting: undefined }], exportSaved([{ ...PRESET }]));
+    expect(r4).toMatchObject({ added: 1, skipped: 0, renumbered: 1 });
+    expect(r4.list.map((x) => [x.id, weightingOf(x)])).toEqual([["local-1", "target"], ["local-2", "cap"]]);
+    // The same weighting is the same basket.
+    expect(importSaved([{ ...PRESET }], exportSaved([{ ...PRESET }]))).toMatchObject({ added: 0, skipped: 1 });
   });
   it("keeps what it cannot read through every write, and counts it (§1.8: never dropped)", () => {
     const m = new Map<string, string>();
