@@ -132,8 +132,8 @@ describe("a cap-weighted basket's words (desk/cap-weight)", () => {
   });
 
   it("the method in a cap-weighted basket's words: held, its weights move with each company; monthly, the same index", () => {
-    expect(methodSentence("hold", "cap")).toBe("Bought at each company's market value at the start and held, so each weight moves with its company's value, as in a cap-weighted index.");
-    expect(methodSentence("monthly", "cap")).toBe("Reset to cap weights at each month's first session; with one set of share counts each reset leaves the holdings as they were, so the index is the held one.");
+    expect(methodSentence("hold", "cap")).toBe("Bought at each company's market value at the start and held, its dividends reinvested across the basket as an index fund's are, so each name's weight stays its company's share of the basket's market value.");
+    expect(methodSentence("monthly", "cap")).toBe("Reset to cap weights at each month's first session; with one set of share counts and the dividends reinvested across the basket, each reset leaves the holdings as they were, so the index is the held one.");
     expect(methodSentence("hold")).toBe("Bought and held: the share counts are fixed at the start, so the weights drift with price.");
     expect(CAP_MONTHLY.total_return).toBeCloseTo(CAP.total_return as number, 12);
   });

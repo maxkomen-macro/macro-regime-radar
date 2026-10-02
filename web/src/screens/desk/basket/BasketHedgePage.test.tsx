@@ -340,7 +340,7 @@ describe("Basket & Hedge tab", () => {
     for (const [s, w] of Object.entries(capW)) expect(within(b).getByLabelText(`Cap weight of ${s} at the start`)).toHaveTextContent(w);
     expect(b).toHaveTextContent("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026)");
     expect(b).toHaveTextContent("AI Infrastructure 10 holds 10 names, cap-weighted, the largest NVDA at 55% at the start, bought and held, $1,000,000: up 155.8% since Mar 28, 2025");
-    expect(b).toHaveTextContent("bought at each company's market value at the start; held, it stays cap-weighted");
+    expect(b).toHaveTextContent("bought at each company's market value at the start; held, with dividends reinvested across it, it stays cap-weighted");
     const step = await screen.findByRole("region", { name: /^How the basket trades/ });
     const index = within(step).getByRole("region", { name: /^Basket index/ });
     await waitFor(() => expect(index).toHaveTextContent("Up 155.8% since Mar 28, 2025"));

@@ -18,10 +18,11 @@ export function listWords(items: readonly string[]): string {
 
 /** How the basket is held, as a sentence; a cap-weighted basket's in its own words (desk/cap-weight). */
 export function methodSentence(m: BasketMethod | undefined, w: BasketWeighting | undefined = "target"): string {
+  // desk/cap-weight, round 2 (R2-01): the dividend policy is said, since it differs from typed weights' (each name's own).
   if (w === "cap")
     return m === "monthly"
-      ? "Reset to cap weights at each month's first session; with one set of share counts each reset leaves the holdings as they were, so the index is the held one."
-      : "Bought at each company's market value at the start and held, so each weight moves with its company's value, as in a cap-weighted index.";
+      ? "Reset to cap weights at each month's first session; with one set of share counts and the dividends reinvested across the basket, each reset leaves the holdings as they were, so the index is the held one."
+      : "Bought at each company's market value at the start and held, its dividends reinvested across the basket as an index fund's are, so each name's weight stays its company's share of the basket's market value.";
   return m === "monthly" ? "Rebalanced to its target weights at each month's last session." : "Bought and held: the share counts are fixed at the start, so the weights drift with price.";
 }
 

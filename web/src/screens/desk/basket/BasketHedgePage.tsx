@@ -702,7 +702,7 @@ function BasketCard({
             {shown === "cap"
               ? method === "monthly"
                 ? "reset to cap weights on each month's first session; with one set of share counts, the same as held"
-                : "bought at each company's market value at the start; held, it stays cap-weighted"
+                : "bought at each company's market value at the start; held, with dividends reinvested across it, it stays cap-weighted"
               : method === "monthly"
                 ? "back to the target weights at each month's last session"
                 : "share counts fixed at the start; weights drift with price"}
