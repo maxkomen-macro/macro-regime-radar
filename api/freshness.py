@@ -66,6 +66,13 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
 # FRED daily: current within 3 business days of the newest print due (FRED posts a day or more after the
 # close; owner's item 7, desk/fill-compute: "a FRED daily series 1–3 business days behind is current").
 DAILY_TOLERANCE = 3
+# desk/cap-weight: the preset baskets' share counts, read from Yahoo by every full refresh. A count is a
+# quarterly figure read again each day, so the stored reads are current while the oldest is at most a
+# week old, and stale after. A per-series state only: never an `sla` feed, never in `overall`, never
+# judged by validate_db (the table is advisory there).
+SHARE_COUNTS_TOLERANCE_DAYS = 7
+SHARE_COUNTS_LABEL = "Share counts (stored)"
+SHARE_COUNTS_MISSING = "Share counts are not stored in this database yet; the next full refresh reads them from Yahoo."
 
 
 def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, state: str, *, delay_min: int | None = None,
@@ -73,6 +80,27 @@ def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, sta
     return {"id": sid, "label": label, "kind": kind, "cadence": cadence, "as_of": as_of, "state": state,
             "delay_min": delay_min, "cycles_behind": cycles_behind, "stale": state == "stale",
             "discontinued": discontinued, "reason": reason}
+
+
+def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | None = None) -> dict:
+    """desk/cap-weight: the state of the stored share counts, dated by the
+    oldest read (`share_counts_as_of`, the New York date the full refresh read
+    it). `cycles_behind` counts the days since the read beyond the day before
+    today; the state is stale once the oldest read is more than
+    SHARE_COUNTS_TOLERANCE_DAYS old."""
+    d = _parse_date(as_of)
+    if d is None:
+        return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", None, "unknown", reason=SHARE_COUNTS_MISSING)
+    age = (today_ny - d).days
+    detail = (watermark or {}).get("detail")
+    src = f" Last read: {detail}." if detail else ""
+    state = "close" if age <= SHARE_COUNTS_TOLERANCE_DAYS else "stale"
+    reason = (f"The preset baskets' share counts were read from Yahoo on {d.isoformat()}; every full refresh reads them again."
+              if state == "close" else
+              f"The oldest stored share count was read from Yahoo on {d.isoformat()}, {age} days ago; the full refresh "
+              "reads them each day.") + src
+    return _state("share_counts", SHARE_COUNTS_LABEL, "derived", "daily", d.isoformat(), state, cycles_behind=max(0, age - 1),
+                  reason=reason)
 
 
 def _expected_month_for(meta: dict, today: date) -> date:
@@ -580,6 +608,10 @@ def assess(
         else:
             series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "stale", cycles_behind=ap_cycles,
                                  reason=f"Allocation's price histories end {ap_str}, {ap_cycles} session(s) older than the last completed session ({exp_md.isoformat()})." + ap_src))
+    # desk/cap-weight: present only when the caller reports the oldest stored read (api/db.freshness, validate_db)
+    if "share_counts_as_of" in db_fresh:
+        series.append(share_counts_state(db_fresh.get("share_counts_as_of"), today_ny=today_ny,
+                                         watermark=(watermarks or {}).get("share_counts")))
     if relay:
         feeds = relay.get("feeds", {})
         us, vix = feeds.get("us"), feeds.get("vix")

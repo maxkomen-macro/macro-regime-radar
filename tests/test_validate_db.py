@@ -1256,3 +1256,133 @@ def _make_path(tmp_path: Path, name: str) -> Path:
     path = tmp_path / name
     _make(path)
     return path
+
+
+# ── desk/cap-weight: the preset baskets' share counts, advisory ─────────────
+
+def _with_counts(path: Path, *, as_of: str = "2026-09-04", symbols=("NVDA", "TSM"), shares: float = 1e9, mark: str | None = "ok") -> Path:
+    """The share_counts table as src/market_data/share_counts.py writes it, and its watermark."""
+    from src.market_data import share_counts as sc
+    from src import watermarks
+
+    conn = sqlite3.connect(path)
+    sc.write_counts(conn, {s: shares for s in symbols}, as_of)
+    if mark:
+        watermarks.record(conn, "share_counts", as_of, status=mark, detail=f"Yahoo {len(symbols)} of 10",
+                          now=datetime(2026, 9, 5, 21, 0, tzinfo=timezone.utc))
+    conn.commit()
+    conn.close()
+    return path
+
+
+def test_a_full_refresh_without_share_counts_passes_and_says_so(tmp_path):
+    """An old database without the table is published as before: the table's absence is a warning."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert any(w.startswith("share_counts: not stored") for w in rep["warnings"])
+    assert not any("share_counts" in f for f in rep["failures"])
+
+
+def test_a_failed_share_count_fetch_still_validates_and_uploads(tmp_path):
+    """The step itself, run with every Yahoo call failing on a refreshed database: the table is created
+    and empty, the watermark says error, and the refresh's other changes validate and upload."""
+    from src.market_data import share_counts as sc
+
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+
+    def down(sym):
+        raise ConnectionError("yahoo")
+
+    summary = sc.refresh(cur, now=NOW, fetch=down, pause=0, retry_wait=0)
+    assert summary["status"] == "error"
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert any(w.startswith("share_counts: no count stored") for w in rep["warnings"])
+    assert any(w.startswith("share_counts error: Yahoo 0 of 10") for w in rep["warnings"])
+    # A partial fetch on top of yesterday's counts, the same way: published, named in a warning.
+    prev2, cur2 = _with_counts(_make_path(tmp_path, "p2.db"), symbols=("NVDA", "TSM", "MU")), tmp_path / "c2.db"
+    import shutil
+
+    shutil.copy(prev2, cur2)
+    conn = sqlite3.connect(cur2)
+    conn.execute("UPDATE market_daily SET date = '2026-09-05'")
+    conn.commit()
+    conn.close()
+    def mu_down(sym):
+        if sym == "MU":
+            raise ConnectionError("yahoo")
+        return {"sharesOutstanding": 1e9, "marketCap": 1e11, "regularMarketPrice": 100.0, "currency": "USD"}
+
+    sc.refresh(cur2, now=NOW, fetch=mu_down, pause=0, retry_wait=0)
+    rep = v.validate(cur2, prev2, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert any(w.startswith("share_counts partial: Yahoo 9 of 10") and "MU: not fetched (ConnectionError)" in w for w in rep["warnings"])
+
+
+def test_a_share_count_change_alone_is_published(tmp_path):
+    """Two snapshots identical but for one stored count: the table changed, so a full refresh uploads."""
+    prev = _with_counts(_make_path(tmp_path, "prev.db"), shares=1e9)
+    cur = _with_counts(_make_path(tmp_path, "cur.db"), shares=1.01e9)
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert "share_counts" in rep["changed_tables"] and rep["upload"] is True
+    same = v.validate(_with_counts(_make_path(tmp_path, "same.db"), shares=1e9), prev, "full", now=NOW)
+    assert "share_counts" not in same["changed_tables"]
+
+
+def test_share_count_regressions_and_rows_the_api_sets_aside_only_warn(tmp_path):
+    """A date that moved earlier, rows that fell, a row whose count is not positive and a future date: each a
+    warning, never a failure."""
+    prev = _with_counts(_make_path(tmp_path, "prev.db"), as_of="2026-09-04", symbols=("NVDA", "TSM", "MU"))
+    cur = _make_path(tmp_path, "cur.db")
+    conn = sqlite3.connect(cur)
+    # a table without the step's CHECK, as a hand-made copy might carry
+    conn.execute("CREATE TABLE share_counts (symbol TEXT PRIMARY KEY, shares_outstanding REAL, as_of TEXT, source TEXT)")
+    conn.executemany("INSERT INTO share_counts VALUES (?,?,?,?)", [("NVDA", 1e9, "2026-09-03", "yfinance"), ("TSM", 0, "2026-09-03", "yfinance")])
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert any(w == "share_counts: max date moved earlier 2026-09-04 → 2026-09-03 (advisory, never blocking)" for w in rep["warnings"])
+    assert any(w == "share_counts: rows fell 3 → 2 (advisory, never blocking)" for w in rep["warnings"])
+    assert any(w.startswith("share_counts: 1 row(s) the API sets aside") for w in rep["warnings"])
+    conn = sqlite3.connect(cur)
+    conn.execute("UPDATE share_counts SET as_of = '2026-12-31' WHERE symbol = 'NVDA'")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and any("share_counts: max date 2026-12-31 is in the future" in w for w in rep["warnings"]), rep["failures"]
+
+
+def test_a_share_counts_table_that_cannot_be_read_only_warns(tmp_path):
+    """A table of another layout (no as_of, no shares column): the checks that cannot run are warnings, the
+    database still validates and publishes."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+    conn = sqlite3.connect(cur)
+    conn.execute("CREATE TABLE share_counts (ticker TEXT, n REAL)")
+    conn.execute("INSERT INTO share_counts VALUES ('NVDA', 1)")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert not rep["corruption"]["not_executed"]
+    assert any(w.startswith("advisory check not run: share_counts newest as_of (the table has no as_of column)") for w in rep["warnings"])
+    assert any(w.startswith("advisory check not run: share_counts fingerprint") for w in rep["warnings"])
+
+
+def test_the_share_counts_state_is_reported_never_judged(tmp_path):
+    """The freshness report carries the counts' state (the drawer's row), and a stale one changes no verdict."""
+    cur = _with_counts(_make_path(tmp_path, "cur.db"), as_of="2026-08-01")
+    rep = v.validate(cur, None, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    st = next(s for s in v.freshness_mod.assess(db_fresh=rep["current"]["fresh"], series_latest=[], relay=None, bootstrap=None,
+                                                now=NOW)["series"] if s["id"] == "share_counts")
+    assert st["state"] == "stale" and st["as_of"] == "2026-08-01" and st["cycles_behind"] == 34
+    assert all(r["feed"] != "share_counts" for r in rep["sla_all"])

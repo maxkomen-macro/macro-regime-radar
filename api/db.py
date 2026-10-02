@@ -903,4 +903,10 @@ def _freshness_uncached() -> dict:
             _desk_as_of(), provenance.is_migrated(conn))).fetchall()) if has_desk else None
         # the oldest of those newest observations
         out["desk_series_date"] = min(out["desk_series_latest"].values(), default=None) if has_desk else None
+        # desk/cap-weight: the oldest stored share-count read (None before the table exists, or with no row)
+        has_counts = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='share_counts'").fetchone()
+        try:
+            out["share_counts_as_of"] = conn.execute("SELECT MIN(as_of) FROM share_counts").fetchone()[0] if has_counts else None
+        except sqlite3.Error:  # an advisory table that cannot be read reads as not stored, never as an error
+            out["share_counts_as_of"] = None
     return out
