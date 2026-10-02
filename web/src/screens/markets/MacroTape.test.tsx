@@ -204,7 +204,7 @@ const GROUP_LABELS = ["Equities", "Rates", "Credit", "Dollar & FX", "Metals", "E
 /** 19 on disk (5+2+2+3+2+2+2+1); the checklist's "18" is a miscount, so the count is read from the registry. */
 const MACRO_ROWS = TAPE_GROUPS.reduce((n, g) => n + g.defs.length, 0);
 const MACRO_TABLE_NAME = new RegExp(`^Macro tape: ${MACRO_ROWS} symbols in (?:${TAPE_GROUPS.length}|eight) groups$`);
-const SINGLES_CAPTION = "Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers; biggest day move on top. Live-feed trades outside the regular session never move the board; outside the session it shows the latest delayed quote.";
+const SINGLES_CAPTION = "Twelve large-cap tech, semis, and crypto-adjacent names as market thermometers; biggest day move on top. Trades the feed marks extended-hours or closed are held, and delayed quotes timestamped outside the session do not replace a regular-session quote.";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });

@@ -719,9 +719,9 @@ export default function MacroTape({
         ) : null}
         <Caption>
           Twelve large-cap tech, semis, and crypto-adjacent names as market
-          thermometers; biggest day move on top. Live-feed trades outside the
-          regular session never move the board; outside the session it shows
-          the latest delayed quote.
+          thermometers; biggest day move on top. Trades the feed marks
+          extended-hours or closed are held, and delayed quotes timestamped
+          outside the session do not replace a regular-session quote.
         </Caption>
       </div>
 

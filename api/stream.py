@@ -144,6 +144,20 @@ def _f(x: Any) -> float | None:
     return v if math.isfinite(v) else None
 
 
+# Codex R-25: a prior-session REST row anchors the next session only when it
+# is that session's regular close: stamped within this many seconds before the
+# regular close, up to and including it (early closes included).
+CLOSE_EVIDENCE_S = 300
+
+
+def regular_hours(ts: float) -> bool:
+    """Whether an epoch-seconds stamp falls inside its own New York session's
+    regular hours, open to close inclusive (early closes included); False on a
+    weekend or holiday."""
+    b = cal.session_bounds(_ny_day(ts))
+    return b is not None and b[0].timestamp() <= ts <= b[1].timestamp()
+
+
 def target_session(now: datetime) -> date:
     """The US session a previous close is kept FOR: today when today is a
     trading day, else the next one (Codex R-01)."""
@@ -211,10 +225,11 @@ class QuoteHub:
         # session it is the previous close FOR). Kept from REST rows; a US tick
         # reads it only when the tick belongs to that session.
         self._prev_close: dict[str, tuple[float, date]] = {}
-        # How each anchor was learned (Codex R-01): ("a", ts) from a row dated
-        # the target session (its previousClose), ("b", ts) from the previous
-        # session's row at or before that session's close (its close). An "a"
-        # anchor supersedes a "b" one; nothing else sets or overwrites either.
+        # How each anchor was learned (Codex R-01, R-25): ("a", ts) from a row
+        # dated the target session (its previousClose), ("b", ts) from the
+        # previous session's row stamped in the last five minutes of its
+        # regular hours (its close). An "a" anchor supersedes a "b" one;
+        # nothing else sets or overwrites either.
         self._prev_close_how: dict[str, tuple[str, float]] = {}
         # Ops counters for /api/stream/debug — how many raw frames each feed
         # delivered, how often it (re)connected, and what got stored/flushed.
@@ -230,6 +245,8 @@ class QuoteHub:
             "ticks_stored": 0,
             # US prints outside the regular session, held off the board (D1).
             "us_ticks_held": 0,
+            # Codex R-04: US REST rows outside their session held against a regular-session quote.
+            "us_rest_held": 0,
             "flushes_sent": 0,
             "dynamic_subscribes": 0,
             "dynamic_unsubscribes": 0,
@@ -701,12 +718,16 @@ class QuoteHub:
         trading day, else the next one) and is accepted only from
           (a) a row dated the target session: its previousClose, or
           (b) a row dated the trading session immediately before the target,
-              stamped at or before that session's regular close (early closes
-              included): its close.
-        Any other row (an older session, an after-the-close print, a clock
-        fault) sets nothing and never overwrites a valid anchor; (a)
-        supersedes (b). A new or changed anchor re-prices the retained WS
-        quote of that session (Codex R-02)."""
+              stamped within the last CLOSE_EVIDENCE_S seconds of that
+              session's regular hours, up to and including the close (early
+              closes included): its close (Codex R-25: only that is evidence
+              the row is the session's regular close).
+        Any other row (an older session, a pre-market or mid-session or
+        after-the-close print of the prior session, a clock fault) sets
+        nothing and never overwrites a valid anchor; the anchor then waits for
+        a target-session row's previousClose. (a) supersedes (b). A new or
+        changed anchor re-prices the retained WS quote of that session
+        (Codex R-02)."""
         if ts is None:
             return
         target = target_session(now or datetime.now(timezone.utc))
@@ -715,8 +736,9 @@ class QuoteHub:
             how, prev = "a", _f(row.get("previousClose"))
         elif row_day == cal.previous_trading_day(target):
             bounds = cal.session_bounds(row_day)
-            if bounds is None or ts > bounds[1].timestamp():
-                return  # after that session's close: not its regular close
+            close = bounds[1].timestamp() if bounds is not None else None
+            if close is None or not (close - CLOSE_EVIDENCE_S <= ts <= close):
+                return  # Codex R-25: not evidence of that session's regular close
             how, prev = "b", _f(row.get("close"))
         else:
             return  # an older session, or a clock fault
@@ -776,9 +798,16 @@ class QuoteHub:
         if price is None:
             return
         ts = _f(row.get("timestamp"))
+        live = self.quotes.get(sym)
         if self._feed_of(sym) == "us":
             self._note_prev_close(sym, row, ts, now)
-        live = self.quotes.get(sym)
+            # Codex R-04: a US row stamped outside its own session's regular
+            # hours (pre-market, after the close, a closed day) never replaces
+            # a quote from a regular session; it may still seed the anchor
+            # above. With no quote yet (a restart after hours) it is stored.
+            if live and (ts is None or not regular_hours(ts)) and live.get("t") is not None and regular_hours(live["t"] / 1000.0):
+                self.stats["us_rest_held"] += 1
+                return
         # Never let a 15-min-delayed REST row clobber a fresher WS tick.
         if live and live.get("src") == "ws" and ts is not None and live.get("t"):
             if live["t"] >= ts * 1000.0:

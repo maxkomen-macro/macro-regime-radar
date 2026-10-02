@@ -368,3 +368,91 @@ def test_r03_non_finite_numbers_set_no_anchor_and_never_reach_the_wire():
     assert "DIA" not in h.quotes
     # Everything stored serializes as strict JSON (what the browser's JSON.parse accepts).
     json.dumps({"type": "quotes", "items": list(h.quotes.values())}, allow_nan=False)
+
+
+# ── Codex round 2 (R-25, R-04) ──────────────────────────────────────────────
+# Fri Oct 2 2026; Sat Oct 3; Mon Oct 5. EDT is UTC−4.
+
+SATURDAY = _utc(2026, 10, 3, 15)
+MON_OPEN_TICK = _utc(2026, 10, 5, 13, 31)  # 09:31 ET Monday
+
+
+def test_r25_a_prior_session_premarket_row_never_anchors_the_next_session():
+    """Codex's repro: on Saturday a REST row stamped Friday 08:00 ET at 90 is not
+    Friday's regular close (100): Monday's tick at 102 gets no change until a
+    Monday row brings previousClose, then +2%, never +13.33%."""
+    h = _hub()
+    h._store_rest_quote(_row_at("SPY", 90.0, _utc(2026, 10, 2, 12)), delayed=True, now=SATURDAY)  # Fri 08:00 ET
+    assert "SPY" not in h._prev_close
+    h._handle_tick("us", _us_frame("SPY", 102.0, MON_OPEN_TICK))
+    assert h.quotes["SPY"]["dc"] is None and h.quotes["SPY"]["dd"] is None
+    h._store_rest_quote(_rest_row("SPY", 101.5, 100.0, _utc(2026, 10, 5, 13, 30, 30)), delayed=True, now=_utc(2026, 10, 5, 13, 32))
+    assert h._prev_close["SPY"] == (100.0, datetime(2026, 10, 5).date())
+    assert h.quotes["SPY"]["p"] == 102.0 and h.quotes["SPY"]["dc"] == pytest.approx(2.0) and h.quotes["SPY"]["dd"] == pytest.approx(2.0)
+
+
+@pytest.mark.parametrize(
+    ("stamp", "anchors"),
+    [
+        (_utc(2026, 10, 2, 19, 59, 30), True),   # 15:59:30 ET: inside the last five minutes
+        (_utc(2026, 10, 2, 20, 0, 0), True),     # 16:00:00 ET: the close itself
+        (_utc(2026, 10, 2, 19, 55, 0), True),    # 15:55:00 ET: the window's first second
+        (_utc(2026, 10, 2, 19, 54, 59), False),  # 15:54:59 ET: mid-session
+        (_utc(2026, 10, 2, 20, 15), False),      # 16:15 ET: after the close
+        (_utc(2026, 10, 2, 16), False),          # 12:00 ET: mid-session
+    ],
+)
+def test_r25_only_the_last_five_minutes_up_to_the_close_are_evidence_of_the_close(stamp, anchors):
+    h = _hub()
+    h._store_rest_quote(_row_at("SPY", 100.0, stamp), delayed=True, now=SATURDAY)
+    assert ("SPY" in h._prev_close) is anchors
+    if anchors:
+        assert h._prev_close["SPY"] == (100.0, datetime(2026, 10, 5).date())
+
+
+def test_r25_an_early_close_day_bounds_the_window_at_1300():
+    """Fri Nov 27 2026 closes at 13:00 ET (EST): 12:58 anchors Monday Nov 30; 12:50 and 13:05 do not."""
+    monday_pre = _utc(2026, 11, 30, 13)
+    for stamp, anchors in ((_utc(2026, 11, 27, 17, 50), False), (_utc(2026, 11, 27, 18, 5), False), (_utc(2026, 11, 27, 17, 58), True)):
+        h = _hub()
+        h._store_rest_quote(_row_at("SPY", 800.0, stamp), delayed=True, now=monday_pre)
+        assert ("SPY" in h._prev_close) is anchors, stamp
+
+
+def test_r04_an_after_hours_rest_row_never_replaces_a_regular_session_quote():
+    """Codex's repro: a WS quote at 100 at 15:59 ET, then a REST row at 110
+    stamped 16:15 ET: the board stays 100."""
+    h = _hub()
+    h._handle_tick("us", _us_frame("SPY", 100.0, _utc(2026, 10, 1, 19, 59)))  # Thu 15:59 ET
+    standing = dict(h.quotes["SPY"])
+    h._store_rest_quote(_row_at("SPY", 110.0, _utc(2026, 10, 1, 20, 15), prev=99.0), delayed=True, now=_utc(2026, 10, 1, 20, 20))
+    q = h.quotes["SPY"]
+    assert (q["p"], q["t"], q["src"]) == (standing["p"], standing["t"], "ws")  # the board stays 100, the 15:59 quote
+    assert h.stats["us_rest_held"] == 1
+    # The row is dated Thursday, the target session: its previousClose (99) still anchors (rule a) and re-prices
+    # the retained quote's change (R-02); only the price on the board is held.
+    assert q["dc"] == pytest.approx(round(1.0 / 99.0 * 100, 4))
+
+
+def test_r04_a_premarket_rest_row_next_morning_is_held_but_seeds_the_anchor():
+    h = _hub()
+    h._handle_tick("us", _us_frame("SPY", 100.0, _utc(2026, 10, 1, 19, 59)))  # Thu 15:59 ET
+    standing = dict(h.quotes["SPY"])
+    pre = _utc(2026, 10, 2, 12)  # Fri 08:00 ET, pre-market: a row dated Friday whose previousClose is Thursday's close
+    h._store_rest_quote(_rest_row("SPY", 101.2, 100.25, pre), delayed=True, now=pre)
+    assert h.quotes["SPY"] == standing  # the board keeps Thursday's regular quote
+    assert h._prev_close["SPY"] == (100.25, datetime(2026, 10, 2).date())  # rule (a), unchanged
+    # In the session a REST row inside regular hours replaces it again, and a tick reads the anchor.
+    h._store_rest_quote(_rest_row("SPY", 101.0, 100.25, _utc(2026, 10, 2, 13, 45)), delayed=True, now=_utc(2026, 10, 2, 14))
+    assert h.quotes["SPY"]["p"] == 101.0 and h.quotes["SPY"]["src"] == "rest"
+    h._handle_tick("us", _us_frame("SPY", 102.255, _utc(2026, 10, 2, 14, 5)))
+    assert h.quotes["SPY"]["dc"] == pytest.approx(2.0)
+
+
+def test_r04_after_a_restart_with_no_quote_an_after_hours_row_is_stored():
+    h = _hub()
+    h._store_rest_quote(_row_at("SPY", 110.0, _utc(2026, 10, 1, 20, 15)), delayed=True, now=_utc(2026, 10, 1, 21))
+    assert h.quotes["SPY"]["p"] == 110.0 and h.stats["us_rest_held"] == 0
+    # A newer after-hours row replaces an after-hours quote (it is not a regular-session quote).
+    h._store_rest_quote(_row_at("SPY", 111.0, _utc(2026, 10, 1, 21, 30)), delayed=True, now=_utc(2026, 10, 1, 21, 40))
+    assert h.quotes["SPY"]["p"] == 111.0
