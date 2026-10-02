@@ -5,14 +5,13 @@
  */
 
 import { usePipeline } from "../data/api";
-import { dayShort, utcTime } from "../kit/format";
+import { etDayTime } from "../kit/format";
 import { useMixedGenerations } from "../data/generations";
 
-/** "Sep 22, 00:23 UTC" from the served refresh time. */
+/** "Sep 21, 8:23 PM ET" from the served refresh time (desk/pdf-polish item 2b: every Desk time in New York time,
+ * so the day is New York's too). */
 export function refreshWords(iso: string | null | undefined): string {
-  const t = utcTime(iso);
-  const d = typeof iso === "string" ? dayShort(iso.slice(0, 10)) : "";
-  return d && t ? `${d}, ${t}` : "";
+  return etDayTime(iso);
 }
 
 /** The served verdict in the header's words: pass → "passed", fail → "failed", not served → "unknown" (§11). */

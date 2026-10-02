@@ -84,7 +84,7 @@ drawn finished with illustrative values and a footnote saying so.
 Build Notes prints these two lists as their own section, word for word.
 
 **Live**
-- Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level, its band word and its gap to the S&P's 21-day realized volatility, active signals, data status.
+- Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level and its gap to the S&P's 21-day realized volatility, active signals, data status.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month; the drawdown from the one-year high and 21-day realized volatility; the same figures for any US stock or ETF, with its strength against the S&P.
 - Event Study: every catalog study whose inputs are stored, and any other question its six slots ask, computed on request, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.

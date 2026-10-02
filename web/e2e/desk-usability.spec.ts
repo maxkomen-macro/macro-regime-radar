@@ -330,6 +330,13 @@ test.describe("desk usability", () => {
       await open(page, `/desk/${p.slug}`);
       const title = page.locator(".dk-title").first();
       const line = title.locator(".dk-title-sub");
+      // desk/pdf-polish item 2a: the owner took Overview's line out; its title stands alone.
+      if (p.slug === "overview") {
+        await expect(line, p.slug).toHaveCount(0);
+        const primaries = page.locator('.dk-main :is(a, button):is([data-kind="light"], [data-kind="primary"]):visible:not([data-prototype] *)');
+        await expect(primaries, `${p.slug}: primary actions`).toHaveCount(1);
+        continue;
+      }
       await expect(line, p.slug).toBeVisible();
       const [h1Box, lineBox] = await Promise.all([title.locator("h1").boundingBox(), line.boundingBox()]);
       // Under the title, not beside it.

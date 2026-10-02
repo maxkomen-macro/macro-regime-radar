@@ -262,7 +262,8 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Live · Aug 2026 data");
     // The audit's values (§2.2, §2.1): the August row is Overheating; the S&P dated Sep 23; the VIX (^VIX, desk/fill-compute) Sep 23.
     await expect(page.getByRole("region", { name: "Regime" })).toContainText("Overheating");
-    await expect(page.getByRole("region", { name: "Regime" })).toContainText("odds 42%");
+    // desk/pdf-polish 2c: under the label only the two directions; no odds, no "rule-based".
+    await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-sub")).toHaveText("Growth rising, inflation rising");
     await expect(page.getByRole("region", { name: "Recession · logistic model" })).toContainText("11.6%");
     // fix/freshness 3c: closes say Close · <date>, never Live (no relay quote in this test, so the VIX is the stored close).
     await expect(page.getByRole("region", { name: "S&P 500 · trend" })).toContainText("Close · Sep 23");
@@ -270,7 +271,8 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: "Vol · VIX" })).toContainText("Close · Sep 23");
     await expect(page.getByTestId("dk-live")).toHaveCount(4);
     // Nothing is firing in the audit's snapshot, so the line names no signal.
-    await expect(page.getByTestId("ov-since")).toContainText("regime unchanged");
+    // desk/pdf-polish 2b: the owner's words, the refresh time in New York time.
+    await expect(page.getByTestId("ov-since")).toContainText("Regime unchanged (Data refreshed 11:52 AM ET)");
     await expect(page.getByTestId("ov-since")).not.toContainText("firing");
     // Tones render (verifier V-1): Overheating amber, room amber under 30% and green at 50% or more.
     await expect(page.getByRole("region", { name: "Regime" }).locator(".ov-tile-value")).toHaveCSS("color", "rgb(232, 180, 71)");

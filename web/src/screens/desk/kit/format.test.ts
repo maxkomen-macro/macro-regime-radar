@@ -1,6 +1,6 @@
 /** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
 import { describe, expect, it } from "vitest";
-import { dayLong, dayShort, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, utcTime, year, priceText, tickText } from "./format";
+import { dayLong, dayShort, etDayTime, etTime, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, year, priceText, tickText } from "./format";
 import { levelText, roomTone, roomWords, sortByRoom } from "./MonitoredRows";
 
 describe("numbers", () => {
@@ -65,7 +65,19 @@ describe("dates", () => {
     expect(monthLong("2026-06")).toBe("June");
     expect(monthYear("2025-07-01")).toBe("Jul 2025");
     expect(year("2000-01-03")).toBe("2000");
-    expect(utcTime("2026-09-22T00:23:00Z")).toBe("00:23 UTC");
+  });
+
+  it("prints every time of day in New York time, 12-hour, with its New York day (desk/pdf-polish item 2b)", () => {
+    // EDT (UTC−4): the full refresh's 17:27 UTC run is 1:27 PM; its 00:23 UTC run is the evening before.
+    expect(etTime("2026-10-01T17:27:07Z")).toBe("1:27 PM ET");
+    expect(etTime("2026-09-24T15:52:43Z")).toBe("11:52 AM ET");
+    expect(etDayTime("2026-09-22T00:23:00Z")).toBe("Sep 21, 8:23 PM ET");
+    // EST (UTC−5) after the November change; midnight and noon read 12.
+    expect(etTime("2026-11-10T11:17:00Z")).toBe("6:17 AM ET");
+    expect(etTime("2026-12-01T05:00:00Z")).toBe("12:00 AM ET");
+    expect(etDayTime("2026-12-01T17:00:00Z")).toBe("Dec 1, 12:00 PM ET");
+    expect(etTime("not a stamp")).toBe("");
+    expect(etDayTime(null)).toBe("");
   });
 });
 
