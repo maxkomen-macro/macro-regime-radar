@@ -444,6 +444,23 @@ def test_codex_r01_a_dividend_payer_is_weighted_at_its_market_value_not_its_adju
     assert m["index"] == pytest.approx(r["index"], rel=1e-12)
 
 
+def test_held_reinvests_a_dividend_across_the_basket_so_the_weights_stay_the_market_values():
+    """Round 2, R2-01 (rejected; the policy kept and said on the page): Codex's case. A and B start at 100 shares and
+    $100; B pays $2 on Jan 29 (98 as traded and adjusted after); A doubles on Jan 30. The dividend is reinvested
+    across the basket at the market values (A 10,000, B 9,800), so the basket ends at 100 × (10,000 × 2 + 9,800) /
+    19,800 = 150.505; kept in B instead it would end at 150, its weights off the market values, and a monthly reset
+    would then differ from held (D4). Without a dividend the reset changes nothing: the one trade is the dividend's."""
+    d3 = D5[:3]
+    h = {"A": H(d3, [100, 100, 200]), "B": H(d3, [98, 98, 98], traded=[100, 98, 98])}
+    held = bk.price_basket(h, None, "hold", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    assert held["index"] == pytest.approx([100.0, 100.0, 100 * (10_000 * 2 + 9_800) / 19_800])
+    assert held["rebalances"] == 1
+    a, b = held["legs"]
+    assert (a["weight_now"], b["weight_now"]) == pytest.approx((20_000 / 29_800, 9_800 / 29_800))
+    monthly = bk.price_basket(h, None, "monthly", 1000.0, sessions=CAL, shares_outstanding={"A": 100, "B": 100})
+    assert monthly["index"] == pytest.approx(held["index"], rel=1e-12)
+
+
 def test_a_split_is_taken_out_of_the_close_as_traded_so_a_current_count_meets_a_price_on_its_basis():
     """B splits 4-for-1 on Jan 29: as traded 400 then 100, adjusted 100 and 100, and its current count (100) is
     post-split. Its market value at the start is 100 × 400 / 4 = 10,000, the same as A's 100 × 100."""
