@@ -219,7 +219,7 @@ function Legs({
               ) : null}
               <th scope="col" className="bh-w-h">
                 {/* desk/cap-weight: a cap-weighted basket's column is its weights at the start, served */}
-                <Term ids={[capped ? "col-weight-cap" : "col-weight"]}>{capped ? "At start" : "Weight"}</Term>
+                <Term ids={["col-weight"]}>{capped ? "At start" : "Weight"}</Term>
               </th>
               <th scope="col">
                 <span className="dk-sr">Drop</span>

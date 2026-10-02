@@ -65,7 +65,7 @@ function expectHeads(table: Element | null, expected: [string, string | readonly
 const fromEntry = (id: string) => [id, "entry", "entry-rule"] as const;
 
 describe("every Desk column head carries its definition (desk/pdf-polish item 7)", () => {
-  it("Basket & Hedge cap-weighted (desk/cap-weight): the weights column and liquidity's dollars carry their own definitions", async () => {
+  it("Basket & Hedge cap-weighted (desk/cap-weight): the weights column and liquidity's dollars carry the one definition true under both weightings", async () => {
     // A first visit: the AI Infrastructure 10 preset, cap-weighted.
     renderAt("/desk/basket-hedge");
     const basket = await screen.findByRole("region", { name: "Basket" });
@@ -76,14 +76,14 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
       ["Name", "col-name"],
       ["Now", "col-now"],
       ["Since start", "col-since"],
-      ["At start", "col-weight-cap"],
+      ["At start", "col-weight"],
     ]);
     const liquidity = await screen.findByRole("region", { name: /^Liquidity/ });
     await waitFor(() => expect(liquidity.querySelector("table.bh-liq-table")).not.toBeNull());
     expectHeads(liquidity.querySelector("table.bh-liq-table"), [
       ["Name", "col-liq-name"],
       ["20-day avg $ volume", "col-adv"],
-      ["At cap weight", "col-at-cap-weight"],
+      ["At cap weight", "col-at-target"],
       ["Days at 20%", "col-days20"],
     ]);
   });

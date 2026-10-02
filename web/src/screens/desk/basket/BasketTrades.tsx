@@ -365,7 +365,7 @@ function LiquidityCard({ p, state }: { p: BasketPriceResponse | undefined; state
               </th>
               {/* desk/cap-weight: a cap-weighted basket bought today, at the last close's market values */}
               <th scope="col">
-                <Term ids={[p?.weighting === "cap" ? "col-at-cap-weight" : "col-at-target"]}>{p?.weighting === "cap" ? "At cap weight" : "At target"}</Term>
+                <Term ids={["col-at-target"]}>{p?.weighting === "cap" ? "At cap weight" : "At target"}</Term>
               </th>
               <th scope="col">
                 <Term ids={["col-days20"]}>Days at 20%</Term>
