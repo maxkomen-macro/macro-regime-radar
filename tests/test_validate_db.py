@@ -1388,6 +1388,31 @@ def test_the_share_counts_state_is_reported_never_judged(tmp_path):
     assert all(r["feed"] != "share_counts" for r in rep["sla_all"])
 
 
+def test_round2_r2_04_a_row_the_basket_reads_as_blank_is_blank_to_the_freshness_and_validate_db(tmp_path):
+    """Round 2, R2-04: the basket's reader blanks a symbol or a source with str.strip(); SQLite's one-argument trim()
+    removes spaces only, so a tab-only source read as stored to the freshness. The predicate trims Python's own
+    whitespace: Codex's tab-only source, and an ideographic-space symbol, are set aside by both."""
+    from api import desk_basket
+    from api import freshness as fr
+
+    assert list(fr.STRIP_WHITESPACE) == [c for c in range(0x110000) if chr(c).isspace()]
+    cur = _make_path(tmp_path, "cur.db")
+    conn = sqlite3.connect(cur)
+    conn.execute("CREATE TABLE share_counts (symbol TEXT PRIMARY KEY, shares_outstanding REAL, as_of TEXT, source TEXT)")
+    rows = [("NVDA", 100.0, "2026-09-04", "\t"), ("\u3000", 100.0, "2026-09-04", "yfinance")]
+    conn.executemany("INSERT INTO share_counts VALUES (?, ?, ?, ?)", rows)
+    conn.commit()
+    conn.close()
+    assert all(desk_basket._count_problem(*r, "2026-09-05") for r in rows)
+    rep = v.validate(cur, None, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert rep["current"]["fresh"]["share_counts_as_of"] is None and rep["current"]["fresh"]["share_counts_rows"] == 2
+    assert any("2 row(s) the API sets aside" in w for w in rep["warnings"])
+    st = next(s for s in v.freshness_mod.assess(db_fresh=rep["current"]["fresh"], series_latest=[], relay=None, bootstrap=None,
+                                                now=NOW)["series"] if s["id"] == "share_counts")
+    assert st["state"] == "unknown" and st["reason"] == fr.SHARE_COUNTS_NONE_READABLE
+
+
 def test_codex_r05_a_count_dated_after_today_is_never_read_as_current(tmp_path):
     """Codex R-05: the basket sets aside a count dated after today (api/desk_basket._count_problem), so the counts'
     state is dated by the counts it reads: one it reads dates the state, and with every row set aside the counts are

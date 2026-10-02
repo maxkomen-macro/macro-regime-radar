@@ -75,15 +75,22 @@ SHARE_COUNTS_LABEL = "Share counts (stored)"
 SHARE_COUNTS_MISSING = "Share counts are not stored in this database yet; the next full refresh reads them from Yahoo."
 SHARE_COUNTS_NONE_READABLE = ("No stored share count can be read (the basket sets each aside, with why); the next full refresh "
                               "reads them from Yahoo again.")
+# The code points of Python's str.isspace(), the whitespace str.strip() removes (pinned to it by
+# tests/test_validate_db.py), for SQLite's trim(): round 2, R2-04, SQLite's one-argument trim() removes spaces only,
+# so a tab-only source read as stored here and as none to the basket's reader.
+STRIP_WHITESPACE = (9, 10, 11, 12, 13, 28, 29, 30, 31, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198,
+                    8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288)
+_BLANK = "char(" + ", ".join(map(str, STRIP_WHITESPACE)) + ")"
 # desk/cap-weight (Codex R-05): a stored share-count row the basket reads (api/desk_basket._count_problem), in SQL,
-# bound to a New York date (`?`): a symbol, a count that is a positive finite number, a YYYY-MM-DD read date no
-# later than that date (SQLite's date() normalizes '2026-02-30', so `date(d) = d` holds only for a real day), and a
-# source. Never NULL, so `NOT (...)` counts exactly the rows the basket sets aside (scripts/validate_db.py).
+# bound to a New York date (`?`): a symbol that is not blank (as str.strip() reads it), a count that is a positive
+# finite number, a YYYY-MM-DD read date no later than that date (SQLite's date() normalizes '2026-02-30', so
+# `date(d) = d` holds only for a real day), and a source that is not blank. Never NULL, so `NOT (...)` counts
+# exactly the rows the basket sets aside (scripts/validate_db.py).
 SHARE_COUNTS_READABLE_SQL = (
-    "(typeof(symbol) = 'text' AND trim(symbol) <> '' "
+    f"(typeof(symbol) = 'text' AND trim(symbol, {_BLANK}) <> '' "
     "AND typeof(shares_outstanding) IN ('real', 'integer') AND shares_outstanding > 0 AND shares_outstanding < 1e308 "
     "AND typeof(as_of) = 'text' AND COALESCE(date(as_of) = as_of, 0) AND as_of <= ? "
-    "AND typeof(source) = 'text' AND trim(source) <> '')"
+    f"AND typeof(source) = 'text' AND trim(source, {_BLANK}) <> '')"
 )
 
 
