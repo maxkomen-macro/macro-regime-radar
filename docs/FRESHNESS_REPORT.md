@@ -26,11 +26,16 @@ Source of truth: `/tmp/mrr-brief/SYSTEM_BRIEF.md` (read in full for §2, §4–�
 | 12 | Codex round 1 · D: tests (R-22..R-24) | `c96ebfec` | `tests/test_desk_v2_overview.py`, `tests/test_credit_oas_basis.py`, `web/e2e/recession.spec.ts` | `git revert c96ebfec` |
 | 13 | The Codex round 1 section of this report | `b9070431` | `docs/FRESHNESS_REPORT.md` | `git revert b9070431` |
 | 14 | Item 8: US 30Y in the strip, the status card out, "Data status" (below) | `6f0002e3` | `api/db.py`, `api/main.py`, the shell (`TickerLive.tsx`, `Sidebar.tsx`, `MobileNav.tsx`, `FreshnessDrawer.tsx`, `AppShell.tsx`, `shell-status.ts`, `FreshnessCard.tsx` deleted), `DashboardScreen.tsx`, `app.css`, tests, e2e specs, `docs/freshness-shots/item8/`, `CLAUDE.md` | `git revert <sha>` |
-| 15 | Codex R-20 follow-up: six regime definitions still said "over three months" | (newest commit on the branch) | `web/src/screens/methodology/MethodologyScreen.tsx`, `web/src/screens/dashboard/hero-copy.ts`, tests, this report | `git revert <sha>` (web only) |
+| 15 | Codex R-20 follow-up: six regime definitions still said "over three months" | `51ff49a3` | `web/src/screens/methodology/MethodologyScreen.tsx`, `web/src/screens/dashboard/hero-copy.ts`, tests, this report | `git revert <sha>` (web only) |
+| 16 | Codex round 2 · A: relay (R-25, R-04, R-16) | `df63d95d` | `api/stream.py`, `tests/test_stream_day_change.py`, the two Markets captions and tests, `CLAUDE.md` | `git revert df63d95d` |
+| 17 | Codex round 2 · B: copy (R-26, R-27, R-14, R-20) | `8ecb518a` | `RegimePage.tsx`, `recession-copy.ts`, `SensitivityPanel.tsx`, `src/desk/event_study.py` (one string), `src/analytics/news.py` (prompt), tests, `web/e2e/recession.spec.ts` | `git revert 8ecb518a` |
+| 18 | Codex round 2 · C: UI and tests (R-21, R-31, R-28, R-29, R-30, the DGS30 state id) | `b3441ced` | `QuadrantChart.tsx`, `DashboardScreen.tsx`, `shell-actions.ts`, `AppShell.tsx`, `api/main.py`, tests, four e2e specs | `git revert b3441ced` |
+| 19 | Two e2e expectations the non-Desk run found | `df618ae1` | `web/e2e/markets.spec.ts`, `web/e2e/states.spec.ts` | `git revert df618ae1` |
+| 20 | The Codex round 2 section of this report | (newest commit on the branch) | `docs/FRESHNESS_REPORT.md`, `CLAUDE.md` | `git revert <sha>` |
 
 - Whole branch, before it is pushed: nothing to undo on `main`; delete the branch (`git branch -D fix/freshness` from another checkout) or reset it (`git reset --hard b116f584`, destructive).
 - Whole branch, after a merge commit lands on `main`: `git revert -m 1 <merge-sha>`.
-- One item after merge: `git revert <sha>` for that item, newest first if reverting several (15 → 1). Group B's rates reader and Group A's anchors are API changes; reverting either alone is safe for the web. Items 2 and 3 both add optional fields to response models; reverting the API commit before the web commit that reads them is safe (the web degrades: no change label, chip falls back to the newest date).
+- One item after merge: `git revert <sha>` for that item, newest first if reverting several (20 → 1). Group B's rates reader and Group A's anchors are API changes; reverting either alone is safe for the web. Items 2 and 3 both add optional fields to response models; reverting the API commit before the web commit that reads them is safe (the web degrades: no change label, chip falls back to the newest date).
 - Commits 3 and 4 were amended once before this report (an embedded web test still pinned the old chip noun; three captions still said "probability"; the inputs month printed twice). Commit 4 was amended a second time for one Regime Lab test fixture that still mocked "the 12-month recession model". The superseded SHAs (`0a1f7348`, `e7bb2dd9`, `169188fa`, `4d90bb25`, `76e69b9b`, `c9d3a4c6`, `a2fb0d7a`) exist only in the local reflog.
 
 **Deploy order.** API (Render) first, then web (Vercel): the web reads `change_basis`, `inputs_through`, `observation_month`, `odds` and `oldest_behind`, and without them it prints no change label rather than a wrong one, but every new label appears only once the API serves them.
@@ -54,7 +59,7 @@ The ten pytest failures:
 | `test_desk_v2_technicals.py::test_the_published_copy`, `_rsi`, `_macd` | pin the audit store's ^GSPC closes | **fail identically on base** with this DB |
 | `test_generations.py::test_an_item_that_fails_on_a_new_file_holds_the_whole_generation_back…` | timing: the test sleeps 50 ms but the hold is recorded after `db.freshness()` (≈62 ms on this machine) | **fails 5 of 6 runs on base** under the same load (measured); not caused by this branch |
 | `test_public_posture.py` ×2 | `web/dist` was being rebuilt by the web gate while pytest ran | pass on re-run (21 passed with the fresh-report tests) |
-| `test_web_fresh_report.py::test_the_recession_route_labels_an_awaiting_block_as_the_hook_does` | `tests/web/RecessionScreen.awaiting.test.tsx` pinned the old chip noun `Model inputs:` | fixed in commit 3 (`3eb9ea49`); passes |
+| `test_web_fresh_report.py::test_the_recession_route_labels_an_awaiting_block_as_the_hook_does` | `tests/web/RecessionScreen.awaiting.test.tsx` pinned the old chip noun `Model inputs:` | **no: caused by this branch.** Commit 3's chip rewording ("Model inputs" → "Inputs through") broke it, and the same commit (`3eb9ea49`) updated the test; it passes. Not a pre-existing failure (corrected after Codex round 2) |
 
 ## Acceptance
 
@@ -267,7 +272,7 @@ Taken 2026-10-01 between 00:00 and 02:40 ET (after the close, so the US session 
 
 ## Not fixed, and why
 
-- **A REST row newer than the last regular tick still replaces the quote (Codex R-04, deferred by the owner; see Codex round 1).** Whether EODHD's delayed REST `close` carries post-market prints is unverified. D1 holds `extended-hours` *ticks* only, and since round 1 the captions say so (R-16). EODHD's live-delayed page is silent on extended hours. If the live check below shows an after-hours price arriving through REST, the follow-up is to hold a US REST row whose timestamp is outside its session once a regular quote is on the board.
+- **A WS tick with a missing or unknown `ms` still moves the board outside the session** (EODHD documents `open`, `closed` and `extended-hours`; only the last two are held). Since Codex round 2 a US REST row stamped outside its own session never replaces a regular-session quote (R-04, fixed), and the captions say exactly what is held (R-16). EODHD's live-delayed page is silent on extended hours. If the live check below shows an after-hours price arriving through REST, the follow-up is to hold a US REST row whose timestamp is outside its session once a regular quote is on the board.
 - **`news.py`'s `REGIME_KEYWORD_MAP` still has a "Deflation" key** (`src/analytics/news.py:58`). It feeds the rule-based significance score; renaming it changes which headlines score as regime-relevant (a rule change, out of scope). Only the prompt text and the odds dict sent to the model were fixed.
 - **The transition count (D4)** is left as is; see below.
 - **The two VIX fallbacks are different stored series** (item 7 fixed the card itself). With a quote the Dashboard, the tape and the Desk print one number and one stamp. Without one, the Desk reads ^VIX (`asset_prices`, written by the full refresh) and the Dashboard FRED `VIXCLS` (posted the next day). Both are the Sep 29 close (16.04) on this DB, each labeled with its own date; between a full refresh that stores a new ^VIX close and FRED's posting, the Desk can be one close ahead. Moving the Dashboard to ^VIX needs a stored-close read on the app routes (the Atlas `/series/{id}/latest` reads `raw_series`); not asked.
@@ -316,7 +321,7 @@ Deploy the API (Render) first, then the web (Vercel). Then, on a regular session
 3. **First minutes after 09:30 ET.** SPY, QQQ, IWM, AAPL and the other US rows show Day % and Day Δ ("+$…") with a ● clock stamp within a minute of the open. Check SPY's Day % against an external quote: it is (last − previous close) / previous close, to the bp. If US rows dash, the pre-open REST seed did not run; check `feed_last_tick_at` and the relay log.
 4. **During the session.** Single names re-sort by day move; Movers read "stream change" (no "Close · <date>" fallback for names with a quote); the SPY/QQQ strip and the Dashboard glance tiles show the same Day % as the tape; no "LAST" tag on US tiles.
 5. **Thin ETFs (UUP, HYG, CPER).** A REST row may be newer than the last trade; its Day % is EODHD's `change_p`, which should equal the relay's own figure for the same price. If a 15m-stamped row ever shows an after-hours-looking price after 16:00, note it (unverified EODHD behaviour, "Not fixed" above).
-6. **After 16:00 ET (watch until ~16:30).** SPY's last does not follow post-market WS prints (`us_ticks_held` rises). A delayed REST row may still move it (R-04, deferred): note whether a 15m row after 16:00 carries an after-hours price. The tape caption reads "Live-feed trades outside the regular session never move the board; outside the session it shows the latest delayed quote."
+6. **After 16:00 ET (watch until ~16:30).** SPY's last does not follow post-market WS prints (`us_ticks_held` rises), and a delayed REST row stamped after the close does not replace it (`us_rest_held` rises; Codex R-04). The tape caption reads "Trades the feed marks extended-hours or closed are held, and delayed quotes timestamped outside the session do not replace a regular-session quote." The next morning a pre-market REST row does not move the board either, but its previousClose anchors the new session.
 7. **Rates.** The strip's "US 10Y" change reads "+N bps 1W" and N equals FRED's DGS10 latest minus the observation 7 days earlier (FRED's CSV); its hover title names both dates; KeyLevels, the TenYearCard and the Markets row print the same N. The TenYearCard sparkline has ~60 daily points.
 8. **One number per concept.** The Dashboard, Regime Lab, Desk Overview tile, Desk Regime page and the Desk sidebar all say the same regime and month (Overheating · Aug 2026 until the September row publishes, around Oct 16–17). The recession figure reads the same to one decimal on the Dashboard (KeyLevels and the summary row), the Recession hero and the Desk (Overview tile, Regime page). The Desk VIX tile and the Dashboard's Key levels VIX card show the tape's VIX value and stamp (the VIX REST poll runs every 60 s in session); the Dashboard's Monitored signals "VIX spike" card keeps its monthly signal print (item 7). The S&P trend tile reads "Close · <date>". "data refreshed" equals the Data Pipeline's last refresh time.
 9. **The next full refresh (00:23 UTC / 11:17 UTC).** "data refreshed" moves to the run's time; if a Desk series is left behind, the since-last-close line names it. When the September regimes row publishes, the first session after it shows "regime changed → X" (if the label changes), and only that session.
@@ -512,3 +517,106 @@ One difference: the strip ran on Regime Lab, Markets, Credit, News and Tools as 
 ## Codex R-20 follow-up
 
 The item 8 screenshots showed the Current regime card still saying "Overheating means industrial production and the CPI level both rising over three months". Round 1 (`5ee6b2b7`) had changed the Jargon definition, the KeyLevels captions and the read-through, but missed the quadrant definitions: three in Methodology (`REGIME_DEFS`) and three in the Dashboard hero (`REGIME_MEANING`, which the Current regime card prints). All six now read "over the last three monthly readings". This is its own commit, separate from item 8, and is pinned by `methodology-words.test.ts` (no quadrant definition mentions three months; six name the last three monthly readings). Two places were left alone because they are not the regime slope: the unemployment signal's "over 3 months" (a 3-month change in unemployment) and the recession subhead's "unchanged over three months" (the odds' three-month change). Item 8's screenshots were taken before this commit and still show the old phrase on the regime card.
+
+## Codex round 2
+
+Codex reviewed `51ff49a3` against `083c9cdd`: "not safe to push — R-25 blocking", 14 findings. As in round 1, its output was not in the pasted prompt; it was read from Codex's session log (`~/.codex/sessions/2026/10/01/rollout-2026-10-01T02-44-56-…jsonl`, final message, 23:23 UTC). The owner's prompt was cut off after "Deferred, record". The two findings no group names, R-10 and R-11, are recorded as deferred, as the owner decided for both in round 1; that reading is mine.
+
+The fixes are three commits, one per group, not pushed. `data/macro_radar.db` was never staged, and its sha256 stayed `318d1eec…`. No model, coefficient, threshold or stored history changed: the relay reads REST rows differently, one engine provenance sentence and the news prompt's wording changed, and the rest is copy, UI and tests.
+
+| Group | Commit | Findings |
+|---|---|---|
+| A · relay | `df63d95d` | R-25, R-04, R-16 |
+| B · copy | `8ecb518a` | R-26, R-27, R-14, R-20 |
+| C · UI and tests | `b3441ced` | R-21, R-31, R-28, R-29, R-30, plus the DGS30 state id (below) |
+
+### Every finding
+
+File:line is at the group's commit.
+
+| ID | Severity (origin) | Outcome | Commit | Where | Test |
+|---|---|---|---|---|---|
+| R-25 | blocking (branch) | **fixed** | `df63d95d` | `api/stream.py:150` `CLOSE_EVIDENCE_S` (300 s), `:740` (rule b) | `tests/test_stream_day_change.py`: `test_r25_a_prior_session_premarket_row_never_anchors_the_next_session` (Codex's repro: Friday 08:00 at 90, read on Saturday; Monday's tick at 102 reads no change until a Monday row brings previousClose 100, then **+2%**, never +13.33%); `test_r25_only_the_last_five_minutes_…` (15:55:00, 15:59:30 and 16:00:00 anchor; 15:54:59, 12:00 and 16:15 do not); `test_r25_an_early_close_day_bounds_the_window_at_1300` (Nov 27 2026: 12:58 anchors; 12:50 and 13:05 do not) |
+| R-04 | blocking (pre-existing) | **fixed** (deferred in round 1; the owner asked for it now) | `df63d95d` | `api/stream.py:153` `regular_hours`, `:809` (the hold, counted as `us_rest_held`) | `test_r04_an_after_hours_rest_row_never_replaces_a_regular_session_quote` (Codex's repro: WS at 100 at 15:59, REST at 110 at 16:15: the board stays 100; the row still anchors through rule a), `test_r04_a_premarket_rest_row_next_morning_is_held_but_seeds_the_anchor`, `test_r04_after_a_restart_with_no_quote_an_after_hours_row_is_stored` |
+| R-16 | high (pre-existing) | **fixed** | `df63d95d` | `web/src/screens/markets/MacroTape.tsx:722`, `MarketsScreen.tsx:524` | `MacroTape.test.tsx`, `MarketsScreen.test.tsx` |
+| R-26 | high (branch) | **fixed** | `8ecb518a` | `web/src/screens/desk/regime/RegimePage.tsx:424` `flipWords` | `RegimePage.test.tsx` (every flip sentence; without `first_effective_month` the tagging clause is left out) |
+| R-27 | blocking (pre-existing) | **fixed** | `8ecb518a` | `web/src/screens/recession/recession-copy.ts:269` `peak2008`, `:340` | `recession-copy.test.ts` "Codex R-27" (the served 97.38568… in Dec 2008 prints "2008 peaked at 97.4% in Dec 2008"; another history prints its own number; no 2008 point, no clause); `web/e2e/recession.spec.ts` derives the expectation from the served history |
+| R-14 | high (pre-existing) | **fixed** | `8ecb518a` | `web/src/screens/recession/SensitivityPanel.tsx:35` | `RecessionScreen.test.tsx` (the untouched caption; moved, the hypothetical-score caption and no "three months later") |
+| R-20 | high (pre-existing) | **fixed** | `8ecb518a` | `web/src/screens/desk/regime/RegimePage.tsx:216`, `:217`; `src/desk/event_study.py:1544`; `src/analytics/news.py:78` | `RegimePage.test.tsx`. Engine (below): a one-line diff, layer 2 green with `REWORDED`, and full native outputs identical 16/16 with that sentence mapped |
+| R-21 | low (pre-existing) | **fixed** | `b3441ced` | `web/src/screens/regimelab/QuadrantChart.tsx:165` (leader or omission), `:251` `layoutLabels` | `QuadrantChart.test.tsx` "Codex R-21 (round 2)": Codex's 300 × 250 case **fails on the old fallback** ("Dec 2025 vs +1.05") and passes now; a crowded corner draws at most one leader |
+| R-31 | low (branch) | **fixed** | `b3441ced` | `web/src/screens/dashboard/DashboardScreen.tsx:533`, `web/src/screens/shell/shell-actions.ts:16` (`freshnessOpen`), `AppShell.tsx` | `DashboardScreen.test.tsx` (closed: no `aria-controls`, `aria-expanded="false"`; open: `aria-controls="freshness-drawer"`, expanded); `shell-actions.test.tsx` (the flag's default) |
+| R-28 | low (branch) | **fixed** | `b3441ced` | `web/e2e/a11y.spec.ts:462`, `dashboard.spec.ts:163`, `shell-iteration.spec.ts:431` | the specs themselves (the e2e run below) |
+| R-29 | low (branch) | **fixed** | `b3441ced` | `web/e2e/states.spec.ts:110` `expectPhoneDataStatus` (error: "Data service unavailable" with a red dot; snapshot: "Validated snapshot" with no health dot) | `states.spec.ts` |
+| R-30 | low (branch) | **fixed** | `b3441ced` | `tests/test_api.py:336` `_dgs30_eligible_in_file` (the Desk's rules in its own SQL: committed run, not after its run's day or today, finite, inside the 90-day window, not behind the watermark) | `test_api_credit_oas_serves_the_30y_as_its_own_field`: eligible means non-null and dated the newest eligible row; ineligible means null; never a skip |
+| R-10 | high (pre-existing) | **deferred** | — | `api/desk_items_macro.py:170-190` | As in round 1: dating a regime version needs that version's own publication time stored by the pipeline. Codex adds that saying "change timing unknown" when only input watermarks exist needs no migration; that is the smaller fix when the owner takes it up |
+| R-11 | high (pre-existing) | **deferred** | — | `api/desk_v2.py:390-410, 542-554` | As in round 1. Codex adds that an upper time bound on the comparison needs no migration; comparing versions at both boundaries needs R-10's timing |
+
+**Also fixed in Group C (found while gating round 1).** Item 8 served the 30Y's state in `/api/credit/oas`'s freshness block with `id: "desk:DGS30"` under the key `DGS30`. That breaks the block's contract (each state's id is its key; `tests/test_freshness_state.py::test_payloads_carry_a_freshness_block[/api/credit/oas?days=90]`). It now serves `id: "DGS30"` (`api/main.py:1384`), and the web reads it by that key unchanged. Item 8's scoped tests had not included that file.
+
+**Report correction (Codex).** The first gates table listed `test_web_fresh_report.py::test_the_recession_route_labels_an_awaiting_block_as_the_hook_does` among "the ten pytest failures" beside failures pre-existing on `b116f584`. It was not pre-existing: this branch's chip rewording in commit 3 ("Model inputs" became "Inputs through") broke it, and the same commit updated the test. The table now says so.
+
+### The engine string (R-20)
+
+`git diff -U0 b116f584 -- src/desk/` is one line, the `regime_source` provenance sentence ("a rule on 3-month INDPRO and CPI slopes" became "a rule on the INDPRO and CPI slopes over the last three monthly readings"). That string is served in each study's `provenance`, so the regression gate moved:
+
+- **Layer 2** (`tests/test_desk_native_regression.py`): every query's hash moved, because each output carries the sentence. With only that line reverted, all 23 tests passed. The test now maps exactly that new sentence back to the base's (`REWORDED`, line 96, the pattern `BASE_VIX` already uses), requires it to occur (it does, in every study), and every hash matches the golden again: 23 passed.
+- **Layer 3** (`scripts/desk_native_ab.py --base b116f584 --db data/macro_radar.db`): 0/16 byte-identical, with each first difference at `/provenance/regime_source`. Comparing both engines' full outputs with that one sentence mapped back gives **identical 16/16** (one occurrence mapped per study). So nothing else the engine returns moved.
+
+### Wording, before → after
+
+| Where | Before | After |
+|---|---|---|
+| Single names caption (Markets) | … Live-feed trades outside the regular session never move the board; outside the session it shows the latest delayed quote. | … Trades the feed marks extended-hours or closed are held, and delayed quotes timestamped outside the session do not replace a regular-session quote. |
+| Markets lede, off-hours | Outside the regular session the board shows the latest delayed quote with its timestamp; live-feed trades outside the session never move it. … | Outside the regular session, trades the feed marks extended-hours or closed are held, and delayed quotes timestamped outside the session do not replace a regular-session quote. … |
+| Desk next print | a print ≤ −0.39% m/m flips inflation to falling → Goldilocks; it updates the regime shown as soon as it publishes, and event studies tag sessions with it two months later (Nov 2026). | a print ≤ −0.39% m/m flips inflation to falling → Goldilocks. The regime shown updates once both CPI and industrial production for the month are stored; event studies tag sessions with it from Nov 2026. |
+| Recession note | …(class-balanced, so not a calibrated probability) and 2008 peaked near 89%. | …(class-balanced, so not a calibrated probability), and 2008 peaked at 97.4% in Dec 2008. (on the release copy; no clause without a 2008 history) |
+| Sensitivity, untouched | Hypothetical score of these inputs under the fitted coefficients and scaler. Untouched, they hold the latest readings, which the headline scores about three months later. | Rounded latest-available inputs evaluated under the current fitted coefficients: a hypothetical, not a forecast. |
+| Desk Regime, Growth / Inflation | industrial production, 3-mo slope · CPI, 3-mo slope | industrial production, slope over the last three monthly readings · CPI, slope over the last three monthly readings |
+| Engine provenance `regime_source` | … a rule on 3-month INDPRO and CPI slopes … | … a rule on the INDPRO and CPI slopes over the last three monthly readings … |
+| News interpretation prompt | … set by the signs of two 3-month slopes: … | … set by the signs of two slopes over the last three monthly readings: … |
+
+The recession model's own three-month input lag ("inputs three months old") is not the regime slope and stays.
+
+### Gates (round 2)
+
+| Gate | Result |
+|---|---|
+| Scoped, per commit | A: `test_stream_day_change.py` + `test_stream_hub.py` **51 passed**; Markets web **108 passed**. B: Recession and Desk web **743 passed**; news tests + native regression **179 + 1**, then **23 passed** with `REWORDED`; A/B **16/16** with the sentence mapped. C: shell, Dashboard and Regime Lab web **274 passed**; `test_freshness_state.py` + `test_api.py` **75 passed** |
+| Web gate on `b3441ced` | tsc clean; **vitest 1804 passed (146 files)**; build ✓ |
+| Full pytest on `b3441ced` | **1796 passed, 71 skipped, 7 failed**: the six known failures (`test_asset_history` ×2; the audit-store pins `test_desk_v2_regime[published]` and `test_desk_v2_technicals` ×3), plus `test_generations::test_an_item_that_fails_on_a_new_file_holds…`, the timing test, which then passed 3/3 alone (load average 25 from other sessions during the run). The release copy's sha256 is unchanged |
+| Desk e2e on `b3441ced` (fixture Vite) | **83 passed** |
+
+### The eleven non-Desk e2e specs, on local servers
+
+**Setup.**
+- **API:** a `git archive` of `b3441ced` serving a copy of the release DB (`318d1eec…`, the fixture the whole report uses) on :8617. The relay is off: this machine has no EODHD token and the archive has no `.env`.
+- **Web:** Vite from the worktree on :5174, `E2E_BASE_URL=http://127.0.0.1:5174`, one worker.
+- **Ports:** another session's Vite holds :5173 and its uvicorn holds :8000 (the `macro-regime-radar-frame` worktree, running since Sep 21). Neither was touched, and the specs' "one Vite on :5173 / one uvicorn" checks passed with them running.
+- **Baselines:** the specs read local baselines under `docs/redesign-v2/` (git-excluded). They were linked read-only from the main checkout for the run and removed after.
+- **Snapshot:** `web/public/snapshot/latest.json` was built from the same DB with `scripts/build_snapshot.py`, so the snapshot cells could run, and removed after.
+- **Captures:** written to the session scratchpad.
+- **Rate limits:** a first pass hit the API's per-client rate limit (600 a minute; 833 requests answered 429), because the whole suite comes from one address. The pass below raised it for this local run only (`RATE_LIMIT_PER_CLIENT_PER_MIN=100000` and the burst and global equivalents), with no code change.
+
+| Spec | Passed | Failed | Each failure |
+|---|---|---|---|
+| `shell` | 10 | 0 | — |
+| `shell-iteration` | 47 | 0 | — (R-28's footer expectation runs here) |
+| `dashboard` | 14 | 1 | "2. health": 403s from `/api/market/candles`, `missing_token` (**no EODHD token**). R-28's alert-strip scoping passed |
+| `markets` | 12 | 3 | "2. health" (403 candles), "6. single-name search" (the NVDA option needs `/api/market/search`, EODHD), "8. ranges" (candles, EODHD), all **no EODHD token**. "12. priced" failed on its first run: its row headers had been out of date since item 4. `df618ae1` updated them and it passed on the rerun, counted here |
+| `news` | 11 | 2 | "2. health" (403 candles, **no EODHD token**). "9. rows" **fails identically on `b116f584`** (run against a base build on the same DB): the label renders "Why it matters · AI", uppercased only by CSS, while the assertion matches `/WHY IT MATTERS · AI/` against the text. Neither changed on this branch; not fixed |
+| `recession` | 13 | 1 | "2. health" (403 candles, **no EODHD token**). R-23's and R-27's assertions (the 2008 peak read from the served history) passed |
+| `tools` | 14 | 1 | "2. health" (403 candles, **no EODHD token**) |
+| `states` | 5 | 2 | "empty cells at 1672" and "stale cells at 1672" each **stop at their first route** (the Dashboard) on the 403 candle console lines (**no EODHD token**), so **the rest of those two loops did not run**. The first pass also failed "snapshot cells at 390" on R-29's own helper (a snapshot's entry starts with ◇); `df618ae1` fixed it, and the phone error and snapshot cells pass |
+| `snapshot-empty` | 24 | 0 | — |
+| `a11y` | 22 | 0 | — (R-28's opener and R-31's reference check run here) |
+| `behaviour-iteration` | 29 | 6 | "M5" ×3 (single-name search, a direct `?name=AAPL` load, missing blocks: EODHD search and candles, **no EODHD token**). "D2 glance tiles at 1024/768/390" ×3 **fail identically on `b116f584`**: the FX view's tiles are UUP 183.6, EURUSD 183.6 and USDJPY 159.1 px tall, the same on both builds, so not from this branch |
+
+**Could not run, exactly:**
+1. Everything that needs EODHD: there is no token on this machine, so candles, symbol search and options answer 403 `missing_token`.
+   - "2. health" in `dashboard`, `markets`, `news`, `recession` and `tools`;
+   - `markets` "6" and "8";
+   - `behaviour-iteration` "M5" ×3;
+   - the routes after the first in `states`' empty and stale loops (they stop on the 403 console lines).
+2. Nothing else was blocked.
+
+Ran and failed before this branch (base build, same DB): `news` "9. rows" and `behaviour-iteration` "D2" ×3.
