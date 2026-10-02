@@ -44,6 +44,7 @@ import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Fl
 import "./positions.css";
 import { DroppedNote, FailedScope, LoadingLine, droppedWords, type QueryLike } from "../kit/ui";
 import { InstrumentSearch } from "../kit/InstrumentSearch";
+import { Term } from "../kit/Term";
 
 const HORIZONS = [5, 10, 20, 60];
 
@@ -239,17 +240,24 @@ function Closed({ store }: { store: PositionStore }) {
   return (
     <section className="dk-card pm-closed" aria-label="Closed in the last 90 days">
       <p className="dk-stat-label">Closed · last 90d</p>
+      {/* desk/pdf-polish 7: each row head carries its definition. */}
       <dl>
         <div>
-          <dt>Falsified on level</dt>
+          <dt>
+            <Term ids={["col-falsified"]}>Falsified on level</Term>
+          </dt>
           <dd>{lost ? "—" : c.falsified}</dd>
         </div>
         <div>
-          <dt>Expired at horizon</dt>
+          <dt>
+            <Term ids={["col-expired"]}>Expired at horizon</Term>
+          </dt>
           <dd>{lost ? "—" : c.expired}</dd>
         </div>
         <div>
-          <dt>Pre-mortem was right</dt>
+          <dt>
+            <Term ids={["col-premortem"]}>Pre-mortem was right</Term>
+          </dt>
           <dd data-tone={lost ? undefined : "amber"}>{lost ? "—" : `${c.premortem_right[0]} of ${c.premortem_right[1]}`}</dd>
         </div>
       </dl>

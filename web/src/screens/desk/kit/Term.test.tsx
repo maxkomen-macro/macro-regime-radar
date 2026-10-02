@@ -153,6 +153,31 @@ describe("keyboard, touch and written definitions (desk/pdf-polish item 7)", () 
     expect(screen.getByRole("tooltip")).toHaveTextContent(GLOSSARY.curve.text);
   });
 
+  it("a control that holds terms shows their sentences when it takes the focus; a pointer over the control alone shows none", () => {
+    render(
+      <>
+        <button type="button">
+          <Term ids={["nav"]}>4% NAV</Term> <Term ids={["col-room"]}>68% room</Term>
+        </button>
+        <TermTip />
+      </>,
+    );
+    const button = screen.getByRole("button");
+    act(() => {
+      fireEvent.focusIn(button);
+    });
+    const tip = screen.getByRole("tooltip");
+    expect([...tip.querySelectorAll("p")].map((p) => p.textContent)).toEqual([GLOSSARY.nav.text, GLOSSARY["col-room"].text]);
+    act(() => {
+      fireEvent.focusOut(button, { relatedTarget: document.body });
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    act(() => {
+      fireEvent.pointerOver(button);
+    });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("a definition written from data joins the hidden list while it shows, and the tip reads it", () => {
     const def = "The recession model reads data from three months earlier, so September's score uses June's readings.";
     const first = render(

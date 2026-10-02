@@ -23,8 +23,9 @@ import { DESK_ACCENTS } from "../kit/palette";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { matrixProblem } from "./matrix";
+import { GLOSSARY } from "../kit/glossary";
 import "./macro.css";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -536,9 +537,11 @@ function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
               <thead>
                 <tr>
                   <td />
+                  {/* desk/pdf-polish 7: each asset's column head carries its definition (the served name stays its title
+                      only where no definition is written). */}
                   {grid.assets.map((a, j) => (
-                    <th key={a} scope="col" title={name(j) || undefined} data-nodata={noData.has(a) || undefined}>
-                      {a}
+                    <th key={a} scope="col" title={GLOSSARY[`mx-${a}`] ? undefined : name(j) || undefined} data-nodata={noData.has(a) || undefined}>
+                      <Term ids={[`mx-${a}`]}>{a}</Term>
                     </th>
                   ))}
                 </tr>

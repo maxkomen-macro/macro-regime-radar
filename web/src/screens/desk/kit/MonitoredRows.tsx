@@ -11,6 +11,7 @@
 
 import type { ReactNode } from "react";
 import { num, pctPlain } from "./format";
+import { Term } from "./Term";
 import { cx } from "./ui";
 
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -55,6 +56,12 @@ export function sortByRoom<T extends { room_pct: number | null; id: string }>(ro
   return [...rows].sort((a, b) => key(a) - key(b) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 }
 
+/** The definitions a row's three figures carry (desk/pdf-polish item 7): size as % of NAV, room, distance to the
+ * level. Inside the row's button they show on hover or tap; the button names them for a screen reader, and the
+ * Desk's tooltip shows them when the row takes the focus. */
+const ROW_DEFS = ["nav", "col-room", "col-to-level"] as const;
+const ROW_DESCRIBED = ROW_DEFS.map((id) => `dk-def-${id}`).join(" ");
+
 export function MonitoredRow({
   row,
   open,
@@ -72,15 +79,22 @@ export function MonitoredRow({
   const words = roomWords(row);
   return (
     <li className={cx("dk-mon", open && "dk-mon-open")} data-testid="dk-mon-row" data-id={row.id} data-monitoring={row.monitoring}>
-      <button type="button" className="dk-mon-row" onClick={onClick} aria-expanded={children !== undefined ? Boolean(open) : undefined} aria-controls={controls}>
+      <button type="button" className="dk-mon-row" onClick={onClick} aria-expanded={children !== undefined ? Boolean(open) : undefined} aria-controls={controls} aria-describedby={ROW_DESCRIBED}>
         {/* A long name is cut with an ellipsis (desk2.css); the title carries it whole. */}
         <span className="dk-mon-name" title={row.name}>
           {row.name}
         </span>
-        <span className="dk-mon-nav">{fin(row.size_nav) ? pctPlain(row.size_nav) : "—"} NAV</span>
+        <span className="dk-mon-nav">
+          <Term ids={["nav"]}>{`${fin(row.size_nav) ? pctPlain(row.size_nav) : "—"} NAV`}</Term>
+        </span>
         <span className="dk-mon-room" data-tone={tone}>
-          {words.room}
-          {words.level ? <span className="dk-mon-dim"> · {words.level}</span> : null}
+          {row.monitoring === "manual" ? words.room : <Term ids={["col-room"]}>{words.room}</Term>}
+          {words.level ? (
+            <span className="dk-mon-dim">
+              {" · "}
+              {words.level.endsWith(" to level") ? <Term ids={["col-to-level"]}>{words.level}</Term> : words.level}
+            </span>
+          ) : null}
         </span>
         <span className="dk-mon-bar" aria-hidden="true">
           {row.monitoring === "automatic" && fin(row.room_pct) ? <span data-tone={tone} style={{ width: `${Math.max(0, Math.min(1, row.room_pct)) * 100}%` }} /> : null}

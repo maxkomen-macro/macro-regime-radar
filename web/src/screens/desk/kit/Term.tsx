@@ -113,10 +113,13 @@ export function TermTip() {
   useSyncExternalStore(subscribe, snapshot, snapshot);
   useEffect(() => {
     let current: Element | null = null;
-    const show = (el: Element) => {
-      const text = el.getAttribute("data-def");
+    // The sentences on show: a term's own, or those a focused control holds.
+    let shown = "";
+    const show = (el: Element, own?: string) => {
+      const text = own ?? el.getAttribute("data-def");
       if (!text) return;
       current = el;
+      shown = text;
       const r = el.getBoundingClientRect();
       const vw = window.innerWidth || document.documentElement.clientWidth;
       const vh = window.innerHeight || document.documentElement.clientHeight;
@@ -129,8 +132,17 @@ export function TermTip() {
       setTip(null);
     };
     const over = (e: Event) => {
-      const el = (e.target as Element | null)?.closest?.(".dk-term");
-      if (el && el !== current) show(el);
+      const target = e.target as Element | null;
+      const el = target?.closest?.(".dk-term");
+      if (el) {
+        if (el !== current) show(el);
+        return;
+      }
+      // desk/pdf-polish 7: a control that holds terms (a monitored row, a Ledger row) shows their sentences when it
+      // takes the focus, as a pointer shows them over the terms themselves.
+      if (e.type !== "focusin" || !target || target === current || typeof target.matches !== "function" || !target.matches(CONTROL)) return;
+      const held = [...new Set([...target.querySelectorAll(".dk-term")].flatMap((t) => (t.getAttribute("data-def") ?? "").split("\n")).filter(Boolean))];
+      if (held.length) show(target, held.join("\n"));
     };
     const out = (e: Event) => {
       // A finger lifting off the screen fires pointerout: a tapped term keeps its sentence until a tap elsewhere,
@@ -156,7 +168,7 @@ export function TermTip() {
       const r = current.getBoundingClientRect();
       const vh = window.innerHeight || document.documentElement.clientHeight;
       if (!current.isConnected || r.bottom < 0 || r.top > vh) return hide();
-      show(current);
+      show(current, shown);
     };
     document.addEventListener("pointerover", over);
     document.addEventListener("pointerout", out);

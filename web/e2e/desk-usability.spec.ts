@@ -474,10 +474,38 @@ test.describe("desk usability", () => {
     await hover("/desk/basket-hedge", "Effective names", "effn");
     await hover("/desk/basket-hedge", "days to trade", "adv");
     await hover("/desk/basket-hedge", "Hedge ratio", "hedgeratio");
-    await hover("/desk/basket-hedge", "Beta 1Y", "beta");
+    // desk/pdf-polish 7: each column head its own window's sentence (252 daily returns), not the generic beta's.
+    await hover("/desk/basket-hedge", "Beta 1Y", "col-beta1y");
+    await hover("/desk/basket-hedge", "Vol cut", "col-vol-cut");
+    await hover("/desk/signal-ledger", "Vs normal", "col-vs-normal");
+    await hover("/desk/macro", "TLT", "mx-TLT");
     // The Event Study's Move slot explains σ with the same sentence.
     await open(page, "/desk/event-study");
     await expect(page.locator(".es-tip").first()).toHaveAttribute("data-tip", GLOSSARY.sigma.text);
+  });
+
+  test("desk/pdf-polish item 7: a column head's definition shows on keyboard focus and on a tap, and goes on Escape or a tap elsewhere", async ({ page, browser, baseURL }) => {
+    await open(page, "/desk/signal-ledger");
+    const head = page.locator("thead abbr.dk-term", { hasText: "Times" });
+    await expect(head).toHaveAttribute("tabindex", "0");
+    // Tab from the column head before it lands on this one: a Tab stop of its own, its sentence shown.
+    await page.locator("thead abbr.dk-term", { hasText: "Last fired" }).focus();
+    await page.keyboard.press("Tab");
+    await expect(head).toBeFocused();
+    await expect(page.getByTestId("dk-term-tip")).toHaveText(GLOSSARY["col-times"].text);
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("dk-term-tip")).toHaveCount(0);
+    // A phone: a tap shows the sentence, the finger lifting keeps it, a tap elsewhere hides it.
+    const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: "dark" });
+    const p = await phone.newPage();
+    await open(p, "/desk/signal-ledger");
+    await p.locator("thead abbr.dk-term", { hasText: "Vs normal" }).tap();
+    await expect(p.getByTestId("dk-term-tip")).toHaveText(GLOSSARY["col-vs-normal"].text);
+    await p.waitForTimeout(300);
+    await expect(p.getByTestId("dk-term-tip")).toHaveText(GLOSSARY["col-vs-normal"].text);
+    await p.getByRole("heading", { level: 1 }).tap();
+    await expect(p.getByTestId("dk-term-tip")).toHaveCount(0);
+    await phone.close();
   });
 
   test("item 12: one endpoint forced to fail: its cards say Couldn't load · Retry, the rest renders, Retry recovers", async ({ page }) => {

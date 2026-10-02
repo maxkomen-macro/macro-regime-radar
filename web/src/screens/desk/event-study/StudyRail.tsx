@@ -137,11 +137,20 @@ export default function StudyRail({
       {byRegime ? (
       <table className="es-table">
         <thead>
+          {/* desk/pdf-polish 7: every column head carries its definition. */}
           <tr>
-            <th scope="col">Regime</th>
-            <th scope="col">N</th>
-            <th scope="col">Up</th>
-            <th scope="col">Median</th>
+            <th scope="col">
+              <Term ids={["col-es-regime"]}>Regime</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-es-n"]}>N</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-es-up"]}>Up</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-es-median"]}>Median</Term>
+            </th>
           </tr>
         </thead>
         <tbody>

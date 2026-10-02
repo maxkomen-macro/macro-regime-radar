@@ -18,7 +18,7 @@ import { useId, type ReactNode } from "react";
 import type { BasketHedgeResponse, HedgeEtf } from "../data/types";
 import { num, pct, pctPlain } from "../kit/format";
 import { Awaiting, LoadingLine, NotServedBadge, UnservedLine, cx } from "../kit/ui";
-import { defineTerms } from "../kit/Term";
+import { Term, defineTerms } from "../kit/Term";
 import { excludedWords, hedgeLead, stressLead, stressShortWords, stressWindowWords, usd } from "./trades";
 import type { SavedBasket } from "./weights";
 import { OptionsHedgeCard } from "../prototypes/OptionsHedgeCard";
@@ -57,13 +57,28 @@ function EtfTable({ rows, top }: { rows: HedgeEtf[]; top: string | null }) {
         <caption className="dk-sr">The hedge ETFs ranked by R² of the basket's daily returns; the top pick is marked</caption>
         <thead>
           <tr>
-            <th scope="col">ETF</th>
-            <th scope="col">{defineTerms("R² 1Y")}</th>
-            <th scope="col">{defineTerms("R² 60D")}</th>
-            <th scope="col">{defineTerms("Hedge ratio")}</th>
-            <th scope="col">Short</th>
-            <th scope="col">Vol left</th>
-            <th scope="col">Vol cut</th>
+            {/* desk/pdf-polish 7: every column head carries its definition. */}
+            <th scope="col">
+              <Term ids={["col-etf"]}>ETF</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-r2-1y"]}>R² 1Y</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-r2-60d"]}>R² 60D</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["hedgeratio"]}>Hedge ratio</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-short"]}>Short</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-vol-left"]}>Vol left</Term>
+            </th>
+            <th scope="col">
+              <Term ids={["col-vol-cut"]}>Vol cut</Term>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -117,11 +132,21 @@ function StressCard({ h, state }: { h: BasketHedgeResponse | undefined; state: S
             <caption className="dk-sr">The basket's P&amp;L if QQQ or SPY falls 10%, unhedged and hedged with the top pick</caption>
             <thead>
               <tr>
-                <th scope="col">If</th>
-                <th scope="col">Basket</th>
-                <th scope="col">Unhedged</th>
-                <th scope="col">{hedge ? `Short ${hedge}` : "Hedge"}</th>
-                <th scope="col">Hedged</th>
+                <th scope="col">
+                  <Term ids={["col-if"]}>If</Term>
+                </th>
+                <th scope="col">
+                  <Term ids={["col-st-basket"]}>Basket</Term>
+                </th>
+                <th scope="col">
+                  <Term ids={["col-unhedged"]}>Unhedged</Term>
+                </th>
+                <th scope="col">
+                  <Term ids={["col-short-pnl"]}>{hedge ? `Short ${hedge}` : "Hedge"}</Term>
+                </th>
+                <th scope="col">
+                  <Term ids={["col-hedged"]}>Hedged</Term>
+                </th>
               </tr>
             </thead>
             <tbody>

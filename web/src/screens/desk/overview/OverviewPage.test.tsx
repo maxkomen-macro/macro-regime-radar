@@ -218,8 +218,15 @@ describe("Overview tab", () => {
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% NAV29% room · 10 bp to level");
     expect(rows[1].textContent?.replace(/\s+/g, " ")).toContain("Long S&P 5003% NAV60% room · 1.1% to level");
     expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Long NDX vs SPX4% NAVmanual");
-    expect(within(rows[0]).getByText(/29% room/)).toHaveAttribute("data-tone", "amber");
-    expect(within(rows[1]).getByText(/60% room/)).toHaveAttribute("data-tone", "green");
+    expect(within(rows[0]).getByText(/29% room/).closest(".dk-mon-room")).toHaveAttribute("data-tone", "amber");
+    expect(within(rows[1]).getByText(/60% room/).closest(".dk-mon-room")).toHaveAttribute("data-tone", "green");
+    // desk/pdf-polish 7: the row's figures carry their definitions; the button names them for a screen reader.
+    expect(within(rows[0]).getByText("2% NAV").getAttribute("data-term")).toBe("nav");
+    expect(within(rows[0]).getByText("29% room").getAttribute("data-term")).toBe("col-room");
+    expect(within(rows[0]).getByText("10 bp to level").getAttribute("data-term")).toBe("col-to-level");
+    expect(rows[0].querySelector(".dk-mon-row")).toHaveAttribute("aria-describedby", "dk-def-nav dk-def-col-room dk-def-col-to-level");
+    // Inside the row's button a term is no Tab stop of its own: the row is.
+    expect(within(rows[0]).getByText("29% room")).not.toHaveAttribute("tabindex");
     expect(rows[2].querySelector(".dk-mon-bar")?.children).toHaveLength(0);
     expect(card).toHaveTextContent("Sorted by room left · same scale for every trade · size as % of NAV · click a row for the gate text");
     // desk/pdf-polish 2g: the title and its small text.

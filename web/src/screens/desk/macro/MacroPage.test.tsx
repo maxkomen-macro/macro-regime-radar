@@ -6,6 +6,7 @@
  * hand-checked 3-asset grid), and Awaiting refresh with the labels kept when
  * /macro fails.
  */
+import { GLOSSARY } from "../kit/glossary";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
@@ -264,7 +265,12 @@ describe("Macro tab", () => {
     expect(wrap).toHaveAttribute("tabindex", "0");
     expect(within(wrap).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]);
     expect(within(wrap).getAllByRole("rowheader").map((h) => h.textContent).slice(0, 3)).toEqual(["SPYS&P 500", "QQQNasdaq 100", "IWMSmall caps"]);
-    expect(within(wrap).getByRole("columnheader", { name: "TLT" })).toHaveAttribute("title", "20+ year Treasuries");
+    // desk/pdf-polish 7: each column head carries its asset's definition in place of the served name as a title.
+    const tlt = within(wrap).getByRole("columnheader", { name: "TLT" });
+    expect(tlt).not.toHaveAttribute("title");
+    expect(tlt.querySelector(".dk-term")?.getAttribute("data-def")).toBe(GLOSSARY["mx-TLT"].text);
+    expect(tlt.querySelector(".dk-term")).toHaveAttribute("tabindex", "0");
+    for (const h of within(wrap).getAllByRole("columnheader")) expect(h.querySelector(".dk-term")?.getAttribute("data-def"), h.textContent ?? "").toBe(GLOSSARY[`mx-${h.textContent}`].text);
   });
   it("chart band labels and the peak label keep the colors passed to them (M-5)", async () => {
     renderTab();
