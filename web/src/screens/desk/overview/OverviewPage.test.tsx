@@ -12,7 +12,7 @@ import overview from "../../../fixtures/desk/overview.json";
 import type { OverviewResponse } from "../data/types";
 import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
-import { monthsBetween, recessionLag, recessionWords, regimeSub, sinceItems, trendSub, trendWords } from "./OverviewPage";
+import { activeSignalsWords, monthsBetween, recessionLag, recessionWords, regimeSub, sinceItems, trendSub, trendWords } from "./OverviewPage";
 import { writtenId } from "../kit/Term";
 import positions from "../../../fixtures/desk/positions.json";
 import { FIXTURE_META } from "../../../fixtures/desk";
@@ -83,6 +83,20 @@ describe("Overview words", () => {
     expect(monthsBetween("2026-06", "2026-09")).toBe(3);
     expect(monthsBetween("2025-11-01", "2026-02")).toBe(3);
     expect(monthsBetween(null, "2026-02")).toBeNull();
+  });
+
+  it("Codex R-01: the Active signals date is the data's, never the staging date", () => {
+    // The fixture was staged on Sep 24 (as_of); its studies read data through Sep 23, the two RSI rows through Sep 21.
+    expect(fixture.as_of).toBe("2026-09-24");
+    expect(activeSignalsWords(fixture)).toBe("backtested through Sep 21");
+    const rows = fixture.active_signals!.map((r) => ({ ...r, evaluated_on: "2026-09-23" }));
+    expect(activeSignalsWords({ ...fixture, active_signals: rows })).toBe("backtested through Sep 23");
+    // A row without a date does not decide it.
+    expect(activeSignalsWords({ ...fixture, active_signals: [{ ...rows[0], evaluated_on: null }, rows[1]] })).toBe("backtested through Sep 23");
+    // No dated row: the S&P's newest stored close, said as the data's date; without one, nothing.
+    expect(activeSignalsWords({ ...fixture, active_signals: [] })).toBe("data through Sep 23");
+    expect(activeSignalsWords({ ...fixture, active_signals: [], tiles: { ...fixture.tiles!, trend: undefined } })).toBe("");
+    expect(activeSignalsWords(undefined)).toBe("");
   });
 
   it("names the trend from the served state, and its sub-line from state_since and the last cross (§2)", () => {
@@ -182,8 +196,9 @@ describe("Overview tab", () => {
     // §12.1: nothing firing, so the five latest last fires, newest first.
     expect(rows.map((r) => r.querySelector("b")?.textContent)).toEqual(["S&P 5-day move over 2σ", "VIX spike +2σ, 5 days", "RSI above 70", "S&P 20-day move over 2σ", "RSI below 30"]);
     expect(rows[0]).toHaveTextContent("last fired Aug 4, 2026");
-    // desk/pdf-polish 2f: the title, and the engine's date as its small text; each row keeps its own start year.
-    expect(card.querySelector(".dk-card-title")?.textContent).toBe("Active signalsbacktested through Sep 24");
+    // desk/pdf-polish 2f, Codex R-01: the title, and the data's date as its small text (the earliest session the rows
+    // were evaluated on, Sep 21), never the generation's staging date (Sep 24); each row keeps its own start year.
+    expect(card.querySelector(".dk-card-title")?.textContent).toBe("Active signalsbacktested through Sep 21");
     expect(card).not.toHaveTextContent(/what fired|engine as of/);
     expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Fired 78× since 1996 · S&P up 63% of the time · 20-day median +1.7% (+0.4 pts vs normal)");
     expect(within(rows[0]).getByText("No edge")).toBeInTheDocument();
