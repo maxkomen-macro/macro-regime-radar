@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { GLOSSARY, splitTerms } from "./glossary";
-import { Term, TermTip, defineTerms, termsIn, writtenId } from "./Term";
+import { Term, TermTip, defineTerms, placeTip, termsIn, writtenId } from "./Term";
 import { Stat } from "./ui";
 
 describe("hover definitions (desk/usability item 11, §14.11)", () => {
@@ -133,6 +133,68 @@ describe("hover definitions (desk/usability item 11, §14.11)", () => {
     act(() => {
       fireEvent.pointerOut(term, { relatedTarget: document.body });
     });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+});
+
+describe("Codex R-11: the tip is measured and placed inside the window", () => {
+  const phone = { width: 390, height: 640 };
+  it("under its term when it fits there, else over it", () => {
+    expect(placeTip({ left: 20, top: 100, bottom: 115 }, { width: 300, height: 120 }, phone)).toEqual({ left: 20, top: 121, maxHeight: 640 - 8 - 121, above: false });
+    expect(placeTip({ left: 20, top: 560, bottom: 575 }, { width: 300, height: 120 }, phone)).toEqual({ left: 20, top: 560 - 6 - 120, maxHeight: 560 - 6 - 8, above: true });
+  });
+
+  it("never past the right edge of a 390 px window", () => {
+    const at = placeTip({ left: 300, top: 100, bottom: 115 }, { width: 300, height: 80 }, phone);
+    expect(at.left).toBe(390 - 300 - 8);
+  });
+
+  it("taller than the room on either side: the roomier side, its height clamped there, inside the window", () => {
+    const down = placeTip({ left: 20, top: 300, bottom: 315 }, { width: 300, height: 900 }, phone);
+    expect(down).toEqual({ left: 20, top: 321, maxHeight: 640 - 8 - 321, above: false });
+    const up = placeTip({ left: 20, top: 400, bottom: 415 }, { width: 300, height: 900 }, phone);
+    expect(up).toEqual({ left: 20, top: 8, maxHeight: 400 - 6 - 8, above: true });
+    for (const at of [down, up]) {
+      expect(at.top).toBeGreaterThanOrEqual(8);
+      expect(at.top + at.maxHeight).toBeLessThanOrEqual(640 - 8);
+    }
+    // With no room on either side, the window's whole height, over the term.
+    expect(placeTip({ left: 20, top: 40, bottom: 600 }, { width: 300, height: 900 }, phone)).toEqual({ left: 20, top: 8, maxHeight: 640 - 16, above: false });
+  });
+
+  it("the pointer on its way into the tip, a finger in it and its own scroll keep it; leaving it hides it", () => {
+    render(
+      <>
+        <Stat label="2s10s" value="+52 bp" />
+        <p>elsewhere</p>
+        <TermTip />
+      </>,
+    );
+    const term = screen.getByText("2s10s").closest(".dk-term")!;
+    let top = 100;
+    term.getBoundingClientRect = () => ({ top, bottom: top + 15, left: 40, right: 120, width: 80, height: 15, x: 40, y: top, toJSON: () => ({}) }) as DOMRect;
+    act(() => {
+      fireEvent.pointerOver(term);
+    });
+    const tip = screen.getByRole("tooltip");
+    // jsdom's pointer events drop relatedTarget: the pointer leaving is written out as a mouse event that keeps it.
+    const leave = (from: Element, to: Element) =>
+      act(() => {
+        from.dispatchEvent(new MouseEvent("pointerout", { bubbles: true, relatedTarget: to }));
+      });
+    leave(term, tip);
+    expect(screen.getByRole("tooltip")).toBe(tip);
+    act(() => {
+      fireEvent.pointerDown(tip.querySelector("p")!);
+    });
+    expect(screen.getByRole("tooltip")).toBe(tip);
+    // The tip's own scroll is not the page's: with the term out of the window a page scroll would hide it.
+    top = -40;
+    act(() => {
+      fireEvent.scroll(tip.querySelector(".dk-term-tip-body")!);
+    });
+    expect(screen.getByRole("tooltip")).toBe(tip);
+    leave(tip, screen.getByText("elsewhere"));
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });

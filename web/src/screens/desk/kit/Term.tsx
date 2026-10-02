@@ -6,6 +6,8 @@
  * before. One tooltip per Desk (TermTip, mounted by DeskShell) shows the
  * sentence on hover or focus, fixed to the viewport so no card clips it; the
  * same sentences sit in a hidden list the terms point at with aria-describedby.
+ * The tooltip is measured and placed inside the window, its height clamped to
+ * the room beside its term and the rest scrolled (Codex R-11).
  *
  * desk/pdf-polish item 7: a term is a Tab stop of its own, so the keyboard
  * reaches every definition (a term inside a control, a link, a button or a
@@ -101,16 +103,66 @@ export function defineTerms(node: ReactNode): ReactNode {
 
 interface Tip {
   text: string;
+  /** The box of what shows it (a term, or a control holding terms), in window pixels. */
+  anchor: { left: number; top: number; bottom: number };
+}
+
+/** Where the tip sits once measured: its box's left and top, the most height it may take, and which side it is on. */
+export interface TipPlace {
   left: number;
   top: number;
+  maxHeight: number;
   above: boolean;
 }
 
 const TIP_W = 300;
+/** The tip keeps this far from every edge of the window. */
+export const TIP_MARGIN = 8;
+/** The gap between a term and its tip. */
+const TIP_GAP = 6;
+/** With less room than this on both sides of its term, the tip takes the window's whole height, over the term. */
+const TIP_MIN_ROOM = 96;
+
+const viewport = () => ({
+  width: window.innerWidth || document.documentElement.clientWidth,
+  height: window.innerHeight || document.documentElement.clientHeight,
+});
+
+/** The widest the tip may be in this window: 300 px, less on a phone. */
+const tipWidth = (vw: number) => Math.max(0, Math.min(TIP_W, vw - 2 * TIP_MARGIN));
+
+/**
+ * Codex R-11: the tip, measured at its natural `size`, placed in the window `view`: under its term when it fits
+ * there, else over it, else on the roomier side with its height clamped to that side (the rest scrolls). It never
+ * passes an edge, so a phone's 390 px window shows it whole or scrolls it.
+ */
+export function placeTip(anchor: Tip["anchor"], size: { width: number; height: number }, view: { width: number; height: number }): TipPlace {
+  const m = TIP_MARGIN;
+  const left = Math.max(m, Math.min(anchor.left, view.width - size.width - m));
+  const below = view.height - m - (anchor.bottom + TIP_GAP);
+  const above = anchor.top - TIP_GAP - m;
+  if (size.height <= below) return { left, top: anchor.bottom + TIP_GAP, maxHeight: below, above: false };
+  if (size.height <= above) return { left, top: anchor.top - TIP_GAP - size.height, maxHeight: above, above: true };
+  if (Math.max(below, above) < TIP_MIN_ROOM) return { left, top: m, maxHeight: Math.max(0, view.height - 2 * m), above: false };
+  return below >= above ? { left, top: anchor.bottom + TIP_GAP, maxHeight: below, above: false } : { left, top: m, maxHeight: above, above: true };
+}
 
 /** The Desk's one definition tooltip, plus the hidden sentences the terms describe themselves by. */
 export function TermTip() {
   const [tip, setTip] = useState<Tip | null>(null);
+  // Codex R-11: null while the tip is measured (hidden, unclamped), then where it goes.
+  const [place, setPlace] = useState<(TipPlace & { bodyMax: number }) | null>(null);
+  const tipRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = tipRef.current;
+    const body = el?.firstElementChild;
+    if (!tip || !el || !body || place) return;
+    const box = el.getBoundingClientRect();
+    // The tip's padding and border: what its clamped height keeps besides the sentences.
+    const chrome = box.height - body.getBoundingClientRect().height;
+    const at = placeTip(tip.anchor, { width: box.width, height: box.height }, viewport());
+    setPlace({ ...at, bodyMax: Math.max(0, at.maxHeight - chrome) });
+  }, [tip, place]);
   // The written sentences' hidden entries follow the terms that show them.
   useSyncExternalStore(subscribe, snapshot, snapshot);
   useEffect(() => {
@@ -125,16 +177,17 @@ export function TermTip() {
       current = el;
       shown = text;
       const r = el.getBoundingClientRect();
-      const vw = window.innerWidth || document.documentElement.clientWidth;
-      const vh = window.innerHeight || document.documentElement.clientHeight;
-      const left = Math.max(8, Math.min(r.left, vw - Math.min(TIP_W, vw - 16) - 8));
-      const above = r.bottom + 120 > vh && r.top > 120;
-      setTip({ text, left, top: above ? r.top - 6 : r.bottom + 6, above });
+      // Measured, then placed (Codex R-11).
+      setPlace(null);
+      setTip({ text, anchor: { left: r.left, top: r.top, bottom: r.bottom } });
     };
     const hide = () => {
       current = null;
       setTip(null);
+      setPlace(null);
     };
+    /** Inside the tip: the pointer on its way in or scrolling it keeps it (Codex R-11). */
+    const inTip = (n: EventTarget | null) => n instanceof Node && !!tipRef.current?.contains(n);
     const over = (e: Event) => {
       const target = e.target as Element | null;
       const el = target?.closest?.(".dk-term");
@@ -155,10 +208,12 @@ export function TermTip() {
       // a focus change or Escape (desk/pdf-polish item 7).
       if ((e as PointerEvent).pointerType === "touch") return;
       const to = (e as PointerEvent | FocusEvent).relatedTarget as Node | null;
+      if (inTip(to)) return;
       if (current && !(to && current.contains(to))) hide();
     };
     // A tap (or a click) on a term shows its sentence; anywhere else, it hides the one showing.
     const down = (e: Event) => {
+      if (inTip(e.target)) return;
       const el = (e.target as Element | null)?.closest?.(".dk-term") ?? null;
       const type = (e as PointerEvent).pointerType;
       tapped = el && (type === "touch" || type === "pen") ? el : null;
@@ -182,8 +237,8 @@ export function TermTip() {
     };
     // A scroll moves the tip with its term, and hides it once the term leaves the window (a scroll that lands just
     // after the pointer reached a term would otherwise wipe the tip while the pointer is still on it).
-    const scroll = () => {
-      if (!current) return;
+    const scroll = (e: Event) => {
+      if (!current || inTip(e.target)) return;
       const r = current.getBoundingClientRect();
       const vh = window.innerHeight || document.documentElement.clientHeight;
       if (!current.isConnected || r.bottom < 0 || r.top > vh) return hide();
@@ -223,10 +278,19 @@ export function TermTip() {
         ))}
       </div>
       {tip ? (
-        <div role="tooltip" className="dk-term-tip" data-testid="dk-term-tip" data-above={tip.above || undefined} style={{ left: tip.left, top: tip.top, maxWidth: TIP_W }}>
-          {tip.text.split("\n").map((line) => (
-            <p key={line}>{line}</p>
-          ))}
+        <div
+          ref={tipRef}
+          role="tooltip"
+          className="dk-term-tip"
+          data-testid="dk-term-tip"
+          data-above={place?.above || undefined}
+          style={place ? { left: place.left, top: place.top, maxWidth: tipWidth(viewport().width) } : { left: tip.anchor.left, top: 0, maxWidth: tipWidth(viewport().width), visibility: "hidden" }}
+        >
+          <div className="dk-term-tip-body" style={place ? { maxHeight: place.bodyMax } : undefined}>
+            {tip.text.split("\n").map((line) => (
+              <p key={line}>{line}</p>
+            ))}
+          </div>
         </div>
       ) : null}
     </>

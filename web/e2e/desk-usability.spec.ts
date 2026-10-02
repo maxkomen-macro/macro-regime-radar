@@ -492,7 +492,8 @@ test.describe("desk usability", () => {
     await page.locator("thead abbr.dk-term", { hasText: "Last fired" }).focus();
     await page.keyboard.press("Tab");
     await expect(head).toBeFocused();
-    await expect(page.getByTestId("dk-term-tip")).toHaveText(GLOSSARY["col-times"].text);
+    // Codex R-04: an outcome column's sentence, then where its outcomes count from.
+    await expect(page.getByTestId("dk-term-tip").locator("p")).toHaveText([GLOSSARY["col-times"].text, GLOSSARY.entry.text, GLOSSARY["entry-rule"].text]);
     await page.keyboard.press("Escape");
     await expect(page.getByTestId("dk-term-tip")).toHaveCount(0);
     // A phone: a tap shows the sentence, the finger lifting keeps it, a tap elsewhere hides it.
@@ -500,11 +501,54 @@ test.describe("desk usability", () => {
     const p = await phone.newPage();
     await open(p, "/desk/signal-ledger");
     await p.locator("thead abbr.dk-term", { hasText: "Vs normal" }).tap();
-    await expect(p.getByTestId("dk-term-tip")).toHaveText(GLOSSARY["col-vs-normal"].text);
+    const vsNormal = [GLOSSARY["col-vs-normal"].text, GLOSSARY.entry.text, GLOSSARY["entry-rule"].text];
+    await expect(p.getByTestId("dk-term-tip").locator("p")).toHaveText(vsNormal);
     await p.waitForTimeout(300);
-    await expect(p.getByTestId("dk-term-tip")).toHaveText(GLOSSARY["col-vs-normal"].text);
+    await expect(p.getByTestId("dk-term-tip").locator("p")).toHaveText(vsNormal);
     await p.getByRole("heading", { level: 1 }).tap();
     await expect(p.getByTestId("dk-term-tip")).toHaveCount(0);
+    await phone.close();
+  });
+
+  test("Codex R-10, R-11: on a 390 px phone a tapped definition opens no row, and its tip stays inside the window, scrolling when taller", async ({ browser, baseURL }) => {
+    const phone = await browser.newContext({ baseURL, viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true, colorScheme: "dark" });
+    const p = await phone.newPage();
+    const tip = p.getByTestId("dk-term-tip");
+    const inside = async (w: number, h: number) => {
+      const box = (await tip.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(w);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.y + box.height).toBeLessThanOrEqual(h);
+    };
+    // R-10: a Ledger row's title is a term; a tap on it shows the sentence and leaves the row closed.
+    await open(p, "/desk/signal-ledger");
+    await expect(p.getByRole("main").getByTestId("dk-loading")).toHaveCount(0);
+    const row = p.locator("tbody tr[tabindex]", { has: p.locator("abbr.dk-term", { hasText: "2s10s +2σ steepening" }) });
+    await row.locator("abbr.dk-term").tap();
+    await expect(tip).toContainText(GLOSSARY.curve.text);
+    await p.waitForTimeout(300);
+    await expect(p).toHaveURL(/\/desk\/signal-ledger/);
+    await inside(390, 844);
+    // A tap elsewhere in the row still opens it.
+    await row.locator("td").first().tap();
+    await expect(p).toHaveURL(/\/desk\/event-study/);
+    // R-11: the Data Pipeline's Status head holds four sentences; in a short window they are clamped and scroll.
+    await p.setViewportSize({ width: 390, height: 360 });
+    await open(p, "/desk/data-pipeline?group=credit");
+    await expect(p.getByRole("main").getByTestId("dk-loading")).toHaveCount(0);
+    await p.locator("thead abbr.dk-term", { hasText: "Status" }).tap();
+    await expect(tip.locator("p")).toHaveText(["col-pl-status", "col-pl-lag-close", "col-pl-lag-daily", "col-pl-lag-monthly"].map((id) => GLOSSARY[id].text));
+    await inside(390, 360);
+    const body = tip.locator(".dk-term-tip-body");
+    const sized = await body.evaluate((el) => ({ scroll: el.scrollHeight, client: el.clientHeight, overflow: getComputedStyle(el).overflowY }));
+    expect(sized.overflow).toBe("auto");
+    expect(sized.scroll).toBeGreaterThan(sized.client);
+    // A finger dragging inside the tip scrolls it; the tip stays.
+    await body.evaluate((el) => el.scrollBy(0, 60));
+    await expect.poll(() => body.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+    await expect(tip).toBeVisible();
+    await inside(390, 360);
     await phone.close();
   });
 

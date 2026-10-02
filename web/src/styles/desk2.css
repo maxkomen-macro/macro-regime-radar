@@ -664,10 +664,24 @@
   letter-spacing: normal;
   text-transform: none;
   white-space: normal;
-  pointer-events: none;
 }
-.dk-term-tip[data-above] {
-  transform: translateY(-100%);
+/* Codex R-11: TermTip places the tip once measured, inside the window; when its height is clamped the sentences
+   scroll, so the tip takes the pointer, and a strip over the gap to its term keeps it open on the pointer's way in. */
+.dk-term-tip::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  bottom: 100%;
+  height: 8px;
+}
+.dk-term-tip[data-above]::before {
+  top: 100%;
+  bottom: auto;
+}
+.dk-term-tip-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .dk-term-tip p {
   margin: 0;
