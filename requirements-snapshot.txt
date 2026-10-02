@@ -4,3 +4,5 @@ fastapi
 httpx
 websockets
 pydantic>=2
+# /api/credit/oas reads rates through src/desk/event_study, which imports it (fix/freshness); same pin as requirements-api.txt.
+exchange_calendars==4.13.2

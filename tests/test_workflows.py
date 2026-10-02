@@ -253,6 +253,30 @@ def test_the_stored_histories_step_runs_on_the_full_mode_install():
     assert "pip install -r requirements.txt -r requirements-snapshot.txt" in wf
 
 
+def _pins(req: Path) -> dict[str, str]:
+    """Normalized name -> version for every exact `name==version` line."""
+    out = {}
+    for line in req.read_text().splitlines():
+        m = re.fullmatch(r"([A-Za-z0-9._-]+)\s*==\s*(\S+)", line.split("#", 1)[0].strip())
+        if m:
+            out[re.sub(r"[-_.]+", "-", m.group(1)).lower()] = m.group(2)
+    return out
+
+
+def test_the_snapshot_build_pins_exchange_calendars_like_the_api():
+    """fix/snapshot-deps: "Build the public static snapshot" runs the API in
+    process on the full-mode install (requirements.txt and
+    requirements-snapshot.txt), and /api/credit/oas reads rates through
+    src/desk/event_study, which imports exchange_calendars at module level
+    (fix/freshness). Without it every full refresh failed at that step and
+    published nothing. The pin is the API's, so the snapshot's calendar is the
+    one the API serves."""
+    api = _pins(ROOT / "requirements-api.txt")
+    snapshot = _pins(ROOT / "requirements-snapshot.txt")
+    assert "exchange-calendars" in api
+    assert snapshot.get("exchange-calendars") == api["exchange-calendars"], (snapshot.get("exchange-calendars"), api["exchange-calendars"])
+
+
 # ── launch-1: the static site is told when a full refresh publishes ─────────
 
 
