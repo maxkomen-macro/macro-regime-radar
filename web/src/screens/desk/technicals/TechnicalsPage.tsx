@@ -31,7 +31,7 @@ import { nyToday } from "../DeskSidebar";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { capitalize, dayLong, dayShort, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, priceText, signed, tickText, year } from "../kit/format";
+import { capitalize, dayLong, dayShort, leadershipGaps, monthYear, num, ordinal, pct, pctPlain, priceText, putsVsCalls, signed, tickText, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import LineChart, { extentTicks } from "../kit/LineChart";
 import { DESK_ACCENTS } from "../kit/palette";
@@ -100,13 +100,8 @@ function VolCard({ vol, state }: { vol: VolResponse | undefined; state: CardStat
         <>
           <div className="te-vol-sec">
             <Stat label={VOL_LABELS[0]} value={fin(vol.skew_25d_1m_pts) ? `${signed(vol.skew_25d_1m_pts)} pts` : undefined} awaiting={!fin(vol.skew_25d_1m_pts)} tone={fin(vol.skew_25d_1m_pts) && vol.skew_25d_1m_pts > 0 ? "amber" : undefined} size="xl" />
-            {fin(vol.skew_25d_1m_pts) ? (
-              <p className="te-vol-meaning">
-                {vol.skew_25d_1m_pts >= 0
-                  ? `Puts are ${num(Math.abs(vol.skew_25d_1m_pts))} vol points more expensive than calls.`
-                  : `Calls are ${num(Math.abs(vol.skew_25d_1m_pts))} vol points more expensive than puts.`}
-              </p>
-            ) : null}
+            {/* desk/pdf-polish follow-up 3: the PROTOTYPE's words, "richer" ("cheaper" below zero), served or not. */}
+            {fin(vol.skew_25d_1m_pts) ? <p className="te-vol-meaning">{putsVsCalls(vol.skew_25d_1m_pts)}</p> : null}
             {vol.skew_trend ? <p className="te-vol-context">{`${capitalize(vol.skew_trend)}.`}</p> : null}
           </div>
           <div className="te-vol-sec">

@@ -10,7 +10,7 @@
 
 import { PrototypeCard } from "../kit/Prototype";
 import { AdvancedPanel, Stat, useAdvanced } from "../kit/ui";
-import { capitalize, monthYear, num, ordinal, signed } from "../kit/format";
+import { capitalize, monthYear, num, ordinal, putsVsCalls, signed } from "../kit/format";
 import { costText, protection, strikeText, TENOR_WORDS, TENORS } from "./protection";
 import { prototype } from "./registry";
 import "./prototypes.css";
@@ -121,10 +121,8 @@ export function ProtectionCard() {
           tone="amber"
           size="xl"
         />
-        {/* desk/pdf-polish 3a: "richer", the desk's word ("cheaper" when the skew is below zero). */}
-        <p className="te-vol-meaning">
-          Puts are {num(Math.abs(P.skew))} vol points {P.skew < 0 ? "cheaper" : "richer"} than calls.
-        </p>
+        {/* desk/pdf-polish 3a: "richer", the desk's word ("cheaper" when the skew is below zero), as the served card says it. */}
+        <p className="te-vol-meaning">{putsVsCalls(P.skew)}</p>
         <table className="pr-sides">
           <caption className="dk-sr">The 25-delta put and call, 1 month out</caption>
           <thead>

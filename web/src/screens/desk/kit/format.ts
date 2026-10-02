@@ -45,6 +45,13 @@ export function pctPlain(frac: number, digits = 0): string {
   return isFiniteNumber(frac) ? `${num(frac * 100, digits)}%` : NOT_SERVED;
 }
 
+/** The options card's sentence on its 25-delta skew, illustrative or served: "Puts are 6.8 vol points richer than
+ * calls.", "cheaper" below zero (desk/pdf-polish 3a and its follow-up: the same words in both states). */
+export function putsVsCalls(skewPts: number): string {
+  if (!isFiniteNumber(skewPts)) return NOT_SERVED;
+  return `Puts are ${num(Math.abs(skewPts))} vol points ${skewPts < 0 ? "cheaper" : "richer"} than calls.`;
+}
+
 /** Points, signed: 1.4 → "+1.4 pts". */
 export function pts(x: number, digits = 1): string {
   return isFiniteNumber(x) ? `${signed(x, digits)} pts` : NOT_SERVED;

@@ -164,7 +164,9 @@ describe("Technicals tab", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: "What protection costs right now" });
     await waitFor(() => expect(card).toHaveTextContent("+6.8 pts"));
-    expect(card).toHaveTextContent("Puts are 6.8 vol points more expensive than calls.");
+    // desk/pdf-polish follow-up 3: the served card says what the PROTOTYPE says, "richer" ("cheaper" below zero).
+    expect(card).toHaveTextContent("Puts are 6.8 vol points richer than calls.");
+    expect(card).not.toHaveTextContent(/more expensive|dearer/);
     // §12.0 serves a read only with a named rule; the §12.13 shape carries the trend's words and no read.
     expect(card).toHaveTextContent("Rising since June.");
     expect(card).not.toHaveTextContent("Investors are paying up");

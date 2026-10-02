@@ -1,6 +1,6 @@
 /** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
 import { describe, expect, it } from "vitest";
-import { dayLong, dayShort, etDayTime, etTime, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, signed, year, priceText, tickText } from "./format";
+import { dayLong, dayShort, etDayTime, etTime, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, putsVsCalls, signed, year, priceText, tickText } from "./format";
 import { levelText, roomTone, roomWords, sortByRoom } from "./MonitoredRows";
 
 describe("numbers", () => {
@@ -78,6 +78,15 @@ describe("dates", () => {
     expect(etDayTime("2026-12-01T17:00:00Z")).toBe("Dec 1, 12:00 PM ET");
     expect(etTime("not a stamp")).toBe("");
     expect(etDayTime(null)).toBe("");
+  });
+});
+
+describe("the options card's skew sentence (desk/pdf-polish 3a and its follow-up)", () => {
+  it("says richer, cheaper below zero, in the same words served or illustrative", () => {
+    expect(putsVsCalls(6.8)).toBe("Puts are 6.8 vol points richer than calls.");
+    expect(putsVsCalls(-2.14)).toBe("Puts are 2.1 vol points cheaper than calls.");
+    expect(putsVsCalls(0)).toBe("Puts are 0.0 vol points richer than calls.");
+    expect(putsVsCalls(Number.NaN)).toBe("—");
   });
 });
 

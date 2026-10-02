@@ -189,7 +189,9 @@ function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, l
         <h2 className="dk-card-title" id="pm-mon-title">
           Monitored
         </h2>
-        <p className="pm-mon-sub">how far each is from being wrong · live</p>
+        {/* desk/pdf-polish follow-up 2: the Overview's words. No "· live": the levels are /technicals' newest stored
+            close and /macro's 2s10s (useLevels), stored data refetched with the generation, never the relay's quotes. */}
+        <p className="pm-mon-sub">your positions vs. their exit levels</p>
         <LoadingLine busy={live && loading} />
         {note ? (
           <p className="pm-close-note" role="status" data-testid="pm-close-note">
