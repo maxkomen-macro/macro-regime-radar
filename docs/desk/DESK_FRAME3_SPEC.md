@@ -1008,8 +1008,10 @@ computes everything.
 
 **Cap-weight** (desk/cap-weight) weights the basket by each name's market
 value at its start (§12.15 `weighting=cap`): the stored share count (Yahoo's,
-read by the full refresh, §12.18) times the start's close, over the sum,
-then held; monthly, reset to cap weights on each month's first session.
+read by the full refresh, §12.18) times the start's close as traded (never
+the dividend-adjusted close; Codex R-01), over the sum, then held, each
+dividend reinvested across the basket so it stays cap-weighted; monthly,
+reset to cap weights on each month's first session.
 The weights column then shows the resulting weights at the start, read
 only, beside the weights at the last close, and the basket reads
 "Cap-weighted: market value at the start, current share counts (Yahoo, as
@@ -1971,7 +1973,7 @@ ceiling. No block envelopes.
 |---|---|---|---|---|---|
 | `method` | `"hold"` \| `"monthly"` | required | — | — | A: the request's |
 | `weighting` | `"target"` \| `"cap"` | required | — | — | A: the request's (desk/cap-weight) |
-| `cap_weights` | `{provider, source, as_of, start, legs: [{symbol, shares_outstanding, as_of, close_start, value_start, weight_start}]}` | required, nullable | shares; USD; fraction | `as_of`: the oldest read among the names | S `share_counts` (§12.18) and N `price_basket`: each name's weight at `start` is its share count × its adjusted close there over the basket's sum (`value_start`, `weight_start`, equal to `legs[].target_weight`), then held; monthly, reset to cap weights at each later month's first index session, which with one set of counts changes no holding; null for `target`. The page's label: "Cap-weighted: market value at the start, current share counts (<provider>, as of <as_of>)" |
+| `cap_weights` | `{provider, source, as_of, start, legs: [{symbol, shares_outstanding, as_of, close_start, value_start, weight_start}]}` | required, nullable | shares; USD; fraction | `as_of`: the oldest read among the names | S `share_counts` (§12.18) and N `price_basket`: each name's weight at `start` is its share count × its close there as traded on today's share basis (`close_start`: the provider's own close divided by the splits since, never the dividend-adjusted close, Codex R-01) over the basket's sum (`value_start`, `weight_start`, equal to `legs[].target_weight`), then held, each dividend reinvested across the basket at its weights (a total-return index: the weights stay the market values, a session's return is the names' adjusted returns at those weights); monthly, reset to cap weights at each later month's first index session, which changes nothing; null for `target`. The page's label: "Cap-weighted: market value at the start, current share counts (<provider>, as of <as_of>)" |
 | `notional` | number | required | USD | — | A |
 | `provider`, `source` | string | required | — | — | A: `"EODHD"`, and the source in words |
 | `freq` | `"daily"` | required | — | — | A |

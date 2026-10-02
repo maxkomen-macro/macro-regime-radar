@@ -136,10 +136,14 @@ def history_of(bars_answer: Mapping[str, Any], symbol: str = "") -> Any:
     the provider served without an adjusted close is left out, never priced
     from its raw close (Codex R-07); how many is on the History as
     `unadjusted` for the answer to disclose. A symbol with no adjusted close at
-    all is refused."""
+    all is refused. desk/cap-weight (Codex R-01): EODHD's own close is kept as
+    the close as traded, which a cap-weighted basket's market values read."""
     from src.desk import basket as bk
 
-    dates, close, dv = [], [], []
+    def positive(x: Any) -> bool:
+        return isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and x > 0
+
+    dates, close, dv, traded = [], [], [], []
     left_out = 0
     for b in bars_answer["bars"]:
         c = b.get("close")
@@ -153,9 +157,10 @@ def history_of(bars_answer: Mapping[str, Any], symbol: str = "") -> Any:
         raw, vol = b.get("close_raw"), b.get("volume")
         ok = all(isinstance(x, (int, float)) and math.isfinite(x) and x > 0 for x in (raw, vol))
         dv.append(float(raw) * float(vol) if ok else None)
+        traded.append(float(raw) if positive(raw) else None)
     if not dates and left_out:
         raise env.Refused(502, "provider", f"{symbol}: EODHD served no adjusted closes; a basket reads adjusted closes only.")
-    h = bk.History(tuple(dates), tuple(close), tuple(dv))
+    h = bk.History(tuple(dates), tuple(close), tuple(dv), tuple(traded))
     object.__setattr__(h, "unadjusted", left_out)
     return h
 
@@ -228,7 +233,8 @@ def cap_block(priced: Mapping[str, Any], counts: Mapping[str, Mapping[str, Any]]
     """§12.15's `cap_weights` (desk/cap-weight): where the weights came from, for the label "Cap-weighted:
     market value at the start, current share counts (<provider>, as of <as_of>)": the provider in words, the
     oldest read among the basket's names, the session the market values are taken on, and per name its
-    count, its read date, its close there, its market value and its weight. None for typed weights."""
+    count, its read date, its close there as traded on today's share basis (Codex R-01), its market value and
+    its weight. None for typed weights."""
     if counts is None:
         return None
     legs = priced["legs"]
@@ -238,7 +244,7 @@ def cap_block(priced: Mapping[str, Any], counts: Mapping[str, Mapping[str, Any]]
         "as_of": min(counts[l["symbol"]]["as_of"] for l in legs),
         "start": priced["start"],
         "legs": [{"symbol": l["symbol"], "shares_outstanding": l["shares_outstanding"], "as_of": counts[l["symbol"]]["as_of"],
-                  "close_start": l["price_start"], "value_start": l["value_start"], "weight_start": l["target_weight"]}
+                  "close_start": l["close_traded_start"], "value_start": l["value_start"], "weight_start": l["target_weight"]}
                  for l in legs],
     }
 

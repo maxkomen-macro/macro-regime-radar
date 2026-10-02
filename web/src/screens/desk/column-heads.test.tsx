@@ -67,7 +67,7 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
     renderAt("/desk/basket-hedge");
     const basket = await screen.findByRole("region", { name: "Basket" });
     await waitFor(() => expect(basket.querySelector("thead.bh-legs-thead")).not.toBeNull());
-    await waitFor(() => expect(within(basket).getByLabelText("Cap weight of NVDA at the start")).toHaveTextContent("55.3%"));
+    await waitFor(() => expect(within(basket).getByLabelText("Cap weight of NVDA at the start")).toHaveTextContent("55.1%"));
     expectHeads(basket.querySelector("table.bh-table"), [
       ["Ticker", "col-ticker"],
       ["Name", "col-name"],

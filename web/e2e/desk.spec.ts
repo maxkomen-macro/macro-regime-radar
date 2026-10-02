@@ -809,12 +809,12 @@ test.describe("desk v2", () => {
     // desk/cap-weight: the preset is cap-weighted, like the S&P and the Nasdaq it is read against; the weights column
     // shows each name's market value at the start, read only, and the basket says where the counts come from.
     await expect(basket.getByRole("button", { name: "Cap-weight" })).toHaveAttribute("aria-pressed", "true");
-    await expect(basket.getByLabel("Cap weight of NVDA at the start")).toHaveText("55.3%");
-    await expect(basket.getByLabel("Cap weight of TSM at the start")).toHaveText("17.6%");
+    await expect(basket.getByLabel("Cap weight of NVDA at the start")).toHaveText("55.1%");
+    await expect(basket.getByLabel("Cap weight of TSM at the start")).toHaveText("17.8%");
     await expect(basket.getByLabel("Cap weight of NBIS at the start")).toHaveText("0.1%");
     await expect(basket).toContainText("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026)");
     await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("Up 155.8% since Mar 28, 2025");
-    await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best (R² 0.83 over a year): short $847,494 of it");
+    await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best (R² 0.83 over a year): short $847,384 of it");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&notional=1000000&weighting=cap");
     // §1.0.3: the prototypes are drawn for this basket: Positioning lists all ten names, the event study names it.
     const positions = page.getByRole("region", { name: /^Positioning/ });

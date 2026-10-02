@@ -155,16 +155,16 @@ describe("a cap-weighted basket's words (desk/cap-weight)", () => {
     const EQ = ANSWERS[PRESET];
     const EQ_HEDGE = HEDGES[PRESET];
     expect(indexLead(EQ)).toBe("Up 346.5% since Mar 28, 2025 and +98.6% over the last year; above both its 50- and 200-day averages since Sep 17.");
-    expect(indexLead(CAP)).toBe("Up 155.8% since Mar 28, 2025 and +46.7% over the last year; above both its 50- and 200-day averages since Sep 17.");
-    expect(compareLead(CAP, "1y")).toBe("Over the last year (since Sep 22, 2025) the basket returned +46.7%, against +23.7% for QQQ and +16.4% for SPY; over a year it has moved 1.61× QQQ, correlation 0.87.");
+    expect(indexLead(CAP)).toBe("Up 155.8% since Mar 28, 2025 and +46.6% over the last year; above both its 50- and 200-day averages since Sep 17.");
+    expect(compareLead(CAP, "1y")).toBe("Over the last year (since Sep 22, 2025) the basket returned +46.6%, against +23.7% for QQQ and +16.4% for SPY; over a year it has moved 1.61× QQQ, correlation 0.87.");
     expect(compareLead(EQ, "1y")).toContain("over a year it has moved 2.23× QQQ, correlation 0.78.");
-    expect(contributionLead(CAP)).toBe("NVDA added 58.7 of the index's 155.8 points since Mar 28; CEG added the least, 0.4.");
+    expect(contributionLead(CAP)).toBe("NVDA added 58.6 of the index's 155.8 points since Mar 28; CRWV added the least, 0.4.");
     expect(concentrationLead(CAP.concentration)).toBe("NVDA, TSM and AVGO are 77% of the basket at the last close; it holds like 3.7 equal-weight names, and its names' average pairwise correlation is 0.47.");
     expect(liquidityLead(CAP)).toBe("At $1,000,000 the slowest name to trade is TSM: 0.00022 days at 20% of its 20-day average dollar volume.");
-    expect(hedgeLead(CAP_HEDGE)).toBe("SMH fits the basket best (R² 0.83 over a year): short $847,494 of it against $1,000,000 and the basket's volatility falls from 37% to 15%, 59% less.");
+    expect(hedgeLead(CAP_HEDGE)).toBe("SMH fits the basket best (R² 0.83 over a year): short $847,384 of it against $1,000,000 and the basket's volatility falls from 37% to 15%, 59% less.");
     expect(hedgeLead(EQ_HEDGE)).toBe("SMH fits the basket best (R² 0.74 over a year): short $1,233,779 of it against $1,000,000 and the basket's volatility falls from 57% to 29%, 49% less.");
     expect(stressLead(CAP_HEDGE)).toBe(
-      "With the table's hedge, short $847,494 of SMH: if QQQ falls 10% the basket loses $160,857 unhedged and loses $7,461 hedged; if SPY falls 10% the basket loses $218,536 unhedged and loses $17,441 hedged.",
+      "With the table's hedge, short $847,384 of SMH: if QQQ falls 10% the basket loses $160,835 unhedged and loses $7,458 hedged; if SPY falls 10% the basket loses $218,520 unhedged and loses $17,452 hedged.",
     );
     // Liquidity's dollars: a cap-weighted basket bought at the last close's market values (its weights now).
     for (const l of CAP.legs!) expect(l.dollars).toBeCloseTo((l.weight_now as number) * 1_000_000, 6);

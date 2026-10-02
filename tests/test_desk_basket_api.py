@@ -374,8 +374,9 @@ def test_a_cap_weighted_basket_is_weighted_by_market_value_at_its_start(served_c
     assert d["weighting"] == "cap" and d["start"] == SESSIONS[120]  # CRWV's first close sets the start
     cw = d["cap_weights"]
     assert cw["provider"] == "Yahoo" and cw["as_of"] == "2026-09-24" and cw["start"] == SESSIONS[120]
-    # Each weight is its count × its close on the start over the sum.
-    closes = {s: float(UNIVERSE[s][1][120]) for s in COUNTS}
+    # Each weight is its count × its close on the start over the sum: the close as traded (Codex R-01), EODHD's own
+    # close (the mock's is the adjusted close × 1.01, no split), never the adjusted one.
+    closes = {s: float(UNIVERSE[s][1][120]) * 1.01 for s in COUNTS}
     mv = {s: COUNTS[s] * closes[s] for s in COUNTS}
     want = {s: mv[s] / sum(mv.values()) for s in COUNTS}
     assert {l["symbol"]: l["target_weight"] for l in d["legs"]} == pytest.approx(want)
@@ -383,12 +384,28 @@ def test_a_cap_weighted_basket_is_weighted_by_market_value_at_its_start(served_c
         s = l["symbol"]
         assert (l["shares_outstanding"], l["as_of"]) == (COUNTS[s], "2026-09-24")
         assert (l["close_start"], l["value_start"], l["weight_start"]) == pytest.approx((closes[s], mv[s], want[s]))
-    # The index is the three companies' market value over the start's.
-    end_mv = sum(COUNTS[s] * float(UNIVERSE[s][1][-1]) for s in COUNTS)
+    # The index is the three companies' market value over the start's (no dividend in the mock).
+    end_mv = sum(COUNTS[s] * float(UNIVERSE[s][1][-1]) * 1.01 for s in COUNTS)
     assert d["total_return"] == pytest.approx(end_mv / sum(mv.values()) - 1)
     # The same names at typed weights are another basket, and say so.
     t = price(legs="NVDA:40,AVGO:35,CRWV:25").json()["data"]
     assert t["weighting"] == "target" and t["cap_weights"] is None and t["total_return"] != pytest.approx(d["total_return"])
+
+
+def test_history_of_keeps_eodhds_own_close_as_the_close_as_traded():
+    """desk/cap-weight (Codex R-01): the adjusted close prices the index; EODHD's own close, kept beside it, is what
+    a cap-weighted basket's market values read. A bar without one keeps its place, with None, and takes the next
+    session's ratio; a 2% dividend stays in the market value."""
+    from src.desk import basket as bk
+
+    bars = {"bars": [
+        {"ts": "2026-09-21T00:00:00Z", "close": 98.0, "close_raw": 100.0, "volume": 1e6, "adjusted": True},
+        {"ts": "2026-09-22T00:00:00Z", "close": 99.0, "close_raw": None, "volume": 1e6, "adjusted": True},
+        {"ts": "2026-09-23T00:00:00Z", "close": 98.0, "close_raw": 98.0, "volume": 1e6, "adjusted": True},
+    ]}
+    h = desk_basket.history_of(bars, "X")
+    assert h.close == (98.0, 99.0, 98.0) and h.close_traded == (100.0, None, 98.0)
+    assert bk.market_prices(h, "X") == pytest.approx((100.0, 99.0, 98.0))
 
 
 def test_a_cap_weighted_hedge_reads_the_same_counts_and_says_so(served_counts):
@@ -495,7 +512,8 @@ def test_the_hedge_ranking_follows_the_chosen_weights():
         r[0] = 0.0
 
     def hist(r):
-        return bk.History(tuple(SESSIONS), tuple(50.0 * np.cumprod(1 + r)), tuple([1e9] * n))
+        px = tuple(50.0 * np.cumprod(1 + r))
+        return bk.History(tuple(SESSIONS), px, tuple([1e9] * n), px)
 
     histories = {sym: hist(r) for sym, r in rets.items()}
     histories["X"], histories["Y"] = hist(rets["SMH"]), hist(rets["XLU"])

@@ -80,14 +80,17 @@ def yahoo(symbols: list[str], through: str, cache: Path | None = None) -> dict:
                 adj, raw, vol = float(row["Adj Close"]), float(row["Close"]), float(row["Volume"])
                 rows.append([ts.strftime("%Y-%m-%d"), adj, raw, vol])
             saved[s] = rows
-        dates, close, dv = [], [], []
+        dates, close, dv, traded = [], [], [], []
         for d, adj, raw, vol in saved[s]:
             if d > through or not (math.isfinite(adj) and adj > 0):
                 continue
             dates.append(d)
             close.append(adj)
             dv.append(raw * vol if math.isfinite(raw) and math.isfinite(vol) and vol > 0 else None)
-        out[s] = bk.History(tuple(dates), tuple(close), tuple(dv))
+            # desk/cap-weight (Codex R-01): Yahoo's Close, the close as traded on today's share basis (Yahoo
+            # splits it, never takes dividends out), is what a cap-weighted basket's market values read.
+            traded.append(raw if math.isfinite(raw) and raw > 0 else None)
+        out[s] = bk.History(tuple(dates), tuple(close), tuple(dv), tuple(traded))
         print(f"{s}: {dates[0]} → {dates[-1]} ({len(dates)} sessions)")
     if cache:
         cache.write_text(json.dumps(saved))

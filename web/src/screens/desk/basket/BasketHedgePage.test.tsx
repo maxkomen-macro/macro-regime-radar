@@ -335,8 +335,8 @@ describe("Basket & Hedge tab", () => {
     expect(within(b).queryByRole("button", { name: "Normalize to 100%" })).toBeNull();
     expect(within(b).queryByLabelText("Weight of NVDA, percent")).toBeNull();
     // The weights column shows each name's market value at the start over the basket's, as served (§12.15).
-    const capW: Record<string, string> = { NVDA: "55.3%", AVGO: "16.7%", AMD: "3.5%", TSM: "17.6%", MU: "2.1%", ANET: "2.1%", VRT: "0.6%", CEG: "1.5%", CRWV: "0.4%", NBIS: "0.1%" };
-    await waitFor(() => expect(within(b).getByLabelText("Cap weight of NVDA at the start")).toHaveTextContent("55.3%"));
+    const capW: Record<string, string> = { NVDA: "55.1%", AVGO: "16.8%", AMD: "3.5%", TSM: "17.8%", MU: "2.1%", ANET: "2.0%", VRT: "0.6%", CEG: "1.5%", CRWV: "0.4%", NBIS: "0.1%" };
+    await waitFor(() => expect(within(b).getByLabelText("Cap weight of NVDA at the start")).toHaveTextContent("55.1%"));
     for (const [s, w] of Object.entries(capW)) expect(within(b).getByLabelText(`Cap weight of ${s} at the start`)).toHaveTextContent(w);
     expect(b).toHaveTextContent("Cap-weighted: market value at the start, current share counts (Yahoo, as of Oct 1, 2026)");
     expect(b).toHaveTextContent("AI Infrastructure 10 holds 10 names, cap-weighted, the largest NVDA at 55% at the start, bought and held, $1,000,000: up 155.8% since Mar 28, 2025");
