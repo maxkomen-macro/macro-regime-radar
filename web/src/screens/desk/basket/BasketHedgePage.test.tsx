@@ -371,6 +371,17 @@ describe("Basket & Hedge tab", () => {
     expect(stored()[0].weighting).toBe("cap");
   });
 
+  it("Codex R-02: an answer with the same dates as the stored cap weights and other weights replaces them, so Position Monitor records what the page shows", async () => {
+    // A snapshot an earlier answer left, with the fixture answer's dates (close Sep 23, counts read Oct 1) and other weights.
+    const old = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: Object.fromEntries(PRESET.legs.map((l) => [l.symbol, 0.1])), received_at: 1 };
+    seed([{ ...PRESET, cap_weights: old }]);
+    renderTab();
+    await loaded();
+    await waitFor(() => expect(stored()[0].cap_weights?.weights.NVDA).toBeCloseTo(0.446, 3));
+    expect(stored()[0].cap_weights?.received_at).toBeGreaterThan(1);
+    expect(stored()[0]).toMatchObject({ id: PRESET.id, name: PRESET.name, weighting: "cap", saved_at: PRESET.saved_at });
+  });
+
   it("with no basket saved, says so and starts one with + New basket, named", async () => {
     seed([]);
     renderTab();

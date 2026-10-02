@@ -59,7 +59,6 @@ import {
   exportSaved,
   importSaved,
   heldBasket,
-  isNewerSnapshot,
   legsKey,
   newBasketId,
   normalize,
@@ -72,10 +71,10 @@ import {
   toWork,
   totalText,
   unreadableSaved,
-  updateSaved,
   weightingOf,
   writeAllSaved,
   writeSaved,
+  writeSnapshot,
   type CapAvailability,
   type CapSnapshot,
   type Method,
@@ -927,16 +926,23 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   const names = Object.fromEntries((local?.legs ?? []).map((l) => [l.symbol, l.name]));
   // Send to Position Monitor records a cap-weighted basket at the cap weights last served for it (§9, §10): each
   // name's weight at the last close, kept on the saved basket when an answer for exactly its names arrives.
+  const receivedAt = pq.dataUpdatedAt;
   useEffect(() => {
     if (!local || weightingOf(local) !== "cap" || priced?.weighting !== "cap" || !priced.legs || !priced.cap_weights || !priced.prices_as_of) return;
     if (!sameNames(priced.legs, local.legs) || !priced.legs.every((l) => finite(l.weight_now))) return;
-    const snap: CapSnapshot = { as_of: priced.cap_weights.as_of, prices_as_of: priced.prices_as_of, weights: Object.fromEntries(priced.legs.map((l) => [l.symbol, l.weight_now as number])) };
-    // Only a newer answer replaces what is stored (Codex-style review, finding 1): two windows of this browser
-    // holding answers of different days would otherwise rewrite each other's snapshot on every storage event.
-    if (!isNewerSnapshot(snap, local.cap_weights, local.legs)) return;
-    if (updateSaved({ ...local, cap_weights: snap }) === "ok") refresh();
+    const snap: CapSnapshot = {
+      as_of: priced.cap_weights.as_of,
+      prices_as_of: priced.prices_as_of,
+      weights: Object.fromEntries(priced.legs.map((l) => [l.symbol, l.weight_now as number])),
+      // Codex R-02: when this browser received the answer, so one with the same dates and other weights replaces.
+      received_at: receivedAt,
+    };
+    // Only a newer answer replaces what is stored, so two windows of this browser never rewrite each other's snapshot
+    // on every storage event; and the write reads the basket again and changes only its snapshot (Codex R-03), so an
+    // answer for a basket another window has since edited never writes that edit back.
+    if (writeSnapshot(local.id, snap)) refresh();
     // refresh reads the store again; the effect then finds the snapshot current and writes nothing.
-  }, [local, priced]);
+  }, [local, priced, receivedAt]);
   // The options PROTOTYPE sizes its single-name puts by the weights the basket holds: for a cap-weighted basket, the
   // served weights at the last close (§1.0.3; its outputs stay illustrative).
   const optionsBasket = local ? heldBasket(local, priced) : null;

@@ -1,7 +1,7 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
 import { addLeg, saveRefusal, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
-import { capAvailability, heldBasket, isNewerSnapshot, priceParams, recordedLegs, shareCountsOf, updateSaved, upgradeSeededPreset, weightingOf, type ShareCounts } from "./weights";
+import { capAvailability, heldBasket, isNewerSnapshot, priceParams, recordedLegs, shareCountsOf, upgradeSeededPreset, weightingOf, writeSnapshot, type ShareCounts } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -256,9 +256,16 @@ describe("cap weight (desk/cap-weight)", () => {
     expect(isNewerSnapshot(snap("2026-09-23", "2026-10-01"), undefined, legs)).toBe(true);
     expect(isNewerSnapshot(snap("2026-09-24", "2026-10-01"), snap("2026-09-23", "2026-10-01"), legs)).toBe(true);
     expect(isNewerSnapshot(snap("2026-09-23", "2026-10-02"), snap("2026-09-23", "2026-10-01"), legs)).toBe(true);
-    // Older, or the same day with other weights (another window's answer): the stored one stands.
+    // Older, or the same day with other weights and no later receipt (another window's answer): the stored one stands.
     expect(isNewerSnapshot(snap("2026-09-22", "2026-10-02"), snap("2026-09-23", "2026-10-01"), legs)).toBe(false);
     expect(isNewerSnapshot(snap("2026-09-23", "2026-10-01", 0.7), snap("2026-09-23", "2026-10-01"), legs)).toBe(false);
+    // Codex R-02: the same dates with other weights (the counts read again that day, or a close restated): the answer
+    // this browser received later replaces the stored one, an earlier one never does, and the same weights write nothing.
+    expect(isNewerSnapshot({ ...snap("2026-09-23", "2026-10-01", 0.8), received_at: 2 }, { ...snap("2026-09-23", "2026-10-01"), received_at: 1 }, legs)).toBe(true);
+    expect(isNewerSnapshot({ ...snap("2026-09-23", "2026-10-01", 0.8), received_at: 1 }, { ...snap("2026-09-23", "2026-10-01"), received_at: 2 }, legs)).toBe(false);
+    expect(isNewerSnapshot({ ...snap("2026-09-23", "2026-10-01"), received_at: 3 }, { ...snap("2026-09-23", "2026-10-01"), received_at: 2 }, legs)).toBe(false);
+    // ...and one stored before the answers carried their receipt reads as the oldest.
+    expect(isNewerSnapshot({ ...snap("2026-09-23", "2026-10-01", 0.8), received_at: 2 }, snap("2026-09-23", "2026-10-01"), legs)).toBe(true);
     // A stored one that misses a name gives way; a served one that misses a name, or is malformed, never writes.
     expect(isNewerSnapshot(snap("2026-09-01", "2026-09-01"), { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 1 } }, legs)).toBe(true);
     expect(isNewerSnapshot({ ...snap("2026-09-24", "2026-10-01"), weights: { NVDA: 1 } }, undefined, legs)).toBe(false);
@@ -272,17 +279,55 @@ describe("cap weight (desk/cap-weight)", () => {
     writeSaved(a, st);
     writeSaved(c, st);
     expect(readSaved(st).map((x) => [x.id, weightingOf(x)])).toEqual([["local-1", "cap"], ["local-2", "target"]]);
-    const snap = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: 0.446 } };
-    expect(updateSaved({ ...a, cap_weights: snap }, st)).toBe("ok");
+    const snap = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: Object.fromEntries(PRESET.legs.map((l, i) => [l.symbol, i === 0 ? 0.55 : 0.05])), received_at: 1 };
+    expect(writeSnapshot("local-1", snap, st)).toBe(true);
     expect(readSaved(st).map((x) => x.id)).toEqual(["local-1", "local-2"]);
     expect(readSaved(st)[0].cap_weights).toEqual(snap);
-    // A basket no longer saved here is not written back.
+    // A basket not saved here, or one at typed weights, takes no snapshot.
+    expect(writeSnapshot("local-9", snap, st)).toBe(false);
+    expect(writeSnapshot("local-2", snap, st)).toBe(false);
+    expect(readSaved(st)[1].cap_weights).toBeUndefined();
     removeSaved("local-2", st);
-    expect(updateSaved(c, st)).toBe("ok");
     expect(readSaved(st).map((x) => x.id)).toEqual(["local-1"]);
-    st.setItem(SAVED_BASKETS_KEY, JSON.stringify([{ ...a, weighting: "equal" }, { ...a, id: "local-3", cap_weights: { as_of: "x", prices_as_of: "y", weights: { NVDA: "big" } } }]));
+    st.setItem(
+      SAVED_BASKETS_KEY,
+      JSON.stringify([{ ...a, weighting: "equal" }, { ...a, id: "local-3", cap_weights: { as_of: "x", prices_as_of: "y", weights: { NVDA: "big" } } }, { ...a, id: "local-4", cap_weights: { ...snap, received_at: "soon" } }]),
+    );
     expect(readSaved(st)).toEqual([]);
-    expect(unreadableSaved(st)).toHaveLength(2);
+    expect(unreadableSaved(st)).toHaveLength(3);
+  });
+
+  it("Codex R-02: an answer with the same dates and other weights is what Position Monitor records", () => {
+    const st = memory();
+    const w = (nvda: number) => ({ as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: { NVDA: nvda, AVGO: 1 - nvda } });
+    const two: SavedBasket = { ...PRESET, legs: [{ symbol: "NVDA", name: null, weight: 50 }, { symbol: "AVGO", name: null, weight: 50 }], cap_weights: { ...w(0.6), received_at: 1 } };
+    writeSaved(two, st);
+    expect(writeSnapshot(two.id, { ...w(0.8), received_at: 2 }, st)).toBe(true);
+    expect(recordedLegs(readSaved(st)[0])!.map((l) => Math.round(Number(l.weight) * 1e6) / 1e6)).toEqual([80, 20]);
+    // An answer received before the stored one never writes over it.
+    expect(writeSnapshot(two.id, { ...w(0.6), received_at: 1.5 }, st)).toBe(false);
+    expect(readSaved(st)[0].cap_weights?.weights.NVDA).toBe(0.8);
+  });
+
+  it("Codex R-03: a background snapshot reads the basket again and writes only its snapshot, never another window's edit back", () => {
+    const st = memory();
+    writeSaved({ ...PRESET }, st);
+    // Window A holds the preset as it was read; window B saves it renamed, at typed weights.
+    const stale = readSaved(st)[0];
+    writeSaved({ ...stale, name: "Renamed", weighting: undefined, saved_at: "2026-10-02T05:00:00Z" }, st);
+    const snap = { as_of: "2026-10-01", prices_as_of: "2026-09-23", weights: Object.fromEntries(PRESET.legs.map((l) => [l.symbol, 0.1])), received_at: 5 };
+    // A's answer arrives: the stored basket is no longer cap-weighted, so nothing is written, and B's save stands.
+    expect(writeSnapshot(stale.id, snap, st)).toBe(false);
+    expect(readSaved(st)[0]).toMatchObject({ name: "Renamed", saved_at: "2026-10-02T05:00:00Z" });
+    expect(weightingOf(readSaved(st)[0])).toBe("target");
+    // B makes it cap-weighted again, renamed: A's answer writes its snapshot onto B's basket, and nothing else.
+    writeSaved({ ...readSaved(st)[0], weighting: "cap" }, st);
+    expect(writeSnapshot(stale.id, snap, st)).toBe(true);
+    expect(readSaved(st)[0]).toMatchObject({ name: "Renamed", saved_at: "2026-10-02T05:00:00Z", weighting: "cap", cap_weights: snap });
+    // B drops a name: an answer for the ten names no longer fits the stored nine, and writes nothing.
+    writeSaved({ ...readSaved(st)[0], legs: PRESET.legs.slice(0, 9), cap_weights: undefined }, st);
+    expect(writeSnapshot(stale.id, { ...snap, received_at: 9 }, st)).toBe(false);
+    expect(readSaved(st)[0].cap_weights).toBeUndefined();
   });
 
   it("the preset desk/books seeded, untouched, takes cap weight where it stands; a basket the analyst saved is left alone", () => {

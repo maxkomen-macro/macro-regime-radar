@@ -34,6 +34,9 @@ export interface CapSnapshot {
   prices_as_of: string;
   /** Fractions, by ticker. */
   weights: Record<string, number>;
+  /** When this browser received the answer (ms since 1970; Codex R-02): orders two answers that carry the same dates. A
+   * snapshot written before it existed has none and reads as the oldest. */
+  received_at?: number;
 }
 
 export interface SavedBasket {
@@ -322,12 +325,17 @@ const covers = (s: CapSnapshot | undefined, legs: readonly { symbol: string }[])
   !!s && isSnapshot(s) && legs.every((l) => typeof s.weights[l.symbol] === "number" && Number.isFinite(s.weights[l.symbol]));
 
 /** Whether a served snapshot replaces the stored one: it is well formed and covers every leg, and the stored one is
- * absent, does not cover the legs, or is older (its close, then its counts' read). Never on a tie or an older answer,
- * so two windows holding answers of different days settle on the newer and never trade writes. */
+ * absent, does not cover the legs, or is older: its close, then its counts' read, then, when both dates are the same
+ * and the weights are not (the counts were read again that day, or a close was restated; Codex R-02), the answer this
+ * browser received later. Never on a tie or an older answer, so two windows holding different answers settle on one
+ * and never trade writes. */
 export function isNewerSnapshot(next: CapSnapshot, stored: CapSnapshot | undefined, legs: readonly { symbol: string }[]): boolean {
   if (!covers(next, legs)) return false;
   if (!covers(stored, legs)) return true;
-  return `${next.prices_as_of}|${next.as_of}` > `${stored.prices_as_of}|${stored.as_of}`;
+  const a = `${next.prices_as_of}|${next.as_of}`;
+  const b = `${stored.prices_as_of}|${stored.as_of}`;
+  if (a !== b) return a > b;
+  return legs.some((l) => next.weights[l.symbol] !== stored.weights[l.symbol]) && (next.received_at ?? 0) > (stored.received_at ?? 0);
 }
 
 /** The legs Position Monitor records for a saved basket (§9): its typed weights, or for a cap-weighted basket the
@@ -392,7 +400,8 @@ function isSnapshot(v: unknown): v is CapSnapshot {
     typeof s.prices_as_of === "string" &&
     !!s.weights &&
     typeof s.weights === "object" &&
-    Object.values(s.weights).every((w) => typeof w === "number" && Number.isFinite(w))
+    Object.values(s.weights).every((w) => typeof w === "number" && Number.isFinite(w)) &&
+    (s.received_at === undefined || (typeof s.received_at === "number" && Number.isFinite(s.received_at)))
   );
 }
 
@@ -496,12 +505,16 @@ export function writeSaved(b: SavedBasket, storage: Pick<Storage, "getItem" | "s
   return writeAll([...readSaved(storage).filter((x) => x.id !== b.id), b], storage);
 }
 
-/** Replaces one saved basket where it stands in the list (desk/cap-weight: the cap weights last served, written
- * in the background, never move a basket); nothing when it is not saved here. */
-export function updateSaved(b: SavedBasket, storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): SaveResult {
+/** Writes the cap weights served for a saved basket onto it, in the background (desk/cap-weight; Codex R-03). The
+ * basket is read again from storage when the snapshot is written, and only its snapshot changes: only while the
+ * stored basket is still cap-weighted, holds exactly the snapshot's names, and the snapshot is newer than the one it
+ * carries (`isNewerSnapshot`). So an answer that arrives for a basket another window has since renamed, re-weighted
+ * or edited never writes that window's work back; and the basket keeps its place in the list. True when it wrote. */
+export function writeSnapshot(id: string, snap: CapSnapshot, storage: Pick<Storage, "getItem" | "setItem"> | null = safeStorage()): boolean {
   const list = readSaved(storage);
-  if (!list.some((x) => x.id === b.id)) return "ok";
-  return writeAll(list.map((x) => (x.id === b.id ? b : x)), storage);
+  const b = list.find((x) => x.id === id);
+  if (!b || weightingOf(b) !== "cap" || Object.keys(snap.weights).length !== b.legs.length || !isNewerSnapshot(snap, b.cap_weights, b.legs)) return false;
+  return writeAll(list.map((x) => (x.id === id ? { ...x, cap_weights: snap } : x)), storage) === "ok";
 }
 
 /** Forgets one saved basket. */
