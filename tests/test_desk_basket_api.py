@@ -421,8 +421,8 @@ def test_a_cap_weighted_basket_is_weighted_by_market_value_at_its_start(served_c
 
 def test_history_of_keeps_eodhds_own_close_as_the_close_as_traded():
     """desk/cap-weight (Codex R-01): the adjusted close prices the index; EODHD's own close, kept beside it, is what
-    a cap-weighted basket's market values read. A bar without one keeps its place, with None, and takes the next
-    session's ratio; a 2% dividend stays in the market value."""
+    a cap-weighted basket's market values read. A bar without one keeps its place, with None, and has no market
+    value that session (round 2, R2-03: none is borrowed); a 2% dividend stays in the market value."""
     from src.desk import basket as bk
 
     bars = {"bars": [
@@ -432,7 +432,7 @@ def test_history_of_keeps_eodhds_own_close_as_the_close_as_traded():
     ]}
     h = desk_basket.history_of(bars, "X")
     assert h.close == (98.0, 99.0, 98.0) and h.close_traded == (100.0, None, 98.0)
-    assert bk.market_prices(h, "X") == pytest.approx((100.0, 99.0, 98.0))
+    assert bk.market_prices(h, "X") == pytest.approx({"2026-09-21": 100.0, "2026-09-23": 98.0})
 
 
 def test_a_cap_weighted_hedge_reads_the_same_counts_and_says_so(served_counts):

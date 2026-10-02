@@ -26,14 +26,20 @@ The method, in the order the page states it:
   that basis, `M_i` (`market_prices`: the provider's own close divided by the
   splits since). Codex R-01: never the adjusted close the index is priced
   from, which takes the dividends paid since out of the past and would read a
-  dividend payer's value at the start low. Held, the basket stays
-  cap-weighted: each dividend is reinvested across the basket at its weights,
-  as a total-return index does, so the holdings stay proportional to the
-  share counts, the weights are the names' market values on every session,
-  and a session's return is the cap-weighted total return of the names (their
-  adjusted closes). Monthly, the counts are reset to cap weights at the close
-  of each month's first index session after the start; with one set of share
-  counts that reset changes nothing, so the monthly index is the held one.
+  dividend payer's value at the start low. Splits are told from dividends by
+  the size of the move (`market_prices`); a move prices cannot place refuses
+  cap weight with the reason. Held, the basket stays cap-weighted: each
+  dividend is reinvested across the basket at its weights, as a total-return
+  index does (and as the closes of SPY and QQQ, the funds it is read against,
+  reinvest theirs), so the holdings stay proportional to the share counts,
+  the weights are the names' market values on every session, and a
+  session's return is the cap-weighted total return of the names (their
+  adjusted closes). Kept in each paying name instead, the dividends would
+  pull the weights off the market values and a monthly reset would differ
+  from held (round 2, R2-01, rejected for that reason). Monthly, the counts
+  are reset to cap weights at the close of each month's first index session
+  after the start; with one set of share counts that reset changes nothing,
+  so the monthly index is the held one.
   The liquidity's dollars are a basket bought today, at the market values of
   the last close.
 - **Contribution to return** of a name: the sum over holding periods of its
@@ -75,12 +81,14 @@ PARTICIPATION = 0.20
 CORR_SESSIONS = 252
 CORR_MIN_SESSIONS = 60
 WEIGHT_TOLERANCE = 1e-9
-# desk/cap-weight (Codex R-01): a session's move in the ratio of the close as traded to the adjusted close of this
-# size or more, either way, is taken out as a split (every split and stock dividend is: 5-for-4 is 1.25, a 5% stock
-# dividend 1.05); a smaller one is a cash dividend, which moves the ratio by its yield and stays in. Prices cannot
-# tell a cash dividend of 5% or more paid at once (a special) from a split of that size, so it is read as a split:
-# the adjusted close's reading of that one dividend, never an error the adjusted close would not make.
-SPLIT_STEP = 1.05
+# desk/cap-weight (Codex R-01; round 2, R2-02): a session's move in the ratio of the close as traded to the
+# adjusted close tells a split from a dividend only at the two ends. Under DIVIDEND_STEP (5%), either way, it is a
+# cash dividend, which moves the ratio by its yield and stays in the market value; at SPLIT_STEP (40%) or more,
+# either way, it is a split (2-for-1 is 2, 3-for-2 1.5, a 1-for-10 reverse split 0.1) and is taken out. In
+# between (a 5-for-4 split, a stock dividend, a special cash dividend of that size) prices cannot tell which, so
+# cap weight is refused for the basket, with the reason, never guessed.
+DIVIDEND_STEP = 1.05
+SPLIT_STEP = 1.4
 
 
 class BasketError(ValueError):
@@ -155,35 +163,44 @@ def cap_weights(counts: np.ndarray, closes: np.ndarray) -> np.ndarray:
     return mv / mv.sum()
 
 
-def market_prices(h: History, symbol: str = "") -> tuple[float, ...]:
-    """desk/cap-weight (Codex R-01): one name's close on each of its sessions as
-    traded, on today's share basis: the provider's own close (`close_traded`)
-    divided by the splits since, never adjusted for dividends, so a share count
-    times it is the name's market value that day. The splits are read from the
-    history itself: the ratio of the close as traded to the adjusted close moves
-    only on an ex-date, by a split's ratio or by a dividend's yield; walking back
-    from the last session, a move of SPLIT_STEP or more is taken out as a split
-    and a smaller one stays in (a provider whose close is already split-adjusted,
-    as Yahoo's is, shows only dividends). A session without a close as traded
-    takes the next one's ratio."""
+def market_prices(h: History, symbol: str = "", since: str | None = None) -> dict[str, float]:
+    """desk/cap-weight (Codex R-01): one name's close as traded on each of its
+    sessions from `since` (every one without it), on today's share basis: the
+    provider's own close (`close_traded`) divided by the splits since, never
+    adjusted for dividends, so a share count times it is the name's market
+    value that day. The splits are read from the history itself: the ratio of
+    the close as traded to the adjusted close moves only on an ex-date, by a
+    split's ratio or by a dividend's yield; walking back from the last session,
+    a move of SPLIT_STEP or more is taken out as a split, one under
+    DIVIDEND_STEP stays in as a dividend, and one in between refuses cap weight
+    with the reason (round 2, R2-02). A provider whose close is already
+    split-adjusted, as Yahoo's is, shows only dividends. A session without a
+    close as traded has no market value: none is borrowed from another session
+    (R2-03)."""
     who = symbol or "a name"
     if h.close_traded is None:
         raise BasketError(f"cap weight reads each name's close as traded, and {who} has none")
-    out = [0.0] * len(h.dates)
+    out: dict[str, float] = {}
     split = 1.0
-    later: float | None = None
+    later: tuple[str, float] | None = None  # the next later session with a close as traded, and its ratio
     for i in range(len(h.dates) - 1, -1, -1):
-        t = h.close_traded[i]
-        r = t / h.close[i] if t is not None else later
-        if r is None:
-            raise BasketError(f"cap weight reads each name's close as traded, and {who} has none on {h.dates[i]}")
+        d, t = h.dates[i], h.close_traded[i]
+        if since is not None and d < since:
+            break
+        if t is None:
+            continue
+        r = t / h.close[i]
         if later is not None:
-            step = r / later
+            step = r / later[1]
             if step >= SPLIT_STEP or step <= 1.0 / SPLIT_STEP:
                 split *= step
-        out[i] = h.close[i] * r / split
-        later = r
-    return tuple(out)
+            elif step >= DIVIDEND_STEP or step <= 1.0 / DIVIDEND_STEP:
+                raise BasketError(f"cap weight cannot tell whether {who}'s close as traded moved {abs(step - 1) * 100:.0f}% "
+                                  f"against its adjusted close on {later[0]} for a split or for a dividend, so it cannot "
+                                  "weight this basket by market value")
+        out[d] = t / split
+        later = (d, r)
+    return out
 
 
 def on_calendar(levels: Mapping[str, float], sessions: Sequence[str]) -> np.ndarray:
@@ -236,16 +253,15 @@ def _on_calendar_matrix(histories: Mapping[str, History], symbols: Sequence[str]
     return px, off
 
 
-def _market_matrix(histories: Mapping[str, History], symbols: Sequence[str], cal: Sequence[str]) -> np.ndarray:
+def _market_matrix(histories: Mapping[str, History], symbols: Sequence[str], cal: Sequence[str], since: str) -> np.ndarray:
     """desk/cap-weight: the (sessions × names) matrix of each name's close as
-    traded on today's share basis (`market_prices`), where the adjusted
-    closes' matrix has a close; a date that is not a session is left out
-    there too."""
+    traded on today's share basis (`market_prices`) from `since`, the basket's
+    start; NaN where a name has none (a date that is not a session is left out,
+    as in the adjusted closes' matrix)."""
     pos = {d: i for i, d in enumerate(cal)}
     mkt = np.full((len(cal), len(symbols)), np.nan)
     for j, s in enumerate(symbols):
-        h = histories[s]
-        for d, m in zip(h.dates, market_prices(h, s)):
+        for d, m in market_prices(histories[s], s, since).items():
             i = pos.get(d)
             if i is not None:
                 mkt[i, j] = m
@@ -349,8 +365,15 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float] 
     missing = [cal[i] for i in range(i0, i_end + 1) if not present[i]]
     rows = rebalance_rows(cal, idx, method, cap=cap)
     # desk/cap-weight (Codex R-01): a cap-weighted basket's market values read each name's close as traded on
-    # today's share basis, never the adjusted close the index is priced from.
-    mkt = _market_matrix(histories, symbols, cal) if cap else None
+    # today's share basis, never the adjusted close the index is priced from; the start's and the last close's
+    # are needed, never borrowed from another session (round 2, R2-03).
+    mkt = _market_matrix(histories, symbols, cal, cal[i0]) if cap else None
+    if cap:
+        for row, when in ((i0, "its start"), (i_end, "its last close")):
+            gone = [s for j, s in enumerate(symbols) if not np.isfinite(mkt[row, j])]
+            if gone:
+                raise BasketError(f"cap weight reads each name's close as traded on {when}, {cal[row]}, and "
+                                  f"{', '.join(gone)} {'has' if len(gone) == 1 else 'have'} none there")
     # The weights the basket starts at: the typed targets, or the market values on the start's closes.
     target = cap_weights(counts, mkt[i0]) if cap else np.array([w[s] for s in symbols])
 
@@ -369,7 +392,10 @@ def price_basket(histories: Mapping[str, History], weights: Mapping[str, float] 
         for t in idx[1:]:
             value[t] = px[t] @ shares
             contrib += shares * (px[t] - px[prev]) / notional
-            shares = cap_weights(counts, mkt[t]) * value[t] / px[t]
+            # A session where a name has no close as traded keeps the holdings, so a dividend waits a session to be
+            # reinvested (R2-03: no market value is borrowed). On a session without a dividend this changes nothing.
+            if np.all(np.isfinite(mkt[t])):
+                shares = cap_weights(counts, mkt[t]) * value[t] / px[t]
             prev = t
         for k, r in enumerate(rows):
             seg_end = rows[k + 1] if k + 1 < len(rows) else i_end
