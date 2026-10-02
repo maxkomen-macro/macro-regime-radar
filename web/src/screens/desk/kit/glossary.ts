@@ -79,7 +79,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-r2-60d": { forms: [], text: "R² 60D is the share of the basket's daily-return variance the ETF's daily returns explain over the last 60 returns both have, from 0 to 1." },
   "col-short": { forms: [], text: "Short is the dollars of the ETF to sell short: the hedge ratio times the basket's notional." },
   "col-vol-left": { forms: [], text: "Vol left is the basket's annualized volatility after the short: the standard deviation of its daily return less the hedge ratio times the ETF's, times √252." },
-  "col-vol-cut": { forms: [], text: "Vol cut is how much of the basket's annualized volatility the short removes: one minus vol left over the basket's own volatility." },
+  "col-vol-cut": { forms: [], text: "Vol cut is the change the short makes to the basket's annualized volatility, as a share of it: vol left over the basket's own volatility, minus one, so −44% means 44% less." },
   "col-if": { forms: [], text: "If is the move tested: QQQ or SPY falling 10%." },
   "col-st-basket": { forms: [], text: "Basket is the basket's move in that case: its beta to the benchmark times the benchmark's move." },
   "col-unhedged": { forms: [], text: "Unhedged is the basket's profit or loss without the short: its notional times its beta to the benchmark times the move." },

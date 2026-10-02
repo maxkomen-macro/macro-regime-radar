@@ -101,6 +101,11 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
       ["Vol left", "col-vol-left"],
       ["Vol cut", "col-vol-cut"],
     ]);
+    // Codex R-03: the column prints the change in volatility (vol left ÷ the basket's own − 1, below zero when the
+    // short lowers it), and its definition says the same sign.
+    const cuts = [...etfs.querySelectorAll("table.bh-etf-table tbody tr td:last-child")].map((td) => td.textContent ?? "");
+    expect(cuts.some((t) => t.startsWith("−"))).toBe(true);
+    expect(GLOSSARY["col-vol-cut"].text).toContain("vol left over the basket's own volatility, minus one, so −44% means 44% less");
     const stress = screen.getByRole("region", { name: /^Stress test/ });
     const short = stress.querySelector("thead th:nth-child(4)")?.textContent ?? "";
     expect(short).toMatch(/^Short [A-Z]+$/);
