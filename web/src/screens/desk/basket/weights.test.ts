@@ -1,7 +1,7 @@
 /** Basket & Hedge's weights (DESK_FRAME3_SPEC §10): typed, tidied, keyed, kept in this browser. */
 import { describe, expect, it } from "vitest";
 import { addLeg, saveRefusal, apiLegs, equalWeight, exportSaved, importSaved, decimal, isEqualWeight, legsKey, methodOf, newBasketId, normalize, notionalOf, notionalText, parseNotional, parseTicker, parseWeight, PRESET, readSaved, removeSaved, seedPreset, sumsToHundred, toWork, total, totalText, unreadableSaved, writeSaved, SAVED_BASKETS_KEY, type SavedBasket, type WorkLeg } from "./weights";
-import { capAvailability, heldBasket, isNewerSnapshot, priceParams, recordedLegs, shareCountsOf, upgradeSeededPreset, weightingOf, writeSnapshot, type ShareCounts } from "./weights";
+import { capAvailability, capRefusalOf, heldBasket, isNewerSnapshot, priceParams, recordedLegs, shareCountsOf, upgradeSeededPreset, weightingOf, writeSnapshot, type ShareCounts } from "./weights";
 
 const legs = (ws: string[]): WorkLeg[] => ws.map((w, i) => ({ symbol: `T${i}`, name: null, weight: w }));
 
@@ -301,6 +301,24 @@ describe("cap weight (desk/cap-weight)", () => {
     );
     expect(readSaved(st)).toEqual([]);
     expect(unreadableSaved(st)).toHaveLength(3);
+  });
+
+  it("round 2: a basket the API refused to cap-weight is unavailable with the API's words, so it is priced at its typed weights", () => {
+    const words = "cap weight cannot tell whether NVDA's close as traded moved 25% against its adjusted close on 2026-03-03 for a split or for a dividend, so it cannot weight this basket by market value";
+    const refusal = capRefusalOf({ status: 422, body: { error: "unsupported" }, message: words }, "NVDA,AVGO");
+    expect(refusal).toEqual({ names: "NVDA,AVGO", reason: `C${words.slice(1)}.` });
+    // Any other failure is shown as it is: a 422 about something else, a provider's 502, an awaiting answer.
+    expect(capRefusalOf({ status: 422, body: { error: "unsupported" }, message: "The weight of NVDA is not a number." }, "NVDA")).toBeNull();
+    expect(capRefusalOf({ status: 502, body: { error: "provider" }, message: "cap weight" }, "NVDA")).toBeNull();
+    expect(capRefusalOf({ status: 200, body: { error: "awaiting" }, message: "Awaiting refresh: cap weight reads stored share counts." }, "NVDA")).toBeNull();
+    expect(capRefusalOf(null, "NVDA")).toBeNull();
+    const counts: ShareCounts = { state: "ready", provider: "Yahoo", dates: { NVDA: "2026-10-01", AVGO: "2026-10-01" } };
+    const cap = capAvailability(["NVDA", "AVGO"], counts, refusal);
+    expect(cap).toEqual({ state: "unavailable", reason: `Cap weight is unavailable. C${words.slice(1)}.` });
+    // Refused for these names only: another set of names is asked again.
+    expect(capAvailability(["NVDA"], counts, refusal).state).toBe("ok");
+    const b: SavedBasket = { ...PRESET, legs: [{ symbol: "NVDA", name: null, weight: 50 }, { symbol: "AVGO", name: null, weight: 50 }] };
+    expect(priceParams(b, cap)).toEqual({ legs: "NVDA:50,AVGO:50", method: "hold", notional: "1000000" });
   });
 
   it("Codex R-02: an answer with the same dates and other weights is what Position Monitor records", () => {

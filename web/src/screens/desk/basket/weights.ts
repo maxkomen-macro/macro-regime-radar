@@ -268,9 +268,27 @@ function listOf(items: readonly string[]): string {
   return items.length <= 1 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
 }
 
-/** Whether a basket of these names can be cap-weighted: every name needs a stored share count (§12.18). When it
- * can, the counts' provider and their oldest read, for the label; when it cannot, why, in words. */
-export function capAvailability(symbols: readonly string[], counts: ShareCounts): CapAvailability {
+/** desk/cap-weight, round 2: a cap-weighted basket the API refused to weight by market value (its closes cannot be
+ * placed, R2-02, or one is missing on its start or last close, R2-03; or a count gone since the counts were read): the
+ * names it was asked for, as the request lists them, and the API's words. */
+export interface CapRefusal {
+  names: string;
+  reason: string;
+}
+
+/** The refusal a failed cap-weighted request carries (a 422 `unsupported` whose words are about cap weight), as the
+ * page says it; null for any other failure, which the page shows as it is. */
+export function capRefusalOf(e: { status?: number; body?: { error?: string } | null; message?: string } | null | undefined, names: string): CapRefusal | null {
+  if (!e || e.status !== 422 || e.body?.error !== "unsupported" || !e.message || !/^cap weight/i.test(e.message)) return null;
+  const words = e.message.charAt(0).toUpperCase() + e.message.slice(1);
+  return { names, reason: /[.!?]$/.test(words) ? words : `${words}.` };
+}
+
+/** Whether a basket of these names can be cap-weighted: every name needs a stored share count (§12.18), and the API
+ * must not have refused these names (`refused`, round 2). When it can, the counts' provider and their oldest read, for
+ * the label; when it cannot, why, in words. */
+export function capAvailability(symbols: readonly string[], counts: ShareCounts, refused?: CapRefusal | null): CapAvailability {
+  if (refused && refused.names === symbols.join(",")) return { state: "unavailable", reason: `Cap weight is unavailable. ${refused.reason}` };
   if (counts.state === "loading") return { state: "loading" };
   if (counts.state === "unavailable") return { state: "unavailable", reason: `Cap weight is unavailable. ${counts.reason}` };
   if (!symbols.length) return { state: "unavailable", reason: "Cap weight is unavailable. The basket holds no name yet." };

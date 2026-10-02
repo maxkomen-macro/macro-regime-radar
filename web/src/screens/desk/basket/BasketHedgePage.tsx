@@ -46,6 +46,7 @@ import {
   METHOD_WORDS,
   addLeg,
   capAvailability,
+  capRefusalOf,
   methodOf,
   notionalOf,
   notionalText,
@@ -76,6 +77,7 @@ import {
   writeSaved,
   writeSnapshot,
   type CapAvailability,
+  type CapRefusal,
   type CapSnapshot,
   type Method,
   type SaveResult,
@@ -335,6 +337,7 @@ function BasketCard({
   onAddDone,
   priced,
   counts,
+  refused,
 }: {
   basketId: string | null;
   saved: SavedBasket[];
@@ -348,6 +351,8 @@ function BasketCard({
   priced?: BasketPriceResponse;
   /** desk/cap-weight: the stored share counts (§12.18), for whether a basket can be cap-weighted. */
   counts: ShareCounts;
+  /** Round 2: the names the API refused to cap-weight, and why (the basket is then priced at its typed weights). */
+  refused: CapRefusal | null;
 }) {
   const uid = useId();
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -379,7 +384,7 @@ function BasketCard({
   const notional = parseNotional(notionalTyped);
   // desk/cap-weight: how the legs are weighted, and whether these names can be cap-weighted (every one with a count).
   const weighting = weightingWork ?? weightingOf(local);
-  const cap = capAvailability((legs ?? []).map((l) => l.symbol), counts);
+  const cap = capAvailability((legs ?? []).map((l) => l.symbol), counts, refused);
   // How the legs are shown and priced: cap-weighted only while every name has a stored count; otherwise the typed
   // weights the basket is priced at (the choice itself is kept, so the counts' arrival makes it cap-weighted again).
   const shown: Weighting = weighting === "cap" && cap.state !== "unavailable" ? "cap" : "target";
@@ -917,9 +922,17 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
   const local = saved.find((b) => b.id === basketId) ?? null;
   // desk/cap-weight: the stored share counts decide whether the saved basket is asked cap-weighted (§12.18).
   const counts = shareCountsOf(useBasketShares());
-  const params = priceParams(local, local ? capAvailability(local.legs.map((l) => l.symbol), counts) : undefined);
+  // Round 2: the API refuses cap weight for a basket whose closes it cannot place or that lacks a close on its start or
+  // last close (R2-02, R2-03). That basket is then priced at its typed weights and says why, as one without stored
+  // counts is: unavailable means priced at the typed weights, never unpriced.
+  const [refused, setRefused] = useState<CapRefusal | null>(null);
+  const params = priceParams(local, local ? capAvailability(local.legs.map((l) => l.symbol), counts, refused) : undefined);
   const pq = useBasketPrice(params);
   const hq = useBasketHedge(params);
+  useEffect(() => {
+    const r = params?.weighting === "cap" ? capRefusalOf(pq.error ?? hq.error, params.legs) : null;
+    if (r) setRefused(r);
+  }, [params?.weighting, params?.legs, pq.error, hq.error]);
   const [range, setRange] = useState<BasketRange>("1y");
   const priced = pq.data;
   const state = pq.data ? "ready" : pq.isError ? "awaiting" : "loading";
@@ -950,7 +963,7 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
     <div className="bh">
       <PageTitle page={page} badge={priced ? <LiveBadge boxed parts={[priced.provider ?? null, dayShort(priced.prices_as_of) || null]} /> : <NotServedBadge boxed />} />
       <StepOne>
-        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} priced={pq.data} counts={counts} />
+        <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} priced={pq.data} counts={counts} refused={refused} />
       </StepOne>
       <StepTwo local={local} params={params} q={pq} state={state} range={range} setRange={setRange} names={names} />
       <StepThree local={local} params={params} q={hq} priceAsOf={pq.data?.prices_as_of} optionsBasket={optionsBasket} />

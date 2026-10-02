@@ -16,7 +16,7 @@ import DeskShell from "../DeskShell";
 import sample from "../../../fixtures/desk/baskets.json";
 import { renderWithProviders } from "../../../test/utils";
 import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
-import { deskFixture } from "../../../fixtures/desk";
+import { basketKey, deskFixture } from "../../../fixtures/desk";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import { PRESET, SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
@@ -369,6 +369,25 @@ describe("Basket & Hedge tab", () => {
     fireEvent.click(within(b).getByRole("button", { name: "Save basket" }));
     await waitFor(() => expect(index).toHaveTextContent("Up 155.8% since Mar 28, 2025"));
     expect(stored()[0].weighting).toBe("cap");
+  });
+
+  it("round 2: when the API refuses to cap-weight the preset, it is priced at its typed weights and says why, never unpriced", async () => {
+    const words = "cap weight cannot tell whether NVDA's close as traded moved 25% against its adjusted close on 2026-03-03 for a split or for a dividend, so it cannot weight this basket by market value";
+    const answers = { price: (basketPrice as { answers: Record<string, unknown> }).answers, hedge: (basketHedge as { answers: Record<string, unknown> }).answers };
+    const refuse = (route: "price" | "hedge") => (url: URL) =>
+      url.searchParams.get("weighting") === "cap" ? { status: 422, body: { error: "unsupported", message: words } } : answers[route][basketKey(url)];
+    const { calls } = stubDesk({ "/api/desk/basket/price": refuse("price"), "/api/desk/basket/hedge": refuse("hedge") });
+    renderTab();
+    const b = await loaded();
+    const index = await screen.findByRole("region", { name: /^Basket index/ });
+    await waitFor(() => expect(index).toHaveTextContent("Up 346.5% since Mar 28, 2025"));
+    expect(b).toHaveTextContent(`Cap weight is unavailable. C${words.slice(1)}.`);
+    expect(within(b).getByRole("button", { name: "Cap-weight" })).toBeDisabled();
+    expect(within(b).getByLabelText("Weight of NVDA, percent")).toHaveValue("10");
+    expect(calls).toContain("GET /api/desk/basket/price?legs=NVDA%3A10%2CAVGO%3A10%2CAMD%3A10%2CTSM%3A10%2CMU%3A10%2CANET%3A10%2CVRT%3A10%2CCEG%3A10%2CCRWV%3A10%2CNBIS%3A10&method=hold&notional=1000000");
+    // The choice is kept: the saved basket stays cap-weighted, and no cap weights are recorded for it.
+    expect(stored()[0].weighting).toBe("cap");
+    expect(stored()[0].cap_weights).toBeUndefined();
   });
 
   it("Codex R-02: an answer with the same dates as the stored cap weights and other weights replaces them, so Position Monitor records what the page shows", async () => {
