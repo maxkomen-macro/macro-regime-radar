@@ -14,9 +14,10 @@ owner pushes after typing `PUSH OK desk/cap-weight`. One commit per item:
 | 6 | `ac312b3b` | The review's findings (below, "Review"); its subject says "desk/cap-weight 6" |
 | 7 | (this report's commit) | This report and its screenshots (`docs/desk/shots/desk-cap-weight/`) |
 
-Overnight round 2 (the last section) merged desk/pdf-polish, added the
-CLAUDE.md lines and ran the independent review; its commits are listed
-there.
+Overnight round 2 merged desk/pdf-polish, added the CLAUDE.md lines and
+ran the independent review; Round 4 merged main and desk/pdf-polish's
+final tip and had the fixes re-reviewed ("safe to push"). Both are the
+last two sections, with their commits.
 
 **Where the numbers come from.** This machine holds no EODHD token (by
 design: the local API runs with the relay off and cannot spend the
@@ -866,3 +867,90 @@ case it is priced at its typed weights with the reason.
 
 Every server this run started (the API on 8001, Vite on 5174) is stopped,
 and each Codex run ended on its own.
+
+## Round 4
+
+Run on Oct 2, 2026, from 11:44 ET (hard stop 1:30 PM ET), in this
+worktree, ports 8001 and 5174 only, nothing pushed, `data/macro_radar.db`
+never staged.
+
+### The merges
+
+- `git fetch origin`, then `git merge --no-ff origin/main`: **`d44565e1`**.
+  Main had gained `fix/snapshot-deps` (`290bf866`: `exchange_calendars` in
+  `requirements-snapshot.txt` and a workflows test) and the refresh bot's
+  memo and playbook commits; none of it touches this branch's files, and it
+  merged cleanly.
+- `git merge desk/pdf-polish` at its tip `227dc7e4` (main did not hold it):
+  **`6782783e`**. A's sixteen new commits (its Codex loop: R-01 to R-14, the
+  definition tooltip's placement, the Fit column of Hedge with an ETF, the
+  definitions' wording) touch none of the lines this branch changed, so
+  there was no textual conflict. Checked file by file (`git diff --stat`):
+  what the merge adds on top of this branch is exactly A's new change set,
+  and what it adds on top of A is exactly this branch's; the Fit column
+  (`fitWords`, 1Y or 60D, `col-fit`) is in.
+- One conflict of meaning, resolved in **`0a1d20d4`**: two columns switched
+  between two definitions with the weighting (this branch's
+  `col-weight-cap` and `col-at-cap-weight` beside A's `col-weight` and
+  `col-at-target`). Each now carries one definition, true whether the basket
+  is weighted as typed or by market cap, within A's rule (one sentence, at
+  most 32 words); the heads keep their words:
+  - the weights column ("Weight" / "At start"): "Each name's weight at the
+    start: the share you type, which must add up to 100%, or, cap-weighted,
+    its stored share count times its close that day, over the basket's
+    sum.";
+  - liquidity's dollars ("At target" / "At cap weight"): "The dollars the
+    name holds in the basket bought at the last close: the notional times its
+    weight, the target you set or, cap-weighted, its share of the basket's
+    market value there."
+
+  Every other Basket & Hedge definition, A's new Fit and Vol cut among them,
+  was read against both weightings and holds: each reads the basket's own
+  daily returns or values, whatever weights made them.
+
+### Gates
+
+At `0a1d20d4`, the same commands, database copy and interpreter as before:
+
+- **Web**: `tsc -b` clean; vitest **147 files, 1,858 tests passed** (A's
+  new ones among them); `vite build` clean.
+- **Full pytest**: **1,931 passed, 3 skipped, 11 failed** in 18 min, run
+  while Codex, the API and Vite were busy beside it. Ten are the known
+  data-state pins. Of the two timing tests, `test_generations` passed this
+  run and `test_desk_api.py`'s assistant-SQL test failed instead (another
+  reader waited 27.3 ms against its 20 ms limit). Run alone four times, the
+  assistant-SQL test passed every time and `test_generations` failed every
+  time, as it does on the base; this branch's one change to
+  `test_desk_api.py` is the `/basket/shares` row of its route table. So the
+  known 11 stand, the two timing tests trading places under load.
+- **Desk e2e**: **85/85 passed** (stamp `desk/cap-weight@0a1d20d`; 85 since
+  A added one).
+
+### The review (Codex round 4)
+
+Base `a409e900`, the tip round 3 reviewed; reviewed `0a1d20d4` (round 3's
+fixes `12bbb187` and `45f5b981`, the two merges and the definitions
+commit); the brief as given, with D5 (dividends reinvested across the
+basket) accepted and D6 (a move of 5% or more after the start refuses cap
+weight) by design; 11:48–12:13 ET. Codex read all 35 changed files, ran 41
+basket test cases in memory, matched 40 synthetic baskets against the
+engine (monthly equal to held), probed the refusal retry, the recovery on a
+new generation, the typed weights reaching Position Monitor, the
+discipline gate and the tooltip, and accounted for every file outside the
+Desk tree. It found nothing, so nothing was fixed in this round.
+
+| ID | Severity | Finding | What I did |
+|---|---|---|---|
+| — | — | No new actionable findings | Nothing to fix |
+
+`VERDICT: safe to push`
+
+### Final HEAD
+
+Round 4's commits, on round 2's `382298aa`: `d44565e1` (main),
+`6782783e` (desk/pdf-polish at `227dc7e4`), `0a1d20d4` (one definition per
+column), and the commit that adds this section, whose parent is
+`0a1d20d4`: that commit is the final HEAD (`git log -1` gives its SHA).
+Nothing is pushed; `data/macro_radar.db` was never staged. The API on 8001
+and Vite on 5174 that this round started are stopped, and the Codex run
+ended on its own.
