@@ -32,7 +32,8 @@ export const LEDGER_HEADS = [
   ["col-median", "Median"],
   ["col-vs-normal", "Vs normal"],
   ["col-verdict", "Verdict"],
-  ["col-now-firing", "Now"],
+  // fix/site-audit D-d: "Latest", not "Now": under the close's grace a row is the previous session's (S-01).
+  ["col-now-firing", "Latest"],
 ] as const;
 /** The heads whose figures are outcomes counted from each firing's entry (Codex R-04). */
 const OUTCOME_HEADS: ReadonlySet<string> = new Set(["col-times", "col-up-month", "col-median", "col-vs-normal"]);
@@ -40,7 +41,7 @@ const FILTER_IDS: readonly Filter[] = ["all", "firing", "reliable", "spx", "cros
 
 /** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
 export const isAvailable = (r: LedgerRow) => r.available !== false;
-/** Firing: firing on its evaluated session (which may be the previous one, under the close's grace; the NOW
+/** Firing: firing on its evaluated session (which may be the previous one, under the close's grace; the Latest
  * cell dates it, fix/site-audit S-01); a stale row is never called firing (v3 §3). */
 // A firing claim needs the state and its freshness served: stale not served claims nothing (§12.5; verifier V14-5).
 export const firingToday = (r: LedgerRow) => isAvailable(r) && r.firing_now === true && r.stale === false;
@@ -239,7 +240,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
                 <col style={{ width: 92 }} />
                 <col style={{ width: 101 }} />
                 <col style={{ width: 101 }} />
-                {/* NOW holds "● Firing · day 10" and "○ Stale · Sep 19" whole (§8), with air before it: 12px taken from VERDICT's 92px pill column, no other column moved. */}
+                {/* LATEST holds "● Firing · day 10" and "○ Stale · Sep 19" whole (§8), with air before it: 12px taken from VERDICT's 92px pill column, no other column moved. */}
                 <col style={{ width: 148 }} />
               </colgroup>
               <thead>

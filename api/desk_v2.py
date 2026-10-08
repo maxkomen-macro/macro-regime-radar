@@ -955,7 +955,7 @@ def close_grace(comparison: str, now: datetime) -> int:
     /overview's data status and the Data status drawer already apply) a study
     through the session before is current, so 1; after it 0, and a close
     still missing then is stale. On a trading day T, for a study whose inputs
-    are exchange closes, the Ledger's NOW cell reads:
+    are exchange closes, the Ledger's Latest cell (fix/site-audit D-d; it was headed NOW) reads:
       pre-open and mid-session  T−1 is the comparison session and its close is
                                 stored: "● Firing · day n" or "○ Quiet" (as
                                 of T−1); if the refresh after T−1's close has

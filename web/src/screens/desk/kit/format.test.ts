@@ -152,7 +152,7 @@ describe("classifier odds (fix/site-audit D1)", () => {
 describe("firing words (fix/site-audit S-01)", () => {
   // D4's grace keeps the previous session standing after the bell: a signal evaluated on Oct 6 must never read as firing today on Oct 7.
   const row = (over: Record<string, unknown>) => ({ firing_now: true, firing_day: 1, stale: false, evaluated_on: "2026-10-06", ...over });
-  it("the Ledger's NOW cell says now only for today's session, else the session's day", async () => {
+  it("the Ledger's Latest cell says now only for today's session, else the session's day", async () => {
     const { firingCell } = await import("./format");
     expect(firingCell(row({}), "2026-10-07")).toBe("● Fired Oct 6 · day 1");
     expect(firingCell(row({ evaluated_on: "2026-10-07" }), "2026-10-07")).toBe("● Firing · day 1");

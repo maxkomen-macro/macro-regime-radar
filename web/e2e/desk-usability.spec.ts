@@ -534,7 +534,7 @@ test.describe("desk usability", () => {
     await expect(p).toHaveURL(/\/desk\/signal-ledger/);
     await inside(390, 844, false);
     // The rightmost head: its tip keeps its full width, inside the window.
-    await p.locator("thead abbr.dk-term", { hasText: "Now" }).tap();
+    await p.locator("thead abbr.dk-term", { hasText: "Latest" }).tap();
     await expect(tip).toContainText(GLOSSARY["col-now-firing"].text);
     await inside(390, 844);
     await p.getByRole("heading", { level: 1 }).tap();

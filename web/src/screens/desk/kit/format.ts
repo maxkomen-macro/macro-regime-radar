@@ -231,7 +231,7 @@ type FiringRow = { firing_now?: boolean | null; firing_day?: number | null; stal
 
 const onToday = (r: FiringRow, today: string) => typeof r.evaluated_on === "string" && r.evaluated_on === today;
 
-/** The Ledger's NOW cell: "● Firing · day 3" / "○ Quiet" for today's session, "● Fired Oct 6 · day 3" /
+/** The Ledger's Latest cell (fix/site-audit D-d; headed NOW before): "● Firing · day 3" / "○ Quiet" for today's session, "● Fired Oct 6 · day 3" /
  * "○ Quiet · Oct 6" for an earlier one, "○ Stale · Oct 6", "—" when the state is not served. */
 export function firingCell(r: FiringRow, today = nyToday()): string {
   if (r.firing_now == null || r.stale == null) return NOT_SERVED;

@@ -132,7 +132,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-median": { forms: [], text: "Median is the middle move of the target over the 20 sessions from each firing's entry." },
   "col-vs-normal": { forms: [], text: "Vs normal is that median less the median 20-session move over every evaluable session of the sample, in log returns times 100, or basis points for a yield or spread." },
   "col-verdict": { forms: [], text: "Verdict is the 20-session result by the scoring rule: Reliable, Suggestive, No edge or Too few." },
-  "col-now-firing": { forms: [], text: "Now says whether the signal is firing on the last session and for how many days, is quiet, or is stale because an input is behind." },
+  "col-now-firing": { forms: [], text: "Latest says whether the signal fired on its latest evaluated session and for how many days, is quiet, or is stale because an input is behind." },
   // Position Monitor (positions/monitor.ts, positions/store.ts).
   "col-room": { forms: [], text: "Room is how far the series is from the exit level now, as a share of that distance at entry: 100% at entry, zero at the level." },
   "col-to-level": { forms: [], text: "To level is the distance left to the exit level: a percent of the price for the S&P, basis points for 2s10s." },
