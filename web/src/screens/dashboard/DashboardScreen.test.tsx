@@ -402,6 +402,8 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(text(ddFor("Model confidence"))).toBe("Medium (47%)");
     expect(text(ddFor("Odds"))).toContain("GL 58%");
     expect(ddFor("Odds").querySelector(".mrr-odds")).not.toBeNull();
+    // fix/site-audit D-b: the Model & market summary's four odds carry the rounding note.
+    expect(ddFor("Odds").querySelector("[data-copy='odds-rounding']")?.textContent).toBe("Rounded; may not sum to 100");
     await waitFor(() => expect(text(ddFor("Model vs market"))).toBe("Aligned · +8 on ±100"));
     await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path \u2192 Recession Risk 12% (hand-set priors)"));
     await waitFor(() => expect(text(ddFor("What changed"))).toBe("Switched from Recession Risk in Jul 2026 · 3 months in"));

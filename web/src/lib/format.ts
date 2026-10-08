@@ -58,6 +58,10 @@ export function fmtBpsLevel(bps: number): string {
  * model, transition outlook odds, scenario odds). */
 export type ProbScale = "unit" | "percent";
 
+/** Printed wherever the four regime odds appear together (fix/site-audit D-b): each whole percent rounds half up
+ * on its own (roundHalfUp), so the four can read 101 or 99 (11 + 43 + 37 + 10 for the stored Aug 2026 row). */
+export const ODDS_ROUNDING_NOTE = "Rounded; may not sum to 100";
+
 /** x × 10^shift as an integer, rounded half up (away from zero) on the
  * decimal JavaScript prints for x: its shortest round-trip spelling, the one
  * Python's repr prints too, so 0.285 × 100 is 28.5 and rounds to 29 (a bare

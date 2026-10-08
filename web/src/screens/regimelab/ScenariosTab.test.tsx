@@ -187,6 +187,8 @@ describe("ScenariosTab (checklist 04 B.8)", () => {
     expect(legend(/^stored odds today$/i)).toBe("GL 58% · OV 7% · ST 4% · RR 31%"); // the classifier's own odds
     expect(legend(/^stressed odds$/i)).toBe("GL 28% · OV 7% · ST 4% · RR 61%");
     expect(tile.querySelectorAll(".mrr-odds")).toHaveLength(2);
+    // fix/site-audit D-b: one rounding note under the pair (each bar rounds half up on its own), not one per bar.
+    expect([...tile.querySelectorAll("[data-copy='odds-rounding']")].map((n) => n.textContent)).toEqual(["Rounded; may not sum to 100"]);
     // pp chips: amber only when positive; zero is a real label.
     const chip = (label: string) => [...tile.querySelectorAll("span")].find((s) => text(s) === label) as HTMLElement;
     expect(chip("goldilocks -30pp")).toBeDefined();

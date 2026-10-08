@@ -405,6 +405,8 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
     expect(text(ddFor("Model confidence"))).toBe("Medium (47%)");
     expect(text(ddFor("Classifier odds"))).toContain("GL 58%");
     expect(ddFor("Classifier odds").querySelector(".mrr-odds")).not.toBeNull();
+    // fix/site-audit D-b: the four whole percents round half up on their own, and the row says so.
+    expect(ddFor("Classifier odds").querySelector("[data-copy='odds-rounding']")?.textContent).toBe("Rounded; may not sum to 100");
     await waitFor(() => expect(text(ddFor("Spell length"))).toBe("6 months in · Early · avg spell 14.3mo"));
     await waitFor(() => expect(text(ddFor("Market read"))).toBe("Risk-On"));
     expect(ddFor("Market read").style.color).toBe("var(--pos)");

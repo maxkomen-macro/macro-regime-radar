@@ -98,4 +98,16 @@ describe("ProbabilityBar (checklist 02 B.10)", () => {
     expect(segments(fixed).map((s) => s.getAttribute("title"))[2]).toBe("Stagflation 5%");
     expect(within(fixed).getByText("ST 5%")).toBeInTheDocument();
   });
+
+  it("says under the legend that the four whole percents are rounded and may not sum to 100 (fix/site-audit D-b)", () => {
+    // 0.1102 / 0.425 / 0.3691 / 0.0957 print 11 + 43 + 37 + 10 = 101: each rounds half up on its own.
+    const { container } = render(<ProbabilityBar probs={{ goldilocks: 0.1102, overheating: 0.425, stagflation: 0.3691, recession: 0.0957 }} />);
+    expect(within(container).getByText("GL 11%")).toBeInTheDocument();
+    expect(within(container).getByText("OV 43%")).toBeInTheDocument();
+    const note = container.querySelector("[data-copy='odds-rounding']");
+    expect(note?.textContent).toBe("Rounded; may not sum to 100");
+    // No legend, no note; and a caller that prints one note for several bars can turn it off.
+    expect(render(<ProbabilityBar probs={PROBS} showLegend={false} />).container.querySelector("[data-copy='odds-rounding']")).toBeNull();
+    expect(render(<ProbabilityBar probs={PROBS} roundingNote={false} />).container.querySelector("[data-copy='odds-rounding']")).toBeNull();
+  });
 });

@@ -18,7 +18,7 @@ import { useState, type CSSProperties } from "react";
 import { Card, ProbabilityBar, SectionHeader, Segmented, Tag } from "../../components";
 import { useRegimeLatest, useScenarioDefs, useScenarioRun } from "../../api/queries";
 import type { ScenarioShocks } from "../../api/types";
-import { fmtMonYr, fmtProb, roundHalfUp, tidyProse } from "../../lib/format";
+import { ODDS_ROUNDING_NOTE, fmtMonYr, fmtProb, roundHalfUp, tidyProse } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, MISSING, SliderRow, StateNote, eyebrowStyle, mono, monoNoteStyle, useDebounced } from "../shared/screen-ui";
 import { REGIME_HUE } from "./regime-history";
@@ -242,12 +242,17 @@ export default function ScenariosTab() {
                   }
                   metrics={regimeNow.data ? servedOdds(regimeNow.data) : undefined}
                   height={6}
+                  roundingNote={false}
                 />
               </div>
               <div data-odds="stressed">
                 <div style={{ ...eyebrowStyle, marginBottom: 4 }}>stressed odds</div>
-                <ProbabilityBar probs={toBar(r.stressed_regime_probs)} height={6} />
+                <ProbabilityBar probs={toBar(r.stressed_regime_probs)} height={6} roundingNote={false} />
               </div>
+            </div>
+            {/* fix/site-audit D-b: one note for the pair; each bar's percents round half up on their own. */}
+            <div className="mrr-odds-note" data-copy="odds-rounding" style={{ marginTop: 4, fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--text-3)" }}>
+              {ODDS_ROUNDING_NOTE}
             </div>
 
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 10 }}>
