@@ -21,7 +21,7 @@
 
 import { useMemo } from "react";
 import { useCreditOas, useMarketDaily, useMarketIntraday } from "../../api/queries";
-import { useQuotes, useStreamStatus } from "../../live/quotes";
+import { useQuotes } from "../../live/quotes";
 import { fmtBps, fmtDate, fmtPct } from "../../lib/format";
 import { MISSING, missingNote, useSnapshotMode } from "../shared/screen-ui";
 import { SRC, Stamp, metricAttrs, quoteStamp, type MetricId } from "../shared/Stamp";
@@ -61,7 +61,6 @@ function treasuryCard(symbol: string, words: string, s: CreditSeries, credit: Cr
 
 export default function TickerLive() {
   const quotes = useQuotes();
-  const stale = useStreamStatus().stale; // D7 follow-up: a 15M tag is amber only when its feed is late
   const intraday = useMarketIntraday(["SPY", "QQQ"]);
   const daily = useMarketDaily(["SPY", "QQQ"], 45);
   const credit = useCreditOas(90);
@@ -76,7 +75,7 @@ export default function TickerLive() {
     // SPY and QQQ walk the shared ladder; the US 10Y stays on the credit
     // endpoint below because yields are not on the stream.
     const out: QuoteCardProps[] = ["SPY", "QQQ"].map((symbol) => {
-      const q = quoteFor({ symbol }, quotes, intraday.data, daily.data, { dailyLoading: daily.isLoading, unavailable, staleFeeds: stale });
+      const q = quoteFor({ symbol }, quotes, intraday.data, daily.data, { dailyLoading: daily.isLoading, unavailable });
       // A3: the CLOSE tag and the stale mark read the server's words; F1:
       // dated by the card's own tick or bar, never the feed-wide as_of.
       return withFreshTags(
@@ -111,7 +110,7 @@ export default function TickerLive() {
     }
 
     return out;
-  }, [quotes, stale, intraday.data, daily.data, daily.isLoading, credit.data, credit.isError, unavailable, report]);
+  }, [quotes, intraday.data, daily.data, daily.isLoading, credit.data, credit.isError, unavailable, report]);
 
   return (
     <div className="mrr-strip" role="region" aria-label="Market strip">
