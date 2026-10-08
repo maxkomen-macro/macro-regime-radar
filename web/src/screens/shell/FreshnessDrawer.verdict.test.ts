@@ -15,6 +15,10 @@ describe("verdictCell", () => {
     expect(cell.word).toBe("Awaiting opening bars");
     expect(cell.color).toBe("var(--text-2)");
   });
+  it("prints the D4 grace's word in the neutral tone over a delayed verdict (fix/site-audit D-c)", () => {
+    const cell = verdictCell(sla({ feed: "market_daily", verdict: "delayed", word: "Awaiting daily refresh" }));
+    expect(cell).toMatchObject({ word: "Awaiting daily refresh", color: "var(--text-2)" });
+  });
   it("prints the verdict otherwise, in its own color", () => {
     expect(verdictCell(sla({}))).toMatchObject({ word: "current", color: "var(--pos)" });
     expect(verdictCell(sla({ feed: "news", verdict: "delayed" }))).toMatchObject({ word: "delayed", color: "var(--amber)" });

@@ -79,6 +79,10 @@ RELEASE_BUFFER = timedelta(minutes=60)
 # a month the calendar does not date, or a store without the table, keeps the approximate day rule above.
 RELEASE_EVENTS = ("CPI Release", "Jobs Report (NFP)")
 INTRADAY_ON_TIME_MIN = 20
+# fix/site-audit D-c: a stored daily row within the D4 grace (the previous session's close, before the full refresh's
+# 06:00 UTC deadline) is on schedule. Its verdict stays "delayed" (the four-word contract overall, validate_db and
+# the smoke check read); the drawer prints this word in the neutral tone in its place.
+GRACE_WORD = "Awaiting daily refresh"
 INTRADAY_LATE_MIN = 60
 OPENING_GRACE_MIN = 30
 
@@ -467,6 +471,8 @@ def assess(
     within_grace = md is not None and md >= cal.previous_trading_day(exp_md) and now < grace_until
     lag = cal.business_days_between(md, exp_md) if md else None
     rows.append(_verdict("market_daily", db_fresh.get("market_daily_date"), exp_md.isoformat(), ok, within_grace, "Stored closes include the last completed session." if ok else (f"Last completed session {exp_md.isoformat()} not yet stored; the daily refresh has until 06:00 UTC." if within_grace else f"Stored closes end {md.isoformat() if md else 'never'}; {lag} session(s) behind {exp_md.isoformat()}." if md else "No stored closes.")))
+    if not ok and within_grace:
+        rows[-1]["word"] = GRACE_WORD
 
     # ── asset_prices: allocation's stored price histories (fix/prelaunch-1) ──
     # Written by the full refresh, judged like market_daily against the last
@@ -491,6 +497,8 @@ def assess(
         else:
             ap_reason = f"Stored histories end {ap.isoformat()}; {ap_lag} session(s) behind {exp_md.isoformat()}." + ap_src
         rows.append(_verdict("asset_prices", db_fresh.get("asset_prices_date"), exp_md.isoformat(), ap_ok, ap_grace, ap_reason))
+        if not ap_ok and ap_grace:
+            rows[-1]["word"] = GRACE_WORD
 
     # ── desk_series: the Desk's daily series (desk/event-study, 2026-09-21) ──
     # Not a regime input, never in `overall`. With the per-series maxima
@@ -541,6 +549,8 @@ def assess(
         else:
             ds_reason = f"Stored Desk series end {ds.isoformat()}; {ds_lag} session(s) behind {exp_ds.isoformat()}." + ds_src
         rows.append(_verdict("desk_series", db_fresh.get("desk_series_date"), exp_ds.isoformat(), ds_ok, ds_grace, ds_reason))
+        if not ds_ok and ds_grace:
+            rows[-1]["word"] = GRACE_WORD
 
     # ── market_intraday: 20 min in session, else last session close ─────────
     mi = _parse_dt(db_fresh.get("market_intraday_ts"), naive_tz=cal.NY)  # pipeline stamps ET wall time

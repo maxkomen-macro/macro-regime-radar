@@ -231,3 +231,31 @@ def test_after_the_close_the_stored_close_reads_on_time_until_the_refresh_deadli
     past = _assess(now=datetime(2026, 9, 19, 6, 0, tzinfo=timezone.utc), fresh=fresh)  # Sat 06:00 UTC: due
     p = _series(past)[feed]
     assert (p["state"], p["cycles_behind"]) == ("stale", 1)
+
+
+# ── fix/site-audit D-c: the drawer row within the D4 grace ───────────────────
+
+AFTER_CLOSE = datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc)  # Fri 17:00 ET: Friday's close is due by 06:00 UTC Saturday
+PAST_GRACE = datetime(2026, 9, 19, 6, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(("feed", "fresh"), [
+    ("market_daily", {**_FRESH, "market_daily_date": "2026-09-17"}),
+    ("asset_prices", {**_FRESH, "asset_prices_date": "2026-09-17"}),
+    # The table-wide rule for a store without per-series maxima: FRED posts next day, so Wednesday's is on time.
+    ("desk_series", {**_FRESH, "desk_series_date": "2026-09-16"}),
+])
+def test_within_the_grace_the_drawer_row_says_awaiting_daily_refresh(feed, fresh):
+    """Before the evening refresh stores the session, the row's verdict stays "delayed" (the four-word contract that
+    overall, validate_db and the smoke check read) and carries the word the drawer prints in the neutral tone in its
+    place; past 06:00 UTC it is stale, with no word."""
+    row = _sla(_assess(now=AFTER_CLOSE, fresh=fresh))[feed]
+    assert (row["verdict"], row.get("word")) == ("delayed", "Awaiting daily refresh"), row["reason"]
+    past = _sla(_assess(now=PAST_GRACE, fresh=fresh))[feed]
+    assert past["verdict"] == "stale" and past.get("word") is None
+
+
+def test_a_stored_close_needs_no_word():
+    fresh = {**_FRESH, "market_daily_date": "2026-09-18", "asset_prices_date": "2026-09-18"}
+    rows = _sla(_assess(now=AFTER_CLOSE, fresh=fresh))
+    assert [(rows[f]["verdict"], rows[f].get("word")) for f in ("market_daily", "asset_prices")] == [("current", None)] * 2
