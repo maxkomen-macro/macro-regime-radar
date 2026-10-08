@@ -199,3 +199,34 @@ def test_each_input_counts_on_its_own_calendar():
     assert (got["us10y"]["calendar"], got["us10y"]["lag"], got["us10y"]["stale"]) == ("bond", 3, False)
     assert (got["spx"]["calendar"], got["spx"]["lag"], got["spx"]["stale"]) == ("nyse", 4, True)
     assert desk_v2.input_rule("wti") == ("nyse", 8) and desk_v2.input_rule("vix") == ("nyse", 0)
+
+
+# ── fix/site-audit D4: the close's grace until the full refresh's deadline ──
+# After Wed Oct 7's close every Ledger row read "○ Stale · Oct 6": the
+# comparison session turns to Oct 7 at the bell, an exchange close had no
+# grace, and the Oct 7 close is stored only by the evening full refresh
+# (00:23 UTC cron; its deadline in api/freshness, which /overview's data status
+# already follows, is 06:00 UTC the next day).
+
+@pytest.mark.parametrize(("now", "grace"), [
+    (datetime(2026, 10, 7, 20, 30, tzinfo=timezone.utc), 1),   # 16:30 ET, after the close
+    (datetime(2026, 10, 8, 1, 19, tzinfo=timezone.utc), 1),    # 21:19 ET, the walkthrough
+    (datetime(2026, 10, 8, 5, 59, tzinfo=timezone.utc), 1),    # the last minute of the grace
+    (datetime(2026, 10, 8, 6, 0, tzinfo=timezone.utc), 0),     # 06:00 UTC: the refresh is due
+    (datetime(2026, 10, 8, 12, 0, tzinfo=timezone.utc), 0),    # 08:00 ET, pre-open
+])
+def test_the_close_is_given_until_the_refresh_deadline(now, grace):
+    assert desk_v2.close_grace("2026-10-07", now) == grace
+
+
+def test_after_the_close_a_study_through_the_previous_session_is_not_stale_until_the_deadline():
+    sessions = ("2026-10-01", "2026-10-02", "2026-10-05", "2026-10-06", "2026-10-07")
+    t = trace([0, 0, 0, 1, 0], evaluable=[1, 1, 1, 1, 0], sessions=sessions)  # data through Oct 6
+    spx = _inputs(spx="2026-10-06")
+    before = desk_v2.firing_state(t, "2026-10-07", "2026-10-06", cross=False, inputs=spx)
+    assert before["stale"] is True and before["stale_inputs"] == ["spx"]  # no grace: the bug
+    f = desk_v2.firing_state(t, "2026-10-07", "2026-10-06", cross=False, inputs=spx, grace=1)
+    assert (f["stale"], f["stale_inputs"], f["evaluated_on"]) == (False, [], "2026-10-06")
+    assert f["firing_now"] is True and f["firing_day"] == 1  # its own session's state, Oct 6
+    two_behind = desk_v2.firing_state(t, "2026-10-08", "2026-10-07", cross=False, inputs=spx, grace=1)
+    assert two_behind["stale"] is True  # the grace is one session, the one that just closed

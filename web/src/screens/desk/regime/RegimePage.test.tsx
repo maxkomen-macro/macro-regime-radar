@@ -179,11 +179,11 @@ describe("Regime tab", () => {
     await waitFor(() => expect(card).toHaveTextContent("11.6%"));
     expect(card.querySelector(".rg-rec-line")?.textContent).toBe("11.6%Low.");
     // A month keeps its year on the same line.
-    expect(card.querySelector(".rg-rec-for")?.textContent).toBe("score for Aug\u00a02026 · inputs through May\u00a02026");
+    expect(card.querySelector(".rg-rec-for")?.textContent).toBe("Scored for Aug\u00a02026 · inputs from May\u00a02026");
     const gauge = within(card).getByRole("img", { name: "Recession score 11.6%, low" });
     expect(gauge.textContent).toBe("LowElevatedHigh risk · above 40%");
     expect([...gauge.querySelectorAll(".dk-gauge-track > span[data-tone]")].map((x) => (x as HTMLElement).style.width)).toEqual(["20%", "20%", "60%"]);
-    expect(card).toHaveTextContent(/Inputs through\s*May/);
+    expect(card).toHaveTextContent(/Inputs from\s*May/);
     expect(card).toHaveTextContent(/A year ago\s*17.2%\s*Aug 2025/);
     // The engine's full-precision peak, 0.95497…, prints 95.5% (§12.0: full precision; one rounding rule in the kit).
     expect(card).toHaveTextContent(/Peak since 2015\s*95.5%\s*Jun 2020/);
@@ -317,7 +317,7 @@ describe("Regime tab", () => {
     expect(where).toHaveTextContent(/Inflation\s*Awaiting refresh/);
     expect(where).toHaveTextContent(/Last five years\s*Awaiting refresh/);
     const rec = screen.getByRole("region", { name: /Recession score/ });
-    expect(rec).toHaveTextContent(/Inputs through\s*Awaiting refresh/);
+    expect(rec).toHaveTextContent(/Inputs from\s*Awaiting refresh/);
     expect(rec).toHaveTextContent(/Peak since 2015\s*Awaiting refresh/);
     const meant = screen.getByRole("region", { name: /What each regime has meant/ });
     expect(meant).toHaveTextContent(/S&P mean/);
@@ -337,7 +337,7 @@ describe("Regime tab", () => {
     expect(where).toHaveTextContent("Goldilocks");
     const rec = screen.getByRole("region", { name: /Recession score/ });
     expect(rec).toHaveTextContent("Awaiting refresh · the recession score");
-    expect(rec).toHaveTextContent(/Inputs through\s*May/);
+    expect(rec).toHaveTextContent(/Inputs from\s*May/);
     // The flip is spelled from the served operator, so it stands without today's trends (§12.6).
     const change = screen.getByRole("region", { name: /What would change it/ });
     expect(change).toHaveTextContent(/Next CPI\s*Oct 14/);

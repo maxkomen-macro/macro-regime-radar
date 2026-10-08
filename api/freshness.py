@@ -11,7 +11,7 @@ what the shell prints, so it stays a plain sentence.
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from api import calendar as cal
@@ -21,9 +21,9 @@ from api import provenance
 # month after which last month's print is expected). UNRATE is the Employment
 # Situation (first Friday); CPI ~10th–15th; INDPRO mid-month (G.17).
 MONTHLY_INPUTS: dict[str, dict[str, Any]] = {
-    "INDPRO": {"label": "Industrial production", "rule": "day", "day": 18},
-    "CPIAUCSL": {"label": "CPI (all items)", "rule": "day", "day": 15},
-    "UNRATE": {"label": "Unemployment rate", "rule": "first_friday"},
+    "INDPRO": {"label": "Industrial production", "rule": "day", "day": 18, "release_et": "09:15"},
+    "CPIAUCSL": {"label": "CPI (all items)", "rule": "day", "day": 15, "event": "CPI Release"},
+    "UNRATE": {"label": "Unemployment rate", "rule": "first_friday", "event": "Jobs Report (NFP)"},
 }
 DAILY_INPUTS = ["DGS10", "DGS2", "VIXCLS"]
 NEWS_SLA_MIN_WEEKDAY = 90
@@ -56,9 +56,9 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
     "DFII10": {"label": "10-year TIPS yield", "cadence": "daily", "calendar": "bond"},
     "DFII5": {"label": "5-year TIPS yield", "cadence": "daily", "calendar": "bond"},
     "SOFR": {"label": "SOFR", "cadence": "daily", "calendar": "bond"},
-    "INDPRO": {"label": "Industrial production", "cadence": "monthly", "rule": "day", "day": 18},
-    "CPIAUCSL": {"label": "CPI (all items)", "cadence": "monthly", "rule": "day", "day": 15},
-    "UNRATE": {"label": "Unemployment rate", "cadence": "monthly", "rule": "first_friday"},
+    "INDPRO": {"label": "Industrial production", "cadence": "monthly", "rule": "day", "day": 18, "release_et": "09:15"},
+    "CPIAUCSL": {"label": "CPI (all items)", "cadence": "monthly", "rule": "day", "day": 15, "event": "CPI Release"},
+    "UNRATE": {"label": "Unemployment rate", "cadence": "monthly", "rule": "first_friday", "event": "Jobs Report (NFP)"},
     "FEDFUNDS": {"label": "Fed funds (effective, monthly)", "cadence": "monthly", "rule": "day", "day": 3},
     "USREC": {"label": "NBER recession indicator", "cadence": "monthly", "rule": "day", "day": 3},
     "USSLIND": {"label": "Leading index", "cadence": "monthly", "discontinued": True},
@@ -66,6 +66,35 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
 # FRED daily: current within 3 business days of the newest print due (FRED posts a day or more after the
 # close; owner's item 7, desk/fill-compute: "a FRED daily series 1–3 business days behind is current").
 DAILY_TOLERANCE = 3
+# fix/site-audit D7: a monthly print is due at its release time on its release day (08:30 ET for the BLS
+# prints, the G.17 at 09:15 for INDPRO: `release_et`), plus RELEASE_BUFFER for FRED to post it; the
+# expected month used to flip at midnight New York time, so a print read one release behind for the
+# hours before it could exist.
+DEFAULT_RELEASE_ET = "08:30"
+RELEASE_BUFFER = timedelta(minutes=60)
+# Stored intraday bars in the session (D7): within the drawer's 20-minute window on time, past it late,
+# past an hour stale; in the first 30 minutes after the open the previous session's closing bar is on time.
+# Codex S-05: a series with an `event` is due at its dated release in the event calendar (events/calendar.csv,
+# loaded into event_calendar by the refresh), passed in as db_fresh["release_times"] {event_name: [UTC ISO, …]};
+# a month the calendar does not date, or a store without the table, keeps the approximate day rule above.
+RELEASE_EVENTS = ("CPI Release", "Jobs Report (NFP)")
+INTRADAY_ON_TIME_MIN = 20
+# fix/site-audit D-c: a stored daily row within the D4 grace (the previous session's close, before the full refresh's
+# 06:00 UTC deadline) is on schedule. Its verdict stays "delayed" (the four-word contract overall, validate_db and
+# the smoke check read); the drawer prints this word in the neutral tone in its place.
+GRACE_WORD = "Awaiting daily refresh"
+INTRADAY_LATE_MIN = 60
+OPENING_GRACE_MIN = 30
+
+
+def close_grace_until(session: date) -> datetime:
+    """When a session's exchange closes are due in the store: 06:00 UTC on the
+    calendar day after it, the full refresh's deadline (its 00:23 UTC run
+    after the US close, with room for GitHub's queue). `assess` judges
+    market_daily, asset_prices and desk_series against it, and the Desk's
+    stale rule reads the same deadline (api/desk_v2.close_grace,
+    fix/site-audit D4)."""
+    return datetime.combine(session + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6)
 # desk/cap-weight: the preset baskets' share counts, read from Yahoo by every full refresh. A count is a
 # quarterly figure read again each day, so the stored reads are current while the oldest is at most a
 # week old, and stale after. A per-series state only: never an `sla` feed, never in `overall`, never
@@ -95,10 +124,13 @@ SHARE_COUNTS_READABLE_SQL = (
 
 
 def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, state: str, *, delay_min: int | None = None,
-           cycles_behind: int | None = None, discontinued: bool = False, reason: str = "") -> dict:
+           cycles_behind: int | None = None, discontinued: bool = False, reason: str = "", late: bool | None = None) -> dict:
+    """`late` (fix/site-audit D7) is the server's judgement of a delayed state against the source's
+    expected lag: false within it (the screen reads neutral), true past it (amber); null for every
+    other state."""
     return {"id": sid, "label": label, "kind": kind, "cadence": cadence, "as_of": as_of, "state": state,
             "delay_min": delay_min, "cycles_behind": cycles_behind, "stale": state == "stale",
-            "discontinued": discontinued, "reason": reason}
+            "discontinued": discontinued, "reason": reason, "late": late if state == "delayed" else None}
 
 
 def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | None = None, stored_rows: int | None = None) -> dict:
@@ -130,12 +162,63 @@ def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | N
                   reason=reason)
 
 
-def _expected_month_for(meta: dict, today: date) -> date:
-    if meta.get("rule") == "first_friday":
-        released = today >= cal.first_friday(today.year, today.month)
+def release_times(conn) -> dict[str, list[str]]:
+    """The dated releases of RELEASE_EVENTS in the store's event_calendar (UTC ISO strings, ascending);
+    {} without the table or its two columns. Read by api/db.freshness and scripts/validate_db.py for
+    `assess` (Codex S-05)."""
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_calendar'").fetchone() is None:
+        return {}
+    if not {"event_name", "event_datetime"} <= {r[1] for r in conn.execute("PRAGMA table_info(event_calendar)")}:
+        return {}
+    out: dict[str, list[str]] = {e: [] for e in RELEASE_EVENTS}
+    marks = ",".join("?" for _ in RELEASE_EVENTS)
+    for name, at in conn.execute(f"SELECT event_name, event_datetime FROM event_calendar WHERE event_name IN ({marks}) "
+                                 "AND event_datetime IS NOT NULL ORDER BY event_datetime", RELEASE_EVENTS):
+        if str(at) not in out[name]:
+            out[name].append(str(at))
+    return out
+
+
+def _dated_release(meta: dict, year: int, month: int, releases: dict | None) -> datetime | None:
+    """The series' dated release in that New York month, from the event calendar; None when not dated."""
+    event = meta.get("event")
+    for at in (releases or {}).get(event, []) if event else []:
+        t = _parse_dt(at)
+        if t is not None:
+            ny = t.astimezone(cal.NY)
+            if (ny.year, ny.month) == (year, month):
+                return t
+    return None
+
+
+def _released(meta: dict, when: date | datetime, releases: dict | None = None) -> bool:
+    """Whether this month's print of a monthly series is out at `when` (D7): at its dated release in the
+    event calendar plus RELEASE_BUFFER (Codex S-05), else after its approximate release day, or on it
+    from its release time in New York (`release_et`, DEFAULT_RELEASE_ET) plus RELEASE_BUFFER. A bare
+    date is the whole day, so the print is out on its release day."""
+    if isinstance(when, datetime):
+        ny = when.astimezone(cal.NY)
+        today = ny.date()
     else:
-        released = today.day >= int(meta.get("day", 15))
-    return cal.month_add(date(today.year, today.month, 1), -1 if released else -2)
+        ny, today = None, when
+    dated = _dated_release(meta, today.year, today.month, releases)
+    if dated is not None:
+        if ny is None:
+            return today >= dated.astimezone(cal.NY).date()
+        return when >= dated + RELEASE_BUFFER
+    if meta.get("rule") == "first_friday":
+        day = cal.first_friday(today.year, today.month)
+    else:
+        day = date(today.year, today.month, int(meta.get("day", 15)))
+    if today != day or ny is None:
+        return today >= day
+    hh, mm = (int(x) for x in str(meta.get("release_et", DEFAULT_RELEASE_ET)).split(":"))
+    return ny >= datetime.combine(day, time(hh, mm), tzinfo=cal.NY) + RELEASE_BUFFER
+
+
+def _expected_month_for(meta: dict, when: date | datetime, releases: dict | None = None) -> date:
+    today = when.astimezone(cal.NY).date() if isinstance(when, datetime) else when
+    return cal.month_add(date(today.year, today.month, 1), -1 if _released(meta, when, releases) else -2)
 
 
 def _daily_expected_and_lag(d: date, today_ny: date, rates: bool) -> tuple[date, int]:
@@ -146,7 +229,8 @@ def _daily_expected_and_lag(d: date, today_ny: date, rates: bool) -> tuple[date,
     return exp, between(d, exp)
 
 
-def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, watermark: dict | None) -> dict:
+def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, watermark: dict | None,
+                      now: datetime | None = None, releases: dict | None = None) -> dict:
     """State of one FRED series. Daily series need a watermark (their stored
     rows are month-stamped); monthly prints are dated by month either way."""
     meta = SERIES_REGISTRY.get(sid) or {"label": sid, "cadence": "monthly", "rule": "day", "day": 15}
@@ -172,7 +256,7 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     if d is None:
         return _state(sid, label, "fred", cadence, None, "unknown", reason=f"{label} has no stored observations.")
     month = date(d.year, d.month, 1)
-    exp = _expected_month_for(meta, today_ny)
+    exp = _expected_month_for(meta, now or today_ny, releases)
     cycles = max(0, (exp.year - month.year) * 12 + exp.month - month.month)
     reason = (f"{label} for {month.strftime('%b %Y')} is the newest print due." if cycles == 0
               else f"{label}: {cycles} release(s) behind; {exp.strftime('%b %Y')} is due.")
@@ -319,15 +403,10 @@ def _parse_date(s: str | None) -> date | None:
     return d.date() if d else None
 
 
-def expected_month(series: str, today: date) -> date:
-    """First day of the latest month whose print should be public today."""
-    rule = MONTHLY_INPUTS[series]
-    if rule["rule"] == "first_friday":
-        released = today >= cal.first_friday(today.year, today.month)
-    else:
-        released = today.day >= rule["day"]
-    this_month = date(today.year, today.month, 1)
-    return cal.month_add(this_month, -1 if released else -2)
+def expected_month(series: str, when: date | datetime, releases: dict | None = None) -> date:
+    """First day of the latest month whose print should be public at `when` (a datetime: from the
+    release time, D7; a bare date: the whole day), on the dated release calendar when given (S-05)."""
+    return _expected_month_for(MONTHLY_INPUTS[series], when, releases)
 
 
 def _verdict(kind: str, latest: str | None, expected: str | None, ok: bool, delayed_ok: bool, reason: str) -> dict:
@@ -340,6 +419,25 @@ def _verdict(kind: str, latest: str | None, expected: str | None, ok: bool, dela
     else:
         v = "stale"
     return {"feed": kind, "latest": latest, "expected": expected, "verdict": v, "reason": reason}
+
+
+def intraday_in_session(mi: datetime | None, now: datetime, today_ny: date) -> tuple[str, int | None]:
+    """fix/site-audit D7: the stored intraday bars during the session, judged once for the drawer's
+    verdict and the per-series state: ("on_time", age) within INTRADAY_ON_TIME_MIN; ("opening", age)
+    when, in the first OPENING_GRACE_MIN after the open, the newest bar is the previous session's
+    close (the first bars land a few minutes after 09:30); ("late", age) up to INTRADAY_LATE_MIN;
+    else ("stale", age). The per-series state used to read every bar amber, a 1-minute-old one too."""
+    if mi is None:
+        return "stale", None
+    age = max(0, int((now - mi).total_seconds() // 60))
+    if age <= INTRADAY_ON_TIME_MIN:
+        return "on_time", age
+    sb = cal.session_bounds(today_ny)
+    if sb is not None and now < sb[0] + timedelta(minutes=OPENING_GRACE_MIN):
+        pb = cal.session_bounds(cal.previous_trading_day(today_ny))
+        if pb is not None and mi >= pb[1] - timedelta(minutes=15):
+            return "opening", age
+    return ("late", age) if age <= INTRADAY_LATE_MIN else ("stale", age)
 
 
 def assess(
@@ -359,6 +457,7 @@ def assess(
     is checked but stops advancing is reported stale with the reason."""
     now = now or datetime.now(timezone.utc)
     today_ny = now.astimezone(cal.NY).date()
+    releases = db_fresh.get("release_times")  # Codex S-05: the dated release calendar, when the store has one
     session = cal.session_state(now)
     last_session = date.fromisoformat(session["last_completed_session"])
     by_series = {str(r.get("series_id")): r for r in series_latest}
@@ -367,11 +466,13 @@ def assess(
     # ── market_daily: last completed session by 06:00 UTC next day ─────────
     md = _parse_date(db_fresh.get("market_daily_date"))
     exp_md = last_session
-    grace_until = datetime.combine(last_session + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6)
+    grace_until = close_grace_until(last_session)
     ok = md is not None and md >= exp_md
     within_grace = md is not None and md >= cal.previous_trading_day(exp_md) and now < grace_until
     lag = cal.business_days_between(md, exp_md) if md else None
     rows.append(_verdict("market_daily", db_fresh.get("market_daily_date"), exp_md.isoformat(), ok, within_grace, "Stored closes include the last completed session." if ok else (f"Last completed session {exp_md.isoformat()} not yet stored; the daily refresh has until 06:00 UTC." if within_grace else f"Stored closes end {md.isoformat() if md else 'never'}; {lag} session(s) behind {exp_md.isoformat()}." if md else "No stored closes.")))
+    if not ok and within_grace:
+        rows[-1]["word"] = GRACE_WORD
 
     # ── asset_prices: allocation's stored price histories (fix/prelaunch-1) ──
     # Written by the full refresh, judged like market_daily against the last
@@ -396,6 +497,8 @@ def assess(
         else:
             ap_reason = f"Stored histories end {ap.isoformat()}; {ap_lag} session(s) behind {exp_md.isoformat()}." + ap_src
         rows.append(_verdict("asset_prices", db_fresh.get("asset_prices_date"), exp_md.isoformat(), ap_ok, ap_grace, ap_reason))
+        if not ap_ok and ap_grace:
+            rows[-1]["word"] = GRACE_WORD
 
     # ── desk_series: the Desk's daily series (desk/event-study, 2026-09-21) ──
     # Not a regime input, never in `overall`. With the per-series maxima
@@ -446,20 +549,23 @@ def assess(
         else:
             ds_reason = f"Stored Desk series end {ds.isoformat()}; {ds_lag} session(s) behind {exp_ds.isoformat()}." + ds_src
         rows.append(_verdict("desk_series", db_fresh.get("desk_series_date"), exp_ds.isoformat(), ds_ok, ds_grace, ds_reason))
+        if not ds_ok and ds_grace:
+            rows[-1]["word"] = GRACE_WORD
 
     # ── market_intraday: 20 min in session, else last session close ─────────
     mi = _parse_dt(db_fresh.get("market_intraday_ts"), naive_tz=cal.NY)  # pipeline stamps ET wall time
+    opening_word = None
     if session["is_open"]:
-        ok = mi is not None and now - mi <= timedelta(minutes=20)
-        delayed_ok = mi is not None and now - mi <= timedelta(minutes=60)
-        sb = cal.session_bounds(today_ny)
-        if not ok and not delayed_ok and sb is not None and now < sb[0] + timedelta(minutes=30):
-            # Opening grace: the first bars land a few minutes after 09:30;
-            # yesterday's closing bar is "delayed", not "stale", until then.
-            pb = cal.session_bounds(cal.previous_trading_day(today_ny))
-            delayed_ok = mi is not None and pb is not None and mi >= pb[1] - timedelta(minutes=15)
-        reason = "Intraday bars are within 20 minutes." if ok else ("Intraday bars are older than 20 minutes during the session." if delayed_ok else "Intraday bars have stopped arriving during the session.")
+        # D7: one rule with the per-series state (intraday_in_session); the opening grace, where
+        # yesterday's closing bar stands until the first bars land, is on time, no longer "delayed".
+        status, _age = intraday_in_session(mi, now, today_ny)
+        ok, delayed_ok = status in ("on_time", "opening"), status == "late"
+        reason = ("Intraday bars are within 20 minutes." if status == "on_time"
+                  else "The session opened under 30 minutes ago; the previous session's closing bar stands until the first bars land." if status == "opening"
+                  else "Intraday bars are older than 20 minutes during the session." if delayed_ok
+                  else "Intraday bars have stopped arriving during the session.")
         exp = (now - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        opening_word = "Awaiting opening bars" if status == "opening" else None
     else:
         b = cal.session_bounds(last_session)
         close = b[1] if b else now
@@ -468,6 +574,10 @@ def assess(
         reason = "Intraday bars run to the last completed session's close." if ok else ("Intraday bars stop before the last completed session's close." if delayed_ok else "Intraday bars are more than one session behind.")
         exp = close.strftime("%Y-%m-%dT%H:%M:%SZ")
     rows.append(_verdict("market_intraday", db_fresh.get("market_intraday_ts"), exp, ok, delayed_ok, reason))
+    if opening_word:
+        # D7 follow-up: the drawer shows this word in the neutral tone in place of the verdict, which stays
+        # "current" (the four-word contract `overall` and validate_db read).
+        rows[-1]["word"] = opening_word
 
     # ── news: 90 min on weekdays in US hours, 6 h otherwise ─────────────────
     np_ = _parse_dt(db_fresh.get("news_published_at"))
@@ -520,7 +630,7 @@ def assess(
     for sid, meta in MONTHLY_INPUTS.items():
         r = by_series.get(sid)
         d = _parse_date(r.get("date")) if r else None
-        exp = expected_month(sid, today_ny)
+        exp = expected_month(sid, now, releases)
         latest_month = date(d.year, d.month, 1) if d else None
         ok = latest_month is not None and latest_month >= exp
         delayed_ok = latest_month is not None and latest_month >= cal.month_add(exp, -1)
@@ -545,7 +655,7 @@ def assess(
             complete = date(d.year, d.month, 1) if d >= last_td else cal.month_add(date(d.year, d.month, 1), -1)
             available_months.append(complete)
     common_month = min(available_months) if available_months else None
-    expected_regime_month = min(expected_month(s, today_ny) for s in MONTHLY_INPUTS)
+    expected_regime_month = min(expected_month(s, now, releases) for s in MONTHLY_INPUTS)
     # Blockers: every monthly input whose latest stored month is the common
     # (slowest) month explains why the regime cannot advance. The cause is
     # either the publication calendar (nothing newer exists yet) or a print
@@ -587,7 +697,10 @@ def assess(
             last = (relay.get("feed_last_tick_at") or {}).get("us") or (relay.get("feed_last_frame_at") or {}).get("us")
             rows.append(_verdict("live_quotes", last, None, live_ok, delayed_ok or (us_state == "open" and not session["is_open"]), "EODHD US feed is open and ticking." if live_ok else ("US session is closed; the last tick stands as the closing print." if not session["is_open"] else f"US feed state is {us_state}; ticks are not arriving." )))
         vix_state = feeds.get("vix")
-        rows.append(_verdict("vix_delayed", (relay.get("feed_last_frame_at") or {}).get("vix"), None, vix_state == "rest", vix_state in ("closed",), "VIX polls the delayed REST quote every 60 s in the US session and every 30 minutes outside it (15–20 min delay by source)." if vix_state == "rest" else "VIX poll is not running."))
+        vix_late = bool(stale.get("vix"))  # D7: three polls missed at the poll's cadence (api/stream.py)
+        rows.append(_verdict("vix_delayed", (relay.get("feed_last_frame_at") or {}).get("vix"), None, vix_state == "rest" and not vix_late,
+                             vix_state == "rest" or vix_state in ("closed",),
+                             ("The VIX poll is late: no answer for three polls at its cadence." if vix_late else "VIX polls the delayed REST quote every 60 s in the US session and every 30 minutes outside it (15–20 min delay by source).") if vix_state == "rest" else "VIX poll is not running."))
 
     # A stamp ahead of the clock is a fault (runner clock, parser), not freshness.
     horizon = now + timedelta(days=2)
@@ -602,22 +715,33 @@ def assess(
     for sid in SERIES_REGISTRY:
         stored = by_series.get(sid)
         series.append(fred_series_state(sid, today_ny=today_ny, stored_date=stored.get("date") if stored else None,
-                                        watermark=(watermarks or {}).get(f"fred:{sid}")))
+                                        watermark=(watermarks or {}).get(f"fred:{sid}"), now=now, releases=releases))
     md_str = md.isoformat() if md else None
     md_cycles = cal.business_days_between(md, exp_md) if md else None
+    # D7 follow-up: within the D4 grace (the previous session's close, before the full refresh's deadline) the
+    # stored close is on time, "Close · <T-1>" in the neutral tone, as the drawer's verdict says "delayed".
+    md_on_time = md is not None and (md >= exp_md or within_grace)
     series.append(_state("market_daily", "Daily closes (stored)", "market", "daily", md_str,
-                         "unknown" if md is None else ("close" if md >= exp_md else "stale"), cycles_behind=md_cycles,
+                         "unknown" if md is None else ("close" if md_on_time else "stale"), cycles_behind=0 if md_on_time else md_cycles,
                          reason="No stored closes." if md is None else (f"Official close of {md_str}, the last completed session." if md >= exp_md
+                                else f"Official close of {md_str}; the last completed session ({exp_md.isoformat()}) is stored by the full refresh, which has until 06:00 UTC." if within_grace
                                 else f"Newest stored close {md_str} is {md_cycles} session(s) older than the last completed session ({exp_md.isoformat()}).")))
     if mi is None:
         series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", None, "unknown", reason="No stored intraday bars."))
     else:
         mi_et = mi.astimezone(cal.NY).strftime("%Y-%m-%d %H:%M:%S")
         if session["is_open"]:
-            age = max(0, int((now - mi).total_seconds() // 60))
-            series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", mi_et, "delayed" if age <= 60 else "stale",
-                                 delay_min=age, cycles_behind=0 if age <= 60 else None,
-                                 reason=f"Newest bar {mi_et} ET, {age} min old." if age <= 60 else f"Bars stopped arriving {age} min ago during the session."))
+            status, age = intraday_in_session(mi, now, today_ny)
+            if status == "opening":
+                series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", mi_et, "close", cycles_behind=0,
+                                     reason="The session opened under 30 minutes ago; the newest bar is the previous session's close."))
+            elif status in ("on_time", "late"):
+                series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", mi_et, "delayed",
+                                     delay_min=age, cycles_behind=0, late=status == "late",
+                                     reason=f"Newest bar {mi_et} ET, {age} min old" + ("." if status == "on_time" else f", past the {INTRADAY_ON_TIME_MIN}-minute window.")))
+            else:
+                series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", mi_et, "stale", delay_min=age,
+                                     reason=f"Bars stopped arriving {age} min ago during the session."))
         else:
             b = cal.session_bounds(last_session)
             closed_ok = b is not None and mi >= b[1] - timedelta(minutes=15)
@@ -632,6 +756,10 @@ def assess(
         elif ap >= exp_md:
             series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "close", cycles_behind=0,
                                  reason=f"Allocation's price histories run to {ap_str}, the last completed session." + ap_src))
+        elif ap_grace:  # D7 follow-up: within the D4 grace, on time ("Close · <T-1>"), as the drawer says "delayed"
+            series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "close", cycles_behind=0,
+                                 reason=f"Allocation's price histories run to {ap_str}; the last completed session ({exp_md.isoformat()}) "
+                                        "is stored by the full refresh, which has until 06:00 UTC." + ap_src))
         else:
             series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "stale", cycles_behind=ap_cycles,
                                  reason=f"Allocation's price histories end {ap_str}, {ap_cycles} session(s) older than the last completed session ({exp_md.isoformat()})." + ap_src))
@@ -656,8 +784,12 @@ def assess(
             st, why = "stale", f"US feed state is {us}; ticks are not arriving."
         series.append(_state("live_quotes", "Live quotes (EODHD relay)", "live", "tick", last_us, st, delay_min=0 if st == "live" else None, reason=why))
         if vix == "rest":
+            # D7: the 15-minute delay is the source's, expected; amber only when the poll itself is late.
+            vix_late = bool((relay.get("feed_stale") or {}).get("vix"))
             series.append(_state("vix_delayed", "VIX (delayed poll)", "live", "60s", (relay.get("feed_last_frame_at") or {}).get("vix"),
-                                 "delayed", delay_min=15, reason="VIX polls the delayed REST quote every 60 s in the US session and every 30 minutes outside it (15-20 min delay by source)."))
+                                 "delayed", delay_min=15, late=vix_late,
+                                 reason="The VIX poll is late: no answer for three polls at its cadence." if vix_late
+                                 else "VIX polls the delayed REST quote every 60 s in the US session and every 30 minutes outside it (15-20 min delay by source)."))
         else:
             series.append(_state("vix_delayed", "VIX (delayed poll)", "live", "60s", None, "unknown",
                                  reason="The VIX poll is connecting." if vix == "connecting" else "The VIX poll is not running."))

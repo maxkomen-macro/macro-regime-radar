@@ -1,6 +1,6 @@
 /** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
 import { describe, expect, it } from "vitest";
-import { dayLong, dayShort, etDayTime, etTime, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, putsVsCalls, signed, year, priceText, tickText } from "./format";
+import { dayLong, dayShort, etDayTime, etTime, grouped, monthLong, monthShort, monthYear, num, oddsPct, ordinal, ordinalWord, pct, pctPlain, pts, putsVsCalls, signed, year, priceText, tickText } from "./format";
 import { levelText, roomTone, roomWords, sortByRoom } from "./MonitoredRows";
 
 describe("numbers", () => {
@@ -138,5 +138,46 @@ describe("endDay (D13)", () => {
     expect(endDay("2026-09-24", "2026-09-24")).toBe("today");
     expect(endDay("2026-09-22", "2026-09-24")).toBe("Sep 22");
     expect(endDay(undefined, "2026-09-24")).toBe("latest");
+  });
+});
+
+describe("classifier odds (fix/site-audit D1)", () => {
+  it("prints odds as whole percents half up on the stored decimal, the app's rule", () => {
+    expect(oddsPct(0.425)).toBe("43%");
+    expect(oddsPct(0.285)).toBe("29%");
+    expect(oddsPct(Number.NaN)).toBe("—");
+  });
+});
+
+describe("firing words (fix/site-audit S-01)", () => {
+  // D4's grace keeps the previous session standing after the bell: a signal evaluated on Oct 6 must never read as firing today on Oct 7.
+  const row = (over: Record<string, unknown>) => ({ firing_now: true, firing_day: 1, stale: false, evaluated_on: "2026-10-06", ...over });
+  it("the Ledger's Latest cell says now only for today's session, else the session's day", async () => {
+    const { firingCell } = await import("./format");
+    expect(firingCell(row({}), "2026-10-07")).toBe("● Fired Oct 6 · day 1");
+    expect(firingCell(row({ evaluated_on: "2026-10-07" }), "2026-10-07")).toBe("● Firing · day 1");
+    expect(firingCell(row({ firing_now: false, firing_day: null }), "2026-10-07")).toBe("○ Quiet · Oct 6");
+    expect(firingCell(row({ firing_now: false, firing_day: null, evaluated_on: "2026-10-07" }), "2026-10-07")).toBe("○ Quiet");
+    expect(firingCell(row({ stale: true }), "2026-10-07")).toBe("○ Stale · Oct 6");
+    expect(firingCell(row({ firing_now: null }), "2026-10-07")).toBe("—");
+  });
+  it("the Event Study pill says today only for today's session", async () => {
+    const { firingPill } = await import("./format");
+    expect(firingPill(row({}), "2026-10-07", null)).toBe("● Fired Oct 6 · day 1");
+    expect(firingPill(row({ evaluated_on: "2026-10-07", firing_day: 3 }), "2026-10-07", null)).toBe("● Firing today · day 3");
+    expect(firingPill(row({ firing_now: false }), "2026-10-07", "2025-04-16")).toBe("○ Not firing on Oct 6 · last Apr 16, 2025");
+    expect(firingPill(row({ firing_now: false, evaluated_on: "2026-10-07" }), "2026-10-07", "2025-04-16")).toBe("○ Not firing today · last Apr 16, 2025");
+    expect(firingPill(row({ stale: true }), "2026-10-07", null)).toBe("○ Stale · Oct 6, 2026");
+    expect(firingPill(row({ stale: null }), "2026-10-07", null)).toBeNull();
+  });
+  it("a count says Firing now only when every current signal was evaluated today", async () => {
+    const { firingNowLabel } = await import("./format");
+    const today = row({ evaluated_on: "2026-10-07" });
+    expect(firingNowLabel([today, row({ evaluated_on: "2026-10-07", firing_now: false })], "2026-10-07")).toBe("Firing now");
+    expect(firingNowLabel([today, row({})], "2026-10-07")).toBe("Firing");
+    expect(firingNowLabel([today, row({ stale: true })], "2026-10-07")).toBe("Firing now"); // a stale row claims nothing
+    // S-01 follow-up: with no current row nothing was evaluated today, so the count claims no "now".
+    expect(firingNowLabel([row({ stale: true }), row({ stale: true, evaluated_on: "2026-09-29" })], "2026-10-07")).toBe("Firing");
+    expect(firingNowLabel([], "2026-10-07")).toBe("Firing");
   });
 });

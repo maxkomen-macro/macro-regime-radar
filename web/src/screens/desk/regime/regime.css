@@ -303,7 +303,10 @@
   display: grid;
   grid-template-columns: 90px minmax(0, 1fr) auto;
   align-items: center;
-  height: 29px;
+  /* fix/site-audit M1: a floor, not a fixed height. At a phone's width the middle column
+     ("Goldilocks → Overheating · from Aug data") wraps to two or three lines, which ran
+     out of a 29 px row and over the next one. One line still reads 29 px. */
+  min-height: 29px;
   border-bottom: 1px solid var(--dk-row);
   font-size: 14px;
 }
@@ -322,6 +325,12 @@
   font-family: var(--dk-mono);
   font-size: 12.5px;
   color: var(--dk-t3);
+}
+/* fix/site-audit M1: room above and below a wrapped change on a phone. */
+@media (max-width: 767.98px) {
+  .rg-changes li {
+    padding-block: 6px;
+  }
 }
 /* Narrower than the PNG: the columns size to their contents again. */
 @media (max-width: 1300px) {

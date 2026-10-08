@@ -7,8 +7,8 @@
  * switch inside the last 12 rows, the open Goldilocks spell six months long.
  */
 import { describe, expect, it } from "vitest";
-import { REGIMES, REGIME_HUE, exitCounts, mergeSegments, overheatingDelta3m, spellStart, stay6m, switchesInLast12, trailPoints, yearsOfHistory } from "./regime-history";
-import type { Regime, RegimeLabel, TransitionOutlook } from "../../api/types";
+import { REGIMES, REGIME_HUE, exitCounts, mergeSegments, overheatingDelta3m, spellStart, switchesInLast12, trailPoints, yearsOfHistory } from "./regime-history";
+import type { Regime, RegimeLabel } from "../../api/types";
 
 const LATEST = "2026-09-01";
 const LABEL: Record<string, RegimeLabel> = { G: "Goldilocks", O: "Overheating", S: "Stagflation", R: "Recession Risk" };
@@ -47,18 +47,6 @@ function history(spec = SPELLS, over: (row: Regime, i: number, n: number) => Par
     return { ...row, ...over(row, i, n) };
   });
 }
-
-const transitions = (probs: number[]): TransitionOutlook => ({
-  current_regime: "Goldilocks",
-  stay_probability_3m: 81,
-  transitions_3m: [],
-  transitions_6m: probs.map((probability, i) => ({ to: (["Recession Risk", "Overheating", "Stagflation"] as RegimeLabel[])[i], probability, color: "#95a5a6" })),
-  narrative_3m: "",
-  narrative_6m: "",
-  highest_risk_transition: "Recession Risk",
-  highest_risk_prob: 12,
-  highest_risk_color: "#95a5a6",
-});
 
 describe("regime-history helpers (checklist 04 A.2)", () => {
   it("REGIMES is the house order and REGIME_HUE carries the four tokens, never a hex", () => {
@@ -169,14 +157,6 @@ describe("regime-history helpers (checklist 04 A.2)", () => {
     expect(overheatingDelta3m(undefined)).toBeNull();
   });
 
-  it("stay6m is the rounded residual of the served 6-month rows, unfloored (A4: the display dashes a negative)", () => {
-    expect(stay6m(transitions([19, 9, 4]))).toBe(68);
-    expect(stay6m(transitions([19.4, 9, 4]))).toBe(68); // 67.6 rounds up
-    expect(stay6m(transitions([19.6, 9, 4]))).toBe(67);
-    // Iteration 1 step 6 (A4): no floor; fmtProb renders a negative residual as "—".
-    expect(stay6m(transitions([60, 30, 14]))).toBe(-4);
-    expect(stay6m(transitions([]))).toBe(100);
-  });
 
   it("yearsOfHistory is the whole years between the first and last rows", () => {
     expect(yearsOfHistory(history())).toBe(2);

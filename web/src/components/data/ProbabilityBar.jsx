@@ -1,5 +1,5 @@
 import React from "react";
-import { fmtProb } from "../../lib/format";
+import { ODDS_ROUNDING_NOTE, fmtProb, roundHalfUp } from "../../lib/format";
 
 // Fixed classifier order (src/regime.py): the bar's shape stays comparable
 // across screens. Legend abbreviations: two-letter (default) or single-letter.
@@ -25,6 +25,7 @@ export function ProbabilityBar({
   legend = "abbr",
   order = "fixed",
   metrics,
+  roundingNote = true,
   style,
   ...rest
 }) {
@@ -38,7 +39,7 @@ export function ProbabilityBar({
     const raw = Number(probs[key]) || 0;
     const bad = raw < 0 || raw > 1;
     const share = bad ? 0 : raw * 100;
-    const pct = Math.round(share);
+    const pct = bad ? 0 : roundHalfUp(raw, 2);
     const served = metrics ? metrics[key] : undefined;
     return {
       key,
@@ -103,6 +104,16 @@ export function ProbabilityBar({
               </span>
             </React.Fragment>
           ))}
+        </div>
+      ) : null}
+      {/* fix/site-audit D-b: each legend percent rounds half up on its own, so the four may not sum to 100. */}
+      {showLegend && roundingNote ? (
+        <div
+          className="mrr-odds-note"
+          data-copy="odds-rounding"
+          style={{ marginTop: 2, fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--text-3)" }}
+        >
+          {ODDS_ROUNDING_NOTE}
         </div>
       ) : null}
     </div>

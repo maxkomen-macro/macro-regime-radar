@@ -23,7 +23,7 @@ import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 
-from src.utils.format import ordinal
+from src.utils.format import ordinal, round_half_up
 
 DB_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "macro_radar.db"
 
@@ -600,7 +600,7 @@ def _matrix_html(probs: dict, title: str, current_label: str | None) -> str:
         from_probs = probs.get(from_s, {})
         for to_s in CREDIT_STATES:
             p = from_probs.get(to_s, 0.0)
-            pct = int(round(p * 100))
+            pct = round_half_up(p, 2)  # fix/site-audit D-e: the one odds rule
             is_diag = from_s == to_s
             if pct >= 50:
                 cell_color = "#2ecc71" if is_diag else "#4a9eff"
@@ -683,11 +683,11 @@ tr:last-child {{ border-bottom:none; }}
 
     # Interpretation block
     if current_label and current_label != "No data" and t3m and t6m:
-        stay_3m = int(round(t3m.get(current_label, {}).get(current_label, 0) * 100))
+        stay_3m = round_half_up(t3m.get(current_label, {}).get(current_label, 0), 2)
         # Probability of deterioration (to Stressed or Crisis) in 6M
         deterio_states = [s for s in ["Stressed", "Crisis"]
                           if s != current_label and CREDIT_STATES.index(s) > CREDIT_STATES.index(current_label)]
-        deterio_6m = int(round(sum(t6m.get(current_label, {}).get(s, 0) for s in deterio_states) * 100))
+        deterio_6m = round_half_up(sum(t6m.get(current_label, {}).get(s, 0) for s in deterio_states), 2)
 
         label_color = _STATE_COLORS.get(current_label, "#8b949e")
         st.markdown(

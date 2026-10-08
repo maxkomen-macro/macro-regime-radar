@@ -364,9 +364,10 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(stripDetail(button)).toBe(`Newest ${fmtUtcStampEt(NEWEST)}`);
     expect(button.getAttribute("aria-label")).toContain(DELAYED_REASON);
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
-    // The chip speaks the same verdict, with the stale mark.
+    // The chip speaks the same verdict; fix/site-audit D7: delayed is amber, not the stale mark.
     expect(text(hero().querySelector(".mrr-hero-chips"))).toMatch(/· delayed/);
-    expect(hero().querySelector("[title^='Newest headline:']")).toHaveAttribute("data-stale", "true");
+    expect(hero().querySelector("[title^='Newest headline:']")).not.toHaveAttribute("data-stale", "true");
+    expect(hero().querySelector("[title^='Newest headline:']")).toHaveAttribute("data-tone", "delayed");
   });
 
   it("status strip: without a served sla row the feed reads Feed as of unknown (A3: no client clock), with the newest stamp", async () => {
@@ -782,6 +783,29 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     await awaitHero("FOMC decision in 7 days");
     await waitFor(() => expect(text(ddFor("Next high impact"))).toBe("FOMC decision · Wed Sep 23, 14:00 ET"));
     expect(dts().slice(0, 3)).toEqual(["Next event", "After that", "Next high impact"]);
+  });
+
+  it("D5: the hero leads with the highest-scored story that carries a stored read, not a higher-scored story without one", async () => {
+    const bare = news(150, { headline: "Stock futures are flat ahead of the open", overall_significance: 4.6 });
+    stub(routes({ "/api/news": () => [bare, { ...LEAD, regime_interpretation: null }, ...WINDOWED.slice(1)] }));
+    renderNews();
+    await awaitHero();
+    await waitFor(() => expect(text(hero().querySelector(".mrr-hero-lede"))).toContain("leads the file"));
+    const lede = text(hero().querySelector(".mrr-hero-lede"));
+    expect(lede).toBe(
+      "Macro / Fed leads the file: Fed holds rates, signals one more cut at 4.4 / 5, the highest score among stories with an AI read. Futures priced one cut by December after the statement.",
+    );
+    expect(lede).not.toContain("No model interpretation");
+  });
+
+  it("D5: with no stored read in the window the lede keeps the score-only sentence", async () => {
+    stub(routes({ "/api/news": () => WINDOWED.map((r) => ({ ...r, regime_interpretation: null, perplexity_research: null })) }));
+    renderNews();
+    await awaitHero();
+    await waitFor(() => expect(text(hero().querySelector(".mrr-hero-lede"))).toContain("leads the file"));
+    expect(text(hero().querySelector(".mrr-hero-lede"))).toBe(
+      "Macro / Fed leads the file: Fed holds rates, signals one more cut at 4.4 / 5, the window's highest score. The highest-scored story on file (significance 4.4 / 5). No model interpretation was stored for it, so the score is the only editorial claim made here.",
+    );
   });
 
   it("G4: the lede keeps the lead sentence and at most two sentences of a long stored interpretation", async () => {

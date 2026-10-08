@@ -3,7 +3,7 @@
  * docs/redesign-v2/checklists/07-recession.md B.0).
  *
  * Order of <main> children, all inside `.mrr-rec`: the hero row (TabHero
- * `#recession-hero`, whose h1 is the served recession odds for this month (scored from inputs three months old) with the
+ * `#recession-hero`, whose h1 is the served recession odds (scored for a month from inputs three months old) with the
  * served `recession_label` as the pill, the three-month change as the
  * subhead, the semicircle gauge over the 24M / Full history probability line
  * as the signature visual, beside SummaryCard `#recession-summary` with the
@@ -30,6 +30,7 @@ import { useRecessionProbability, useRegimeLatest } from "../../api/queries";
 import type { RecessionMetrics, RecessionScenarioRequest, Regime } from "../../api/types";
 import { fmtBps, fmtMonYr, fmtProb, fmtSigned, fmtWholePct, ordinal } from "../../lib/format";
 import { DASH } from "../dashboard/hero-copy";
+import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 import { RECESSION_INPUT_IDS, type FreshLabel } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { Metric, ODDS_METRIC, SRC, Stamp, type OddsKey } from "../shared/Stamp";
@@ -163,8 +164,8 @@ export default function RecessionScreen() {
     // No absence before an answer: the chip waits for the payload (or its
     // error) instead of printing "Unavailable" while the request is pending.
     // fix/freshness 3b: the score reads inputs three months old, so the chip names their month first and the
-    // newest data date after it: "Inputs through Jun 2026 · latest data Sep 28".
-    freshness: m || q.isError ? [{ noun: "Inputs through", label: inputsChip(m, fresh) }] : undefined,
+    // newest data date after it: "Inputs from Jun 2026 · latest data Sep 28" (fix/site-audit D6: was "Inputs through").
+    freshness: m || q.isError ? [{ noun: "Inputs from", label: inputsChip(m, fresh) }] : undefined,
   };
   let hero: ReactNode;
   if (m && copy) {
@@ -203,7 +204,7 @@ export default function RecessionScreen() {
             <ProbabilityHistory m={m} />
           </>
         }
-        stamp={<Stamp source={SRC.recession} asOf={fmtMonYr(m.data_as_of)} />}
+        stamp={<Stamp source={SRC.recession} asOf={recessionVintage(vintageOf(m))} />}
       />
     );
   } else if (q.isError) {
@@ -238,7 +239,7 @@ export default function RecessionScreen() {
   const rows: SummaryRow[] = [
     {
       id: "probability",
-      label: "Recession odds · this month",
+      label: "Recession odds",
       value: val(
         (x) => (
           <>
@@ -333,7 +334,9 @@ export default function RecessionScreen() {
     },
     {
       id: "inputs-through",
-      label: "Inputs through",
+      // fix/site-audit D6: the newest stored inputs, which the score does not read yet; "Inputs from" is the
+      // chip's word for the month the score's inputs come from.
+      label: "Latest data",
       // E3: the weakest daily and monthly input, each a §5 word from series[].
       value: val(() => (
         <span title={through.title || undefined} data-stale={through.stale ? "true" : undefined} className={through.stale ? "mrr-stale-num" : undefined}>
@@ -374,7 +377,7 @@ export default function RecessionScreen() {
           status={strip}
           stamp={
             <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
-              <Stamp source={SRC.recession} asOf={m ? fmtMonYr(m.data_as_of) : null} />
+              <Stamp source={SRC.recession} asOf={m ? recessionVintage(vintageOf(m)) : null} />
               <Stamp source={SRC.classifier} asOf={regime.data ? fmtMonYr(regime.data.date) : null} />
             </span>
           }

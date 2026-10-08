@@ -22,6 +22,9 @@ export interface ProbabilityBarProps extends React.HTMLAttributes<HTMLDivElement
    * `data-metric="odds-<regime>"` and `data-metric-value` (the served
    * number, unformatted). */
   metrics?: { goldilocks?: number | null; overheating?: number | null; stagflation?: number | null; recession?: number | null };
+  /** fix/site-audit D-b: under the legend, "Rounded; may not sum to 100" (default true; shown only with the
+   * legend). A caller that prints one note for several bars turns it off. */
+  roundingNote?: boolean;
   style?: React.CSSProperties;
 }
 

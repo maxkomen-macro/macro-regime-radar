@@ -265,6 +265,7 @@ def desk_pipeline(ctx: dict) -> dict:
     watermarks the statuses read; whether desk_series exists; and the Desk
     store's last refresh (`source_watermarks` row "desk_series", `checked_at`)."""
     from api import db
+    from api import freshness as freshness_mod
     from api import provenance
     from src.analytics import dbpath
 
@@ -276,9 +277,10 @@ def desk_pipeline(ctx: dict) -> dict:
         raw_table = provenance.table_exists(conn, "raw_series")
         rows = [(_desk_row(conn, by_id[sid]) if sid in by_id else _raw_row(conn, sid, watermarks, raw_table))
                 for sid in row_ids()]
+        releases = freshness_mod.release_times(conn)  # Codex S-05
     finally:
         conn.close()
-    return {"rows": rows, "watermarks": watermarks, "desk_table": desk_table,
+    return {"rows": rows, "watermarks": watermarks, "desk_table": desk_table, "release_times": releases,
             "last_refresh_utc": _ts_or_none((watermarks.get("desk_series") or {}).get("checked_at"))}
 
 
@@ -311,7 +313,8 @@ def statuses(item: dict, now: datetime) -> dict[str, str]:
             state = "unknown"  # no stored observation: missing, whatever the watermark says (Codex R-01)
         else:
             state = freshness_mod.fred_series_state(r["id"], today_ny=today_ny, stored_date=r["stamp"],
-                                                    watermark=wm.get(f"fred:{r['id']}"))["state"]
+                                                    watermark=wm.get(f"fred:{r['id']}"), now=now,
+                                                    releases=item.get("release_times"))["state"]
         out[r["id"]] = STATE_WORD.get(state, "missing")
     return out
 

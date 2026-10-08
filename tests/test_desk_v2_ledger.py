@@ -149,3 +149,30 @@ def test_codex_r03_the_ledger_judges_each_input_on_its_own_calendar(served, monk
     # One session later than the data, the FRED rows' own grace and the S&P's are both honoured.
     monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc))
     assert all(r["stale"] is False for r in _ledger()["signals"] if r["available"])
+
+
+def test_d4_after_the_close_the_rows_wait_for_the_evening_refresh(served, monkeypatch):
+    """fix/site-audit D4: the synthetic store ends Friday 2026-09-18. After
+    Monday the 21st's close the comparison session is the 21st, whose close
+    only the evening full refresh stores; until its deadline (06:00 UTC the
+    next day, api/freshness) the rows read their Friday state, not "Stale".
+    Past the deadline with the close still missing they are stale again."""
+    def ledger_at(when: datetime) -> dict:
+        monkeypatch.setattr(desk_v2, "_now", lambda: when)
+        return _ledger()
+
+    after_close = ledger_at(datetime(2026, 9, 21, 21, 0, tzinfo=timezone.utc))      # Mon 17:00 ET
+    evening = ledger_at(datetime(2026, 9, 22, 1, 30, tzinfo=timezone.utc))          # Mon 21:30 ET
+    deadline = ledger_at(datetime(2026, 9, 22, 6, 0, tzinfo=timezone.utc))          # 06:00 UTC
+    pre_open = ledger_at(datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc))         # Tue 08:00 ET
+    for d in (after_close, evening, deadline, pre_open):
+        assert d["comparison_session"] == "2026-09-21"
+    for row in after_close["signals"] + evening["signals"]:
+        if row["available"]:
+            assert row["evaluated_on"] == "2026-09-18" and row["stale"] is False, row["slug"]
+    for row in deadline["signals"] + pre_open["signals"]:
+        if row["available"]:
+            assert row["stale"] is True and row["firing_now"] is False, row["slug"]
+    monkeypatch.setattr(desk_v2, "_now", lambda: datetime(2026, 9, 21, 21, 0, tzinfo=timezone.utc))
+    study = dc.check_response("/study", client.get("/api/desk/study?preset=spx-5d-2sigma"))["data"]
+    assert (study["comparison_session"], study["stale"]) == ("2026-09-21", False)

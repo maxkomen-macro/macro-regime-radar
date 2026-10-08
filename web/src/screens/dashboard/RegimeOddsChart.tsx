@@ -65,7 +65,7 @@ import {
   type PointerEvent,
 } from "react";
 import type { Regime } from "../../api/types";
-import { fmtMonYr } from "../../lib/format";
+import { ODDS_ROUNDING_NOTE, fmtMonYr, roundHalfUp } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { HeroChartFrame, clampPx } from "../shared/HeroChart";
 import {
@@ -92,6 +92,8 @@ const LEGEND_H = 26;
 const CAP_H = 22;
 /** The muted footnote line below 1024px, carrying the two lines the plot drops. */
 const FOOT_H = 20;
+/** fix/site-audit D-b: the line under the caption saying the legend's percents are rounded. */
+const NOTE_H = 18;
 const PAD_L = 34;
 /** Room for the current-month dot and its value label. */
 const PAD_R = 44;
@@ -168,8 +170,9 @@ const prob = (r: Regime, name: RegimeName) => {
   const v = r[KEYS[name]] as number | null | undefined;
   return typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : 0;
 };
-/** Stored probabilities print as whole percent, the hero pill's rounding. */
-const pct = (v: number) => `${Math.round(v * 100)}%`;
+/** Stored probabilities print as whole percent, half up on the stored
+ * decimal like every other odds figure (fix/site-audit D1). */
+const pct = (v: number) => `${roundHalfUp(v, 2)}%`;
 
 /** The four rows of the legend, in resting order: highest latest value first. */
 export function legendOrder(rows: Regime[]): RegimeName[] {
@@ -445,7 +448,7 @@ export function RegimeOddsChart({
    * at 390px and pushed "Recession Risk" outside the figure at 1280px. */
   /** The legend, the caption and, when the split makes one, the footnote. */
   const chromeH = (w: number) =>
-    LEGEND_H + CAP_H + (splitAt(w).foot.length ? FOOT_H : 0);
+    LEGEND_H + CAP_H + NOTE_H + (splitAt(w).foot.length ? FOOT_H : 0);
   const splitAt = (w: number) => {
     const drawable = entries.filter((e) => plan.drawn.includes(e.name));
     const keep = drawable.slice(0, fitKeys(drawable, w)).map((e) => e.name);
@@ -602,6 +605,23 @@ export function RegimeOddsChart({
               </span>{" "}
               · heaviest line is the call
             </figcaption>
+            {/* fix/site-audit D-b: the legend's four whole percents round half up on their own. */}
+            <div
+              className="mrr-odds-note"
+              data-copy="odds-rounding"
+              style={{
+                height: NOTE_H,
+                lineHeight: `${NOTE_H}px`,
+                fontFamily: "var(--font-ui)",
+                fontSize: 12,
+                color: "var(--text-3)",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {ODDS_ROUNDING_NOTE}
+            </div>
             <span id={liveId} aria-live="polite" className="sr-only">
               {fmtMonYr(readRow.date)}: {readValues}
             </span>

@@ -39,6 +39,8 @@ import { Caption, MISSING, MISSING_ROW, StateNote, useHashScroll } from "../shar
 import { REGIME_INPUT_IDS, SIGNAL_INPUT_IDS, marketSeries } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { rateChange } from "../shared/rate-change";
+import { outlookLine } from "../shared/transition-outlook";
+import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 import { storedVixFromFred, vixShown } from "../shared/vix-shown";
 import { useQuote } from "../../live/quotes";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
@@ -275,7 +277,7 @@ export default function DashboardScreen() {
     id: "next-3m",
     label: "Next 3 months",
     value: tr
-      ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")} (hand-set priors)`
+      ? outlookLine(tr, "3m")
       : transitions.isError
         ? <StateNote error missing={MISSING.transitions} />
         : <StateNote loading />,
@@ -394,7 +396,7 @@ export default function DashboardScreen() {
                   <Metric id="recession-prob" value={recession.data.recession_prob}>
                     {fmtProb(recession.data.recession_prob, "percent", 1)}
                   </Metric>{" "}
-                  for this month, from inputs three months old · {recession.data.recession_label} (a separate model from the{" "}
+                  {recessionVintage(vintageOf(recession.data), { lower: true }) ?? "from inputs three months old"} · {recession.data.recession_label} (a separate model from the{" "}
                   <Metric id="odds-recession-risk" value={served.recession}>
                     {fmtWholePct(probs.recession)}
                   </Metric>{" "}
@@ -521,7 +523,7 @@ export default function DashboardScreen() {
             // per-source breakdown the strip's status card used to open.
             <span style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", columnGap: 12 }}>
               <Stamp source={SRC.classifier} asOf={regime.data ? fmtMonYr(regime.data.date) : null} />
-              <Stamp source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
+              <Stamp source={SRC.recession} asOf={recession.data ? recessionVintage(vintageOf(recession.data)) : null} />
               <button
                 type="button"
                 className="mrr-fresh-link"

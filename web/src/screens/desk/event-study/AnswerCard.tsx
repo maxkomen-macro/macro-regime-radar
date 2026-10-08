@@ -9,7 +9,7 @@
  */
 
 import type { StudyHorizon, StudyResponse, TargetUnit } from "../data/types";
-import { dayLong, isFiniteNumber as fin, monthYear, pctPlain, year } from "../kit/format";
+import { firingPill, isFiniteNumber as fin, monthYear, pctPlain, year } from "../kit/format";
 import { useBox } from "../kit/LineChart";
 import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved, LoadingLine } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
@@ -244,20 +244,18 @@ export default function AnswerCard({
   const best = h?.best ? moveText(h.best.value, unit) : null;
   // Every log number carries the §1.9 tooltip; bp numbers none.
   const tip = tipOf(unit);
+  const firingPillText = firingPill(study, undefined, study.last_event);
   return (
     <section className="dk-card es-answer" aria-label="The answer" aria-busy={busy || undefined} data-busy={busy || undefined}>
       <h2 className="es-headline">{study.headline}</h2>
       <LoadingLine busy={busy} />
       <div className="es-pills">
-        {/* §4: nothing when the state is not served (a stale study with no evaluable session included); stale is never "firing today"; a firing study counts its days. */}
-        {study.firing_now == null || study.stale == null ? null : study.stale ? (
-          <span className="es-pill">○ Stale · {dayLong(study.evaluated_on) || "—"}</span>
-        ) : study.firing_now === true ? (
-          <span className="es-pill" data-on>
-            ● Firing today{fin(study.firing_day) ? ` · day ${study.firing_day}` : ""}
+        {/* §4: nothing when the state is not served (a stale study with no evaluable session included); stale is never "firing today"; a firing study counts its days.
+            fix/site-audit S-01: "today" only when the evaluated session is today's; an earlier one is dated ("● Fired Oct 6"). */}
+        {firingPillText ? (
+          <span className="es-pill" data-on={(study.firing_now === true && study.stale === false) || undefined}>
+            {firingPillText}
           </span>
-        ) : study.firing_now === false ? (
-          <span className="es-pill">○ Not firing today{study.last_event ? ` · last ${dayLong(study.last_event)}` : ""}</span>
         ) : null}
         {/* desk/usability §14.13: the engine's timing and cache words ("0.3s, cached") are not an MD's; the pill says live. */}
         <span className="es-pill" data-live>

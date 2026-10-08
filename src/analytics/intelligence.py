@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.utils.format import ordinal
+from src.utils.format import ordinal, round_half_up, to_pct
 from src.analytics import dbpath
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
@@ -477,7 +477,7 @@ def _pct_rank(series: pd.Series, current_val: float) -> int:
     arr = series.dropna()
     if len(arr) == 0:
         return 50
-    return int(round((arr.values < current_val).mean() * 100))
+    return round_half_up(float((arr.values < current_val).mean()), 2)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -495,9 +495,9 @@ def _derive_probs_from_confidence(label: str, confidence: float) -> dict[str, in
     regimes = list(REGIME_BASE_RATES.items())
     for i, (regime, base) in enumerate(regimes):
         if regime == label:
-            probs[regime] = round(confidence * 100)
+            probs[regime] = round_half_up(confidence, 2)
         else:
-            val = round((base / other_total) * remaining * 100)
+            val = round_half_up((base / other_total) * remaining, 2)
             probs[regime] = val
             allocated += val
     # Fix rounding to ensure sum = 100
@@ -510,8 +510,10 @@ def _derive_probs_from_confidence(label: str, confidence: float) -> dict[str, in
 def _get_current_regime_state(conn: sqlite3.Connection | None = None) -> dict:
     """
     Query regimes table for the latest row.
-    Returns dict with label, confidence, probs (stored softmax prob_* columns,
-    0–100 ints keyed by display name), date. Falls back to a confidence-based
+    Returns dict with label, confidence, probs (stored softmax prob_* columns
+    on 0–100, exactly from the stored decimal: 0.425 → 42.5, keyed by display
+    name; Codex S-03: they were round()ed, 42), date. Printers round them half
+    up (src.utils.format.round_half_up). Falls back to a confidence-based
     approximation only for legacy rows where prob_* are NULL.
     """
     _close = False
@@ -540,12 +542,7 @@ def _get_current_regime_state(conn: sqlite3.Connection | None = None) -> dict:
                 "Recession Risk": row["prob_recession"],
             }
             if all(v is not None for v in stored.values()):
-                probs = {k: round(float(v) * 100) for k, v in stored.items()}
-                # Fix rounding so the four probabilities sum to 100
-                residual = 100 - sum(probs.values())
-                if residual:
-                    dominant = max(probs, key=lambda k: probs[k])
-                    probs[dominant] += residual
+                probs = {k: to_pct(v) for k, v in stored.items()}
             else:
                 probs = _derive_probs_from_confidence(label, confidence)
         return {
@@ -608,8 +605,8 @@ def _compute_risk_indicators(conn: sqlite3.Connection) -> dict[str, int]:
 
 
 def _estimate_stressed_probs(
-    current_probs: dict[str, int], shocks: dict
-) -> dict[str, int]:
+    current_probs: dict[str, float], shocks: dict
+) -> dict[str, float]:
     """
     Apply scenario shocks to current regime probabilities using simplified stress multipliers.
     current_probs: {"Goldilocks": 19, "Overheating": 59, "Stagflation": 17, "Recession Risk": 5}
@@ -627,13 +624,10 @@ def _estimate_stressed_probs(
     stag = max(5.0, current_probs.get("Stagflation", 25)   + stress_score * 6  + rate_score * 5)
     rec  = max(2.0, current_probs.get("Recession Risk", 25) + stress_score * 12)
 
+    # Codex S-03: the stressed odds stay on 0–100 unrounded; printers round them half up.
     total = gold + over + stag + rec
-    g = round(gold / total * 100)
-    o = round(over / total * 100)
-    s = round(stag / total * 100)
-    r = 100 - g - o - s  # absorb rounding residual
-
-    return {"Goldilocks": g, "Overheating": o, "Stagflation": s, "Recession Risk": r}
+    return {"Goldilocks": gold / total * 100, "Overheating": over / total * 100,
+            "Stagflation": stag / total * 100, "Recession Risk": rec / total * 100}
 
 
 def _compute_transitions_from_db(
@@ -664,7 +658,7 @@ def _compute_transitions_from_db(
     result: dict[str, dict[str, int]] = {}
     for frm, to_dict in counts.items():
         total = sum(to_dict.values())
-        result[frm] = {to: round(cnt / total * 100) for to, cnt in to_dict.items()}
+        result[frm] = {to: round_half_up(cnt / total, 2) for to, cnt in to_dict.items()}
         # Fix rounding
         tot = sum(result[frm].values())
         if tot != 100:
@@ -736,7 +730,9 @@ def generate_market_takeaway(
     # Determine scale
     max_val = max(raw_probs.values()) if raw_probs else 1
     scale = 100 if max_val <= 1.0 else 1
-    probs_100 = {k: round(v * scale) for k, v in raw_probs.items()}
+    # One rounding rule with every other surface (fix/site-audit D1): half up
+    # on the stored decimal, so 0.425 reads 43% here as it does on the web.
+    probs_100 = {k: round_half_up(v, 2 if scale == 100 else 0) for k, v in raw_probs.items()}
 
     top_regime = current_regime
     top_prob   = probs_100.get(top_regime, 30)
@@ -1223,11 +1219,15 @@ def get_transition_narrative(current_regime: str) -> dict:
     transitions_3m = _build_transitions(row3)
     transitions_6m = _build_transitions(row6)
 
-    # Highest risk transition (excluding "stay")
-    highest_3m = max(transitions_3m, key=lambda x: x["probability"]) if transitions_3m else {}
-    highest_risk = highest_3m.get("to", "Stagflation")
-    highest_prob = highest_3m.get("probability", 20)
-    highest_color = highest_3m.get("color", "#e74c3c")
+    def _highest_risk(transitions: list[dict]) -> tuple[str, int, str]:
+        """A horizon's highest-risk path: its likeliest exit (the stay excluded).
+        One rule for both horizons (fix/site-audit D2): the web printed the
+        6-month path from its own derivation beside the served 3-month one."""
+        top = max(transitions, key=lambda x: x["probability"]) if transitions else {}
+        return top.get("to", "Stagflation"), top.get("probability", 20), top.get("color", "#e74c3c")
+
+    highest_risk, highest_prob, highest_color = _highest_risk(transitions_3m)
+    highest_6m, highest_6m_prob, highest_6m_color = _highest_risk(transitions_6m)
 
     narrative_3m = (
         f"{stay_3m}% chance of remaining in {norm_regime} over the next 3 months, "
@@ -1249,6 +1249,10 @@ def get_transition_narrative(current_regime: str) -> dict:
         "highest_risk_transition": highest_risk,
         "highest_risk_prob":       highest_prob,
         "highest_risk_color":      highest_color,
+        "stay_probability_6m":        stay_6m,
+        "highest_risk_6m_transition": highest_6m,
+        "highest_risk_6m_prob":       highest_6m_prob,
+        "highest_risk_6m_color":      highest_6m_color,
     }
 
 
@@ -1388,7 +1392,7 @@ def run_scenario(
 
     # Get current regime state
     state = _get_current_regime_state()
-    current_probs = state["probs"]  # stored softmax, {"Goldilocks": 30, ...}
+    current_probs = state["probs"]  # stored softmax on 0–100, {"Goldilocks": 11.02, ...} (Codex S-03: unrounded)
 
     stressed_probs = _estimate_stressed_probs(current_probs, shocks)
     prob_changes = {

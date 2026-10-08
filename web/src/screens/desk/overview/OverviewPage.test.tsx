@@ -73,14 +73,16 @@ describe("Overview words", () => {
     expect(regimeSub({ ...r, growth: undefined })).toBe("");
     const rec = fixture.tiles!.recession!;
     // The fixture's score is August's, from May's inputs (the model's three-row shift, src/analytics/recession.py).
-    expect(recessionWords(rec)).toBe("Low · based on May\u00a02026 data");
+    expect(recessionWords(rec)).toBe("Low · scored for Aug\u00a02026 · inputs from May\u00a02026");
     expect(recessionLag(rec)).toBe("The recession model reads data from three months earlier, so August's score uses May's readings.");
     // The owner's example, read from the served months: September's score from June's readings.
     expect(recessionLag({ ...rec, probability_month: "2026-09", inputs_through: "2026-06" })).toBe("The recession model reads data from three months earlier, so September's score uses June's readings.");
     // Across a year, and with a month not served: no sentence is typed.
     expect(recessionLag({ ...rec, probability_month: "2027-01", inputs_through: "2026-10" })).toBe("The recession model reads data from three months earlier, so January's score uses October's readings.");
     expect(recessionLag({ ...rec, inputs_through: undefined })).toBeNull();
-    expect(recessionWords({ ...rec, inputs_through: undefined })).toBe("Low");
+    // D6: the served half of the vintage; the band alone with neither month.
+    expect(recessionWords({ ...rec, inputs_through: undefined })).toBe("Low · scored for Aug\u00a02026");
+    expect(recessionWords({ ...rec, inputs_through: undefined, probability_month: undefined })).toBe("Low");
     expect(monthsBetween("2026-06", "2026-09")).toBe(3);
     expect(monthsBetween("2025-11-01", "2026-02")).toBe(3);
     expect(monthsBetween(null, "2026-02")).toBeNull();
@@ -139,9 +141,10 @@ describe("Overview tab", () => {
     const rec = screen.getByRole("region", { name: "Recession · logistic model" });
     // fix/freshness 3b: one decimal, the value the app prints.
     expect(rec).toHaveTextContent("11.6%");
-    // desk/pdf-polish 2d: "<band> · based on <inputs_through> data", the month carrying the model's lag on hover.
-    expect(rec).toHaveTextContent("Low · based on May 2026 data");
-    const based = within(rec).getByText(/based on May/);
+    // desk/pdf-polish 2d, fix/site-audit D6: "<band> · scored for <probability_month> · inputs from <inputs_through>",
+    // the app's one vocabulary, the vintage carrying the model's lag on hover.
+    expect(rec).toHaveTextContent("Low · scored for Aug 2026 · inputs from May 2026");
+    const based = within(rec).getByText(/scored for Aug/);
     expect(based).toHaveClass("dk-term");
     expect(based).toHaveAttribute("tabindex", "0");
     expect(based.getAttribute("data-def")).toBe("The recession model reads data from three months earlier, so August's score uses May's readings.");

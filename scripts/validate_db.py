@@ -365,6 +365,8 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
             # dated after the run's day among them, never dates them)
             "share_counts_as_of": None,
             "share_counts_rows": 0,
+            # Codex S-05: the dated release calendar the monthly prints are due on, as the API reads it
+            "release_times": freshness_mod.release_times(conn),
         }
         if "share_counts" in out["tables"]:
             cut_sc = as_of or datetime.now(timezone.utc).astimezone(freshness_mod.cal.NY).date().isoformat()

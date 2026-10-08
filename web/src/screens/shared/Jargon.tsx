@@ -24,7 +24,7 @@ const DEFS: Record<string, string> = {
     "Whether the recession model and market risk pricing agree. Aligned = they tell one story; a material divergence requires judgment about which read to weight.",
   NBER: "The National Bureau of Economic Research — the committee that dates official US recessions; the model trains on its dates.",
   "recession model":
-    "A logistic regression on the yield curve, unemployment, the high-yield spread, industrial production and the 10Y − 5Y breakeven spread, trained on NBER recession dates: recession odds for this month, scored from inputs three months old. Fitted and scored on the same history (in-sample).",
+    "A logistic regression on the yield curve, unemployment, the high-yield spread, industrial production and the 10Y − 5Y breakeven spread, trained on NBER recession dates: each month's recession odds, scored from inputs three months old. Fitted and scored on the same history (in-sample).",
   breakeven:
     "The inflation rate at which nominal Treasuries and inflation-protected TIPS pay the same — the market's own inflation forecast for that horizon.",
   TIPS: "Treasury Inflation-Protected Securities — their yield is the real (after-inflation) interest rate the market charges.",

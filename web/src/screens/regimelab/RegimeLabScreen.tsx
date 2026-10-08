@@ -25,7 +25,7 @@ import SubTabs from "../shared/SubTabs";
 import { REGIME_INPUT_IDS, referenceLabel } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { useRegimeDuration, useRegimeHistory, useRegimeLatest, useRecessionProbability, useTakeaway, useTransitions } from "../../api/queries";
-import { fmtMonYr, fmtProb, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
+import { fmtMonYr, fmtSigned, fmtWholePct, tidyProse } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, MISSING, MISSING_ROW, StateNote, missingNote, useHashScroll, useSnapshotMode, type MissingSource } from "../shared/screen-ui";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
@@ -35,7 +35,9 @@ import { parseStrong, takeMarkedSentences } from "../shared/narrative";
 import { Metric, SRC, Stamp, servedOdds } from "../shared/Stamp";
 import { DASH, convictionWord } from "../dashboard/hero-copy";
 import { CYCLE_GLOW, cycleHero, monthsText, stripSummary } from "./hero-copy";
-import { stay6m, trailPoints, yearsOfHistory } from "./regime-history";
+import { trailPoints, yearsOfHistory } from "./regime-history";
+import { outlookLine } from "../shared/transition-outlook";
+import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 import QuadrantChart from "./QuadrantChart";
 import OverviewTab from "./OverviewTab";
 import PlaybookTab from "./PlaybookTab";
@@ -190,7 +192,6 @@ export default function RegimeLabScreen() {
   const pending = (q: { isError: boolean }, missing: MissingSource | typeof MISSING_ROW = MISSING_ROW) =>
     q.isError ? <StateNote error missing={missing} /> : <StateNote loading />;
   const months = d ? monthsText(d.months_in_regime) : "0";
-  const six = tr?.transitions_6m[0];
   const summaryRows: SummaryRow[] = [
     {
       id: "current-regime",
@@ -230,14 +231,14 @@ export default function RegimeLabScreen() {
       id: "next-3m",
       label: "Next 3 months",
       value: tr
-        ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")} (hand-set priors)`
+        ? outlookLine(tr, "3m")
         : pending(transitions, MISSING.transitions),
     },
     {
       id: "next-6m",
       label: "Next 6 months",
       value: tr
-        ? `Stays ${tr.current_regime} ${fmtProb(stay6m(tr), "percent")}${six ? ` · highest-risk path → ${six.to} ${fmtProb(six.probability, "percent")}` : ""} (hand-set priors)`
+        ? (outlookLine(tr, "6m") ?? DASH)
         : pending(transitions),
     },
     {
@@ -303,7 +304,7 @@ export default function RegimeLabScreen() {
           stamp={
             <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
               <Stamp source={SRC.classifier} asOf={r ? fmtMonYr(r.date) : null} />
-              <Stamp source={SRC.recession} asOf={rec ? fmtMonYr(rec.data_as_of) : null} />
+              <Stamp source={SRC.recession} asOf={rec ? recessionVintage(vintageOf(rec)) : null} />
             </span>
           }
         >

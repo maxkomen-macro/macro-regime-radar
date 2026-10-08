@@ -11,7 +11,7 @@
  * old-palette hexes (checklist 04 F5).
  */
 
-import type { Regime, TransitionOutlook } from "../../api/types";
+import type { Regime } from "../../api/types";
 
 /** House order: classifier order, the same the Gantt lanes and the odds bar use. */
 export const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"] as const;
@@ -156,15 +156,6 @@ export function overheatingDelta3m(rows: Regime[] | undefined): OverheatingDelta
   const base = rows[rows.length - 4];
   if (latest.prob_overheating == null || base.prob_overheating == null) return null;
   return { delta: (latest.prob_overheating - base.prob_overheating) * 100, from: base.date, to: latest.date };
-}
-
-/** The 6-month "stays" residual: the served rows exclude the self-transition,
- * so 100 minus their sum completes the distribution (rounded). One helper
- * feeds the tile and the summary row. Iteration 1 (A4): no floor. Rows that
- * sum past 100 leave a negative residual, which the display prints as "—"
- * through fmtProb (never a clamped 0% that looks like data). */
-export function stay6m(t: TransitionOutlook): number {
-  return Math.round(100 - t.transitions_6m.reduce((a, tr) => a + tr.probability, 0));
 }
 
 function yearMonth(iso: string): [number, number] {

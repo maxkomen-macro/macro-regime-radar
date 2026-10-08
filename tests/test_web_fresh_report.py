@@ -98,7 +98,7 @@ def test_the_recession_route_labels_an_awaiting_block_as_the_hook_does(tmp_path)
     (tests/web/RecessionScreen.awaiting.test.tsx): the real screen, rendered with
     vitest in a copy of web/ (web/ itself is not written), a cached report dating
     the inputs Sep 24, a failed freshness fetch, and an awaiting block. The hero
-    chip and the Inputs through row read "—" with the reason; the premise without
+    chip and the Latest data row (fix/site-audit D6: "Inputs through" before) read "—" with the reason; the premise without
     the block reads Sep 24. On the staged code the chip read the cached dates."""
     node, modules = shutil.which("node"), _node_modules()
     if not node or modules is None:

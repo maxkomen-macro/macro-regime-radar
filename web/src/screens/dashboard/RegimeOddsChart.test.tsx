@@ -201,4 +201,11 @@ describe("seriesPlan (F1 narrow-column reduction)", () => {
     expect(legendOrder(GOLDILOCKS)).toEqual(["Goldilocks", "Recession Risk", "Overheating", "Stagflation"]);
     expect(legendOrder(OVERHEATING)).toEqual(["Overheating", "Stagflation", "Goldilocks", "Recession Risk"]);
   });
+
+  it("says the four whole percents it prints are rounded and may not sum to 100 (fix/site-audit D-b)", () => {
+    const { container } = render(<RegimeOddsChart rows={GOLDILOCKS} />);
+    const notes = container.querySelectorAll("[data-copy='odds-rounding']");
+    expect(notes).toHaveLength(1);
+    expect(notes[0].textContent).toBe("Rounded; may not sum to 100");
+  });
 });

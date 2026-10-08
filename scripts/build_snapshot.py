@@ -64,7 +64,7 @@ SEEDED_REASON = "Seeded snapshot: freshness is unknown until the live report arr
 
 
 def _unknown(state: dict) -> dict:
-    return {**state, "state": "unknown", "stale": False, "delay_min": None, "reason": SEEDED_REASON}
+    return {**state, "state": "unknown", "stale": False, "delay_min": None, "late": None, "reason": SEEDED_REASON}
 
 
 def seed_freshness(entries: dict) -> dict:

@@ -180,7 +180,8 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
       ["Median", fromEntry("col-median")],
       ["Vs normal", fromEntry("col-vs-normal")],
       ["Verdict", "col-verdict"],
-      ["Now", "col-now-firing"],
+      // fix/site-audit D-d: "Latest", since a row may be the previous session's under the close's grace (S-01).
+      ["Latest", "col-now-firing"],
     ]);
   });
 

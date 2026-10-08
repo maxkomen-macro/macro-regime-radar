@@ -1,0 +1,41 @@
+{
+ "_comment": "fix/site-audit D1: odds print as whole percents rounded half up on the stored decimal (0.425 -> 43). One fixture for both suites: tests/test_whole_percent.py checks src/analytics/percent.py and web/src/lib/format.test.ts checks roundHalfUp/fmtProb against it. 'unit' rows are 0-1 fractions, 'percent' rows are already on 0-100.",
+ "unit": [
+  [0.425, 43],
+  [0.285, 29],
+  [0.145, 15],
+  [0.565, 57],
+  [0.575, 58],
+  [0.135, 14],
+  [0.125, 13],
+  [0.015, 2],
+  [0.025, 3],
+  [0.005, 1],
+  [0.0049, 0],
+  [0.004, 0],
+  [0.995, 100],
+  [0.9949, 99],
+  [0.4249, 42],
+  [0.42499999999999, 42],
+  [0.6423, 64],
+  [0.116, 12],
+  [0.5, 50],
+  [0, 0],
+  [1, 100],
+  [1e-7, 0],
+  [0.1102, 11],
+  [0.3691, 37],
+  [0.0957, 10],
+  [0.2069, 21]
+ ],
+ "percent": [
+  [42.5, 43],
+  [28.5, 29],
+  [11.63, 12],
+  [20, 20],
+  [0.5, 1],
+  [99.5, 100],
+  [12.4999, 12],
+  [9.738, 10]
+ ]
+}

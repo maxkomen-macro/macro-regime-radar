@@ -33,6 +33,7 @@ import {
   heroSubhead,
   highImpactValue,
   leadSentence,
+  leadStory,
   nextFocusEvent,
   outletsValue,
   sourceCount,
@@ -301,6 +302,8 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     expect(feedClock("2026-09-16T20:40:00Z", row("fresh")).state).toBe("unknown");
     expect(feedChipLabel(fresh())).toMatchObject({ word: "Sep 16, 16:40 ET", muted: null, tone: "neutral", stale: false });
     expect(feedChipLabel(fresh({ state: "stale" }))).toMatchObject({ word: "Sep 16, 16:40 ET", muted: "· stale", tone: "stale", stale: true });
+    // fix/site-audit D7: delayed is past the expected lag but not stale: amber, no stale mark.
+    expect(feedChipLabel(fresh({ state: "delayed" }))).toMatchObject({ word: "Sep 16, 16:40 ET", muted: "· delayed", tone: "delayed", stale: false });
     expect(feedChipLabel(fresh({ state: "unknown" }))).toMatchObject({ tone: "unknown", stale: false });
     expect(feedChipLabel(fresh({ stamp: "" })).word).toBe("As of unknown");
   });
@@ -515,5 +518,47 @@ describe("the page and the backend mean the same ten stories (fix/prelaunch-1, B
   it("the floor and the depth are the backend's", () => {
     expect(ENRICH_FLOOR).toBe(storyKeys.floor);
     expect(ENRICH_TOP_N).toBe(storyKeys.top_n);
+  });
+});
+
+/* ── fix/site-audit D5: the lead is the highest-scored story with a stored read ── */
+
+describe("D5 · the hero leads with the highest-scored story that carries a stored read", () => {
+  // The live shape (2026-10-07): Perplexity's read, with markdown bold and citation markers, and no interpretation.
+  const RESEARCH =
+    "The Nasdaq at a record high matters in an **overheating** regime because equities can still rally.[6][8][17] A trader should watch **yields** and **oil**.[2][20]\n\nSources:\n- https://example.com/a\n- https://example.com/b";
+  const top = item({ id: 1, headline: "Stock futures are flat", overall_significance: 3.8 });
+  const read = item({ id: 2, headline: "Nasdaq hits record high", overall_significance: 3.3, perplexity_research: RESEARCH });
+
+  it("leadStory skips a higher-scored story with no read", () => {
+    expect(leadStory([top, read])).toBe(read);
+  });
+
+  it("leadStory falls back to the top story when no story carries a read, and to nothing with no story", () => {
+    const other = item({ id: 3, overall_significance: 2 });
+    expect(leadStory([top, other])).toBe(top);
+    expect(leadStory([])).toBeUndefined();
+  });
+
+  it("whySentence reads the stored research as plain prose when no interpretation is stored", () => {
+    expect(whySentence(read, false)).toBe(
+      "The Nasdaq at a record high matters in an overheating regime because equities can still rally. A trader should watch yields and oil.",
+    );
+    expect(whySentence(read, false)).not.toContain("No model interpretation");
+  });
+
+  it("an interpretation still comes first when both reads are stored", () => {
+    expect(whySentence(item({ regime_interpretation: "Holds the Goldilocks read.", perplexity_research: RESEARCH }), false)).toBe("Holds the Goldilocks read.");
+  });
+
+  it("leadSentence names the lead's rank when a higher-scored story carries no read", () => {
+    expect(leadSentence(read, false, false, false)).toBe(
+      "Macro / Fed leads the file: Nasdaq hits record high at 3.3 / 5, the highest score among stories with an AI read.",
+    );
+    expect(leadSentence(read, true, false, false)).toBe(
+      "Macro / Fed leads the stored file: Nasdaq hits record high at 3.3 / 5, the highest score among stored stories with an AI read.",
+    );
+    // The default is the window's top story, worded as before.
+    expect(leadSentence(read, false)).toMatch(/, the window's highest score\.$/);
   });
 });

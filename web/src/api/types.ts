@@ -299,6 +299,10 @@ export interface SeriesState {
   discontinued: boolean;
   /** One plain sentence for a tooltip or Details, never the headline. */
   reason: string;
+  /** fix/site-audit D7: the server's judgement of a "delayed" state against
+   * the source's expected lag: false within it (neutral), true past it
+   * (amber); null for other states and absent from an older API (amber). */
+  late?: boolean | null;
 }
 
 /* ── Regime Lab (night-2 endpoints) ────────────────────────────────────── */
@@ -369,6 +373,12 @@ export interface TransitionOutlook {
   highest_risk_transition: string;
   highest_risk_prob: number;
   highest_risk_color: string;
+  /** fix/site-audit D2: the 6-month stay and highest-risk path, by the same
+   * rule as the 3-month fields; absent from an API that predates them. */
+  stay_probability_6m?: number;
+  highest_risk_6m_transition?: string;
+  highest_risk_6m_prob?: number;
+  highest_risk_6m_color?: string;
 }
 
 export interface Analogue {
@@ -937,6 +947,9 @@ export interface SlaRow {
   expected: string | null;
   verdict: "current" | "delayed" | "stale" | "unavailable";
   reason: string;
+  /** fix/site-audit D7 follow-up: a word the drawer prints in the neutral tone in place of the verdict
+   * ("Awaiting opening bars" in the 30 minutes after the open); absent otherwise. */
+  word?: string | null;
 }
 
 export interface RegimeFreshness {

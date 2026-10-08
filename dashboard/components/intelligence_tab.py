@@ -41,7 +41,7 @@ from src.analytics.intelligence import (
 from src.analytics.regimes import get_current_regime_probs
 from src.analytics.credit import get_credit_metrics
 from src.analytics.recession import get_recession_probability
-from src.utils.format import ordinal
+from src.utils.format import ordinal, round_half_up
 
 # ─────────────────────────────────────────────────────────────────────────────
 # CSS constants
@@ -161,7 +161,7 @@ def _render_regime_gauge(state: dict, probs: dict) -> None:
     """Animated SVG semicircular gauge."""
     label    = state["label"]
     regime_c = REGIME_COLORS.get(label, "#4a9eff")
-    probs100 = state["probs"]  # stored softmax prob_* columns, {display name: int}
+    probs100 = state["probs"]  # stored softmax prob_* columns on 0–100, unrounded (Codex S-03); printed half up
     top_prob = probs100.get(label, 30)
 
     # SVG gauge: semicircle, angle from 0° (left) to 180° (right)
@@ -188,7 +188,7 @@ def _render_regime_gauge(state: dict, probs: dict) -> None:
                     padding:6px 12px;font-size:11px;cursor:default;margin:3px 4px;">
           <span style="width:6px;height:6px;border-radius:50%;background:{c};display:inline-block;"></span>
           <span style="color:{c if regime == label else 'var(--muted)'};">{short}</span>
-          <span style="color:var(--text);font-weight:700;">{pct}%</span>
+          <span style="color:var(--text);font-weight:700;">{round_half_up(pct)}%</span>
         </div>"""
 
     html = f"""{_BASE_CSS}
@@ -211,7 +211,7 @@ def _render_regime_gauge(state: dict, probs: dict) -> None:
               style="filter:drop-shadow(0 0 3px {regime_c});"/>
       <!-- Percentage text -->
       <text x="100" y="85" text-anchor="middle" font-size="26" font-weight="700"
-            fill="{regime_c}">{top_prob}%</text>
+            fill="{regime_c}">{round_half_up(top_prob)}%</text>
       <text x="100" y="102" text-anchor="middle" font-size="11" fill="#8b949e">{label}</text>
     </svg>
   </div>
@@ -544,7 +544,7 @@ def _render_scenario_cards_html(scenarios_results: dict, selected_key: str) -> N
           <div style="font-size:9px;color:var(--muted);line-height:1.3;">SPX {s['input_shocks']['spx_delta_pct']:+d}%</div>
           <div style="margin-top:6px;padding:4px;background:rgba(0,0,0,0.3);border-radius:4px;">
             <div style="font-size:10px;color:{color};font-weight:700;">→ {top_r.replace('Recession Risk','Rec.')}</div>
-            <div style="font-size:13px;color:{color};font-weight:700;">{top_p}%</div>
+            <div style="font-size:13px;color:{color};font-weight:700;">{round_half_up(top_p)}%</div>
           </div>
         </div>"""
 
@@ -564,8 +564,8 @@ def _render_scenario_results(result: dict) -> None:
         if "recession" in regime:
             disp = "Recession Risk"
         color  = REGIME_COLORS.get(disp, "#8b949e")
-        prob   = result["stressed_regime_probs"].get(regime, 0)
-        change = result["prob_changes"].get(regime, 0)
+        prob   = round_half_up(result["stressed_regime_probs"].get(regime, 0))
+        change = round_half_up(result["prob_changes"].get(regime, 0))
         sign   = "+" if change >= 0 else ""
         ch_c   = "#2ecc71" if change > 0 else ("#e74c3c" if change < 0 else "#8b949e")
         is_top = disp == result["most_likely_regime"]

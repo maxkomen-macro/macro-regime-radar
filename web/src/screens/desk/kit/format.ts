@@ -10,6 +10,7 @@
  * "Awaiting refresh" under the stat's label; "—" is the floor under that.
  */
 
+import { roundHalfUp } from "../../../lib/format";
 import type { Verdict } from "../data/types";
 
 export const MINUS = "−";
@@ -38,6 +39,13 @@ export function num(x: number, digits = 1): string {
 /** A fraction as a signed percent: 0.031 → "+3.1%". */
 export function pct(frac: number, digits = 1): string {
   return isFiniteNumber(frac) ? `${signed(frac * 100, digits)}%` : NOT_SERVED;
+}
+
+/** The classifier's odds as a whole percent, under the app's one rule (half
+ * up on the stored decimal, lib/format roundHalfUp; fix/site-audit D1): 0.425
+ * → "43%", as the Dashboard, the Regime Lab and Tools print the same row. */
+export function oddsPct(frac: number): string {
+  return isFiniteNumber(frac) ? `${roundHalfUp(frac, 2)}%` : NOT_SERVED;
 }
 
 /** A fraction as an unsigned percent: 0.68 → "68%". */
@@ -198,7 +206,7 @@ export const VERDICT_RANK: Record<Verdict, number> = { reliable: 0, suggestive: 
 
 /** "verdict rule v1 at 90%" from a served rule and its fixed level (§4, §1.5); null when either was not served. */
 export function verdictRuleWords(s: { verdict_rule?: string | null; verdict_confidence?: number | null }): string | null {
-  return typeof s.verdict_rule === "string" && s.verdict_rule && isFiniteNumber(s.verdict_confidence) ? `verdict rule ${s.verdict_rule} at ${Math.round(s.verdict_confidence * 100)}%` : null;
+  return typeof s.verdict_rule === "string" && s.verdict_rule && isFiniteNumber(s.verdict_confidence) ? `verdict rule ${s.verdict_rule} at ${roundHalfUp(s.verdict_confidence, 2)}%` : null;
 }
 
 /** A signed value's tone: up green, down red, zero neutral (§1.3). */
@@ -209,6 +217,52 @@ export function toneOf(x: number): "up" | "down" | "flat" {
 /** Today's date in New York, where the S&P closes ("2026-09-24"). */
 export function nyToday(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+/* ── A signal's firing words (fix/site-audit S-01) ───────────────────────
+ * A study's firing state is the state on `evaluated_on`, its last evaluable
+ * session. After the bell the close's grace (D4) keeps the previous session
+ * standing until the evening refresh stores today's close, so the state can be
+ * yesterday's: "today" and "now" are said only when the evaluated session is
+ * New York's today (the Technicals price card's rule, `endDay`), else the
+ * session's own day ("Fired Oct 6"). */
+
+type FiringRow = { firing_now?: boolean | null; firing_day?: number | null; stale?: boolean | null; evaluated_on?: string | null };
+
+const onToday = (r: FiringRow, today: string) => typeof r.evaluated_on === "string" && r.evaluated_on === today;
+
+/** The Ledger's Latest cell (fix/site-audit D-d; headed NOW before): "● Firing · day 3" / "○ Quiet" for today's session, "● Fired Oct 6 · day 3" /
+ * "○ Quiet · Oct 6" for an earlier one, "○ Stale · Oct 6", "—" when the state is not served. */
+export function firingCell(r: FiringRow, today = nyToday()): string {
+  if (r.firing_now == null || r.stale == null) return NOT_SERVED;
+  const day = dayShort(r.evaluated_on);
+  if (r.stale) return `○ Stale · ${day || NOT_SERVED}`;
+  const n = isFiniteNumber(r.firing_day) ? ` · day ${r.firing_day}` : "";
+  const now = onToday(r, today) || !day;
+  if (r.firing_now) return now ? `● Firing${n}` : `● Fired ${day}${n}`;
+  return now ? "○ Quiet" : `○ Quiet · ${day}`;
+}
+
+/** The Event Study pill: "● Firing today · day 3" or "● Fired Oct 6 · day 3", "○ Not firing today" or
+ * "○ Not firing on Oct 6" (with "· last <day>"), "○ Stale · Oct 6, 2026"; null when the state is not served. */
+export function firingPill(r: FiringRow, today = nyToday(), lastEvent?: string | null): string | null {
+  if (r.firing_now == null || r.stale == null) return null;
+  if (r.stale) return `○ Stale · ${dayLong(r.evaluated_on) || NOT_SERVED}`;
+  const day = dayShort(r.evaluated_on);
+  const last = dayLong(lastEvent) ? ` · last ${dayLong(lastEvent)}` : "";
+  if (r.firing_now) {
+    const n = isFiniteNumber(r.firing_day) ? ` · day ${r.firing_day}` : "";
+    return onToday(r, today) ? `● Firing today${n}` : day ? `● Fired ${day}${n}` : `● Firing${n}`;
+  }
+  return onToday(r, today) ? `○ Not firing today${last}` : day ? `○ Not firing on ${day}${last}` : `○ Not firing${last}`;
+}
+
+/** A count of firing signals says "Firing now" only when every current (served, not stale) signal was
+ * evaluated on today's session, and there is at least one (with none, nothing was read today); otherwise
+ * "Firing", each row carrying its own day. */
+export function firingNowLabel(rows: readonly FiringRow[], today = nyToday()): string {
+  const current = rows.filter((r) => r.firing_now != null && r.stale === false);
+  return current.length > 0 && current.every((r) => onToday(r, today)) ? "Firing now" : "Firing";
 }
 
 /** A chart's right-end caption (D13): "today" only when the served day is today in New York, else the day ("Sep 22"). */

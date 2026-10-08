@@ -6,9 +6,10 @@
  * the History sub-tab (decision 5).
  *
  * Every number is a served field except the arithmetic completions the
- * checklist names: the 6-month stay residual (`stay6m`), the spell start and
- * the exit counts over the stored monthly labels (`spellStart`, `exitCounts`;
- * the Gantt's own merge). The "vs 3 mo ago" deltas the mockup draws are not
+ * checklist names: the spell start and the exit counts over the stored
+ * monthly labels (`spellStart`, `exitCounts`; the Gantt's own merge). The
+ * 6-month stay is served (`stay_probability_6m`, fix/site-audit D2), no
+ * longer completed here as 100 minus the exits. The "vs 3 mo ago" deltas the mockup draws are not
  * served (`TransitionOutlook` carries no prior snapshot, F1) and are hidden.
  *
  * Iteration 1 (G2 / G3): tiles of one row carry the same amount of content.
@@ -37,7 +38,7 @@ import { Caption, MISSING, StateNote, eyebrowStyle, monoNoteStyle } from "../sha
 import Disclosure from "../shared/Disclosure";
 import { MetaWithStamp, SRC, Stamp } from "../shared/Stamp";
 import { STATUS_DEFINITION, cycleStatusTone, monthsText } from "./hero-copy";
-import { REGIMES, REGIME_HUE, completedSpells, exitCounts, regimeHue, spellStart, stay6m } from "./regime-history";
+import { REGIMES, REGIME_HUE, completedSpells, exitCounts, regimeHue, spellStart } from "./regime-history";
 import RegimeRibbon from "./RegimeRibbon";
 
 export interface OverviewTabProps {
@@ -186,17 +187,20 @@ export function CycleSection({ duration, history }: { duration: UseQueryResult<R
 
 /* ── Transition outlook ─────────────────────────────────────────────────── */
 
-function OddsRows({ current, stay, rows, labelWidth = 112 }: { current: string; stay: number; rows: TransitionOutlook["transitions_3m"]; labelWidth?: number }) {
+function OddsRows({ current, stay, rows, labelWidth = 112 }: { current: string; stay: number | null; rows: TransitionOutlook["transitions_3m"]; labelWidth?: number }) {
+  // An API that predates the served 6-month stay leaves its row out rather than computing one (D2).
   return (
     <>
-      <MeterRow
-        label={`stays ${current}`}
-        pct={stay}
-        value={fmtProb(stay, "percent")}
-        swatch={regimeHue(current)}
-        color={regimeHue(current)}
-        labelWidth={labelWidth}
-      />
+      {stay != null ? (
+        <MeterRow
+          label={`stays ${current}`}
+          pct={stay}
+          value={fmtProb(stay, "percent")}
+          swatch={regimeHue(current)}
+          color={regimeHue(current)}
+          labelWidth={labelWidth}
+        />
+      ) : null}
       {rows.map((tr) => (
         // The served `tr.color` is an old-palette hex; the hue token carries the regime.
         <MeterRow
@@ -249,7 +253,7 @@ export function TransitionsSection({
             </Card>
             <Card variant="tile" padding="14px 18px 12px">
               <SectionHeader level="sub" as="h3" title="Next 6 months" style={{ marginTop: 0, marginBottom: 6 }} />
-              <OddsRows current={t.current_regime} stay={stay6m(t)} rows={t.transitions_6m.slice(0, 4)} />
+              <OddsRows current={t.current_regime} stay={t.stay_probability_6m ?? null} rows={t.transitions_6m.slice(0, 4)} />
               <Caption style={{ marginTop: 8 }}>{tidyProse(t.narrative_6m)}</Caption>
             </Card>
           </>

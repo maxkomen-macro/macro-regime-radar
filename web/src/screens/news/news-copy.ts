@@ -210,24 +210,51 @@ export function heroSubhead(events: CalendarEvent[], now: number): string {
   return `${head}, then ${b.event_name} on ${weekdayEt(b.event_datetime)} ${stampEt(b.event_datetime)}.`;
 }
 
+/** fix/site-audit D5: the story the hero leads with, from the merged feed
+ * ranked by significance: the highest-scored story carrying a stored AI read
+ * (`hasAiRead`: Claude's interpretation or Perplexity's research, the reads
+ * the summary's "AI reads" row counts), else the highest-scored story; the
+ * hero used to lead with the top score even when that story had no read and
+ * most of the window did. Undefined with no story. Stored reads only: the
+ * page never asks a model for one. */
+export function leadStory(ranked: NewsItem[]): NewsItem | undefined {
+  return ranked.find(hasAiRead) ?? ranked[0];
+}
+
 /** N2 verbatim (NewsScreen.tsx:489-499): the lead story's sentence, the
- * loading line while the windowed feed is still reading, else the empty line. */
-export function leadSentence(item: NewsItem | undefined, usingFallback: boolean, loading = false): string {
+ * loading line while the windowed feed is still reading, else the empty line.
+ * `top` false (D5): a higher-scored story without a read was passed over, so
+ * the sentence ranks the lead among the stories with a read. */
+export function leadSentence(item: NewsItem | undefined, usingFallback: boolean, loading = false, top = true): string {
   if (item) {
+    const rank = top
+      ? `the ${usingFallback ? "stored window's" : "window's"} highest score`
+      : `the highest score among ${usingFallback ? "stored stories" : "stories"} with an AI read`;
     return `${item.category ? (CATEGORY_WORD[item.category] ?? item.category) : "One story"} leads the ${
       usingFallback ? "stored file" : "file"
-    }: ${decodeEntities(item.headline)} at ${(item.overall_significance ?? 0).toFixed(1)} / 5, the ${
-      usingFallback ? "stored window's" : "window's"
-    } highest score.`;
+    }: ${decodeEntities(item.headline)} at ${(item.overall_significance ?? 0).toFixed(1)} / 5, ${rank}.`;
   }
   return loading ? "Reading the stored headline feed…" : "No headlines on file.";
 }
 
-/** N3 verbatim (NewsScreen.tsx:500-508): the top story's interpretation,
- * else the sentence that says none was stored; "" with no story. */
+/** A stored Perplexity read as plain prose for the hero (D5): the body before
+ * its "Sources:" list, without the markdown bold or the citation markers
+ * ("rally.[6][8]"), entities decoded and tidied; null when nothing is left. */
+export function plainResearch(research: string | null | undefined): string | null {
+  const body = researchBody(research ?? null);
+  if (!body) return null;
+  const plain = body.replace(/\*\*/g, "").replace(/\s*(?:\[\d+\])+/g, "").replace(/\s+/g, " ").trim();
+  return plain ? tidyProse(decodeEntities(plain)) : null;
+}
+
+/** N3 verbatim (NewsScreen.tsx:500-508): the lead story's interpretation,
+ * else (D5) its stored research as plain prose, else the sentence that says
+ * no read was stored; "" with no story. */
 export function whySentence(item: NewsItem | undefined, usingFallback: boolean): string {
   if (!item) return "";
   if (item.regime_interpretation?.trim()) return tidyProse(decodeEntities(item.regime_interpretation));
+  const research = plainResearch(item.perplexity_research);
+  if (research) return research;
   return `The highest-scored story on file (significance ${(item.overall_significance ?? 0).toFixed(1)} / 5)${
     usingFallback ? "; it is stored fallback coverage, not today's tape" : ""
   }. No model interpretation was stored for it, so the score is the only editorial claim made here.`;
@@ -430,9 +457,11 @@ export function feedChipLabel(c: FeedClock): FreshLabel {
   switch (c.state) {
     case "current":
       return { word: c.stamp, muted: null, tone: "neutral", reason, stale: false };
+    // fix/site-audit D7: delayed is past the feed's window but not stale: amber, no stale mark.
     case "delayed":
+      return { word: c.stamp, muted: "· delayed", tone: "delayed", reason, stale: false };
     case "stale":
-      return { word: c.stamp, muted: `· ${c.state}`, tone: "stale", reason, stale: true };
+      return { word: c.stamp, muted: "· stale", tone: "stale", reason, stale: true };
     default:
       return { word: c.stamp, muted: null, tone: "unknown", reason, stale: false };
   }

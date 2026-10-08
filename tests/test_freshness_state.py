@@ -1,7 +1,7 @@
 """B3 (2026-09-18): freshness the screen can state honestly, per series.
 
 Every series carries {id, label, kind, cadence, as_of, state, delay_min,
-cycles_behind, stale, discontinued, reason}; state is one of live, delayed,
+cycles_behind, stale, discontinued, reason, late}; state is one of live, delayed,
 close, stale, fallback, unknown. The four-word SLA `verdict`/`overall` stay
 exactly as they were (the order map, test_health and the web depend on them).
 Contract: docs/redesign-v2/FRESHNESS_CONTRACT.md.
@@ -17,7 +17,8 @@ import pytest
 from api import freshness
 
 STATES = {"live", "delayed", "close", "stale", "fallback", "unknown"}
-KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason"}
+# fix/site-audit D7: `late` judges a delayed state against the source's expected lag (null otherwise).
+KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason", "late"}
 
 _FRESH = {
     "regimes_date": "2026-08-01", "signals_date": "2026-08-01", "market_daily_date": "2026-09-17",
@@ -93,7 +94,10 @@ def test_a_discontinued_series_is_its_final_close_not_stale():
 
 def test_market_daily_behind_the_last_completed_session_says_so():
     after_close = datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc)  # Friday 17:00 ET
-    stale = _series(_assess({}, now=after_close))["market_daily"]
+    # fix/site-audit D7 follow-up: until the full refresh's deadline (06:00 UTC Saturday) Thursday's close is on time.
+    waiting = _series(_assess({}, now=after_close))["market_daily"]
+    assert waiting["state"] == "close" and waiting["cycles_behind"] == 0 and waiting["as_of"] == "2026-09-17"
+    stale = _series(_assess({}, now=datetime(2026, 9, 19, 6, 0, tzinfo=timezone.utc)))["market_daily"]
     assert stale["state"] == "stale" and stale["cycles_behind"] == 1 and stale["as_of"] == "2026-09-17"
     fresh = _series(_assess({}, now=after_close, fresh={**_FRESH, "market_daily_date": "2026-09-18"}))["market_daily"]
     assert fresh["state"] == "close" and fresh["cycles_behind"] == 0

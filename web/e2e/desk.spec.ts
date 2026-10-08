@@ -145,7 +145,7 @@ test.describe("desk v2", () => {
     { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
     { slug: "sectors", path: "/api/desk/sectors", labels: ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"] },
-    { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing now", "Reliable", "No edge"] },
+    { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing", "Reliable", "No edge"] }, // S-01: the fixture's sessions are not today
     { slug: "data-pipeline", path: "/api/desk/pipeline", labels: ["Series inventory"] },
   ];
   for (const t of NULL_ANSWERS)
@@ -463,7 +463,7 @@ test.describe("desk v2", () => {
       await expect(where.locator(".rg-latest")).toHaveText("Aug 2026 data");
       await expect(where.locator(".rg-big")).toHaveText("Overheating");
       const rec = page.getByRole("region", { name: /Recession score/ });
-      await expect(rec.locator(".rg-rec-for")).toHaveText("score for Aug\u00a02026 · inputs through May\u00a02026");
+      await expect(rec.locator(".rg-rec-for")).toHaveText("Scored for Aug\u00a02026 · inputs from May\u00a02026");
       await expect(rec).toContainText("High risk · above 40%");
       if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · Aug 2026 data");
       expect(await auditPalette(page)).toEqual([]);

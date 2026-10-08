@@ -10,6 +10,7 @@
  */
 
 import type { StudyResponse } from "../data/types";
+import { roundHalfUp } from "../../../lib/format";
 import { REGIME_TAGGED_LINE, dayLong, isFiniteNumber as fin, numberWord, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { Advanced, Awaiting, DroppedNote, Signed, UnservedLine, useUnserved, VerdictWord, useLoadFailed } from "../kit/ui";
 import { droppedOf } from "../data/schema";
@@ -228,7 +229,7 @@ export default function StudyRail({
         <p className="dk-stat-label">
           <EdgeLabel target={target} /> ·{" "}
           <span className="es-conf-word" data-testid="es-conf">
-            {fin(study.verdict_confidence) ? `${Math.round(study.verdict_confidence * 100)}% range` : "the engine's range"}
+            {fin(study.verdict_confidence) ? `${roundHalfUp(study.verdict_confidence, 2)}% range` : "the engine's range"}
           </span>
         </p>
       </div>

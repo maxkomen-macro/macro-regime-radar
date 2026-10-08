@@ -35,7 +35,7 @@ import math
 import threading
 import time
 from collections import OrderedDict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
 from fastapi import APIRouter, Request
@@ -539,7 +539,7 @@ def overview_answer(params: list[tuple[str, str]]) -> dict:
 
     now = _now()
     comparison, prev = sessions_now(now)
-    entries = ledger_rows(comparison, prev)
+    entries = ledger_rows(comparison, prev, close_grace(comparison, now), now)
     rows = [r for r, _ in entries]
 
     def status() -> dict:
@@ -802,7 +802,7 @@ def _ledger_static() -> list[tuple[dict, Any, bool]]:
     return out
 
 
-def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
+def ledger_rows(comparison: str, prev: str, grace: int = 0, now: datetime | None = None) -> list[tuple[dict, dict | None]]:
     """The twelve Ledger rows with this response's firing state, and each
     row's firing detail (None for an unavailable row). An unavailable row's
     statistics and firing fields are null and it is not stale (S-19)."""
@@ -814,7 +814,8 @@ def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
             row.update(firing_now=None, firing_day=None, evaluated_on=None, stale=False)
             rows.append(({k: row[k] for k in LEDGER_KEYS}, None))
             continue
-        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]))
+        f = firing_state(trace, comparison, prev, cross=cross, allowance=publication_allowance(catalog.BY_SLUG[row["slug"]]),
+                         grace=grace, now=now)
         row.update(firing_now=f["firing_now"], firing_day=f["firing_day"], evaluated_on=f["evaluated_on"], stale=f["stale"])
         rows.append(({k: row[k] for k in LEDGER_KEYS}, f))
     return rows
@@ -823,8 +824,9 @@ def ledger_rows(comparison: str, prev: str) -> list[tuple[dict, dict | None]]:
 def ledger_answer(params: list[tuple[str, str]]) -> dict:
     if params:
         raise env.Unsupported(f"{params[0][0]} is not a parameter of /ledger.")
-    comparison, prev = sessions_now()
-    rows = [r for r, _ in ledger_rows(comparison, prev)]
+    now = _now()
+    comparison, prev = sessions_now(now)
+    rows = [r for r, _ in ledger_rows(comparison, prev, close_grace(comparison, now), now)]
     scored = sum(1 for r in rows if r["available"])
     return {"verdict_rule": VERDICT_RULE, "horizon": 20, "comparison_session": comparison, "prev_session": prev,
             "scored_n": scored, "unavailable_n": len(catalog.LEDGER_ORDER) - scored, "signals": rows}
@@ -943,6 +945,34 @@ def sessions_now(now: datetime | None = None) -> tuple[str, str]:
     return cmp_.isoformat(), nyse.previous_trading_day(cmp_).isoformat()
 
 
+def close_grace(comparison: str, now: datetime) -> int:
+    """fix/site-audit D4: the sessions an exchange close may trail the
+    comparison session by while that session's close is not yet due in the
+    store. The comparison session turns at the bell
+    (calendar.last_completed_session), but only the evening full refresh
+    stores its close; until that refresh's deadline
+    (api/freshness.close_grace_until: 06:00 UTC the next day, the rule
+    /overview's data status and the Data status drawer already apply) a study
+    through the session before is current, so 1; after it 0, and a close
+    still missing then is stale. On a trading day T, for a study whose inputs
+    are exchange closes, the Ledger's Latest cell (fix/site-audit D-d; it was headed NOW) reads:
+      pre-open and mid-session  T−1 is the comparison session and its close is
+                                stored: "● Firing · day n" or "○ Quiet" (as
+                                of T−1); if the refresh after T−1's close has
+                                still not landed, "○ Stale · T−2".
+      after the close           T is the comparison session; until the evening
+                                refresh lands the row reads its T−1 state
+                                ("● Firing · day n" / "○ Quiet", evaluated on
+                                T−1), then its T state.
+      from 06:00 UTC on T+1     with T's close still missing: "○ Stale · T−1".
+    """
+    from datetime import date as _date
+
+    from api import freshness as fr
+
+    return 1 if now < fr.close_grace_until(_date.fromisoformat(comparison)) else 0
+
+
 def publication_allowance(study: catalog.Study) -> int:
     """desk/fill-compute (owner's item 7): the XNYS sessions a study's
     evaluated_on may trail the comparison session and still be current, by
@@ -980,29 +1010,57 @@ def input_rule(key: str) -> tuple[str, int]:
     return meta.get("calendar", "nyse"), int(slow.get("tolerance", fr.DAILY_TOLERANCE))
 
 
-def inputs_behind(inputs: list[dict], comparison: str) -> list[dict]:
+def inputs_behind(inputs: list[dict], comparison: str, grace: int = 0, now: datetime | None = None) -> list[dict]:
     """Each input judged on its own calendar and tolerance against the
     comparison session: how many of its business days its newest VALIDATED
     observation trails the comparison session by (Codex R-03, round 2: the
     engine's trace, `SignalTrace.inputs_last`, after alignment and validation,
     never the newest raw row, so a stored close of −1 is not a fresh close),
-    and whether that is more than its tolerance. An input with no validated
-    observation is stale."""
+    and whether that is more than its tolerance, or than `grace` when that is
+    larger (close_grace: the session that just closed, before the evening
+    refresh's deadline; fix/site-audit D4). A FRED input's lag is the
+    drawer's (fix/site-audit D7: api/freshness._daily_expected_and_lag, the
+    newest print due being the business day before today in New York), so
+    an input current in the Data status drawer is current here: after the
+    bell the comparison session is today, whose FRED print posts tomorrow.
+    Without `now` the newest print due is the comparison session. An input
+    with no validated observation is stale."""
     from datetime import date as _date
+
+    from api import freshness as fr
 
     out = []
     cmp_ = _date.fromisoformat(comparison)
+    today = now.astimezone(nyse.NY).date() if now is not None else cmp_ + timedelta(days=1)
     for m in inputs:
         calendar, tolerance = input_rule(m["key"])
         if m.get("last") is None:
             out.append({"key": m["key"], "last": None, "calendar": calendar, "lag": None, "tolerance": tolerance, "stale": True})
             continue
         last = _date.fromisoformat(str(m["last"])[:10])
-        between = nyse.bond_business_days_between if calendar == "bond" else nyse.business_days_between
-        lag = between(last, cmp_)
+        if registry.get(m["key"]).source == "fred":
+            _due, lag = fr._daily_expected_and_lag(last, today, calendar == "bond")
+        else:
+            between = nyse.bond_business_days_between if calendar == "bond" else nyse.business_days_between
+            lag = between(last, cmp_)
         out.append({"key": m["key"], "last": last.isoformat(), "calendar": calendar, "lag": lag, "tolerance": tolerance,
-                    "stale": lag > tolerance})
+                    "stale": lag > max(tolerance, grace)})
     return out
+
+
+def fred_anchor_offset(comparison: str, now: datetime | None) -> int:
+    """XNYS sessions from the newest FRED print due (the drawer's anchor,
+    api/freshness._daily_expected_and_lag) to the comparison session: 1 after
+    the bell on a trading day (that session's FRED print posts tomorrow), else
+    0, and 0 without `now`. A study whose allowance is a FRED publication lag
+    counts it from that anchor (fix/site-audit D7)."""
+    if now is None:
+        return 0
+    from api import freshness as fr
+
+    cmp_ = date.fromisoformat(comparison)
+    due, _lag = fr._daily_expected_and_lag(cmp_, now.astimezone(nyse.NY).date(), False)
+    return nyse.business_days_between(due, cmp_)
 
 
 def trace_inputs(trace: Any) -> list[dict]:
@@ -1019,7 +1077,7 @@ def sessions_behind(evaluated_on: str, comparison: str) -> int:
 
 
 def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowance: int = 0,
-                 inputs: list[dict] | None = None) -> dict:
+                 inputs: list[dict] | None = None, grace: int = 0, now: datetime | None = None) -> dict:
     """A study's firing state from its signal trace: `fires = trigger and holds`
     per session (the raw trigger, before any cooldown; a cross only on its
     strict crossing session). `evaluated_on` is the last evaluable session and
@@ -1034,7 +1092,13 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
     the comparison session by more than its own tolerance on its own calendar
     (`inputs_behind`), so a FRED series' grace never covers a stale exchange
     close. A stale study is never reported firing: `firing_now` false and
-    `firing_day` null (Codex R-03, round 2)."""
+    `firing_day` null (Codex R-03, round 2). `grace` (close_grace, fix/site-audit
+    D4) lets the study and its closes trail the comparison session by that many
+    sessions while its close is not yet due in the store; `firing_now` is then
+    the previous session's state, which the Desk dates ("● Fired Oct 6",
+    fix/site-audit S-01) rather than calling it today's. `now` (D7) puts a
+    FRED input and a FRED-limited allowance on the drawer's anchor
+    (inputs_behind, fred_anchor_offset)."""
     import numpy as np
 
     ev = trace.evaluable
@@ -1061,8 +1125,10 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
         return bool(fires[i]) if i < len(sessions) and sessions[i] == iso and ev[i] else None
 
     # Dated after the comparison session (a clock behind the data) is stale as before: never firing today.
-    stale = sessions[last] != comparison and (sessions[last] > comparison or sessions_behind(sessions[last], comparison) > allowance)
-    stale_inputs = [m["key"] for m in inputs_behind(trace_inputs(trace) if inputs is None else inputs, comparison) if m["stale"]]
+    allowed = max(allowance + fred_anchor_offset(comparison, now) if allowance > 0 else 0, grace)
+    stale = sessions[last] != comparison and (sessions[last] > comparison or sessions_behind(sessions[last], comparison) > allowed)
+    stale_inputs = [m["key"] for m in inputs_behind(trace_inputs(trace) if inputs is None else inputs, comparison, grace, now)
+                    if m["stale"]]
     stale = stale or bool(stale_inputs)
     if stale:
         firing_now, firing_day = False, None
@@ -1073,8 +1139,10 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
 
 def now_fields(trace: Any, *, cross: bool, allowance: int = 0, inputs: list[dict] | None = None) -> dict:
     """The /study fields that depend on "now" (plan §0.5), for this response."""
-    comparison, prev = sessions_now()
-    f = firing_state(trace, comparison, prev, cross=cross, allowance=allowance, inputs=inputs)
+    now = _now()
+    comparison, prev = sessions_now(now)
+    f = firing_state(trace, comparison, prev, cross=cross, allowance=allowance, inputs=inputs, grace=close_grace(comparison, now),
+                     now=now)
     return {"firing_now": f["firing_now"], "firing_day": f["firing_day"], "evaluated_on": f["evaluated_on"],
             "comparison_session": comparison, "prev_session": prev, "stale": f["stale"], "stale_inputs": f["stale_inputs"]}
 

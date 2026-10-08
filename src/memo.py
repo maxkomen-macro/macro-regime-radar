@@ -1,8 +1,8 @@
 """
 src/memo.py — Weekly Memo Generator  (Phase 3, Part B + Trader Pack)
 
-Run:
-    python src/memo.py
+Run (from the repo root, as weekly-memo.yml does; fix/site-audit S-06):
+    python -m src.memo
 
 Output:
     output/weekly_memo.html
@@ -25,6 +25,10 @@ import matplotlib.dates as mdates
 import numpy as np
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
+
+# Run as a module from the repo root (`python -m src.memo`), so the package imports resolve. `python src/memo.py`
+# put src/ on sys.path instead and failed with "No module named 'src'" (fix/site-audit S-06).
+from src.utils.format import pct_text, z_interpretation
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Paths
@@ -843,7 +847,6 @@ def build_surprise_ranking(derived_df: pd.DataFrame, top_n: int = 10) -> list:
 
         # Shared phrasing (src.utils.format) — knows levels vs changes and units,
         # so the memo can never again call a CPI level a weekly surge.
-        from src.utils.format import z_interpretation
         interp = z_interpretation(col, label, z, raw_val)
         rows.append({
             "label":          label,
@@ -1189,21 +1192,22 @@ def generate_memo() -> None:
             else "Moderate" if dominant_prob >= 0.40
             else "Low"
         )
+        # One rounding rule for odds (fix/site-audit D1, Codex S-03): pct_text.
         regime_ctx = {
             **r,
             "badge_color":      REGIME_COLORS.get(r["label"], "#888888"),
-            "conf_pct":         f"{r['confidence'] * 100:.0f}%",
+            "conf_pct":         pct_text(r["confidence"]),
             "growth_dir":       "Expanding" if r["growth_trend"] > 0 else "Contracting",
             "infl_dir":         "Rising"    if r["inflation_trend"] > 0 else "Falling",
             "growth_arrow":     "▲" if r["growth_trend"] > 0 else "▼",
             "infl_arrow":       "▲" if r["inflation_trend"] > 0 else "▼",
             "has_probs":        has_probs,
-            "prob_gl_pct":      f"{float(prob_gl):.0%}" if has_probs else None,  # type: ignore[arg-type]
-            "prob_ov_pct":      f"{float(prob_ov):.0%}" if has_probs else None,  # type: ignore[arg-type]
-            "prob_st_pct":      f"{float(prob_st):.0%}" if has_probs else None,  # type: ignore[arg-type]
-            "prob_rr_pct":      f"{float(prob_rr):.0%}" if has_probs else None,  # type: ignore[arg-type]
+            "prob_gl_pct":      pct_text(float(prob_gl)) if has_probs else None,  # type: ignore[arg-type]
+            "prob_ov_pct":      pct_text(float(prob_ov)) if has_probs else None,  # type: ignore[arg-type]
+            "prob_st_pct":      pct_text(float(prob_st)) if has_probs else None,  # type: ignore[arg-type]
+            "prob_rr_pct":      pct_text(float(prob_rr)) if has_probs else None,  # type: ignore[arg-type]
             "conviction_label": conviction_label,
-            "dominant_prob_pct":f"{dominant_prob:.0%}" if has_probs else None,
+            "dominant_prob_pct":pct_text(dominant_prob) if has_probs else None,
         }
 
     # ── What Changed This Week ─────────────────────────────────────────────

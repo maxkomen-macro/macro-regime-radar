@@ -6,7 +6,9 @@
  * never re-derives freshness, it prints the state the server judged.
  *
  *   live      "Live"                              mint
- *   delayed   "Delayed 7 min"                     amber
+ *   delayed   "Delayed 7 min" (stored bars)       neutral within the expected lag, amber past it
+ *             "15-min delayed" (a feed's delay by source, the VIX poll)
+ *             (fix/site-audit D7: the server's `late`; absent, amber)
  *   close     "Close · Sep 18" (market, relay)    neutral
  *             "Sep 17" + muted "· 1 day behind" (FRED daily, derived)
  *             "Aug 2026 print" (monthly)
@@ -135,8 +137,13 @@ export function freshLabel(s: SeriesState | null | undefined): FreshLabel {
     case "live":
       return label("Live", "live", reason);
 
-    case "delayed":
-      return label(s.delay_min != null ? `Delayed ${s.delay_min} min` : "Delayed", "delayed", reason);
+    case "delayed": {
+      // fix/site-audit D7: color by lateness against the source's expected lag, which the server
+      // judges (`late`): a delay the source always has reads neutral, amber only past it. A live
+      // feed's delay is its source's ("15-min delayed"); a stored bar's is its age ("Delayed 7 min").
+      const word = s.delay_min == null ? "Delayed" : s.kind === "live" ? `${s.delay_min}-min delayed` : `Delayed ${s.delay_min} min`;
+      return label(word, s.late === false ? "neutral" : "delayed", reason);
+    }
 
     case "close": {
       if (s.discontinued) {

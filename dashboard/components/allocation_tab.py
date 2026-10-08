@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+from src.utils.format import pct_text  # noqa: E402  the one odds rule (fix/site-audit D-e)
 
 import altair as alt
 import numpy as np
@@ -92,11 +93,11 @@ def _render_regime_banner(data: dict) -> None:
     if dominant_prob is not None:
         # Stored softmax probability — same source as the header badge
         prob_line = (
-            f"{dominant_prob:.0%} model probability &middot; "
-            f"{data['confidence']:.0%} conviction"
+            f"{pct_text(dominant_prob)} model probability &middot; "
+            f"{pct_text(data['confidence'])} conviction"
         )
     else:
-        prob_line = f"{data['confidence']:.0%} conviction"
+        prob_line = f"{pct_text(data['confidence'])} conviction"
     html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
 <style>
   * {{box-sizing:border-box;margin:0;padding:0;}}
@@ -759,16 +760,16 @@ def _regime_insight(regime: str, opt: dict) -> str:
 
     if regime == "Overheating":
         return (
-            f"Black-Litterman tilts toward {top_bl_asset} ({top_bl_weight:.0%})"
+            f"Black-Litterman tilts toward {top_bl_asset} ({top_bl_weight:.0%})"  # not a probability: a portfolio weight
             f" based on historical Overheating performance"
         )
     elif regime == "Recession Risk":
         return (
-            f"Defensive positioning — Min Variance and HRP favor bonds"
+            f"Defensive positioning — Min Variance and HRP favor bonds"  # not a probability: a portfolio weight
             f" ({avg_bonds:.0%} avg fixed income)"
         )
     elif regime == "Goldilocks":
-        return f"Risk-on regime — MVO maximizes equity exposure ({mvo_equity:.0%} equities)"
+        return f"Risk-on regime — MVO maximizes equity exposure ({mvo_equity:.0%} equities)"  # not a probability: a portfolio weight
     elif regime == "Stagflation":
         return "Inflation hedge regime — Gold and commodities feature prominently across methods"
     else:
@@ -1429,7 +1430,7 @@ table {{border-collapse:collapse;width:100%;}}</style></head>
 
     if card_items:
         cards_html = "".join(
-            f"<div style='flex:1;min-width:140px;background:{_CARD_BG};"
+            f"<div style='flex:1;min-width:140px;background:{_CARD_BG};"  # not a probability: an R²
             f"border:1px solid {_BORDER};border-top:3px solid {color};"
             f"border-radius:6px;padding:10px 12px;text-align:center;'>"
             f"<div style='color:{_MUTED};font-size:10px;text-transform:uppercase;"
@@ -1508,7 +1509,7 @@ def _render_style_section(data: dict) -> None:
             hr   = stats["hit_rate"]
             tc   = _POS if ret >= 0 else _NEG
             rows_html += (
-                f"<tr>"
+                f"<tr>"  # not a probability: a backtest hit rate
                 f"<td style='background:{_CARD_BG};color:{_TEXT};border:1px solid {_BORDER};"
                 f"padding:6px 10px;font-size:12px;'>{style}</td>"
                 f"<td style='background:{_CARD_BG};border:1px solid {_BORDER};"

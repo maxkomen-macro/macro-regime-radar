@@ -31,6 +31,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.utils.format import pct_text
+
 ROOT         = Path(__file__).resolve().parent.parent.parent
 DB_PATH      = ROOT / "data" / "macro_radar.db"
 OUTPUT_DIR   = ROOT / "output"
@@ -226,7 +228,7 @@ def build_playbook_dict(regime: dict, because_sentences: list) -> dict:
     label    = regime["label"]
     baseline = REGIME_BASELINES.get(label, f"Current regime: {label}.")
     conf     = float(regime["confidence"])
-    conf_pct = f"{conf * 100:.0f}%"
+    conf_pct = pct_text(conf)
 
     summary = f"Regime: {label} (confidence {conf_pct}). {baseline}"
     if because_sentences:

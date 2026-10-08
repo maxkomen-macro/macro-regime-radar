@@ -33,6 +33,7 @@ import pandas as pd
 from scipy.optimize import minimize
 
 from src.analytics import dbpath
+from src.utils.format import pct_text
 
 warnings.filterwarnings("ignore")
 
@@ -717,6 +718,41 @@ def get_market_cap_weights() -> dict:
     }
 
 
+# ── Weight bounds (fix/site-audit D3, Codex S-02) ─────────────────────────────
+
+def cap_weights(weights, max_weight: float, min_weight: float = 0.0) -> np.ndarray:
+    """Long-only weights that sum to 1 with every weight in [min_weight,
+    max_weight]: the Euclidean projection onto the bounded simplex,
+    w = clip(x + λ, lo, hi) with the one shift λ that makes Σw = 1, found by
+    bisection (Σ clip(x + λ, lo, hi) rises with λ) and then solved exactly on
+    the weights left inside the bounds. Floors and caps are met together
+    (Codex S-02: the pro-rata water-filling it replaces capped an asset the
+    rescaling pushed over and then rejected a feasible set, [.8, .19, .005,
+    .005] with cap .4 and floor .2). Clipping and then dividing by the sum
+    (fix/site-audit D3) lifted HERC's US Agg Bond back over the cap. Weights
+    already on the simplex inside the bounds come back unchanged. Raises
+    ValueError when n weights cannot sum to 1 inside the bounds."""
+    x = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    n = len(x)
+    lo, hi = float(min_weight), float(max_weight)
+    if n == 0 or lo > hi or n * lo > 1.0 + 1e-12 or n * hi < 1.0 - 1e-12:
+        raise ValueError(f"{n} weights cannot sum to 1 within [{lo:g}, {hi:g}]: the bounds need floor ≤ cap and n × floor ≤ 1 ≤ n × cap")
+    a, b = lo - x.max(), hi - x.min()  # Σ clip(x + a) = n·lo ≤ 1 ≤ n·hi = Σ clip(x + b)
+    for _ in range(200):
+        mid = (a + b) / 2.0
+        if np.clip(x + mid, lo, hi).sum() < 1.0:
+            a = mid
+        else:
+            b = mid
+    lam = (a + b) / 2.0
+    w = np.clip(x + lam, lo, hi)
+    free = (x + lam > lo) & (x + lam < hi)
+    if free.any():
+        lam = (1.0 - w[~free].sum() - x[free].sum()) / free.sum()
+        w = np.where(free, x + lam, w)
+    return np.clip(w, lo, hi)
+
+
 # ── Optimization methods ───────────────────────────────────────────────────────
 
 def mean_variance_optimize(
@@ -741,8 +777,7 @@ def mean_variance_optimize(
     )
 
     w = result.x if result.success else x0
-    w = np.clip(w, 0, max_weight)
-    w /= w.sum()
+    w = cap_weights(w, max_weight, min_weight)
 
     return {
         "weights":         w,
@@ -774,8 +809,7 @@ def minimum_variance_optimize(
     )
 
     w = result.x if result.success else x0
-    w = np.clip(w, 0, max_weight)
-    w /= w.sum()
+    w = cap_weights(w, max_weight, min_weight)
 
     return {
         "weights":   w,
@@ -821,8 +855,7 @@ def risk_parity_optimize(
     )
 
     w = result.x if result.success else x0
-    w = np.clip(w, min_weight, max_weight)
-    w /= w.sum()
+    w = cap_weights(w, max_weight, min_weight)
 
     vol      = _port_vol(w, cov)
     marginal = np.dot(cov, w)
@@ -893,7 +926,9 @@ def black_litterman_optimize(
         options={"maxiter": 1000},
     )
 
-    weights  = result.x if result.success else w_mkt
+    # Codex S-04: the market-cap fallback is renormalized over the universe given, so without an asset
+    # (the adaptive universe) US Large Cap's 0.40 passed the cap; both branches go through the projection.
+    weights  = cap_weights(result.x if result.success else w_mkt, max_weight, min_weight)
     port_ret = float(weights @ bl_returns)
     port_vol = float(np.sqrt(weights @ cov_matrix @ weights))
 
@@ -972,9 +1007,9 @@ def hierarchical_risk_parity_optimize(
     for sorted_pos, w in hrp_dict.items():
         weights[sort_idx[sorted_pos]] = w
 
-    # Apply constraints and renormalize
-    weights = np.clip(weights, min_weight, max_weight)
-    weights = weights / weights.sum()
+    # Apply the bounds by water-filling (fix/site-audit D3): clip-then-divide
+    # could leave a weight under the floor or over the cap.
+    weights = cap_weights(weights, max_weight, min_weight)
 
     port_vol = float(np.sqrt(weights @ cov_matrix @ weights))
 
@@ -1022,10 +1057,7 @@ def cvar_optimize(
         converged = False
     else:
         weights = w_df.reindex(asset_names).to_numpy().flatten()
-        weights = np.nan_to_num(weights, nan=0.0)
-        weights = np.clip(weights, 0.0, max_weight)
-        total = weights.sum()
-        weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+        weights = cap_weights(weights, max_weight, min_weight)
         converged = True
 
     ann_vol = float(np.sqrt(weights @ cov_matrix @ weights))
@@ -1077,8 +1109,10 @@ def herc_optimize(
         # kwargs into _hierarchical_recursive_bisection(), whose signature no
         # longer accepts them — model="HERC" raises TypeError on every call.
         # The ward linkage is already consumed by Step-1 tree clustering and
-        # weight bounds are applied in Step-4 after bisection, so stripping the
-        # stray kwargs from the internal call is behavior-identical HERC.
+        # Step-4's bound fitting reads the constructor's w_max/w_min (unset
+        # here, so it fits nothing; the cap is applied below by cap_weights),
+        # so stripping the stray kwargs from the internal call is
+        # behavior-identical HERC.
         # Remove this shim once fixed upstream.
         inner = port._hierarchical_recursive_bisection
         port._hierarchical_recursive_bisection = lambda Z, **kw: inner(
@@ -1091,10 +1125,9 @@ def herc_optimize(
         converged = False
     else:
         weights = w_df.reindex(asset_names).to_numpy().flatten()
-        weights = np.nan_to_num(weights, nan=0.0)
-        weights = np.clip(weights, 0.0, max_weight)
-        total = weights.sum()
-        weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+        # riskfolio is built without w_max, so its weights are uncapped: the
+        # 40% cap is applied here, by water-filling (fix/site-audit D3).
+        weights = cap_weights(weights, max_weight)
         converged = True
 
     ann_vol = float(np.sqrt(weights @ cov_matrix @ weights))
@@ -1635,7 +1668,7 @@ def get_allocation_data() -> Dict:
     regime_corr     = get_correlation_by_regime(returns, regimes)
     drawdowns       = calculate_drawdowns(returns, regimes)
 
-    print(f"Current regime: {current_regime}  ({confidence:.0%})")
+    print(f"Current regime: {current_regime}  ({pct_text(confidence)})")
     print(f"Risk-free rate: {rf_rate:.2%}")
 
     optimizations = None

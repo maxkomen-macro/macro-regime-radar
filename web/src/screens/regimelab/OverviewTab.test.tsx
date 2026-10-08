@@ -87,6 +87,11 @@ const TRANSITIONS: TransitionOutlook = {
   highest_risk_transition: "Recession Risk",
   highest_risk_prob: 12,
   highest_risk_color: "#95a5a6",
+  // fix/site-audit D2: the 6-month stay and path are served, by the 3-month rule.
+  stay_probability_6m: 68,
+  highest_risk_6m_transition: "Recession Risk",
+  highest_risk_6m_prob: 19,
+  highest_risk_6m_color: "#95a5a6",
 };
 
 type Routes = Record<string, (url: URL, init?: RequestInit) => unknown>;
@@ -191,7 +196,7 @@ describe("OverviewTab (checklist 04 B.4 to B.6)", () => {
     expect(text(cycle)).not.toMatch(/warn-hot/);
   });
 
-  it("transitions: the stays row first with the regime swatch, three arrow rows, the 6-month residual, both captions, no vs 3 mo ago", async () => {
+  it("transitions: the stays row first with the regime swatch, three arrow rows, the served 6-month stay, both captions, no vs 3 mo ago", async () => {
     renderWithProviders(<OverviewTab />, { route: "/app/regime-lab" });
     const section = await awaitSection("transitions");
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent(/^Transition outlook$/);
