@@ -5,7 +5,7 @@
  * strongest filling its half), the macro-vs-markets divergence tile (X11,
  * moved here from the old #model row) and the model card. No "Last refit"
  * row (F4: the model trains in-process on every cold call and stores no
- * refit stamp; `data_as_of` already prints as "Inputs through").
+ * refit stamp; the inputs' newest data prints as "Latest data").
  *
  * Every coefficient, the divergence score and its label, and the training
  * metadata are served fields; the only arithmetic is the marker position on
@@ -16,7 +16,7 @@
 import { Link } from "react-router-dom";
 import { Card, DivergingBar, SectionHeader } from "../../components";
 import type { RecessionMetrics } from "../../api/types";
-import { fmtMonYr, fmtSigned } from "../../lib/format";
+import { fmtSigned } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import Disclosure from "../shared/Disclosure";
 import Jargon from "../shared/Jargon";
@@ -24,6 +24,7 @@ import { Caption, MISSING, StateNote, capStyle, eyebrowStyle, mono } from "../sh
 import { useFreshReport } from "../shared/useFreshReport";
 import { BREAKEVEN_LABEL, featureCurrent, featureLabel, inputsThrough } from "./recession-copy";
 import { SRC, Stamp } from "../shared/Stamp";
+import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 import type { RecessionPanelProps } from "./panel-props";
 
 /** The null-value glyph the tile prints (U+2014), never an em-dash aside. */
@@ -166,8 +167,9 @@ function ModelCardTile({ m }: { m: RecessionMetrics }): JSX.Element {
     ["Features", m.model_features.map((f) => featureLabel(f)).join(" · ")],
     ["Look-ahead guard", "All features lagged 3 months"],
     // E3 (Iteration 1 step 6): the inputs' §5 words from series[], the same
-    // words the summary's "Inputs through" row prints.
-    ["Inputs through", through],
+    // words the summary's "Latest data" row prints (fix/site-audit D6: the
+    // newest stored inputs, not the month the score reads).
+    ["Latest data", through],
   ];
   return (
     <Card variant="tile" padding="12px 18px" style={{ minWidth: 0 }}>
@@ -214,7 +216,7 @@ export default function TransparencyPanel({ m, status }: RecessionPanelProps): J
           {/* A1: the panel's figures are the fitted model's, dated by its
               input month (a line under the tiles, where the row's stretch
               would otherwise leave blank space, G2). */}
-          <Stamp block source={SRC.recession} asOf={fmtMonYr(m.data_as_of)} style={{ marginTop: 0 }} />
+          <Stamp block source={SRC.recession} asOf={recessionVintage(vintageOf(m))} style={{ marginTop: 0 }} />
         </div>
       ) : (
         <Card variant="tile">

@@ -37,6 +37,7 @@ import { DASH, convictionWord } from "../dashboard/hero-copy";
 import { CYCLE_GLOW, cycleHero, monthsText, stripSummary } from "./hero-copy";
 import { trailPoints, yearsOfHistory } from "./regime-history";
 import { outlookLine } from "../shared/transition-outlook";
+import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 import QuadrantChart from "./QuadrantChart";
 import OverviewTab from "./OverviewTab";
 import PlaybookTab from "./PlaybookTab";
@@ -303,7 +304,7 @@ export default function RegimeLabScreen() {
           stamp={
             <span style={{ display: "inline-flex", flexWrap: "wrap", columnGap: 12 }}>
               <Stamp source={SRC.classifier} asOf={r ? fmtMonYr(r.date) : null} />
-              <Stamp source={SRC.recession} asOf={rec ? fmtMonYr(rec.data_as_of) : null} />
+              <Stamp source={SRC.recession} asOf={rec ? recessionVintage(vintageOf(rec)) : null} />
             </span>
           }
         >

@@ -16,11 +16,12 @@ import { useLocation } from "react-router-dom";
 import type { UseQueryResult } from "@tanstack/react-query";
 import { Card, SectionHeader } from "../../components";
 import type { CreditOAS, RecessionMetrics } from "../../api/types";
-import { fmtBpsLevel, fmtMonYr, fmtPct, fmtProb, pctToBps } from "../../lib/format";
+import { fmtBpsLevel, fmtPct, fmtProb, pctToBps } from "../../lib/format";
 import Jargon from "../shared/Jargon";
 import { Caption, mono } from "../shared/screen-ui";
 import { CREDIT_OAS_IDS } from "../shared/fresh-state";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
+import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 import { useFreshReport } from "../shared/useFreshReport";
 import LineChart from "./LineChart";
 
@@ -212,7 +213,7 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                     </Metric>{" "}
                     (the evidence card above), the line&apos;s last point.
                   </Caption>
-                  <Stamp block source={SRC.recession} asOf={recession.data ? fmtMonYr(recession.data.data_as_of) : null} />
+                  <Stamp block source={SRC.recession} asOf={recession.data ? recessionVintage(vintageOf(recession.data)) : null} />
                 </>
               ),
           },

@@ -463,7 +463,7 @@ test.describe("desk v2", () => {
       await expect(where.locator(".rg-latest")).toHaveText("Aug 2026 data");
       await expect(where.locator(".rg-big")).toHaveText("Overheating");
       const rec = page.getByRole("region", { name: /Recession score/ });
-      await expect(rec.locator(".rg-rec-for")).toHaveText("score for Aug\u00a02026 · inputs through May\u00a02026");
+      await expect(rec.locator(".rg-rec-for")).toHaveText("Scored for Aug\u00a02026 · inputs from May\u00a02026");
       await expect(rec).toContainText("High risk · above 40%");
       if (width === 1440) await expect(page.getByTestId("dk-today")).toContainText("regime · Aug 2026 data");
       expect(await auditPalette(page)).toEqual([]);

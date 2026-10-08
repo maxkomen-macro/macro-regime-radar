@@ -23,6 +23,7 @@ import { useFreshReport } from "../shared/useFreshReport";
 import { rateChange } from "../shared/rate-change";
 import type { VixShown } from "../shared/vix-shown";
 import { DASH } from "./hero-copy";
+import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 
 export interface SeriesLatest {
   series_id: string;
@@ -170,7 +171,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vixRead
 
         <Card variant="tile" className="mrr-level-wide" tone={recessionTone(rec?.recession_label)}>
           <StatTile
-            label="Recession odds · this month"
+            label="Recession odds"
             value={
               rec?.recession_prob != null ? (
                 <Metric id="recession-prob" value={rec.recession_prob}>
@@ -188,8 +189,8 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vixRead
             {rec?.recession_prob != null ? (
               <>
                 {fmtProb(rec.recession_prob, "percent", 1)} sits in the {rec.recession_label} band (Elevated starts at 20%, High at 40%). The{" "}
-                <Jargon term="recession model">model</Jargon> scores this month from inputs three months old, trained on{" "}
-                <Jargon term="NBER">NBER</Jargon> dates; inputs through {rec.inputs_through ? fmtMonYr(`${rec.inputs_through}-01`) : fmtMonYr(rec.data_as_of)}.
+                <Jargon term="recession model">model</Jargon> scores each month from inputs three months old, trained on{" "}
+                <Jargon term="NBER">NBER</Jargon> dates{recessionVintage(vintageOf(rec), { lower: true }) ? `: ${recessionVintage(vintageOf(rec), { lower: true })}` : ""}.
               </>
             ) : recession.isError ? (
               missingNote(MISSING.recession, snapshot)
@@ -197,7 +198,7 @@ export default function KeyLevels({ regime, recession, credit, fedFunds, vixRead
               "Training the recession model; the first call takes about a second."
             )}
           </Caption>
-          <Stamp block source={SRC.recession} asOf={rec ? fmtMonYr(rec.data_as_of) : null} />
+          <Stamp block source={SRC.recession} asOf={rec ? recessionVintage(vintageOf(rec)) : null} />
         </Card>
       </div>
     </Card>

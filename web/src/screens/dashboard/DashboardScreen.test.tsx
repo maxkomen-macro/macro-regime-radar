@@ -143,6 +143,9 @@ const RECESSION: RecessionMetrics = {
   model_features: ["yield_curve", "hy_oas"],
   feature_coefficients: { yield_curve: -0.8, hy_oas: 0.6 },
   data_as_of: PRIOR_MONTH,
+  // The served months (fix/freshness 4): the score is for August, read from May's inputs.
+  probability_month: "2026-08",
+  inputs_through: "2026-05",
   curve_shape: {},
   current_inputs: {},
 };
@@ -300,7 +303,7 @@ const strip = async () => within(summary()).findByRole("button", { name: /Open t
 
 const LABELS_WATCH = ["Model regime", "Leading odds", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", "Watch", "Invalidates", "NBER recession model"];
 const LABELS_TRIGGERED = LABELS_WATCH.map((l) => (l === "Watch" ? "Triggered" : l));
-const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds · this month"];
+const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds"];
 const IDS_IN_ORDER = ["regime-hero", "regime-summary", "signals", "key-levels", "markets-glance", "whats-priced", "us10y", "macro-calendar", "macro-charts", "read-through"];
 
 beforeEach(() => {
@@ -382,7 +385,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
   it("the hero section text never contains the recession model's probability", async () => {
     renderDashboard();
     await awaitHero();
-    await waitFor(() => expect(text(summary())).toContain("13.7% for this month, from inputs three months old"));
+    await waitFor(() => expect(text(summary())).toContain("13.7% scored for Aug 2026 · inputs from May 2026"));
     const heroText = text(hero());
     expect(heroText).not.toContain("13.7");
     expect(heroText).not.toMatch(/over 12m/);
@@ -404,7 +407,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await waitFor(() => expect(text(ddFor("What changed"))).toBe("Switched from Recession Risk in Jul 2026 · 3 months in"));
     expect(text(ddFor("Watch"))).toBe("Inflation pressure (78% of trigger)");
     expect(text(ddFor("Invalidates"))).toBe("CPI > 4.00% YoY · 2s10s < 0.00% · VIX > 30");
-    expect(text(ddFor("NBER recession model"))).toBe("13.7% for this month, from inputs three months old · Low Risk (a separate model from the 31% Recession Risk regime odds)");
+    expect(text(ddFor("NBER recession model"))).toBe("13.7% scored for Aug 2026 · inputs from May 2026 · Low Risk (a separate model from the 31% Recession Risk regime odds)");
     expect(text(ddFor("NBER recession model"))).toContain("a separate model");
     // The D22 caption lives in the quiet disclosure under the rows.
     const about = within(summary()).getByRole("button", { name: /About model vs market/ });
@@ -609,8 +612,9 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     await waitFor(() => expect(text(kl)).toContain("+52 bps"));
     expect(text(kl)).toContain(`The 10Y${EN_DASH}2Y spread holds at +52 bps (0.52%), the 61st percentile of the model's monthly history. Below 0 is an inversion, the classic pre-recession shape.`);
     expect(text(kl)).toContain("13.7%");
-    // fix/freshness 4: inputs through the served (lagged) month; this fixture serves none, so data_as_of's month.
-    expect(text(kl)).toContain("13.7% sits in the Low Risk band (Elevated starts at 20%, High at 40%). The model scores this month from inputs three months old, trained on NBER dates; inputs through Aug 2026.");
+    // fix/site-audit D6: the score's vintage, the scored month plus the input month, on the tile's caption and stamp.
+    expect(text(kl)).toContain("13.7% sits in the Low Risk band (Elevated starts at 20%, High at 40%). The model scores each month from inputs three months old, trained on NBER dates: scored for Aug 2026 · inputs from May 2026.");
+    expect([...kl.querySelectorAll("[data-stamp]")].map((s) => s.textContent)).toContain("Recession model · Scored for Aug 2026 · inputs from May 2026");
     expect(kl.querySelectorAll("article, .mrr-hero")).toHaveLength(0);
 
     // The US 10Y card prints the same value, its weekly change and the sparkline.
@@ -627,7 +631,7 @@ describe("DashboardScreen (checklist 03 E.1)", () => {
     expect(ten.querySelector("svg path")).not.toBeNull();
     expect(within(ten).getByRole("link", { name: /View rates/ })).toHaveAttribute("href", "/app/credit#financing");
     // And the summary NBER row prints the same recession figure as the tile.
-    await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7% for this month, from inputs three months old/));
+    await waitFor(() => expect(text(ddFor("NBER recession model"))).toMatch(/^13\.7% scored for Aug 2026 · inputs from May 2026/));
   });
 
   it("macro charts: three accordion buttons closed on load (the regime odds moved to the hero, D1); clicking the first opens its chart", async () => {

@@ -25,7 +25,7 @@ const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Summary row labels in C.2 order; row 9 reads Watch, or Triggered when a signal is triggered on verify day. */
 const SUMMARY_LABELS = ["Model regime", "Leading odds", "Odds", "Model confidence", "Model vs market", "Next 3 months", "Key takeaway", "What changed", ["Watch", "Triggered"], "Invalidates", "NBER recession model"];
-const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds · this month"];
+const KEY_LABELS = ["Fed funds", "Growth trend", "Inflation trend", "10Y Treasury", "VIX", "Yield curve 2s10s", "Recession odds"];
 /** The B.5 table: option label, capture suffix and the tile symbols per tab. */
 const GLANCE_TABS = [
   { label: "Equities", file: "equities", symbols: ["SPY", "QQQ", "IWM", "EEM"] },

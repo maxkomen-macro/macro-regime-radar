@@ -325,7 +325,7 @@ export default function SensitivityPanel({ m, status, inputs, onInputsChange }: 
         right={
           <MetaWithStamp
             meta="five inputs · the fitted model rescored live"
-            stamp={<Stamp source={SRC.recession} asOf={m ? fmtMonYr(m.data_as_of) : null} />}
+            stamp={<Stamp source={SRC.recession} asOf={m ? `latest data ${fmtMonYr(m.data_as_of)}` : null} />}
           />
         }
       />

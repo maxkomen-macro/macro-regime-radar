@@ -19,10 +19,11 @@ import type { LedgerRow, OverviewResponse, OverviewTiles, SinceLastClose } from 
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { bandWord, capitalize, dayLong, dayShort, etTime, isFiniteNumber as fin, monthLong, monthYear, num, numberWord, pctPlain, rowWords, year } from "../kit/format";
+import { bandWord, capitalize, dayLong, dayShort, etTime, isFiniteNumber as fin, monthLong, num, numberWord, pctPlain, rowWords, year } from "../kit/format";
 import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, StampBadge, Unserved, UnservedCard, UnservedLine, useBlockUnserved, useUnserved, VerdictPill, LoadingLine, FailedLine, FailedScope, useLoadFailed } from "../kit/ui";
 import { useQuotes } from "../../../live/quotes";
 import { vixShown, type VixShown } from "../../shared/vix-shown";
+import { recessionVintage } from "../../shared/recession-vintage";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
 import MonitoredRows from "../kit/MonitoredRows";
 import { REGIME_TONE } from "../kit/palette";
@@ -134,19 +135,19 @@ export function monthsBetween(from: string | null | undefined, to: string | null
   return (Number(b[1]) - Number(a[1])) * 12 + (Number(b[2]) - Number(a[2]));
 }
 
-/** "based on Jun 2026 data": the month the scored inputs come from, as the Recession tab's chip names it
- * ("Inputs through Jun 2026"); "" when it is not served. A month and its year never part across lines. */
+/** "scored for Sep 2026 · inputs from Jun 2026": the score's vintage in the app's one vocabulary (fix/site-audit
+ * D6, shared/recession-vintage; it read "based on Jun 2026 data" here and "Scored for Sep 2026" on the
+ * Recession tab); "" when neither month is served. A month and its year never part across lines. */
 function basedOn(r: RecessionTile): string {
-  const through = monthYear(r.inputs_through).replace(" ", "\u00a0");
-  return through ? `based on ${through} data` : "";
+  return recessionVintage(r, { lower: true, nbsp: true }) ?? "";
 }
 
-/** The recession tile's sub-line (desk/pdf-polish item 2d): "<band> · based on <inputs_through> data". */
+/** The recession tile's sub-line (desk/pdf-polish item 2d, D6): "<band> · scored for <probability_month> · inputs from <inputs_through>". */
 export function recessionWords(r: RecessionTile): string {
   return [bandWord(r.band) || null, basedOn(r) || null].filter(Boolean).join(" · ");
 }
 
-/** The hover on "based on <month> data" (item 2d), both months and the gap read from the served answer, never
+/** The hover on the tile's vintage, "scored for <month> · inputs from <month>" (item 2d, D6), both months and the gap read from the served answer, never
  * typed: "The recession model reads data from three months earlier, so September's score uses June's readings."
  * The recession tab says the same: "scored from inputs three months old". Null unless both months are served
  * and the inputs come first. */

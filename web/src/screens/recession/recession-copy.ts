@@ -27,6 +27,7 @@ import type { TabHeroPillTone } from "../shared/TabHero";
 import type { FreshLabel } from "../shared/fresh-state";
 import type { ChartBand } from "../dashboard/LineChart";
 import { DASH } from "../dashboard/hero-copy";
+import { recessionVintage } from "../shared/recession-vintage";
 
 export type LabelTone = "clear" | "watch" | "alert" | "reference";
 
@@ -277,7 +278,7 @@ export function peak2008(series: readonly DatedValue[] | null | undefined): { va
 
 function ledeMid(share: string | null): string {
   const sample = share ? `recession months are ${share} of its training months, and it` : "it";
-  return ` scores recession odds for this month from inputs three months old; ${sample} is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. `;
+  return ` scores each month's recession odds from inputs three months old; ${sample} is class-balanced, so scores are not calibrated probabilities. Elevated starts at 20%, High Risk at 40%. `;
 }
 const LEDE_TAIL = " This is the recession model's own score, not the classifier's Recession Risk odds (the Regime context row).";
 
@@ -307,11 +308,15 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
 
   // Rule 2: the three-month change at 0.1 resolution, or the NBER sentence.
   const change = i >= 0 ? deltaPoints(series, i, 3) : null;
+  // fix/site-audit D6: the month the headline score is for, never "this month" (on 2026-10-07 the score was
+  // September's); the footnote adds the month its inputs come from, the app's one vocabulary.
+  const scoredMonth = m.probability_month ?? (i >= 0 ? series[i].date : null);
+  const head = scoredMonth ? `Recession odds scored for ${fmtMonYr(scoredMonth)}` : "Recession odds";
   let subhead: string;
-  if (!change) subhead = "Recession odds for this month, scored from inputs three months old.";
-  else if (change.delta > 0) subhead = `Recession odds for this month, up ${change.delta.toFixed(1)} points in three months.`;
-  else if (change.delta < 0) subhead = `Recession odds for this month, down ${Math.abs(change.delta).toFixed(1)} points in three months.`;
-  else subhead = "Recession odds for this month, unchanged over three months.";
+  if (!change) subhead = scoredMonth ? `${head}, from inputs three months old.` : `${head}, scored from inputs three months old.`;
+  else if (change.delta > 0) subhead = `${head}, up ${change.delta.toFixed(1)} points in three months.`;
+  else if (change.delta < 0) subhead = `${head}, down ${Math.abs(change.delta).toFixed(1)} points in three months.`;
+  else subhead = `${head}, unchanged over three months.`;
 
   // Rule 3: X4 with its three edits; the Jargon affordance on "logistic model".
   // G4: the visible lede is the model sentence, the divergence word and the
@@ -344,7 +349,8 @@ export function heroCopy(m: RecessionMetrics): RecessionHeroCopy {
 
   // Rule 5.
   const footnote = [`Logistic model on ${m.model_features.length} FRED inputs, lagged 3 months`];
-  if (i >= 0) footnote.push(`Scored for ${fmtMonYr(series[i].date)}`);
+  const vintage = recessionVintage({ probability_month: scoredMonth, inputs_through: m.inputs_through });
+  if (vintage) footnote.push(vintage);
 
   // Rule 6.
   const pillTone = pillToneFor(label);
@@ -373,7 +379,7 @@ export interface InputsThrough {
 
 const wordOf = (l: FreshLabel): string => (l.muted ? `${l.word} ${l.muted}` : l.word);
 
-/** The "Inputs through" words from the server's per-series states (E3): the
+/** The "Latest data" words (D6; was "Inputs through") from the server's per-series states (E3): the
  * weakest daily input and the weakest monthly input, each a §5 word. */
 export function inputsThrough(group: (ids: readonly string[]) => FreshLabel): InputsThrough {
   const daily = group(RECESSION_DAILY_IDS);

@@ -21,6 +21,7 @@ import Gauge from "../kit/Gauge";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import "./regime.css";
 import { Term, defineTerms } from "../kit/Term";
+import { recessionVintage } from "../../shared/recession-vintage";
 
 /** §5's key: Goldilocks green, Overheating amber, Stagflation red, Recession Risk gray. */
 export const REGIME_KEY: Record<string, "green" | "amber" | "red" | "gray"> = { Goldilocks: "green", Overheating: "amber", Stagflation: "red", "Recession Risk": "gray" };
@@ -242,12 +243,12 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
   const edges = rec?.band_edges;
   const unserved = useBlockUnserved(r, "recession");
   const score = rec && fin(rec.score) ? rec.score : null;
-  // §5: the band word, then "score for <probability_month> · inputs through <inputs_through>".
+  // §5, fix/site-audit D6: the band word, then the app's one vocabulary for the score's vintage,
+  // "Scored for <probability_month> · inputs from <inputs_through>" (shared/recession-vintage).
   const band = bandWord(rec?.band);
-  const my = (m: string | undefined) => monthYear(m).replace(" ", "\u00a0");
-  const scoredFor = [my(rec?.probability_month) ? `score for ${my(rec?.probability_month)}` : null, my(rec?.inputs_through) ? `inputs through ${my(rec?.inputs_through)}` : null].filter(Boolean).join(" · ");
+  const scoredFor = recessionVintage(rec, { nbsp: true }) ?? "";
   const trained = rec?.training && monthYear(rec.training.start) && monthYear(rec.training.end) ? `, trained ${monthYear(rec.training.start)} to ${monthYear(rec.training.end)}` : "";
-  if (unserved) return <UnservedCard headingId="rg-rec" className="rg-card" title="Recession score" sub="logistic model, five monthly inputs lagged three months" labels={["Inputs through", "A year ago", "Peak since 2015"]} block={unserved} advanced />;
+  if (unserved) return <UnservedCard headingId="rg-rec" className="rg-card" title="Recession score" sub="logistic model, five monthly inputs lagged three months" labels={["Inputs from", "A year ago", "Peak since 2015"]} block={unserved} advanced />;
   return (
     <Card
       id="rg-rec"
@@ -286,13 +287,13 @@ function Recession({ r, state }: { r: RegimeResponse | undefined; state: State }
       )}
       {rec ? (
         <StatRow cols={3}>
-          <Stat label="Inputs through" value={monthShort(rec.inputs_through)} awaiting={!monthShort(rec.inputs_through)} sub="three-month lag by design" />
+          <Stat label="Inputs from" value={monthShort(rec.inputs_through)} awaiting={!monthShort(rec.inputs_through)} sub="three-month lag by design" />
           {/* §5: "—" when a year ago's month is absent (served null), never Awaiting refresh. */}
           <Stat label="A year ago" value={rec.year_ago && fin(rec.year_ago.score) ? pctPlain(rec.year_ago.score, 1) : "—"} sub={rec.year_ago ? monthYear(rec.year_ago.probability_month) : undefined} />
           <Stat label="Peak since 2015" tone="amber" value={rec.peak && fin(rec.peak.score) ? pctPlain(rec.peak.score, 1) : undefined} awaiting={!rec.peak || !fin(rec.peak.score)} sub={rec.peak ? monthYear(rec.peak.probability_month) : undefined} />
         </StatRow>
       ) : (
-        <AwaitingStats labels={["Inputs through", "A year ago", "Peak since 2015"]} quiet={quiet} />
+        <AwaitingStats labels={["Inputs from", "A year ago", "Peak since 2015"]} quiet={quiet} />
       )}
       <ReadBox label="What it is" className="rg-method">
         a fitted model — five monthly indicators against NBER recession dates{trained}; historical scores are in-sample. It is the only fitted thing on the site, and it is labeled as one wherever it appears.

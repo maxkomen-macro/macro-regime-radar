@@ -36,10 +36,10 @@ const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** The served band words (recession.py) and the summary row labels in C.2 order. */
 const LABELS = ["Low Risk", "Elevated", "High Risk"];
-// Iteration 1 X2 adds two served rows (Training sample, Inputs through).
+// Iteration 1 X2 adds two served rows (Training sample, Latest data; fix/site-audit D6: was "Inputs through").
 /** E3: the series behind each card, in CARD_NAMES order (fresh-state.ts RECESSION_FEATURE_SERIES). */
 const CARD_SERIES = ["DGS10, DGS2", "UNRATE", "BAMLH0A0HYM2", "INDPRO", "T10YIE, T5YIE"];
-const SUMMARY_LABELS = ["Recession odds · this month", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Inputs through", "Reference thresholds"];
+const SUMMARY_LABELS = ["Recession odds", "3 months ago", "Strongest input", "Curve 2s10s", "Model vs market", "Regime context", "Training sample", "Latest data", "Reference thresholds"];
 // Iteration 1 E2: the fifth input is named for what recession.py computes (T10YIE − T5YIE).
 const CARD_NAMES = ["Yield curve (2s10s)", "Unemployment rate", "HY credit spread", "Industrial production YoY", "10Y − 5Y breakeven spread"];
 const TENOR_ORDER = ["1M", "3M", "6M", "1Y", "2Y", "5Y", "10Y", "30Y"];
@@ -222,7 +222,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     expect(sink.failed, JSON.stringify(sink.failed, null, 2)).toEqual([]);
   });
 
-  test("3. hero: one serif h1 equal to the served probability, the pill equal to the served label, the Recession odds for this month h2, and no classifier label in the hero", async ({ page }) => {
+  test("3. hero: one serif h1 equal to the served probability, the pill equal to the served label, the Recession odds scored for the month h2, and no classifier label in the hero", async ({ page }) => {
     await open(page);
     const m = await served(page);
     const regime = await servedRegime(page);
@@ -243,7 +243,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     note("hero", `${(m.recession_prob as number).toFixed(1)}% · ${m.recession_label}`);
 
     const h2 = page.locator("main h2").first();
-    expect(await visibleText(h2)).toMatch(/^Recession odds for this month/);
+    expect(await visibleText(h2)).toMatch(/^Recession odds scored for [A-Z][a-z]{2} \d{4}/);
     const lede = hero(page).locator(".mrr-hero-lede");
     // Codex R-23: the hero calls it the recession model's own score (fix/freshness 4), still set apart from the
     // classifier's odds.
@@ -574,7 +574,7 @@ test.describe("recession (checklist 07 E.3)", () => {
     note("coefficients", coefs.map(([k, c]) => `${k} ${fmtSigned(c, 2)}`).join(" · "));
 
     await expect(transparency(page).locator("dl dt")).toHaveCount(6);
-    expect((await transparency(page).locator("dl dt").allTextContents()).map(clean)).toEqual(["Estimator", "Training target", "Training samples", "Features", "Look-ahead guard", "Inputs through"]);
+    expect((await transparency(page).locator("dl dt").allTextContents()).map(clean)).toEqual(["Estimator", "Training target", "Training samples", "Features", "Look-ahead guard", "Latest data"]);
     expect(text).not.toContain("Last refit");
     await transparency(page).getByRole("link", { name: /Methodology/ }).click();
     await expect(page).toHaveURL(/\/app\/methodology#models$/);
