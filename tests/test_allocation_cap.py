@@ -4,9 +4,9 @@ Tools > Asset allocation says "max 40% per asset · long-only", yet HERC served
 US Agg Bond at 0.40524 (41% on screen): herc_optimize clipped riskfolio's
 weights at 0.40 and then divided by their sum, which lifts every weight,
 the capped one included, back over the cap. HRP did the same with its 2% floor.
-Every method that post-processes now goes through `cap_weights`, an
-iterative cap-and-redistribute (water-filling): capped assets are fixed at
-the cap and the excess is shared pro rata over the rest until nothing breaches.
+Every method that post-processes now goes through `cap_weights`, the
+Euclidean projection onto the bounded simplex (Codex S-02: the pro-rata
+water-filling it replaced rejected feasible floor-and-cap sets).
 
 NO network, NO database: synthetic seeded returns only.
 """
@@ -29,22 +29,26 @@ CAP = 0.40
 TOL = 1e-9
 
 
-def test_the_example_caps_at_40_and_shares_the_excess_pro_rata():
+def test_the_example_caps_at_40_and_shifts_the_rest_onto_the_simplex():
+    """fix/site-audit S-02: a bounded-simplex projection, w = clip(x + λ, lo, hi) with Σw = 1."""
     w = cap_weights(np.array([0.8, 0.1, 0.05, 0.05]), CAP)
-    assert w == pytest.approx([0.4, 0.3, 0.15, 0.15], abs=1e-12)
+    assert w == pytest.approx([0.4, 0.1 + 0.4 / 3, 0.05 + 0.4 / 3, 0.05 + 0.4 / 3], abs=1e-12)  # λ = 0.1333…
     assert w.sum() == pytest.approx(1.0, abs=1e-12)
     # What clip-then-renormalize served: [0.4, 0.1, 0.05, 0.05] / 0.6 → 66.7%.
     old = np.clip([0.8, 0.1, 0.05, 0.05], 0, CAP)
     assert (old / old.sum()).max() > CAP
 
 
-def test_a_cascade_caps_every_asset_the_redistribution_pushes_over():
-    # 0.5 caps first; sharing its excess lifts 0.39 → 0.433, which then caps too.
+def test_codex_s02_a_floor_and_a_cap_together_are_feasible():
+    """The counterexample the pro-rata water-filling rejected: it capped 0.8, scaled 0.19 to 0.57 and capped
+    it too, then floored the two 0.005s and summed to 1.2."""
+    w = cap_weights(np.array([0.8, 0.19, 0.005, 0.005]), CAP, 0.2)
+    assert w == pytest.approx([0.4, 0.2, 0.2, 0.2], abs=1e-12)
+
+
+def test_a_cascade_caps_every_asset_the_shift_pushes_over():
     w = cap_weights(np.array([0.5, 0.39, 0.06, 0.05]), CAP)
-    assert w.max() <= CAP + TOL
-    assert w.sum() == pytest.approx(1.0, abs=1e-12)
-    assert w[:2] == pytest.approx([0.4, 0.4], abs=1e-12)
-    assert w[2] / w[3] == pytest.approx(0.06 / 0.05)
+    assert w == pytest.approx([0.4, 0.4, 0.105, 0.095], abs=1e-12)  # λ = 0.045
 
 
 def test_a_floor_holds_beside_the_cap():
@@ -53,14 +57,29 @@ def test_a_floor_holds_beside_the_cap():
     assert w.sum() == pytest.approx(1.0, abs=1e-12)
 
 
-def test_weights_inside_the_bounds_are_only_normalized():
-    raw = np.array([0.3, 0.3, 0.2, 0.2]) * 0.999
-    assert cap_weights(raw, CAP) == pytest.approx(raw / raw.sum(), abs=1e-15)
+def test_weights_already_on_the_simplex_are_unchanged():
+    raw = np.array([0.3, 0.3, 0.2, 0.2])
+    assert cap_weights(raw, CAP) == pytest.approx(raw, abs=1e-15)
 
 
-def test_an_infeasible_cap_is_an_error_not_a_breach():
-    with pytest.raises(ValueError):
-        cap_weights(np.array([0.5, 0.5]), CAP)  # two assets cannot sum to 1 under 40%
+@pytest.mark.parametrize("seed", range(40))
+def test_any_weights_land_inside_the_bounds_and_sum_to_one(seed):
+    rng = np.random.default_rng(seed)
+    n = int(rng.integers(4, 12))
+    x = rng.dirichlet(np.ones(n) * 0.3) * rng.uniform(0.5, 1.5) + rng.normal(0, 0.01, n)
+    w = cap_weights(x, CAP, 0.02)
+    assert w.max() <= CAP + TOL and w.min() >= 0.02 - TOL
+    assert w.sum() == pytest.approx(1.0, abs=1e-12)
+
+
+@pytest.mark.parametrize(("x", "lo", "hi"), [
+    ([0.5, 0.5], 0.0, CAP),          # two assets cannot reach 1 under 40%
+    ([0.25] * 4, 0.3, CAP),          # four floors of 30% pass 1
+    ([0.5, 0.5, 0.0], 0.5, 0.4),     # a floor above the cap
+])
+def test_infeasible_bounds_raise_a_clear_error(x, lo, hi):
+    with pytest.raises(ValueError, match=r"cannot sum to 1"):
+        cap_weights(np.array(x), hi, lo)
 
 
 # A universe with one very low-volatility asset: the risk-based methods

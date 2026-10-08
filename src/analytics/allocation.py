@@ -717,44 +717,39 @@ def get_market_cap_weights() -> dict:
     }
 
 
-# ── Weight bounds (fix/site-audit D3) ─────────────────────────────────────────
+# ── Weight bounds (fix/site-audit D3, Codex S-02) ─────────────────────────────
 
 def cap_weights(weights, max_weight: float, min_weight: float = 0.0) -> np.ndarray:
     """Long-only weights that sum to 1 with every weight in [min_weight,
-    max_weight], by water-filling: a weight over the cap is fixed at the cap and
-    one under the floor at the floor, and what is left is shared pro rata over
-    the rest by their own weights, repeated until nothing breaches. Clipping and
-    then dividing by the sum lifted every weight, the capped one included, back
-    over the cap: HERC served US Agg Bond at 40.52% under "max 40% per asset".
-    Weights already inside the bounds are only normalized. Raises ValueError
-    when n weights cannot sum to 1 inside the bounds."""
-    w = np.clip(np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0), 0.0, None)
-    n = len(w)
-    if n == 0 or n * max_weight < 1.0 - 1e-12 or n * min_weight > 1.0 + 1e-12:
-        raise ValueError(f"{n} weights cannot sum to 1 within [{min_weight}, {max_weight}]")
-    out = np.zeros(n)
-    fixed = np.zeros(n, dtype=bool)
-    while True:
-        free = ~fixed
-        if not free.any():
-            break
-        room = 1.0 - out[fixed].sum()
-        base = w[free]
-        out[free] = base / base.sum() * room if base.sum() > 0 else room / free.sum()
-        over = free & (out > max_weight)
-        if over.any():
-            out[over] = max_weight
-            fixed |= over
-            continue
-        under = free & (out < min_weight)
-        if under.any():
-            out[under] = min_weight
-            fixed |= under
-            continue
-        break
-    if abs(out.sum() - 1.0) > 1e-9:
-        raise ValueError(f"weights cannot sum to 1 within [{min_weight}, {max_weight}]: {out.sum():.12f}")
-    return out
+    max_weight]: the Euclidean projection onto the bounded simplex,
+    w = clip(x + λ, lo, hi) with the one shift λ that makes Σw = 1, found by
+    bisection (Σ clip(x + λ, lo, hi) rises with λ) and then solved exactly on
+    the weights left inside the bounds. Floors and caps are met together
+    (Codex S-02: the pro-rata water-filling it replaces capped an asset the
+    rescaling pushed over and then rejected a feasible set, [.8, .19, .005,
+    .005] with cap .4 and floor .2). Clipping and then dividing by the sum
+    (fix/site-audit D3) lifted HERC's US Agg Bond back over the cap. Weights
+    already on the simplex inside the bounds come back unchanged. Raises
+    ValueError when n weights cannot sum to 1 inside the bounds."""
+    x = np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0)
+    n = len(x)
+    lo, hi = float(min_weight), float(max_weight)
+    if n == 0 or lo > hi or n * lo > 1.0 + 1e-12 or n * hi < 1.0 - 1e-12:
+        raise ValueError(f"{n} weights cannot sum to 1 within [{lo:g}, {hi:g}]: the bounds need floor ≤ cap and n × floor ≤ 1 ≤ n × cap")
+    a, b = lo - x.max(), hi - x.min()  # Σ clip(x + a) = n·lo ≤ 1 ≤ n·hi = Σ clip(x + b)
+    for _ in range(200):
+        mid = (a + b) / 2.0
+        if np.clip(x + mid, lo, hi).sum() < 1.0:
+            a = mid
+        else:
+            b = mid
+    lam = (a + b) / 2.0
+    w = np.clip(x + lam, lo, hi)
+    free = (x + lam > lo) & (x + lam < hi)
+    if free.any():
+        lam = (1.0 - w[~free].sum() - x[free].sum()) / free.sum()
+        w = np.where(free, x + lam, w)
+    return np.clip(w, lo, hi)
 
 
 # ── Optimization methods ───────────────────────────────────────────────────────
