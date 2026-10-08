@@ -249,7 +249,9 @@ test.describe("news (checklist 08 E.3)", () => {
     await awaitFeed(page);
     const lede = await contentText(hero(page).locator(".mrr-hero-lede"));
     if (/leads the/.test(lede)) {
-      expect(lede).toMatch(/leads the (?:stored )?file: .+ at \d\.\d \/ 5, the (?:stored )?window's highest score\./);
+      // fix/site-audit D5: the lead is the highest-scored story with a stored read, ranked as such when a
+      // higher-scored story without one was passed over.
+      expect(lede).toMatch(/leads the (?:stored )?file: .+ at \d\.\d \/ 5, (?:the (?:stored )?window's highest score|the highest score among (?:stored )?stories with an AI read)\./);
       expect(lede).toMatch(/No model interpretation was stored|leads the .*\. .+/);
     } else {
       expect(lede).toBe("No headlines on file.");

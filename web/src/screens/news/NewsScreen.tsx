@@ -63,6 +63,7 @@ import {
   highImpactCount,
   highImpactValue,
   leadSentence,
+  leadStory,
   feedChipLabel,
   feedClock,
   nextFocusEvent,
@@ -340,13 +341,18 @@ export default function NewsScreen() {
     : "";
 
   /* ── hero (B.1) ──────────────────────────────────────────────────────── */
-  const lead = leadSentence(priority[0], usingFallback, feedLoading);
+  // fix/site-audit D5: the hero leads with the highest-scored story that
+  // carries a stored read (the top story only when none does), and says what
+  // that read says; it used to lead with the top score and print "No model
+  // interpretation was stored" while most of the window carried a read.
+  const leadItem = leadStory(ranked);
+  const lead = leadSentence(leadItem, usingFallback, feedLoading, !leadItem || (leadItem.overall_significance ?? 0) >= (topSig ?? 0));
   // G4: the lede stays at three sentences or fewer by construction, counted
   // on the whole paragraph (a headline quoted in the lead sentence can carry
   // a sentence of its own); the rest, verbatim, sits behind the hero's
   // Details, and the stored interpretation also reads in full on the lead
   // card's AI read.
-  const why = whySentence(priority[0], usingFallback);
+  const why = whySentence(leadItem, usingFallback);
   const ledeParts = takeSentences(why ? `${lead} ${why}` : lead, 3);
   const footnote: ReactNode[] = [
     usingFallback ? coverageValue(feed, windowLabel, usingFallback, newestFallback) : `${feed.length} headlines in ${windowLabel}`,
