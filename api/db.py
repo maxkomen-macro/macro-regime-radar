@@ -914,4 +914,6 @@ def _freshness_uncached() -> dict:
             out["share_counts_rows"] = conn.execute("SELECT COUNT(*) FROM share_counts").fetchone()[0] if has_counts else 0
         except sqlite3.Error:  # an advisory table that cannot be read reads as not stored, never as an error
             out["share_counts_as_of"] = None
+        # Codex S-05: the dated release calendar the monthly prints are due on ({} without event_calendar)
+        out["release_times"] = freshness_mod.release_times(conn)
     return out

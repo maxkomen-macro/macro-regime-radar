@@ -158,3 +158,52 @@ def test_after_the_bell_a_study_whose_fred_input_the_drawer_calls_current_is_not
     older = desk_v2.firing_state(t, "2026-10-07", "2026-10-06", cross=False, allowance=3,
                                  inputs=[{"key": "hy_oas", "last": "2026-09-30"}, {"key": "spx", "last": "2026-10-07"}], now=AFTER_BELL)
     assert older["stale"] is True and older["stale_inputs"] == ["hy_oas"]
+
+
+# ── Codex S-05: monthly prints on the dated release calendar ─────────────────
+
+def _calendar_release_times() -> dict:
+    """The repo's hand-maintained calendar (events/calendar.csv), the rows the refresh loads into event_calendar."""
+    import csv
+    from pathlib import Path
+
+    rows = list(csv.DictReader((Path(__file__).resolve().parent.parent / "events" / "calendar.csv").open()))
+    con = __import__("sqlite3").connect(":memory:")
+    con.execute("CREATE TABLE event_calendar (id INTEGER PRIMARY KEY, event_name TEXT, event_datetime TEXT, importance TEXT)")
+    con.executemany("INSERT INTO event_calendar (event_name, event_datetime, importance) VALUES (?, ?, ?)",
+                    [(r["event_name"], r["event_datetime"], r["importance"]) for r in rows])
+    return freshness.release_times(con)
+
+
+def test_the_release_times_come_from_the_event_calendar():
+    times = _calendar_release_times()
+    assert "2026-10-14T12:30:00Z" in times["CPI Release"]          # Wed Oct 14, 08:30 ET
+    assert "2026-10-02T12:30:00Z" in times["Jobs Report (NFP)"]
+
+
+@pytest.mark.parametrize(("now", "stored", "state"), [
+    # The Sep CPI is released Wed Oct 14 at 08:30 ET (the calendar), not on the 15th (the old approximate day).
+    (datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc), "2026-08-01", "close"),   # 09:00 ET: inside the buffer
+    (datetime(2026, 10, 14, 13, 30, tzinfo=timezone.utc), "2026-08-01", "stale"),  # 09:30 ET: due
+    # The Aug CPI came out Fri Sep 11: by Mon Sep 14 a Jul print is a release behind (the day-15 rule said current).
+    (datetime(2026, 9, 14, 15, 0, tzinfo=timezone.utc), "2026-07-01", "stale"),
+    (datetime(2026, 9, 11, 12, 0, tzinfo=timezone.utc), "2026-07-01", "close"),    # 08:00 ET on release day
+])
+def test_cpi_is_due_on_its_dated_release(now, stored, state):
+    rep = freshness.assess(db_fresh={**_FRESH, "release_times": _calendar_release_times()},
+                           series_latest=[{"series_id": "CPIAUCSL", "date": stored, "value": 1.0}], relay=None, bootstrap=None,
+                           now=now, watermarks={})
+    s = _series(rep)["CPIAUCSL"]
+    assert s["state"] == state, s["reason"]
+    assert _sla(rep)["fred:CPIAUCSL"]["verdict"] == ("current" if state == "close" else "delayed")
+
+
+def test_the_regime_and_the_sla_read_the_same_dated_release():
+    times = _calendar_release_times()
+    assert freshness.expected_month("CPIAUCSL", datetime(2026, 9, 14, 15, 0, tzinfo=timezone.utc), times) == date(2026, 8, 1)
+    assert freshness.expected_month("CPIAUCSL", datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc), times) == date(2026, 8, 1)
+    assert freshness.expected_month("CPIAUCSL", datetime(2026, 10, 14, 13, 30, tzinfo=timezone.utc), times) == date(2026, 9, 1)
+    # A month the calendar does not date keeps the approximate rule (the 15th at 08:30 ET + the buffer).
+    assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 14, 16, 0, tzinfo=timezone.utc), times) == date(2026, 11, 1)
+    assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 15, 16, 0, tzinfo=timezone.utc), times) == date(2026, 12, 1)
+

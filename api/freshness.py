@@ -22,8 +22,8 @@ from api import provenance
 # Situation (first Friday); CPI ~10th–15th; INDPRO mid-month (G.17).
 MONTHLY_INPUTS: dict[str, dict[str, Any]] = {
     "INDPRO": {"label": "Industrial production", "rule": "day", "day": 18, "release_et": "09:15"},
-    "CPIAUCSL": {"label": "CPI (all items)", "rule": "day", "day": 15},
-    "UNRATE": {"label": "Unemployment rate", "rule": "first_friday"},
+    "CPIAUCSL": {"label": "CPI (all items)", "rule": "day", "day": 15, "event": "CPI Release"},
+    "UNRATE": {"label": "Unemployment rate", "rule": "first_friday", "event": "Jobs Report (NFP)"},
 }
 DAILY_INPUTS = ["DGS10", "DGS2", "VIXCLS"]
 NEWS_SLA_MIN_WEEKDAY = 90
@@ -57,8 +57,8 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
     "DFII5": {"label": "5-year TIPS yield", "cadence": "daily", "calendar": "bond"},
     "SOFR": {"label": "SOFR", "cadence": "daily", "calendar": "bond"},
     "INDPRO": {"label": "Industrial production", "cadence": "monthly", "rule": "day", "day": 18, "release_et": "09:15"},
-    "CPIAUCSL": {"label": "CPI (all items)", "cadence": "monthly", "rule": "day", "day": 15},
-    "UNRATE": {"label": "Unemployment rate", "cadence": "monthly", "rule": "first_friday"},
+    "CPIAUCSL": {"label": "CPI (all items)", "cadence": "monthly", "rule": "day", "day": 15, "event": "CPI Release"},
+    "UNRATE": {"label": "Unemployment rate", "cadence": "monthly", "rule": "first_friday", "event": "Jobs Report (NFP)"},
     "FEDFUNDS": {"label": "Fed funds (effective, monthly)", "cadence": "monthly", "rule": "day", "day": 3},
     "USREC": {"label": "NBER recession indicator", "cadence": "monthly", "rule": "day", "day": 3},
     "USSLIND": {"label": "Leading index", "cadence": "monthly", "discontinued": True},
@@ -74,6 +74,10 @@ DEFAULT_RELEASE_ET = "08:30"
 RELEASE_BUFFER = timedelta(minutes=60)
 # Stored intraday bars in the session (D7): within the drawer's 20-minute window on time, past it late,
 # past an hour stale; in the first 30 minutes after the open the previous session's closing bar is on time.
+# Codex S-05: a series with an `event` is due at its dated release in the event calendar (events/calendar.csv,
+# loaded into event_calendar by the refresh), passed in as db_fresh["release_times"] {event_name: [UTC ISO, …]};
+# a month the calendar does not date, or a store without the table, keeps the approximate day rule above.
+RELEASE_EVENTS = ("CPI Release", "Jobs Report (NFP)")
 INTRADAY_ON_TIME_MIN = 20
 INTRADAY_LATE_MIN = 60
 OPENING_GRACE_MIN = 30
@@ -154,15 +158,50 @@ def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | N
                   reason=reason)
 
 
-def _released(meta: dict, when: date | datetime) -> bool:
-    """Whether this month's print of a monthly series is out at `when` (D7): after its release
-    day, or on it from its release time in New York (`release_et`, DEFAULT_RELEASE_ET) plus
-    RELEASE_BUFFER. A bare date is the whole day, so the print is out on its release day."""
+def release_times(conn) -> dict[str, list[str]]:
+    """The dated releases of RELEASE_EVENTS in the store's event_calendar (UTC ISO strings, ascending);
+    {} without the table or its two columns. Read by api/db.freshness and scripts/validate_db.py for
+    `assess` (Codex S-05)."""
+    if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='event_calendar'").fetchone() is None:
+        return {}
+    if not {"event_name", "event_datetime"} <= {r[1] for r in conn.execute("PRAGMA table_info(event_calendar)")}:
+        return {}
+    out: dict[str, list[str]] = {e: [] for e in RELEASE_EVENTS}
+    marks = ",".join("?" for _ in RELEASE_EVENTS)
+    for name, at in conn.execute(f"SELECT event_name, event_datetime FROM event_calendar WHERE event_name IN ({marks}) "
+                                 "AND event_datetime IS NOT NULL ORDER BY event_datetime", RELEASE_EVENTS):
+        if str(at) not in out[name]:
+            out[name].append(str(at))
+    return out
+
+
+def _dated_release(meta: dict, year: int, month: int, releases: dict | None) -> datetime | None:
+    """The series' dated release in that New York month, from the event calendar; None when not dated."""
+    event = meta.get("event")
+    for at in (releases or {}).get(event, []) if event else []:
+        t = _parse_dt(at)
+        if t is not None:
+            ny = t.astimezone(cal.NY)
+            if (ny.year, ny.month) == (year, month):
+                return t
+    return None
+
+
+def _released(meta: dict, when: date | datetime, releases: dict | None = None) -> bool:
+    """Whether this month's print of a monthly series is out at `when` (D7): at its dated release in the
+    event calendar plus RELEASE_BUFFER (Codex S-05), else after its approximate release day, or on it
+    from its release time in New York (`release_et`, DEFAULT_RELEASE_ET) plus RELEASE_BUFFER. A bare
+    date is the whole day, so the print is out on its release day."""
     if isinstance(when, datetime):
         ny = when.astimezone(cal.NY)
         today = ny.date()
     else:
         ny, today = None, when
+    dated = _dated_release(meta, today.year, today.month, releases)
+    if dated is not None:
+        if ny is None:
+            return today >= dated.astimezone(cal.NY).date()
+        return when >= dated + RELEASE_BUFFER
     if meta.get("rule") == "first_friday":
         day = cal.first_friday(today.year, today.month)
     else:
@@ -173,9 +212,9 @@ def _released(meta: dict, when: date | datetime) -> bool:
     return ny >= datetime.combine(day, time(hh, mm), tzinfo=cal.NY) + RELEASE_BUFFER
 
 
-def _expected_month_for(meta: dict, when: date | datetime) -> date:
+def _expected_month_for(meta: dict, when: date | datetime, releases: dict | None = None) -> date:
     today = when.astimezone(cal.NY).date() if isinstance(when, datetime) else when
-    return cal.month_add(date(today.year, today.month, 1), -1 if _released(meta, when) else -2)
+    return cal.month_add(date(today.year, today.month, 1), -1 if _released(meta, when, releases) else -2)
 
 
 def _daily_expected_and_lag(d: date, today_ny: date, rates: bool) -> tuple[date, int]:
@@ -187,7 +226,7 @@ def _daily_expected_and_lag(d: date, today_ny: date, rates: bool) -> tuple[date,
 
 
 def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, watermark: dict | None,
-                      now: datetime | None = None) -> dict:
+                      now: datetime | None = None, releases: dict | None = None) -> dict:
     """State of one FRED series. Daily series need a watermark (their stored
     rows are month-stamped); monthly prints are dated by month either way."""
     meta = SERIES_REGISTRY.get(sid) or {"label": sid, "cadence": "monthly", "rule": "day", "day": 15}
@@ -213,7 +252,7 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     if d is None:
         return _state(sid, label, "fred", cadence, None, "unknown", reason=f"{label} has no stored observations.")
     month = date(d.year, d.month, 1)
-    exp = _expected_month_for(meta, now or today_ny)
+    exp = _expected_month_for(meta, now or today_ny, releases)
     cycles = max(0, (exp.year - month.year) * 12 + exp.month - month.month)
     reason = (f"{label} for {month.strftime('%b %Y')} is the newest print due." if cycles == 0
               else f"{label}: {cycles} release(s) behind; {exp.strftime('%b %Y')} is due.")
@@ -360,10 +399,10 @@ def _parse_date(s: str | None) -> date | None:
     return d.date() if d else None
 
 
-def expected_month(series: str, when: date | datetime) -> date:
+def expected_month(series: str, when: date | datetime, releases: dict | None = None) -> date:
     """First day of the latest month whose print should be public at `when` (a datetime: from the
-    release time, D7; a bare date: the whole day)."""
-    return _expected_month_for(MONTHLY_INPUTS[series], when)
+    release time, D7; a bare date: the whole day), on the dated release calendar when given (S-05)."""
+    return _expected_month_for(MONTHLY_INPUTS[series], when, releases)
 
 
 def _verdict(kind: str, latest: str | None, expected: str | None, ok: bool, delayed_ok: bool, reason: str) -> dict:
@@ -414,6 +453,7 @@ def assess(
     is checked but stops advancing is reported stale with the reason."""
     now = now or datetime.now(timezone.utc)
     today_ny = now.astimezone(cal.NY).date()
+    releases = db_fresh.get("release_times")  # Codex S-05: the dated release calendar, when the store has one
     session = cal.session_state(now)
     last_session = date.fromisoformat(session["last_completed_session"])
     by_series = {str(r.get("series_id")): r for r in series_latest}
@@ -574,7 +614,7 @@ def assess(
     for sid, meta in MONTHLY_INPUTS.items():
         r = by_series.get(sid)
         d = _parse_date(r.get("date")) if r else None
-        exp = expected_month(sid, now)
+        exp = expected_month(sid, now, releases)
         latest_month = date(d.year, d.month, 1) if d else None
         ok = latest_month is not None and latest_month >= exp
         delayed_ok = latest_month is not None and latest_month >= cal.month_add(exp, -1)
@@ -599,7 +639,7 @@ def assess(
             complete = date(d.year, d.month, 1) if d >= last_td else cal.month_add(date(d.year, d.month, 1), -1)
             available_months.append(complete)
     common_month = min(available_months) if available_months else None
-    expected_regime_month = min(expected_month(s, now) for s in MONTHLY_INPUTS)
+    expected_regime_month = min(expected_month(s, now, releases) for s in MONTHLY_INPUTS)
     # Blockers: every monthly input whose latest stored month is the common
     # (slowest) month explains why the regime cannot advance. The cause is
     # either the publication calendar (nothing newer exists yet) or a print
@@ -659,7 +699,7 @@ def assess(
     for sid in SERIES_REGISTRY:
         stored = by_series.get(sid)
         series.append(fred_series_state(sid, today_ny=today_ny, stored_date=stored.get("date") if stored else None,
-                                        watermark=(watermarks or {}).get(f"fred:{sid}"), now=now))
+                                        watermark=(watermarks or {}).get(f"fred:{sid}"), now=now, releases=releases))
     md_str = md.isoformat() if md else None
     md_cycles = cal.business_days_between(md, exp_md) if md else None
     series.append(_state("market_daily", "Daily closes (stored)", "market", "daily", md_str,
