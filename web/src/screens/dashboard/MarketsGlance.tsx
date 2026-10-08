@@ -27,7 +27,7 @@ import type { UseQueryResult } from "@tanstack/react-query";
 import { Card, SectionHeader, Segmented, StatTile } from "../../components";
 import { useMarketDaily, usePriced } from "../../api/queries";
 import type { DailyBar, PricedMetric } from "../../api/types";
-import { useQuotes, type LiveQuote } from "../../live/quotes";
+import { useQuotes, useStreamStatus, type LiveQuote } from "../../live/quotes";
 import { fmtSigned, fmtSignedPct } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { quoteFor } from "../shell/quote-ladder";
@@ -74,8 +74,9 @@ export function tileRead(
   bars: DailyBar[] | undefined,
   dailyLoading = false,
   unavailable?: string,
+  staleFeeds?: Readonly<Record<string, boolean>>,
 ): QuoteCardProps {
-  const q = quoteFor({ symbol: def.symbol, name: def.name, dp: tileDp(def) }, quotes, undefined, def.stored ? bars : undefined, { dailyLoading, unavailable });
+  const q = quoteFor({ symbol: def.symbol, name: def.name, dp: tileDp(def) }, quotes, undefined, def.stored ? bars : undefined, { dailyLoading, unavailable, staleFeeds });
   let change = q.change;
   let changeTone = q.changeTone;
   if (change == null && q.tag?.text === "CLOSE") {
@@ -175,6 +176,7 @@ function PricedPanel({ priced, report }: { priced: UseQueryResult<PricedMetric[]
 export default function MarketsGlance({ onTabChange }: MarketsGlanceProps = {}) {
   const location = useLocation();
   const quotes = useQuotes();
+  const stale = useStreamStatus().stale; // D7 follow-up: a 15M tag is amber only when its feed is late
   const daily = useMarketDaily(GLANCE_DAILY_SYMBOLS, 45);
   const priced = usePriced();
   const report = useFreshReport();
@@ -218,7 +220,7 @@ export default function MarketsGlance({ onTabChange }: MarketsGlanceProps = {}) 
       {/* Every panel stays mounted; the wrapper carries `hidden` (no display
           rule of its own, so the attribute wins) and the grid class sits inside. */}
       {GLANCE_TABS.filter((t) => t.id !== "priced").map((t) => {
-        const reads = t.symbols.map((def) => tileRead(def, quotes, daily.data, daily.isLoading, unavailable));
+        const reads = t.symbols.map((def) => tileRead(def, quotes, daily.data, daily.isLoading, unavailable, stale));
         const anyPrice = reads.some((r) => r.price !== "—");
         return (
           <div key={t.id} id={`glance-${t.id}`} data-glance-tab={t.id} hidden={tab !== t.id}>

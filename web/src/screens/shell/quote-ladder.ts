@@ -47,9 +47,24 @@ export interface QuoteLadderOptions {
    * market prices are not in this snapshot."). The NO PRICE tag and the card
    * carry it as their title instead of the generic line. */
   unavailable?: string;
+  /** The relay's stale flags per feed (StreamStatus.stale): a REST fill's 15M tag is amber only when the
+   * symbol's feed is flagged late (fix/site-audit D7 follow-up). */
+  staleFeeds?: Readonly<Record<string, boolean>>;
 }
 
-const DELAYED_TAG: QuoteTag = { text: "15M", title: "15-minute delayed quote (REST fill)", tone: "amber" };
+// fix/site-audit D7 follow-up: the 15-minute REST delay is the source's, expected, so it reads neutral (muted);
+// amber only when the relay flags the symbol's feed late (three missed polls, api/stream.py stale_flags).
+const DELAYED_TAG: QuoteTag = { text: "15M", title: "15-minute delayed quote (REST fill)", tone: "muted" };
+const LATE_DELAYED_TAG: QuoteTag = { text: "15M", title: "15-minute delayed quote (REST fill); the feed's poll is late", tone: "amber" };
+/** The relay feed that serves a symbol (api/stream.py: the VIX's own REST poll, crypto, forex, US), whose stale
+ * flag (StreamStatus.stale) says whether its poll is late. */
+export function feedOf(symbol: string): "vix" | "crypto" | "forex" | "us" {
+  if (symbol === "VIX") return "vix";
+  if (symbol.endsWith("-USD")) return "crypto";
+  if (/^[A-Z]{6}$/.test(symbol)) return "forex";
+  return "us";
+}
+
 const LAST_TAG: QuoteTag = { text: "LAST", title: "Last tick; no previous close for this session yet, so no day change", tone: "muted" };
 const NO_PRICE_TAG: QuoteTag = { text: "NO PRICE", title: "No stored or live price for this symbol", tone: "muted" };
 
@@ -82,6 +97,7 @@ export function quoteFor(
   const dp = def.dp ?? 2;
   const live = quotes.get(sym);
   const series = intradaySeries(intradayRows, sym) ?? dailySeries(dailyBars, sym);
+  const delayedTag = opts.staleFeeds?.[feedOf(sym)] ? LATE_DELAYED_TAG : DELAYED_TAG;
 
   if (live?.dc != null) {
     // Stream quote: the relay's day change (EODHD's own on a REST row, the
@@ -93,7 +109,7 @@ export function quoteFor(
       raw: live.p,
       change: fmtSignedPct(live.dc),
       changeTone: live.dc >= 0 ? "pos" : "neg",
-      tag: live.delayed ? DELAYED_TAG : undefined,
+      tag: live.delayed ? delayedTag : undefined,
       series,
       via: "stream",
       servedAt: tickStamp(live.t),
@@ -105,7 +121,7 @@ export function quoteFor(
       symbol: sym,
       price: live.p.toFixed(dp),
       raw: live.p,
-      tag: live.delayed ? DELAYED_TAG : LAST_TAG,
+      tag: live.delayed ? delayedTag : LAST_TAG,
       series,
       via: "stream",
       servedAt: tickStamp(live.t),

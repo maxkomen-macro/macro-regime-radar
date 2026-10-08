@@ -58,7 +58,10 @@ const DAILY = [bar("SPY", PRIOR, 640.1), bar("SPY", LATEST, 645.2), bar("QQQ", P
 /** The newest session's 5-minute closes (two SPY points, one QQQ point). */
 const SESSION = [point("SPY", `${LATEST} 15:50:00`, 644.0), point("SPY", `${LATEST} 15:55:00`, 645.2), point("QQQ", `${LATEST} 15:55:00`, 572.9)];
 
-const TAG_15M = { text: "15M", title: "15-minute delayed quote (REST fill)", tone: "amber" };
+// fix/site-audit D7 follow-up: the 15-minute REST delay is the source's, expected: neutral (muted), amber only
+// when the relay flags the symbol's feed as late (three missed polls).
+const TAG_15M = { text: "15M", title: "15-minute delayed quote (REST fill)", tone: "muted" };
+const TAG_15M_LATE = { text: "15M", title: "15-minute delayed quote (REST fill); the feed's poll is late", tone: "amber" };
 const TAG_LAST = { text: "LAST", title: "Last tick; no previous close for this session yet, so no day change", tone: "muted" };
 const TAG_NO_PRICE = { text: "NO PRICE", title: "No stored or live price for this symbol", tone: "muted" };
 const TAG_CLOSE = { text: "CLOSE", title: "Stored close, Sep 14, 2026", tone: "amber" };
@@ -250,5 +253,17 @@ describe("withFreshTags", () => {
     const bar: QuoteCardProps = { symbol: "SPY", price: "645.20", via: "intraday" };
     expect(withFreshTags(bar, { daily: closeL, intraday: staleL }).valueAttrs).toEqual({ "data-stale": "true" });
     expect(withFreshTags(bar, { daily: closeL, intraday: closeL }).valueAttrs).toBeUndefined();
+  });
+});
+
+describe("the 15M REST delay is expected (fix/site-audit D7 follow-up)", () => {
+  const rest = (s: string): LiveQuote => ({ s, p: 100, dc: 0.4, dd: 0.4, t: Date.UTC(2026, 9, 7, 20, 0), delayed: true, src: "rest" });
+  it("reads neutral while the feed is on time and amber when the relay flags it late", () => {
+    const quotes = new Map([["SPY", rest("SPY")], ["VIX", rest("VIX")], ["BTC-USD", rest("BTC-USD")]]);
+    expect(quoteFor({ symbol: "SPY" }, quotes, undefined, undefined).tag).toEqual(TAG_15M);
+    expect(quoteFor({ symbol: "SPY" }, quotes, undefined, undefined, { staleFeeds: { us: true } }).tag).toEqual(TAG_15M_LATE);
+    expect(quoteFor({ symbol: "SPY" }, quotes, undefined, undefined, { staleFeeds: { vix: true } }).tag).toEqual(TAG_15M);
+    expect(quoteFor({ symbol: "VIX" }, quotes, undefined, undefined, { staleFeeds: { vix: true } }).tag).toEqual(TAG_15M_LATE);
+    expect(quoteFor({ symbol: "BTC-USD" }, quotes, undefined, undefined, { staleFeeds: { crypto: true } }).tag).toEqual(TAG_15M_LATE);
   });
 });
