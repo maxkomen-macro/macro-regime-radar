@@ -7,6 +7,7 @@ Run:
 
 import os
 import re
+import sys
 import sqlite3
 import tempfile
 from datetime import datetime
@@ -19,6 +20,10 @@ import requests
 import streamlit as st
 
 from components.shared_styles import compute_momentum, generate_sparkline_b64, section_header, subsection_header
+
+# The repo root, as every tab component puts it on the path, for the one odds rule (fix/site-audit D-e).
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.utils.format import pct_text  # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config — standalone (no src.* imports to avoid FRED_API_KEY dependency)
@@ -679,7 +684,7 @@ def _render_header_bar(latest_regime, as_of) -> None:
         rows = stats["dgs10"] or []
         if len(rows) == 2:
             gs10_now = float(rows[0][0])
-            bps = round((gs10_now - float(rows[1][0])) * 100)
+            bps = round((gs10_now - float(rows[1][0])) * 100)  # not a probability: a yield change in basis points
             bps_color = "#da3633" if bps > 0 else "#3fb950"
             gs10_value_html = (
                 f'<span style="font-size:13px;font-weight:600;color:#e6edf3;">{gs10_now:.2f}%</span>'
@@ -717,9 +722,9 @@ def _render_header_bar(latest_regime, as_of) -> None:
         has_probs = all(v is not None for v in probs.values())
         if has_probs:
             sorted_probs = sorted(probs.items(), key=lambda x: -float(x[1]))
-            dominant_prob_str = f"{float(sorted_probs[0][1]):.0%}"
+            dominant_prob_str = pct_text(float(sorted_probs[0][1]))
             secondary_pills = " &middot; ".join(
-                f'<span style="color:{PROB_COLORS[r]};font-size:10px">{PROB_ABBREVS[r]} {float(p):.0%}</span>'
+                f'<span style="color:{PROB_COLORS[r]};font-size:10px">{PROB_ABBREVS[r]} {pct_text(float(p))}</span>'
                 for r, p in sorted_probs[1:]
             )
             regime_right_html = (
@@ -1360,7 +1365,7 @@ with tab_dash:
                     "Missing Rows": miss.values,
                     "Total Rows":   total,
                     "Completeness": [
-                        f"{(total - m) / total * 100:.0f}%" for m in miss.values
+                        f"{(total - m) / total * 100:.0f}%" for m in miss.values  # not a probability: completeness
                     ],
                 })
                 st.dataframe(miss_rows, hide_index=True, width="stretch")

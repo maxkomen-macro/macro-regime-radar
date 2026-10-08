@@ -11,6 +11,7 @@ fixture (web/src/lib/__fixtures__/whole-percent.json) drives both suites.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import sqlite3
@@ -110,27 +111,122 @@ def test_codex_s03_the_scenario_carries_the_raw_odds_and_prints_them_half_up(mon
 # Modules that print the classifier's odds or confidence as whole percents.
 # format(x, ".0%") rounds the double's binary value (0.425 is 0.42499… → 42)
 # and round() sends a tie to even; both are the defect, so none may remain.
-# Codex S-03: round(… * 100) is caught too, and the weekly memo is in: its
-# printers use a function-level import (like its line 846), so the module
-# still imports as before; the memo's own CI import failure ("No module named
-# 'src'") is unrelated and reported separately.
+# Codex S-03: round(… * 100) is caught too, and the weekly memo is in.
+# fix/site-audit D-e: and every other module that prints a probability (the regime odds, the classifier's
+# confidence, the credit-state transition odds) as a whole percent: the Streamlit header and tabs and the
+# allocation CLI. Percentile ranks, weights and returns are not probabilities and stay out.
 ODDS_PRINTERS = ("src/analytics/intelligence.py", "src/analytics/chat.py", "src/analytics/playbook.py",
-                 "src/daily_memo.py", "src/memo.py", "dashboard/components/intelligence_tab.py")
-# round(… * 100) to a whole number (no ndigits): a one-decimal round(…, 1) is not a whole percent.
-ROUND_X100 = re.compile(r"\bround\((?:[^()]|\([^()]*\))*\*\s*100\s*\)")
+                 "src/daily_memo.py", "src/memo.py", "dashboard/components/intelligence_tab.py",
+                 "src/analytics/allocation.py", "dashboard/app.py", "dashboard/components/decision_view.py",
+                 "dashboard/components/allocation_tab.py", "dashboard/components/credit_tab.py")
+# fix/site-audit D-e: the guard reads the parse tree, so a comment, a docstring or a string literal that only
+# mentions a pattern never trips it, and extra parentheses or `100 * p` never hide one. A whole-percent print is
+# round(…×100) or numpy's around/round(…×100) to 0 places, format(p, ".0%"), "{:.0%}".format(p), f"{p:.0%}",
+# f"{p*100:.0f}%" and "%.0f%%" % (p*100). A round to 1 place or more is not a whole percent.
+
+
+def _is_100(node: ast.AST) -> bool:
+    return isinstance(node, ast.Constant) and type(node.value) in (int, float) and node.value == 100
+
+
+def _times_100(node: ast.AST) -> bool:
+    return any(isinstance(n, ast.BinOp) and isinstance(n.op, ast.Mult) and (_is_100(n.left) or _is_100(n.right))
+               for n in ast.walk(node))
+
+
+def _to_whole(call: ast.Call, places: str) -> bool:
+    nd = call.args[1] if len(call.args) > 1 else next((k.value for k in call.keywords if k.arg == places), None)
+    return nd is None or (isinstance(nd, ast.Constant) and nd.value == 0)
+
+
+def _spec(node: ast.AST | None) -> str:
+    return "".join(v.value for v in getattr(node, "values", []) if isinstance(v, ast.Constant) and isinstance(v.value, str))
+
+
+# A whole-percent print of something that is not a probability (a weight, a basis-point change, a completeness
+# share) in a module the guard reads says so on its line, and keeps its own rounding: `# not a probability`.
+PRAGMA = "# not a probability"
+
+
+def whole_percent_offences(src: str) -> list[str]:
+    """Every place `src` prints a 0–1 value as a whole percent its own way (line: snippet)."""
+    out: list[str] = []
+    lines = src.splitlines()
+    for node in ast.walk(ast.parse(src)):
+        hit = False
+        if isinstance(node, ast.Call) and node.args:
+            f = node.func
+            if isinstance(f, ast.Name) and f.id == "round":
+                hit = _times_100(node.args[0]) and _to_whole(node, "ndigits")
+            elif (isinstance(f, ast.Attribute) and f.attr in ("around", "round", "rint")
+                  and isinstance(f.value, ast.Name) and f.value.id in ("np", "numpy")):
+                hit = _times_100(node.args[0]) and _to_whole(node, "decimals")
+            elif isinstance(f, ast.Name) and f.id == "format" and len(node.args) > 1:
+                spec = node.args[1]
+                hit = isinstance(spec, ast.Constant) and isinstance(spec.value, str) and spec.value.endswith(".0%")
+            elif (isinstance(f, ast.Attribute) and f.attr == "format" and isinstance(f.value, ast.Constant)
+                  and isinstance(f.value.value, str)):
+                hit = bool(re.search(r"\{[^{}]*:[^{}]*\.0%\}", f.value.value))
+        elif isinstance(node, ast.JoinedStr):
+            vals = node.values
+            for i, v in enumerate(vals):
+                if not isinstance(v, ast.FormattedValue):
+                    continue
+                spec = _spec(v.format_spec)
+                after = vals[i + 1] if i + 1 < len(vals) else None
+                if spec.endswith(".0%") or (spec.endswith(".0f") and _times_100(v.value) and isinstance(after, ast.Constant)
+                                            and str(after.value).startswith("%")):
+                    hit = True
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod) and isinstance(node.left, ast.Constant):
+            hit = isinstance(node.left.value, str) and "%.0f%%" in node.left.value and _times_100(node.right)
+        if hit and PRAGMA not in lines[node.lineno - 1]:
+            out.append(f"{node.lineno}: {ast.get_source_segment(src, node)}")
+    return out
 
 
 @pytest.mark.parametrize("path", ODDS_PRINTERS)
 def test_no_odds_printer_formats_a_whole_percent_its_own_way(path):
-    src = (ROOT / path).read_text()
-    assert not re.search(r":\.0%\}", src), f"{path} formats a percent with '.0%'; use src.utils.format.pct_text"
-    assert not re.search(r"\*\s*100:\.0f\}%", src), f"{path} formats a percent with '*100:.0f'; use pct_text"
-    hit = ROUND_X100.search(src)
-    assert not hit, f"{path} rounds a percent with round(… * 100): {hit.group(0)!r}; use round_half_up"
+    hits = whole_percent_offences((ROOT / path).read_text())
+    assert not hits, f"{path} prints a whole percent its own way: {hits}; use src.utils.format.pct_text / round_half_up"
 
 
-def test_the_round_x100_guard_catches_the_old_pattern():
-    assert ROUND_X100.search("probs = {k: round(float(v) * 100) for k, v in stored.items()}")
-    assert ROUND_X100.search("return int(round((arr.values < current_val).mean() * 100))")
-    assert not ROUND_X100.search("x = round_half_up(v, 2)")
-    assert not ROUND_X100.search("progress = round(months / avg * 100, 1)")
+# fix/site-audit D-e: the forms the guard must catch, and what it must leave alone.
+GUARD_CATCHES = [
+    "probs = {k: round(float(v) * 100) for k, v in stored.items()}",
+    "return int(round((arr.values < current_val).mean() * 100))",
+    "x = round(100 * p)",
+    "x = round((p) * 100)",
+    "x = round(((p * 100)))",
+    "x = round(p * 100.0)",
+    "x = round(p * 100, 0)",
+    "x = np.around(p * 100)",
+    "x = numpy.round(100 * p)",
+    "s = format(p, '.0%')",
+    's = f"{p:.0%}"',
+    's = f"{p * 100:.0f}%"',
+    's = "{:.0%}".format(p)',
+    's = "%.0f%%" % (p * 100)',
+]
+GUARD_LEAVES = [
+    "x = round_half_up(v, 2)",
+    "progress = round(months / avg * 100, 1)",
+    "x = np.around(p * 100, 1)",
+    "x = round(p * 10)",
+    "# x = round(p * 100)",
+    "s = 'round(p * 100) and {p:.0%}'",
+    'def f():\n    """Never format(p, \'.0%\') or round(100 * p)."""\n    return 1',
+    's = f"{p:.1%}"',
+    's = f"{w * 100:.1f}%"',
+    "s = format(p, '.1%')",
+    "bps = round((y_now - y_prev) * 100)  # not a probability: a yield change in basis points",
+]
+
+
+@pytest.mark.parametrize("src", GUARD_CATCHES)
+def test_the_guard_catches_every_whole_percent_form(src):
+    assert whole_percent_offences(src), src
+
+
+@pytest.mark.parametrize("src", GUARD_LEAVES)
+def test_the_guard_ignores_comments_strings_and_other_precisions(src):
+    assert not whole_percent_offences(src), src

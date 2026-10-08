@@ -30,6 +30,7 @@ from components.db_helpers import (
     render_surprises,
 )
 from components.shared_styles import render_regime_badge, render_signal_card, section_header, subsection_header, SIGNAL_DISPLAY_NAMES
+from src.utils.format import pct_text, round_half_up  # the repo root is on the path from components.db_helpers
 
 REGIME_COLORS = {
     "Goldilocks":     "#2ecc71",
@@ -157,7 +158,7 @@ def _render_regime_prob_distribution(latest_regime, regimes_df: pd.DataFrame) ->
             prev_val = prev[col_name]
             if prev_val is not None and not (isinstance(prev_val, float) and np.isnan(prev_val)):
                 delta = prob - float(prev_val)
-                delta_str = f"({delta:+.0%} vs last mo)"
+                delta_str = f"({round_half_up(delta, 2):+d}% vs last mo)"  # fix/site-audit D-e: the one odds rule
 
         bar_col, lbl_col = st.columns([3, 1])
         with bar_col:
@@ -171,7 +172,7 @@ def _render_regime_prob_distribution(latest_regime, regimes_df: pd.DataFrame) ->
             )
         with lbl_col:
             st.markdown(
-                f'<span style="font-size:12px;color:#8899aa">{prob:.0%} {delta_str}</span>',
+                f'<span style="font-size:12px;color:#8899aa">{pct_text(prob)} {delta_str}</span>',
                 unsafe_allow_html=True,
             )
 

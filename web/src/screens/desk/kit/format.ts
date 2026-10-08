@@ -206,7 +206,7 @@ export const VERDICT_RANK: Record<Verdict, number> = { reliable: 0, suggestive: 
 
 /** "verdict rule v1 at 90%" from a served rule and its fixed level (§4, §1.5); null when either was not served. */
 export function verdictRuleWords(s: { verdict_rule?: string | null; verdict_confidence?: number | null }): string | null {
-  return typeof s.verdict_rule === "string" && s.verdict_rule && isFiniteNumber(s.verdict_confidence) ? `verdict rule ${s.verdict_rule} at ${Math.round(s.verdict_confidence * 100)}%` : null;
+  return typeof s.verdict_rule === "string" && s.verdict_rule && isFiniteNumber(s.verdict_confidence) ? `verdict rule ${s.verdict_rule} at ${roundHalfUp(s.verdict_confidence, 2)}%` : null;
 }
 
 /** A signed value's tone: up green, down red, zero neutral (§1.3). */

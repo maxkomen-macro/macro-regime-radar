@@ -33,6 +33,7 @@ import pandas as pd
 from scipy.optimize import minimize
 
 from src.analytics import dbpath
+from src.utils.format import pct_text
 
 warnings.filterwarnings("ignore")
 
@@ -1667,7 +1668,7 @@ def get_allocation_data() -> Dict:
     regime_corr     = get_correlation_by_regime(returns, regimes)
     drawdowns       = calculate_drawdowns(returns, regimes)
 
-    print(f"Current regime: {current_regime}  ({confidence:.0%})")
+    print(f"Current regime: {current_regime}  ({pct_text(confidence)})")
     print(f"Risk-free rate: {rf_rate:.2%}")
 
     optimizations = None
