@@ -544,6 +544,7 @@ def assess(
 
     # ── market_intraday: 20 min in session, else last session close ─────────
     mi = _parse_dt(db_fresh.get("market_intraday_ts"), naive_tz=cal.NY)  # pipeline stamps ET wall time
+    opening_word = None
     if session["is_open"]:
         # D7: one rule with the per-series state (intraday_in_session); the opening grace, where
         # yesterday's closing bar stands until the first bars land, is on time, no longer "delayed".
@@ -554,6 +555,7 @@ def assess(
                   else "Intraday bars are older than 20 minutes during the session." if delayed_ok
                   else "Intraday bars have stopped arriving during the session.")
         exp = (now - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        opening_word = "Awaiting opening bars" if status == "opening" else None
     else:
         b = cal.session_bounds(last_session)
         close = b[1] if b else now
@@ -562,6 +564,10 @@ def assess(
         reason = "Intraday bars run to the last completed session's close." if ok else ("Intraday bars stop before the last completed session's close." if delayed_ok else "Intraday bars are more than one session behind.")
         exp = close.strftime("%Y-%m-%dT%H:%M:%SZ")
     rows.append(_verdict("market_intraday", db_fresh.get("market_intraday_ts"), exp, ok, delayed_ok, reason))
+    if opening_word:
+        # D7 follow-up: the drawer shows this word in the neutral tone in place of the verdict, which stays
+        # "current" (the four-word contract `overall` and validate_db read).
+        rows[-1]["word"] = opening_word
 
     # ── news: 90 min on weekdays in US hours, 6 h otherwise ─────────────────
     np_ = _parse_dt(db_fresh.get("news_published_at"))

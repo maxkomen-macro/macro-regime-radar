@@ -947,6 +947,9 @@ export interface SlaRow {
   expected: string | null;
   verdict: "current" | "delayed" | "stale" | "unavailable";
   reason: string;
+  /** fix/site-audit D7 follow-up: a word the drawer prints in the neutral tone in place of the verdict
+   * ("Awaiting opening bars" in the 30 minutes after the open); absent otherwise. */
+  word?: string | null;
 }
 
 export interface RegimeFreshness {

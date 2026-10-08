@@ -63,11 +63,19 @@ const VERDICT_COLOR: Record<string, string> = {
   unavailable: "var(--neg-text)",
 };
 
-function Verdict({ state }: { state: string }) {
-  const s = state in VERDICT_GLYPH ? state : "unavailable";
+/** A feed row's verdict cell: the server's word in the neutral tone when it serves one (D7 follow-up:
+ * "Awaiting opening bars" in the 30 minutes after the open), else the verdict in its own color. */
+export function verdictCell(row: { verdict: string; word?: string | null }): { word: string; glyph: string; color: string } {
+  if (row.word) return { word: row.word, glyph: toneGlyph("neutral"), color: toneColor("neutral") };
+  const s = row.verdict in VERDICT_GLYPH ? row.verdict : "unavailable";
+  return { word: s, glyph: VERDICT_GLYPH[s], color: VERDICT_COLOR[s] };
+}
+
+function Verdict({ row }: { row: { verdict: string; word?: string | null } }) {
+  const c = verdictCell(row);
   return (
-    <span style={{ color: VERDICT_COLOR[s], whiteSpace: "nowrap" }}>
-      <span aria-hidden="true">{VERDICT_GLYPH[s]}</span> {s}
+    <span style={{ color: c.color, whiteSpace: "nowrap" }}>
+      <span aria-hidden="true">{c.glyph}</span> {c.word}
     </span>
   );
 }
@@ -227,7 +235,7 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
           {f?.overall ? (
             <Block title="Overall" wide>
               <div style={{ fontFamily: "var(--font-mono)", fontSize: "var(--fs-meta)" }}>
-                <Verdict state={f.overall} />
+                <Verdict row={{ verdict: f.overall }} />
                 <span style={{ color: STATUS_COLOR.text3 }}> · worst verdict across the model's feeds</span>
               </div>
             </Block>
@@ -257,7 +265,7 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
                       <tr key={row.feed}>
                         <td className="feed">{feedLabel(row.feed, regime)}</td>
                         <td>
-                          <Verdict state={row.verdict} />
+                          <Verdict row={row} />
                         </td>
                         <td className="wrap">{seededLabel ? <StateCell label={seededLabel} /> : id ? <StateCell label={freshLabel(series)} /> : "—"}</td>
                         <td className="wrap">{fmtFeedStamp(row.feed, row.latest, regime)}</td>
@@ -318,7 +326,7 @@ export default function FreshnessDrawer({ open, onClose, status }: Props) {
                   {regime.inputs.map((i) => (
                     <li key={i.series}>
                       {i.label} · latest {i.latest_month ? fmtMonYr(i.latest_month) : "—"} · expected {fmtMonYr(i.expected_month)} ·{" "}
-                      <Verdict state={i.verdict} />
+                      <Verdict row={{ verdict: i.verdict }} />
                     </li>
                   ))}
                 </ul>

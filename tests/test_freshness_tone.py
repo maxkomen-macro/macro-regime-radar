@@ -207,3 +207,13 @@ def test_the_regime_and_the_sla_read_the_same_dated_release():
     assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 14, 16, 0, tzinfo=timezone.utc), times) == date(2026, 11, 1)
     assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 15, 16, 0, tzinfo=timezone.utc), times) == date(2026, 12, 1)
 
+
+def test_the_drawer_says_awaiting_opening_bars_in_the_opening_window():
+    """D7 follow-up: in the 30 minutes after the open the drawer's intraday row reads "Awaiting opening bars"
+    (the verdict stays "current", the four-word contract); once the window closes the word is gone."""
+    opening = datetime(2026, 9, 18, 13, 45, tzinfo=timezone.utc)  # Friday 09:45 ET
+    row = _sla(_assess(now=opening, fresh={**_FRESH, "market_intraday_ts": "2026-09-17 15:55:00"}))["market_intraday"]
+    assert (row["verdict"], row.get("word")) == ("current", "Awaiting opening bars")
+    later = _sla(_assess(fresh={**_FRESH, "market_intraday_ts": "2026-09-18 10:33:00"}))["market_intraday"]
+    assert later["verdict"] == "current" and later.get("word") is None
+
