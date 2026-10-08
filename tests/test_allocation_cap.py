@@ -126,3 +126,25 @@ def test_the_floored_methods_keep_their_floor(returns, cov):
     for name, result in (("risk_parity", risk_parity_optimize(cov)), ("hrp", hierarchical_risk_parity_optimize(cov, ASSETS))):
         w = np.asarray(result["weights"], dtype=float)
         assert w.min() >= 0.02 - TOL, f"{name} serves {w.min():.6f}, under its 2% floor"
+
+
+def test_codex_s04_the_black_litterman_fallback_keeps_the_cap(monkeypatch):
+    """Codex S-04: when SLSQP fails, Black-Litterman fell back to the market-cap prior renormalized over the
+    universe it was given. Without US Agg Bond (the adaptive universe can drop an asset), US Large Cap's 0.40
+    becomes 0.40 / 0.90 = 44.4%, over the cap. The fallback goes through the same projection."""
+    import types
+
+    from src.analytics import allocation
+
+    names = [n for n in allocation.get_market_cap_weights() if n != "US Agg Bond"]
+    assert len(names) == 9
+    rng = np.random.default_rng(3)
+    returns = rng.normal(0.005, 0.04, size=(120, 9))
+    cov = np.cov(returns, rowvar=False) * 12
+    mu = returns.mean(axis=0) * 12
+    monkeypatch.setattr(allocation, "minimize", lambda *a, **k: types.SimpleNamespace(success=False, x=None))
+    out = allocation.black_litterman_optimize(cov, names, mu)
+    w = np.asarray(out["weights"], dtype=float)
+    assert out["converged"] is False
+    assert w.max() <= CAP + TOL, f"{names[int(w.argmax())]} at {w.max():.4f}"
+    assert w.sum() == pytest.approx(1.0, abs=1e-12) and w.min() >= -TOL

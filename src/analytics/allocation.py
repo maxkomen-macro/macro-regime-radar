@@ -925,7 +925,9 @@ def black_litterman_optimize(
         options={"maxiter": 1000},
     )
 
-    weights  = result.x if result.success else w_mkt
+    # Codex S-04: the market-cap fallback is renormalized over the universe given, so without an asset
+    # (the adaptive universe) US Large Cap's 0.40 passed the cap; both branches go through the projection.
+    weights  = cap_weights(result.x if result.success else w_mkt, max_weight, min_weight)
     port_ret = float(weights @ bl_returns)
     port_vol = float(np.sqrt(weights @ cov_matrix @ weights))
 
