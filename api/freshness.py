@@ -66,6 +66,16 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
 # FRED daily: current within 3 business days of the newest print due (FRED posts a day or more after the
 # close; owner's item 7, desk/fill-compute: "a FRED daily series 1–3 business days behind is current").
 DAILY_TOLERANCE = 3
+
+
+def close_grace_until(session: date) -> datetime:
+    """When a session's exchange closes are due in the store: 06:00 UTC on the
+    calendar day after it, the full refresh's deadline (its 00:23 UTC run
+    after the US close, with room for GitHub's queue). `assess` judges
+    market_daily, asset_prices and desk_series against it, and the Desk's
+    stale rule reads the same deadline (api/desk_v2.close_grace,
+    fix/site-audit D4)."""
+    return datetime.combine(session + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6)
 # desk/cap-weight: the preset baskets' share counts, read from Yahoo by every full refresh. A count is a
 # quarterly figure read again each day, so the stored reads are current while the oldest is at most a
 # week old, and stale after. A per-series state only: never an `sla` feed, never in `overall`, never
@@ -367,7 +377,7 @@ def assess(
     # ── market_daily: last completed session by 06:00 UTC next day ─────────
     md = _parse_date(db_fresh.get("market_daily_date"))
     exp_md = last_session
-    grace_until = datetime.combine(last_session + timedelta(days=1), datetime.min.time(), tzinfo=timezone.utc) + timedelta(hours=6)
+    grace_until = close_grace_until(last_session)
     ok = md is not None and md >= exp_md
     within_grace = md is not None and md >= cal.previous_trading_day(exp_md) and now < grace_until
     lag = cal.business_days_between(md, exp_md) if md else None
