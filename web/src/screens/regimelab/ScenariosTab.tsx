@@ -18,7 +18,7 @@ import { useState, type CSSProperties } from "react";
 import { Card, ProbabilityBar, SectionHeader, Segmented, Tag } from "../../components";
 import { useRegimeLatest, useScenarioDefs, useScenarioRun } from "../../api/queries";
 import type { ScenarioShocks } from "../../api/types";
-import { fmtMonYr, fmtProb, tidyProse } from "../../lib/format";
+import { fmtMonYr, fmtProb, roundHalfUp, tidyProse } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, MISSING, SliderRow, StateNote, eyebrowStyle, mono, monoNoteStyle, useDebounced } from "../shared/screen-ui";
 import { REGIME_HUE } from "./regime-history";
@@ -255,7 +255,7 @@ export default function ScenariosTab() {
                   it reads in --text-3 like the negatives. */}
               {Object.entries(r.prob_changes).map(([k, v]) => (
                 <span key={k} style={{ ...monoNoteStyle, color: v > 0 ? "var(--amber)" : "var(--text-3)" }}>
-                  {k.replace("_", " ")} {signed(Math.round(v))}pp
+                  {k.replace("_", " ")} {signed(roundHalfUp(v))}pp
                 </span>
               ))}
               <span style={{ ...monoNoteStyle, color: "var(--text)", marginLeft: "auto" }}>

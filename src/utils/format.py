@@ -27,6 +27,13 @@ def round_half_up(x: float, shift: int = 0) -> int:
     return int(d.quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
+def to_pct(frac: float) -> float:
+    """A 0–1 probability on the 0–100 scale, exactly from its decimal: 0.425 → 42.5, 0.285 → 28.5 (a bare
+    0.285 * 100 is 28.499…, which then rounds down). For a model that computes on percent points and a
+    printer that rounds them half up (Codex S-03)."""
+    return float(Decimal(repr(float(frac))).scaleb(2))
+
+
 def whole_pct(frac: float) -> int:
     """A 0–1 probability as a whole percent under the rule: 0.425 → 43."""
     return round_half_up(frac, 2)

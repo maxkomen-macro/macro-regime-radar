@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.utils.format import ordinal, round_half_up
+from src.utils.format import ordinal, round_half_up, to_pct
 from src.analytics import dbpath
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
@@ -477,7 +477,7 @@ def _pct_rank(series: pd.Series, current_val: float) -> int:
     arr = series.dropna()
     if len(arr) == 0:
         return 50
-    return int(round((arr.values < current_val).mean() * 100))
+    return round_half_up(float((arr.values < current_val).mean()), 2)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -495,9 +495,9 @@ def _derive_probs_from_confidence(label: str, confidence: float) -> dict[str, in
     regimes = list(REGIME_BASE_RATES.items())
     for i, (regime, base) in enumerate(regimes):
         if regime == label:
-            probs[regime] = round(confidence * 100)
+            probs[regime] = round_half_up(confidence, 2)
         else:
-            val = round((base / other_total) * remaining * 100)
+            val = round_half_up((base / other_total) * remaining, 2)
             probs[regime] = val
             allocated += val
     # Fix rounding to ensure sum = 100
@@ -510,8 +510,10 @@ def _derive_probs_from_confidence(label: str, confidence: float) -> dict[str, in
 def _get_current_regime_state(conn: sqlite3.Connection | None = None) -> dict:
     """
     Query regimes table for the latest row.
-    Returns dict with label, confidence, probs (stored softmax prob_* columns,
-    0–100 ints keyed by display name), date. Falls back to a confidence-based
+    Returns dict with label, confidence, probs (stored softmax prob_* columns
+    on 0–100, exactly from the stored decimal: 0.425 → 42.5, keyed by display
+    name; Codex S-03: they were round()ed, 42), date. Printers round them half
+    up (src.utils.format.round_half_up). Falls back to a confidence-based
     approximation only for legacy rows where prob_* are NULL.
     """
     _close = False
@@ -540,12 +542,7 @@ def _get_current_regime_state(conn: sqlite3.Connection | None = None) -> dict:
                 "Recession Risk": row["prob_recession"],
             }
             if all(v is not None for v in stored.values()):
-                probs = {k: round(float(v) * 100) for k, v in stored.items()}
-                # Fix rounding so the four probabilities sum to 100
-                residual = 100 - sum(probs.values())
-                if residual:
-                    dominant = max(probs, key=lambda k: probs[k])
-                    probs[dominant] += residual
+                probs = {k: to_pct(v) for k, v in stored.items()}
             else:
                 probs = _derive_probs_from_confidence(label, confidence)
         return {
@@ -608,8 +605,8 @@ def _compute_risk_indicators(conn: sqlite3.Connection) -> dict[str, int]:
 
 
 def _estimate_stressed_probs(
-    current_probs: dict[str, int], shocks: dict
-) -> dict[str, int]:
+    current_probs: dict[str, float], shocks: dict
+) -> dict[str, float]:
     """
     Apply scenario shocks to current regime probabilities using simplified stress multipliers.
     current_probs: {"Goldilocks": 19, "Overheating": 59, "Stagflation": 17, "Recession Risk": 5}
@@ -627,13 +624,10 @@ def _estimate_stressed_probs(
     stag = max(5.0, current_probs.get("Stagflation", 25)   + stress_score * 6  + rate_score * 5)
     rec  = max(2.0, current_probs.get("Recession Risk", 25) + stress_score * 12)
 
+    # Codex S-03: the stressed odds stay on 0–100 unrounded; printers round them half up.
     total = gold + over + stag + rec
-    g = round(gold / total * 100)
-    o = round(over / total * 100)
-    s = round(stag / total * 100)
-    r = 100 - g - o - s  # absorb rounding residual
-
-    return {"Goldilocks": g, "Overheating": o, "Stagflation": s, "Recession Risk": r}
+    return {"Goldilocks": gold / total * 100, "Overheating": over / total * 100,
+            "Stagflation": stag / total * 100, "Recession Risk": rec / total * 100}
 
 
 def _compute_transitions_from_db(
@@ -664,7 +658,7 @@ def _compute_transitions_from_db(
     result: dict[str, dict[str, int]] = {}
     for frm, to_dict in counts.items():
         total = sum(to_dict.values())
-        result[frm] = {to: round(cnt / total * 100) for to, cnt in to_dict.items()}
+        result[frm] = {to: round_half_up(cnt / total, 2) for to, cnt in to_dict.items()}
         # Fix rounding
         tot = sum(result[frm].values())
         if tot != 100:
@@ -1398,7 +1392,7 @@ def run_scenario(
 
     # Get current regime state
     state = _get_current_regime_state()
-    current_probs = state["probs"]  # stored softmax, {"Goldilocks": 30, ...}
+    current_probs = state["probs"]  # stored softmax on 0–100, {"Goldilocks": 11.02, ...} (Codex S-03: unrounded)
 
     stressed_probs = _estimate_stressed_probs(current_probs, shocks)
     prob_changes = {

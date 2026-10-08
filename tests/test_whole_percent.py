@@ -83,13 +83,41 @@ def test_the_daily_memo_prints_the_four_odds_with_the_rule():
     assert "GL 11% &bull; OV 43% &bull; ST 37% &bull; RR 10%" in html
 
 
+def test_codex_s03_the_scenario_carries_the_raw_odds_and_prints_them_half_up(monkeypatch):
+    """Codex S-03: _get_current_regime_state turned the stored 0.425 into round(42.5) = 42 for the scenario's
+    "stored odds" and its stress rule. It now carries the stored value ×100 exactly (42.5), the stress rule
+    computes on it, and every printer rounds half up (43)."""
+    from src.analytics import intelligence
+    from src.utils.format import round_half_up
+
+    def conn():
+        c = sqlite3.connect(":memory:")
+        c.row_factory = sqlite3.Row
+        c.execute("CREATE TABLE regimes (date TEXT, label TEXT, confidence REAL, prob_goldilocks REAL, prob_overheating REAL, "
+                  "prob_stagflation REAL, prob_recession REAL)")
+        c.execute("INSERT INTO regimes VALUES ('2026-08-01', 'Overheating', 0.2069, 0.1102, 0.425, 0.3691, 0.0957)")
+        return c
+
+    monkeypatch.setattr(intelligence, "_get_conn", conn)
+    state = intelligence._get_current_regime_state()
+    assert state["probs"] == {"Goldilocks": 11.02, "Overheating": 42.5, "Stagflation": 36.91, "Recession Risk": 9.57}
+    out = intelligence.run_scenario(custom_shocks={"hy_spread_delta_bps": 0})
+    assert out["current_regime_probs"]["overheating"] == 42.5
+    assert round_half_up(out["current_regime_probs"]["overheating"]) == 43
+    assert sum(out["stressed_regime_probs"].values()) == pytest.approx(100.0)
+
+
 # Modules that print the classifier's odds or confidence as whole percents.
 # format(x, ".0%") rounds the double's binary value (0.425 is 0.42499… → 42)
 # and round() sends a tie to even; both are the defect, so none may remain.
-# src/memo.py (the weekly memo) is left out: it fails at import in CI
-# ("No module named 'src'", reported, not fixed here).
+# Codex S-03: round(… * 100) is caught too, and the weekly memo is in: its
+# printers use a function-level import (like its line 846), so the module
+# still imports as before; the memo's own CI import failure ("No module named
+# 'src'") is unrelated and reported separately.
 ODDS_PRINTERS = ("src/analytics/intelligence.py", "src/analytics/chat.py", "src/analytics/playbook.py",
-                 "src/daily_memo.py")
+                 "src/daily_memo.py", "src/memo.py", "dashboard/components/intelligence_tab.py")
+# round(… * 100) to a whole number (no ndigits): a one-decimal round(…, 1) is not a whole percent.
+ROUND_X100 = re.compile(r"\bround\((?:[^()]|\([^()]*\))*\*\s*100\s*\)")
 
 
 @pytest.mark.parametrize("path", ODDS_PRINTERS)
@@ -97,3 +125,12 @@ def test_no_odds_printer_formats_a_whole_percent_its_own_way(path):
     src = (ROOT / path).read_text()
     assert not re.search(r":\.0%\}", src), f"{path} formats a percent with '.0%'; use src.utils.format.pct_text"
     assert not re.search(r"\*\s*100:\.0f\}%", src), f"{path} formats a percent with '*100:.0f'; use pct_text"
+    hit = ROUND_X100.search(src)
+    assert not hit, f"{path} rounds a percent with round(… * 100): {hit.group(0)!r}; use round_half_up"
+
+
+def test_the_round_x100_guard_catches_the_old_pattern():
+    assert ROUND_X100.search("probs = {k: round(float(v) * 100) for k, v in stored.items()}")
+    assert ROUND_X100.search("return int(round((arr.values < current_val).mean() * 100))")
+    assert not ROUND_X100.search("x = round_half_up(v, 2)")
+    assert not ROUND_X100.search("progress = round(months / avg * 100, 1)")
