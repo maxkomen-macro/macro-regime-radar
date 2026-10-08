@@ -1,7 +1,7 @@
 """B3 (2026-09-18): freshness the screen can state honestly, per series.
 
 Every series carries {id, label, kind, cadence, as_of, state, delay_min,
-cycles_behind, stale, discontinued, reason}; state is one of live, delayed,
+cycles_behind, stale, discontinued, reason, late}; state is one of live, delayed,
 close, stale, fallback, unknown. The four-word SLA `verdict`/`overall` stay
 exactly as they were (the order map, test_health and the web depend on them).
 Contract: docs/redesign-v2/FRESHNESS_CONTRACT.md.
@@ -17,7 +17,8 @@ import pytest
 from api import freshness
 
 STATES = {"live", "delayed", "close", "stale", "fallback", "unknown"}
-KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason"}
+# fix/site-audit D7: `late` judges a delayed state against the source's expected lag (null otherwise).
+KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason", "late"}
 
 _FRESH = {
     "regimes_date": "2026-08-01", "signals_date": "2026-08-01", "market_daily_date": "2026-09-17",

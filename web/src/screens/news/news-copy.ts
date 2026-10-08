@@ -457,9 +457,11 @@ export function feedChipLabel(c: FeedClock): FreshLabel {
   switch (c.state) {
     case "current":
       return { word: c.stamp, muted: null, tone: "neutral", reason, stale: false };
+    // fix/site-audit D7: delayed is past the feed's window but not stale: amber, no stale mark.
     case "delayed":
+      return { word: c.stamp, muted: "· delayed", tone: "delayed", reason, stale: false };
     case "stale":
-      return { word: c.stamp, muted: `· ${c.state}`, tone: "stale", reason, stale: true };
+      return { word: c.stamp, muted: "· stale", tone: "stale", reason, stale: true };
     default:
       return { word: c.stamp, muted: null, tone: "unknown", reason, stale: false };
   }

@@ -311,7 +311,7 @@ def statuses(item: dict, now: datetime) -> dict[str, str]:
             state = "unknown"  # no stored observation: missing, whatever the watermark says (Codex R-01)
         else:
             state = freshness_mod.fred_series_state(r["id"], today_ny=today_ny, stored_date=r["stamp"],
-                                                    watermark=wm.get(f"fred:{r['id']}"))["state"]
+                                                    watermark=wm.get(f"fred:{r['id']}"), now=now)["state"]
         out[r["id"]] = STATE_WORD.get(state, "missing")
     return out
 

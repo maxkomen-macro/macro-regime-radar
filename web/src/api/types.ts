@@ -299,6 +299,10 @@ export interface SeriesState {
   discontinued: boolean;
   /** One plain sentence for a tooltip or Details, never the headline. */
   reason: string;
+  /** fix/site-audit D7: the server's judgement of a "delayed" state against
+   * the source's expected lag: false within it (neutral), true past it
+   * (amber); null for other states and absent from an older API (amber). */
+  late?: boolean | null;
 }
 
 /* ── Regime Lab (night-2 endpoints) ────────────────────────────────────── */

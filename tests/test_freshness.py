@@ -183,10 +183,11 @@ def test_future_dated_rows_are_not_trusted():
 
 
 def test_intraday_opening_grace():
-    # 09:35 ET on 2026-09-08 with yesterday's 15:55 closing bar: delayed, not stale.
+    # 09:35 ET on 2026-09-08 with yesterday's 15:55 closing bar: within the expected lag, so current
+    # (fix/site-audit D7: it read "delayed"; the per-series state reads the same rule).
     db = {**_BASE, "market_intraday_ts": "2026-09-04 15:55:00"}
     rep = freshness.assess(db_fresh=db, series_latest=_SERIES, relay=None, bootstrap=None, now=_utc(2026, 9, 8, 13, 35))
-    assert _by_feed(rep)["market_intraday"]["verdict"] == "delayed"
+    assert _by_feed(rep)["market_intraday"]["verdict"] == "current"
     # After the grace period the same bar is stale.
     rep = freshness.assess(db_fresh=db, series_latest=_SERIES, relay=None, bootstrap=None, now=_utc(2026, 9, 8, 14, 30))
     assert _by_feed(rep)["market_intraday"]["verdict"] == "stale"

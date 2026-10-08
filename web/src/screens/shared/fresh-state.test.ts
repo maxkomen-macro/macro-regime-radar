@@ -78,6 +78,24 @@ describe("normalizeState", () => {
   });
 });
 
+/* fix/site-audit D7: the tone is lateness against the source's expected lag,
+ * judged on the server (`late`): a delay the source always has reads neutral,
+ * amber only past it. Without the field (an older API) the delay reads amber. */
+describe("D7 · a delay within its expected lag is neutral", () => {
+  it("intraday bars within the drawer's window read neutral, past it amber", () => {
+    const onTime = freshLabel(s({ id: "market_intraday", kind: "market", cadence: "5min", state: "delayed", delay_min: 7, late: false, as_of: "2026-09-18 11:05:00" }));
+    expect(onTime).toMatchObject({ word: "Delayed 7 min", tone: "neutral", stale: false });
+    const late = freshLabel(s({ id: "market_intraday", kind: "market", cadence: "5min", state: "delayed", delay_min: 35, late: true, as_of: "2026-09-18 10:37:00" }));
+    expect(late).toMatchObject({ word: "Delayed 35 min", tone: "delayed", stale: false });
+  });
+  it("the VIX reads 15-min delayed, neutral while the poll is on time and amber when it is late", () => {
+    const vix = (late: boolean | undefined) => freshLabel(s({ id: "vix_delayed", kind: "live", cadence: "60s", state: "delayed", delay_min: 15, late, as_of: "2026-09-18T15:30:00Z" }));
+    expect(vix(false)).toMatchObject({ word: "15-min delayed", tone: "neutral" });
+    expect(vix(true)).toMatchObject({ word: "15-min delayed", tone: "delayed" });
+    expect(vix(undefined).tone).toBe("delayed");
+  });
+});
+
 describe("freshLabel · live and delayed", () => {
   it("live reads Live with the live tone", () => {
     const l = freshLabel(s({ id: "live_quotes", kind: "live", cadence: "tick", state: "live", delay_min: 0, as_of: "2026-09-18T17:42:00Z", reason: "US relay ticking." }));
@@ -93,7 +111,8 @@ describe("freshLabel · live and delayed", () => {
     expect(bars.tone).toBe("delayed");
     expect(bars.stale).toBe(false);
     const vix = freshLabel(s({ id: "vix_delayed", kind: "live", cadence: "60s", state: "delayed", delay_min: 15, as_of: "2026-09-18T15:30:00Z" }));
-    expect(vix.word).toBe("Delayed 15 min");
+    // D7: a feed's delay by source reads "15-min delayed" (it was "Delayed 15 min"); without `late`, amber.
+    expect(vix.word).toBe("15-min delayed");
     expect(vix.tone).toBe("delayed");
   });
 });
@@ -398,7 +417,7 @@ describe("marketSeries (§5: live_quotes in session, the stored close otherwise)
     const live = s({ id: "live_quotes", kind: "live", cadence: "tick", state: "live", delay_min: 0, as_of: "2026-09-18T17:00:00Z" });
     expect(marketSeries(freshnessWith([daily, live]))).toBe(live);
     const delayed = s({ id: "live_quotes", kind: "live", cadence: "tick", state: "delayed", delay_min: 15, as_of: "2026-09-18T17:00:00Z" });
-    expect(freshLabel(marketSeries(freshnessWith([daily, delayed]))).word).toBe("Delayed 15 min");
+    expect(freshLabel(marketSeries(freshnessWith([daily, delayed]))).word).toBe("15-min delayed"); // D7: a live feed's delay by source
   });
   it("after the bell (live_quotes close or unknown) reads the stored daily close", () => {
     const after = s({ id: "live_quotes", kind: "live", cadence: "tick", state: "close", as_of: "2026-09-19T01:30:00Z" });

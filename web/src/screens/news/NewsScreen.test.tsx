@@ -364,9 +364,10 @@ describe("NewsScreen (checklist 08 E.1)", () => {
     expect(stripDetail(button)).toBe(`Newest ${fmtUtcStampEt(NEWEST)}`);
     expect(button.getAttribute("aria-label")).toContain(DELAYED_REASON);
     expect(hero().querySelector(".mrr-hero-dot")).toBeNull();
-    // The chip speaks the same verdict, with the stale mark.
+    // The chip speaks the same verdict; fix/site-audit D7: delayed is amber, not the stale mark.
     expect(text(hero().querySelector(".mrr-hero-chips"))).toMatch(/· delayed/);
-    expect(hero().querySelector("[title^='Newest headline:']")).toHaveAttribute("data-stale", "true");
+    expect(hero().querySelector("[title^='Newest headline:']")).not.toHaveAttribute("data-stale", "true");
+    expect(hero().querySelector("[title^='Newest headline:']")).toHaveAttribute("data-tone", "delayed");
   });
 
   it("status strip: without a served sla row the feed reads Feed as of unknown (A3: no client clock), with the newest stamp", async () => {

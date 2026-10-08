@@ -302,6 +302,8 @@ describe("news-copy: summary and strip helpers (checklist 08 B.2)", () => {
     expect(feedClock("2026-09-16T20:40:00Z", row("fresh")).state).toBe("unknown");
     expect(feedChipLabel(fresh())).toMatchObject({ word: "Sep 16, 16:40 ET", muted: null, tone: "neutral", stale: false });
     expect(feedChipLabel(fresh({ state: "stale" }))).toMatchObject({ word: "Sep 16, 16:40 ET", muted: "· stale", tone: "stale", stale: true });
+    // fix/site-audit D7: delayed is past the expected lag but not stale: amber, no stale mark.
+    expect(feedChipLabel(fresh({ state: "delayed" }))).toMatchObject({ word: "Sep 16, 16:40 ET", muted: "· delayed", tone: "delayed", stale: false });
     expect(feedChipLabel(fresh({ state: "unknown" }))).toMatchObject({ tone: "unknown", stale: false });
     expect(feedChipLabel(fresh({ stamp: "" })).word).toBe("As of unknown");
   });
