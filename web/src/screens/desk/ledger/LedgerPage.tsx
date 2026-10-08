@@ -14,7 +14,7 @@ import type { LedgerRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { useDeskView, withParam } from "../desk-view";
-import { dayLong, dayShort, pctPlain, VERDICT_LABEL } from "../kit/format";
+import { dayLong, dayShort, firingCell, firingNowLabel, pctPlain, VERDICT_LABEL } from "../kit/format";
 import { moveText, tipOf, vsNormalText } from "../kit/units";
 import { Awaiting, DroppedNote, LiveBadge, NotServedBadge, Signed, Stat, Unserved, VerdictPill, LoadingLine, FailedScope } from "../kit/ui";
 import VerdictDefinitions from "../kit/VerdictDefinitions";
@@ -40,7 +40,8 @@ const FILTER_IDS: readonly Filter[] = ["all", "firing", "reliable", "spx", "cros
 
 /** A row whose study can run (§12.5 `available`); an unavailable row is left out of every count but the header's. */
 export const isAvailable = (r: LedgerRow) => r.available !== false;
-/** Firing today: firing on the comparison session; a stale row is never called firing today (v3 §3). */
+/** Firing: firing on its evaluated session (which may be the previous one, under the close's grace; the NOW
+ * cell dates it, fix/site-audit S-01); a stale row is never called firing (v3 §3). */
 // A firing claim needs the state and its freshness served: stale not served claims nothing (§12.5; verifier V14-5).
 export const firingToday = (r: LedgerRow) => isAvailable(r) && r.firing_now === true && r.stale === false;
 
@@ -137,13 +138,13 @@ function Row({ r, onOpen }: { r: LedgerRow; onOpen: (slug: string) => void }) {
         )}
       </td>
       <td className="lg-verdict">{knownVerdict(r.verdict) ? <VerdictPill verdict={r.verdict} className="lg-pill" /> : "—"}</td>
-      {/* §8: "● Firing · day <n>", "○ Quiet", or "○ Stale · <evaluated_on>" (v3 §3), "—" when the state is not served; the tooltip names the session the row was evaluated on. */}
+      {/* §8: "● Firing · day <n>", "○ Quiet", or "○ Stale · <evaluated_on>" (v3 §3), "—" when the state is not served; the tooltip names the session the row was evaluated on. S-01: an earlier session than today's reads "● Fired <day>" / "○ Quiet · <day>". */}
       <td
         className="lg-now"
         title={r.evaluated_on ? `evaluated on ${dayLong(r.evaluated_on)}` : undefined}
         data-tone={r.firing_now == null || r.stale == null ? undefined : r.stale ? "gray" : r.firing_now ? "green" : "gray"}
       >
-        {r.firing_now == null || r.stale == null ? "—" : r.stale ? `○ Stale · ${dayShort(r.evaluated_on) || "—"}` : r.firing_now ? `● Firing${fin(r.firing_day) ? ` · day ${r.firing_day}` : ""}` : "○ Quiet"}
+        {firingCell(r)}
       </td>
     </tr>
   );
@@ -177,6 +178,8 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   const state = ready ? "ready" : q.isError || l ? "awaiting" : "loading";
   // §8, v4 B-02: unavailable rows are left out of every count but the header's.
   const firing = rows.filter(firingToday);
+  // S-01: "Firing now" only when every current row was evaluated on today's session.
+  const firingLabel = firingNowLabel(rows.filter(isAvailable));
   const reliable = rows.filter((r) => isAvailable(r) && r.verdict === "reliable");
   const noEdge = rows.filter((r) => isAvailable(r) && r.verdict === "no_edge");
   const known = countable(rows);
@@ -190,7 +193,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
   const open = (slug: string) => navigate(withParam(pathTo("event-study"), "preset", slug));
   const chips: { id: Filter; label: string }[] = [
     { id: "all", label: `All ${counted ? rows.length : ""}`.trim() },
-    { id: "firing", label: "Firing now" },
+    { id: "firing", label: firingLabel },
     { id: "reliable", label: "Reliable only" },
     { id: "spx", label: "S&P only" },
     { id: "cross", label: "Cross-asset" },
@@ -208,7 +211,7 @@ export default function LedgerPage({ page }: { page: DeskPage }) {
             sub={ready && scored != null ? (off != null ? `${scored} scored · ${off} not yet served` : `${scored} scored`) : undefined}
           />
           {/* Counted from the rows, so only when every row was read and carries what is counted (Codex R-16, R-21). */}
-          <Stat label="Firing now" awaiting={state === "awaiting" || (ready && !firingCounted)} value={firingCounted ? String(firing.length) : undefined} tone={firingCounted && firing.length ? "green" : undefined} sub={firingCounted ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
+          <Stat label={firingLabel} awaiting={state === "awaiting" || (ready && !firingCounted)} value={firingCounted ? String(firing.length) : undefined} tone={firingCounted && firing.length ? "green" : undefined} sub={firingCounted ? firing.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
           <Stat label="Reliable" awaiting={state === "awaiting" || (ready && !verdictsCounted)} value={verdictsCounted ? String(reliable.length) : undefined} tone={verdictsCounted && reliable.length ? "green" : undefined} sub={verdictsCounted ? reliable.map(nameOf).filter(Boolean).join(" · ") || "none" : undefined} />
           <Stat label="No edge" awaiting={state === "awaiting" || (ready && !verdictsCounted)} value={verdictsCounted ? String(noEdge.length) : undefined} />
         </div>

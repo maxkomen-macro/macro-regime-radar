@@ -145,7 +145,7 @@ test.describe("desk v2", () => {
     { slug: "regime", path: "/api/desk/regime", labels: ["Growth", "Inflation", "In this regime", "Recession score", "Next CPI", "Next INDPRO"] },
     { slug: "macro", path: "/api/desk/macro", labels: ["10-year", "2s10s", "Front end", "HY spread", "Investment grade", "Today"] },
     { slug: "sectors", path: "/api/desk/sectors", labels: ["Leading", "Lagging", "Pattern", "Above 50-day", "Above 200-day"] },
-    { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing now", "Reliable", "No edge"] },
+    { slug: "signal-ledger", path: "/api/desk/ledger", labels: ["Signals scored", "Firing", "Reliable", "No edge"] }, // S-01: the fixture's sessions are not today
     { slug: "data-pipeline", path: "/api/desk/pipeline", labels: ["Series inventory"] },
   ];
   for (const t of NULL_ANSWERS)

@@ -66,7 +66,7 @@ describe("Signal Ledger tab", () => {
     renderTab();
     // §8, v4 B-02: SIGNALS SCORED is scored_n, "<scored_n> scored · <unavailable_n> not yet served"; the rest count available rows only.
     await waitFor(() => expect(screen.getByText("Signals scored").parentElement?.textContent).toBe("Signals scored1010 scored · 2 not yet served"));
-    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
+    expect(screen.getByText("Firing", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
     expect(screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/1\s*golden cross/);
     // §8: NO EDGE is the count alone; v2 §7's withdrawn "shown so you know it was checked" is gone.
     expect(screen.getByText("No edge", { selector: ".dk-stat-label" }).parentElement?.textContent).toBe("No edge6");
@@ -82,7 +82,7 @@ describe("Signal Ledger tab", () => {
     expect(dollar.querySelector(".dk-pill")).toBeNull();
     expect(dollar).not.toHaveAttribute("tabindex");
     const rowOf = (label: string) => within(table).getAllByRole("row").find((r) => r.querySelector("th")?.textContent === label)!;
-    expect(rowOf("2s10s +2σ steepening").textContent).toBe("2s10s +2σ steepeningApr 21, 20254971%+1.6%+0.3 ptsNo edge○ Quiet");
+    expect(rowOf("2s10s +2σ steepening").textContent).toBe("2s10s +2σ steepeningApr 21, 20254971%+1.6%+0.3 ptsNo edge○ Quiet · Sep 23");
     // The golden cross last evaluated on Sep 21 (the 2026-09-22 close is missing): stale, never quiet or firing (v3 §3).
     expect(rowOf("S&P golden cross").textContent).toBe("S&P golden crossJul 1, 20251479%+2.7%+1.4 ptsReliable○ Stale · Sep 21");
     // desk/fill-compute: the two RSI rows are scored like the others (the engine on the audit's store).
@@ -118,9 +118,9 @@ describe("Signal Ledger tab", () => {
     renderTab();
     await screen.findByRole("table");
     const group = screen.getByRole("group", { name: "Filter" });
-    await waitFor(() => expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/));
-    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement?.querySelector(".dk-stat-value")).not.toHaveAttribute("data-tone", "green");
-    fireEvent.click(within(group).getByRole("button", { name: "Firing now" }));
+    await waitFor(() => expect(screen.getByText("Firing", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/));
+    expect(screen.getByText("Firing", { selector: ".dk-stat-label" }).parentElement?.querySelector(".dk-stat-value")).not.toHaveAttribute("data-tone", "green");
+    fireEvent.click(within(group).getByRole("button", { name: "Firing" }));
     expect(screen.getByText("No signal matches this filter.")).toBeInTheDocument();
   });
   it("a signal's missing values print a dash, never 'null' or a zero", async () => {
@@ -182,7 +182,7 @@ describe("Signal Ledger tab", () => {
     const row = within(table).getByRole("row", { name: /2s10s/ }) as HTMLTableRowElement;
     expect(row.cells[row.cells.length - 1].textContent).toBe("○ Stale · Sep 19");
     expect(row).not.toHaveAttribute("data-firing");
-    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
+    expect(screen.getByText("Firing", { selector: ".dk-stat-label" }).parentElement).toHaveTextContent(/0\s*none/);
   });
   it("NOW reads '—' when the state is not served, even served stale with no session (§8)", async () => {
     stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "2s10s-2sigma-steepening" ? { ...r, firing_now: null, firing_day: null, evaluated_on: null, stale: true } : r)) }) });
@@ -200,7 +200,8 @@ describe("Signal Ledger tab", () => {
     const table = await screen.findByRole("table");
     const firing = within(table).getByRole("row", { name: /2s10s/ }) as HTMLTableRowElement;
     const now = firing.cells[firing.cells.length - 1];
-    expect(now.textContent).toBe("● Firing · day 10");
+    // fix/site-audit S-01: the fixture's session (Sep 23) is not today, so the cell dates it.
+    expect(now.textContent).toBe("● Fired Sep 23 · day 10");
     expect(now).toHaveAttribute("title", "evaluated on Sep 23, 2026");
     const stale = within(table).getByRole("row", { name: /S&P golden cross/ }) as HTMLTableRowElement;
     expect(stale.cells[stale.cells.length - 1]).toHaveAttribute("title", "evaluated on Sep 21, 2026");
@@ -232,17 +233,17 @@ describe("Signal Ledger tab", () => {
       delete c[k];
       return c;
     };
-    // An available row with no verdict: Reliable and No edge wait; Firing now still counts.
+    // An available row with no verdict: Reliable and No edge wait; Firing still counts.
     stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "golden-cross" ? without(r, "verdict") : r)) }) });
     const a = renderTab();
     await waitFor(() => expect(stat("Reliable")).toHaveTextContent(/Reliable\s*Awaiting refresh/));
     expect(stat("No edge")).toHaveTextContent(/No edge\s*Awaiting refresh/);
-    expect(stat("Firing now")).toHaveTextContent(/Firing now\s*0\s*none/);
+    expect(stat("Firing")).toHaveTextContent(/Firing\s*0\s*none/);
     a.unmount();
-    // An available row with no firing state: Firing now waits; the verdicts still count.
+    // An available row with no firing state: Firing waits; the verdicts still count.
     stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "death-cross" ? without(r, "firing_now") : r)) }) });
     const b = renderTab();
-    await waitFor(() => expect(stat("Firing now")).toHaveTextContent(/Firing now\s*Awaiting refresh/));
+    await waitFor(() => expect(stat("Firing")).toHaveTextContent(/Firing\s*Awaiting refresh/));
     expect(stat("Reliable")).toHaveTextContent(/Reliable\s*1/);
     b.unmount();
     // A row that does not say whether it is available, and no served scored_n: nothing is counted from the rows.
@@ -251,17 +252,17 @@ describe("Signal Ledger tab", () => {
     stubDesk({ "/api/desk/ledger": () => ({ ...rest, signals: rows.map((r) => (r.slug === "rsi-above-70" ? without(r, "available") : r)) }) });
     renderTab();
     await waitFor(() => expect(stat("Signals scored")).toHaveTextContent(/Signals scored\s*Awaiting refresh/));
-    for (const l of ["Firing now", "Reliable", "No edge"]) expect(stat(l)).toHaveTextContent(new RegExp(`${l}\\s*Awaiting refresh`));
+    for (const l of ["Firing", "Reliable", "No edge"]) expect(stat(l)).toHaveTextContent(new RegExp(`${l}\\s*Awaiting refresh`));
     // An unavailable row needs neither a verdict nor a firing state: the fixture's four count as they are.
   });
 
-  it("Codex R-30: one available row with firing_now null (stale false) leaves Firing now uncounted, Awaiting refresh", async () => {
+  it("Codex R-30: one available row with firing_now null (stale false) leaves Firing uncounted, Awaiting refresh", async () => {
     stubDesk({ "/api/desk/ledger": () => ({ ...ledger, signals: rows.map((r) => (r.slug === "spx-5d-2sigma" ? { ...r, available: true, firing_now: null, stale: false } : r)) }) });
     renderTab();
     const stat = (label: string) => screen.getByText(label, { selector: ".dk-stat-label" }).parentElement!;
-    await waitFor(() => expect(stat("Firing now")).toHaveTextContent(/Firing now\s*Awaiting refresh/));
-    expect(stat("Firing now").querySelector(".dk-stat-value")).toBeNull();
-    expect(stat("Firing now")).not.toHaveTextContent(/none/);
+    await waitFor(() => expect(stat("Firing")).toHaveTextContent(/Firing\s*Awaiting refresh/));
+    expect(stat("Firing").querySelector(".dk-stat-value")).toBeNull();
+    expect(stat("Firing")).not.toHaveTextContent(/none/);
     // The verdict counts do not read the firing state: they still count.
     expect(stat("Reliable")).toHaveTextContent(/Reliable\s*1/);
     expect(countable(rows.map((r) => (r.slug === "spx-5d-2sigma" ? { ...r, firing_now: null } : r))).firing).toBe(false);
@@ -276,7 +277,7 @@ describe("Signal Ledger tab", () => {
     const reliable = screen.getByText("Reliable", { selector: ".dk-stat-label" }).parentElement;
     expect(reliable).toHaveTextContent(/0\s*none/);
     expect(reliable?.querySelector(".dk-stat-value")).not.toHaveAttribute("data-tone", "green");
-    expect(screen.getByText("Firing now", { selector: ".dk-stat-label" }).parentElement?.querySelector(".dk-stat-value")).toHaveAttribute("data-tone", "green");
+    expect(screen.getByText("Firing", { selector: ".dk-stat-label" }).parentElement?.querySelector(".dk-stat-value")).toHaveAttribute("data-tone", "green");
   });
   it("without an as-of, the badge and the note's date are left out (L-8)", async () => {
     const { as_of: _a, ...rest } = ledger;

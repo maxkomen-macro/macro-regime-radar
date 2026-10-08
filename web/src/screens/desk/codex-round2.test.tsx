@@ -60,11 +60,11 @@ describe("R-16: rows the boundary drops are said; no total and no 'none' is read
     renderTab("/desk/signal-ledger");
     await waitFor(() => expect(screen.getByText("1 row could not be read.")).toBeInTheDocument());
     const stat = (label: string) => screen.getAllByText(label).map((e) => e.closest(".dk-stat")).find(Boolean);
-    for (const label of ["Firing now", "Reliable", "No edge"]) expect(stat(label)).toHaveTextContent("Awaiting refresh");
+    for (const label of ["Firing", "Reliable", "No edge"]) expect(stat(label)).toHaveTextContent("Awaiting refresh");
     // The served header counts stand (scored_n, unavailable_n).
     expect(stat("Signals scored")).toHaveTextContent("10 scored · 2 not yet served");
     expect(screen.getByRole("button", { name: "All" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Firing now" }));
+    fireEvent.click(screen.getByRole("button", { name: "Firing" }));
     expect(screen.getByText("No readable signal matches this filter.")).toBeInTheDocument();
   });
 

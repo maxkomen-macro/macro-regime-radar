@@ -1094,7 +1094,9 @@ def firing_state(trace: Any, comparison: str, prev: str, *, cross: bool, allowan
     close. A stale study is never reported firing: `firing_now` false and
     `firing_day` null (Codex R-03, round 2). `grace` (close_grace, fix/site-audit
     D4) lets the study and its closes trail the comparison session by that many
-    sessions while its close is not yet due in the store. `now` (D7) puts a
+    sessions while its close is not yet due in the store; `firing_now` is then
+    the previous session's state, which the Desk dates ("● Fired Oct 6",
+    fix/site-audit S-01) rather than calling it today's. `now` (D7) puts a
     FRED input and a FRED-limited allowance on the drawer's anchor
     (inputs_behind, fred_anchor_offset)."""
     import numpy as np

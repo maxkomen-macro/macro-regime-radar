@@ -460,7 +460,9 @@ describe("the study's firing pill (§4, v3 §3)", () => {
   it("firing today counts its day; stale is never firing today; an unknown state prints no pill", async () => {
     stubDesk({ "/api/desk/study": () => ({ ...study, firing_now: true, firing_day: 3, stale: false, evaluated_on: "2026-09-23" }) });
     const a = renderTab();
-    await waitFor(() => expect(pill()).toHaveTextContent("● Firing today · day 3"));
+    // fix/site-audit S-01: Sep 23 is not today, so the pill dates the firing instead of saying today.
+    await waitFor(() => expect(pill()).toHaveTextContent("● Fired Sep 23 · day 3"));
+    expect(pill()).not.toHaveTextContent("Firing today");
     a.unmount();
     stubDesk({ "/api/desk/study": () => ({ ...study, firing_now: true, firing_day: 3, stale: true, evaluated_on: "2026-09-19" }) });
     const b = renderTab();

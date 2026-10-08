@@ -219,6 +219,51 @@ export function nyToday(now = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
+/* ── A signal's firing words (fix/site-audit S-01) ───────────────────────
+ * A study's firing state is the state on `evaluated_on`, its last evaluable
+ * session. After the bell the close's grace (D4) keeps the previous session
+ * standing until the evening refresh stores today's close, so the state can be
+ * yesterday's: "today" and "now" are said only when the evaluated session is
+ * New York's today (the Technicals price card's rule, `endDay`), else the
+ * session's own day ("Fired Oct 6"). */
+
+type FiringRow = { firing_now?: boolean | null; firing_day?: number | null; stale?: boolean | null; evaluated_on?: string | null };
+
+const onToday = (r: FiringRow, today: string) => typeof r.evaluated_on === "string" && r.evaluated_on === today;
+
+/** The Ledger's NOW cell: "● Firing · day 3" / "○ Quiet" for today's session, "● Fired Oct 6 · day 3" /
+ * "○ Quiet · Oct 6" for an earlier one, "○ Stale · Oct 6", "—" when the state is not served. */
+export function firingCell(r: FiringRow, today = nyToday()): string {
+  if (r.firing_now == null || r.stale == null) return NOT_SERVED;
+  const day = dayShort(r.evaluated_on);
+  if (r.stale) return `○ Stale · ${day || NOT_SERVED}`;
+  const n = isFiniteNumber(r.firing_day) ? ` · day ${r.firing_day}` : "";
+  const now = onToday(r, today) || !day;
+  if (r.firing_now) return now ? `● Firing${n}` : `● Fired ${day}${n}`;
+  return now ? "○ Quiet" : `○ Quiet · ${day}`;
+}
+
+/** The Event Study pill: "● Firing today · day 3" or "● Fired Oct 6 · day 3", "○ Not firing today" or
+ * "○ Not firing on Oct 6" (with "· last <day>"), "○ Stale · Oct 6, 2026"; null when the state is not served. */
+export function firingPill(r: FiringRow, today = nyToday(), lastEvent?: string | null): string | null {
+  if (r.firing_now == null || r.stale == null) return null;
+  if (r.stale) return `○ Stale · ${dayLong(r.evaluated_on) || NOT_SERVED}`;
+  const day = dayShort(r.evaluated_on);
+  const last = dayLong(lastEvent) ? ` · last ${dayLong(lastEvent)}` : "";
+  if (r.firing_now) {
+    const n = isFiniteNumber(r.firing_day) ? ` · day ${r.firing_day}` : "";
+    return onToday(r, today) ? `● Firing today${n}` : day ? `● Fired ${day}${n}` : `● Firing${n}`;
+  }
+  return onToday(r, today) ? `○ Not firing today${last}` : day ? `○ Not firing on ${day}${last}` : `○ Not firing${last}`;
+}
+
+/** A count of firing signals says "Firing now" only when every current (served, not stale) signal was
+ * evaluated on today's session; otherwise "Firing", each row carrying its own day. */
+export function firingNowLabel(rows: readonly FiringRow[], today = nyToday()): string {
+  const current = rows.filter((r) => r.firing_now != null && r.stale === false);
+  return current.every((r) => onToday(r, today)) ? "Firing now" : "Firing";
+}
+
 /** A chart's right-end caption (D13): "today" only when the served day is today in New York, else the day ("Sep 22"). */
 export function endDay(date: string | undefined | null, today = nyToday()): string {
   if (!date) return "latest";
