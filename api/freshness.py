@@ -708,9 +708,13 @@ def assess(
                                         watermark=(watermarks or {}).get(f"fred:{sid}"), now=now, releases=releases))
     md_str = md.isoformat() if md else None
     md_cycles = cal.business_days_between(md, exp_md) if md else None
+    # D7 follow-up: within the D4 grace (the previous session's close, before the full refresh's deadline) the
+    # stored close is on time, "Close · <T-1>" in the neutral tone, as the drawer's verdict says "delayed".
+    md_on_time = md is not None and (md >= exp_md or within_grace)
     series.append(_state("market_daily", "Daily closes (stored)", "market", "daily", md_str,
-                         "unknown" if md is None else ("close" if md >= exp_md else "stale"), cycles_behind=md_cycles,
+                         "unknown" if md is None else ("close" if md_on_time else "stale"), cycles_behind=0 if md_on_time else md_cycles,
                          reason="No stored closes." if md is None else (f"Official close of {md_str}, the last completed session." if md >= exp_md
+                                else f"Official close of {md_str}; the last completed session ({exp_md.isoformat()}) is stored by the full refresh, which has until 06:00 UTC." if within_grace
                                 else f"Newest stored close {md_str} is {md_cycles} session(s) older than the last completed session ({exp_md.isoformat()}).")))
     if mi is None:
         series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", None, "unknown", reason="No stored intraday bars."))
@@ -742,6 +746,10 @@ def assess(
         elif ap >= exp_md:
             series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "close", cycles_behind=0,
                                  reason=f"Allocation's price histories run to {ap_str}, the last completed session." + ap_src))
+        elif ap_grace:  # D7 follow-up: within the D4 grace, on time ("Close · <T-1>"), as the drawer says "delayed"
+            series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "close", cycles_behind=0,
+                                 reason=f"Allocation's price histories run to {ap_str}; the last completed session ({exp_md.isoformat()}) "
+                                        "is stored by the full refresh, which has until 06:00 UTC." + ap_src))
         else:
             series.append(_state("asset_prices", "Asset price histories (stored)", "market", "daily", ap_str, "stale", cycles_behind=ap_cycles,
                                  reason=f"Allocation's price histories end {ap_str}, {ap_cycles} session(s) older than the last completed session ({exp_md.isoformat()})." + ap_src))

@@ -217,3 +217,17 @@ def test_the_drawer_says_awaiting_opening_bars_in_the_opening_window():
     later = _sla(_assess(fresh={**_FRESH, "market_intraday_ts": "2026-09-18 10:33:00"}))["market_intraday"]
     assert later["verdict"] == "current" and later.get("word") is None
 
+
+@pytest.mark.parametrize("feed", ["market_daily", "asset_prices"])
+def test_after_the_close_the_stored_close_reads_on_time_until_the_refresh_deadline(feed):
+    """D7 follow-up: after Fri Sep 18's close, before the evening refresh stores it, Thursday's stored close is
+    within the D4 grace (06:00 UTC Saturday): the per-series state reads "Close · Sep 17" (neutral), not
+    stale, matching the drawer's "delayed" summary; past the deadline it is stale, a session behind."""
+    fresh = {**_FRESH, "market_daily_date": "2026-09-17", "asset_prices_date": "2026-09-17"}
+    after_close = _assess(now=datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc), fresh=fresh)  # Fri 17:00 ET
+    s = _series(after_close)[feed]
+    assert (s["state"], s["as_of"], s["cycles_behind"]) == ("close", "2026-09-17", 0), s["reason"]
+    assert _sla(after_close)[feed]["verdict"] == "delayed"
+    past = _assess(now=datetime(2026, 9, 19, 6, 0, tzinfo=timezone.utc), fresh=fresh)  # Sat 06:00 UTC: due
+    p = _series(past)[feed]
+    assert (p["state"], p["cycles_behind"]) == ("stale", 1)
