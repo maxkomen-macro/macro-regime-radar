@@ -105,7 +105,7 @@ jobs:
 
       - name: Generate weekly memo
         if: steps.gate.outputs.go == 'true'
-        run: python src/memo.py
+        run: python -m src.memo
 
       - name: Copy memo to GitHub Pages location
         if: steps.gate.outputs.go == 'true'
