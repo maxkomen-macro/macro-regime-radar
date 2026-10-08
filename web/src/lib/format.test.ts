@@ -12,7 +12,8 @@
  *   fmtProb(v, scale = "unit", dp = 0)
  *                  a probability or share: "unit" is a 0–1 fraction, "percent"
  *                  a 0–100 figure (the recession model). Whole percent under
- *                  the house rounding by default (Math.round: 0.116 → "12%");
+ *                  the house rounding by default (half up on the decimal,
+ *                  roundHalfUp: 0.116 → "12%", 0.425 → "43%");
  *                  anything outside its scale (and NaN / ±Infinity) renders
  *                  "—" (U+2014), never a clamped number.
  *   fmtWholePct    the older 0–1 whole-percent helper, now bounded the same way.
@@ -34,6 +35,7 @@ import { fmtBps, fmtDateNy, fmtPct, fmtWholePct } from "./format";
 import type { CreditMetrics, DatedValue } from "../api/types";
 import { renderWithProviders } from "../test/utils";
 import QualityLadder from "../screens/credit/QualityLadder";
+import WHOLE_PERCENT from "./__fixtures__/whole-percent.json";
 
 // jsdom has no canvas: the ladder chart is replaced the way CreditScreen.test.tsx does it.
 vi.mock("../screens/credit/SpreadLinesChart", () => ({
@@ -284,5 +286,35 @@ describe("fmtDateNy (launch-1, item 6)", () => {
   });
   it("reads a bare date as itself", () => {
     expect(fmtDateNy("2026-09-21")).toBe("Sep 21, 2026");
+  });
+});
+
+/* fix/site-audit D1: the stored odds 0.425 printed 42% in the takeaway
+ * narrative (Python's round() sends the tie to even) and 43% everywhere the
+ * web printed it. One rule, half up on the stored decimal, in both languages;
+ * this fixture also drives tests/test_whole_percent.py. Math.round(x * 100)
+ * rounded 0.285 down (0.285 × 100 is 28.499… as a double). */
+
+type RoundFn = (x: number, shift?: number) => number;
+const roundHalfUp = helper<RoundFn>(["roundHalfUp"]);
+
+describe("D1 · one half-up rule for odds printed as whole percents", () => {
+  it("prints the tie at exactly 0.425 as 43%", () => {
+    expect(fmtProb(0.425)).toBe("43%");
+    expect(fmtWholePct(0.425)).toBe("43%");
+    expect(fmtProb(42.5, "percent")).toBe("43%");
+  });
+  it.each(WHOLE_PERCENT.unit as [number, number][])("a 0–1 fraction %s rounds half up to %s", (frac, expected) => {
+    expect(roundHalfUp(frac, 2)).toBe(expected);
+    expect(fmtProb(frac)).toBe(`${expected}%`);
+  });
+  it.each(WHOLE_PERCENT.percent as [number, number][])("a 0–100 figure %s rounds half up to %s", (value, expected) => {
+    expect(roundHalfUp(value)).toBe(expected);
+    expect(fmtProb(value, "percent")).toBe(`${expected}%`);
+  });
+  it("rounds half away from zero below zero, as Python's ROUND_HALF_UP does, and never returns a number for a non-finite input", () => {
+    expect(roundHalfUp(-2.5)).toBe(-3);
+    expect(roundHalfUp(-0.004, 2)).toBe(0);
+    expect(Number.isNaN(roundHalfUp(Number.NaN))).toBe(true);
   });
 });

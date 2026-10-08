@@ -58,8 +58,29 @@ export function fmtBpsLevel(bps: number): string {
  * model, transition outlook odds, scenario odds). */
 export type ProbScale = "unit" | "percent";
 
-/** "64%" from 0.6423 ("unit") or "11.6%" from 11.63 ("percent", dp 1). Out
- * of range or not a finite number: "—" plus a console warning. */
+/** x × 10^shift as an integer, rounded half up (away from zero) on the
+ * decimal JavaScript prints for x: its shortest round-trip spelling, the one
+ * Python's repr prints too, so 0.285 × 100 is 28.5 and rounds to 29 (a bare
+ * Math.round(0.285 * 100) sees the double 28.4999… and prints 28). The one
+ * rule for odds printed as whole percents (fix/site-audit D1): the stored
+ * 0.425 read 42% in the Python-built takeaway (round() sends a tie to even)
+ * and 43% here. Python's copy is round_half_up in src/utils/format.py; one
+ * fixture, lib/__fixtures__/whole-percent.json, drives both suites. NaN for a
+ * value that is not finite. */
+export function roundHalfUp(x: number, shift = 0): number {
+  if (typeof x !== "number" || !Number.isFinite(x)) return Number.NaN;
+  const [mantissa, exp] = Math.abs(x).toExponential().split("e"); // "4.25", "-1"
+  const digits = mantissa.replace(".", "");
+  const point = 1 + Number(exp) + shift; // digits before the decimal point after the shift
+  const whole = point <= 0 ? 0 : Number(digits.slice(0, point).padEnd(point, "0"));
+  const next = point < 0 ? 0 : Number(digits[point] ?? "0");
+  const r = whole + (next >= 5 ? 1 : 0);
+  return x < 0 && r !== 0 ? -r : r;
+}
+
+/** "64%" from 0.6423 ("unit") or "11.6%" from 11.63 ("percent", dp 1); a
+ * whole percent rounds half up on the served decimal (roundHalfUp: 0.425 →
+ * "43%"). Out of range or not a finite number: "—" plus a console warning. */
 export function fmtProb(v: number | null | undefined, scale: ProbScale = "unit", dp = 0): string {
   if (v == null) return "—";
   const max = scale === "unit" ? 1 : 100;
@@ -67,8 +88,9 @@ export function fmtProb(v: number | null | undefined, scale: ProbScale = "unit",
     console.warn(`fmtProb: ${String(v)} is outside the 0–${max} ${scale} scale of a probability or share; rendering the dash.`);
     return "—";
   }
+  if (dp === 0) return `${roundHalfUp(v, scale === "unit" ? 2 : 0)}%`;
   const pct = scale === "unit" ? v * 100 : v;
-  return dp === 0 ? `${Math.round(pct)}%` : `${pct.toFixed(dp)}%`;
+  return `${pct.toFixed(dp)}%`;
 }
 
 /** A 0–1 probability or share as a whole percent ("64%"); `fmtProb` with its

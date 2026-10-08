@@ -65,7 +65,7 @@ import {
   type PointerEvent,
 } from "react";
 import type { Regime } from "../../api/types";
-import { fmtMonYr } from "../../lib/format";
+import { fmtMonYr, roundHalfUp } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { HeroChartFrame, clampPx } from "../shared/HeroChart";
 import {
@@ -168,8 +168,9 @@ const prob = (r: Regime, name: RegimeName) => {
   const v = r[KEYS[name]] as number | null | undefined;
   return typeof v === "number" && Number.isFinite(v) ? Math.max(0, v) : 0;
 };
-/** Stored probabilities print as whole percent, the hero pill's rounding. */
-const pct = (v: number) => `${Math.round(v * 100)}%`;
+/** Stored probabilities print as whole percent, half up on the stored
+ * decimal like every other odds figure (fix/site-audit D1). */
+const pct = (v: number) => `${roundHalfUp(v, 2)}%`;
 
 /** The four rows of the legend, in resting order: highest latest value first. */
 export function legendOrder(rows: Regime[]): RegimeName[] {

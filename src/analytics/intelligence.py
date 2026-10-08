@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.utils.format import ordinal
+from src.utils.format import ordinal, round_half_up
 from src.analytics import dbpath
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
@@ -736,7 +736,9 @@ def generate_market_takeaway(
     # Determine scale
     max_val = max(raw_probs.values()) if raw_probs else 1
     scale = 100 if max_val <= 1.0 else 1
-    probs_100 = {k: round(v * scale) for k, v in raw_probs.items()}
+    # One rounding rule with every other surface (fix/site-audit D1): half up
+    # on the stored decimal, so 0.425 reads 43% here as it does on the web.
+    probs_100 = {k: round_half_up(v, 2 if scale == 100 else 0) for k, v in raw_probs.items()}
 
     top_regime = current_regime
     top_prob   = probs_100.get(top_regime, 30)

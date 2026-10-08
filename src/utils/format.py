@@ -6,6 +6,36 @@ dashboard components and the self-contained analytics modules).
 """
 from __future__ import annotations
 
+from decimal import ROUND_HALF_UP, Decimal
+
+
+# ── Odds as whole percents (fix/site-audit D1) ───────────────────────────────
+# A stored probability prints as a whole percent rounded half up on its
+# decimal value: 0.425 → 43%. Python's round() sends a tie to the even digit
+# (42.5 → 42) and format(x, ".0%") rounds the double's binary value (0.425 is
+# 0.42499… → 42), while the web rounded the same stored odds up: the takeaway
+# narrative read "(42% odds)" beside 43% everywhere else. The web's copy of
+# the rule is `roundHalfUp` in web/src/lib/format.ts; one fixture,
+# web/src/lib/__fixtures__/whole-percent.json, drives both suites
+# (tests/test_whole_percent.py, web/src/lib/format.test.ts).
+
+def round_half_up(x: float, shift: int = 0) -> int:
+    """x × 10**shift as an integer, rounded half up (away from zero) on the
+    decimal Python prints for x: its shortest round-trip spelling, the one
+    JavaScript prints too, so 0.285 × 100 is 28.5 and rounds to 29."""
+    d = Decimal(repr(float(x))).scaleb(shift)
+    return int(d.quantize(Decimal(1), rounding=ROUND_HALF_UP))
+
+
+def whole_pct(frac: float) -> int:
+    """A 0–1 probability as a whole percent under the rule: 0.425 → 43."""
+    return round_half_up(frac, 2)
+
+
+def pct_text(frac: float) -> str:
+    """A 0–1 probability as printed text: 0.425 → "43%"."""
+    return f"{whole_pct(frac)}%"
+
 
 def ordinal(n: float | int) -> str:
     """Format a number as an English ordinal: 1 -> '1st', 2 -> '2nd', 3 -> '3rd',

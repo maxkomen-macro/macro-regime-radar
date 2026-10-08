@@ -10,6 +10,7 @@
  * "Awaiting refresh" under the stat's label; "—" is the floor under that.
  */
 
+import { roundHalfUp } from "../../../lib/format";
 import type { Verdict } from "../data/types";
 
 export const MINUS = "−";
@@ -38,6 +39,13 @@ export function num(x: number, digits = 1): string {
 /** A fraction as a signed percent: 0.031 → "+3.1%". */
 export function pct(frac: number, digits = 1): string {
   return isFiniteNumber(frac) ? `${signed(frac * 100, digits)}%` : NOT_SERVED;
+}
+
+/** The classifier's odds as a whole percent, under the app's one rule (half
+ * up on the stored decimal, lib/format roundHalfUp; fix/site-audit D1): 0.425
+ * → "43%", as the Dashboard, the Regime Lab and Tools print the same row. */
+export function oddsPct(frac: number): string {
+  return isFiniteNumber(frac) ? `${roundHalfUp(frac, 2)}%` : NOT_SERVED;
 }
 
 /** A fraction as an unsigned percent: 0.68 → "68%". */

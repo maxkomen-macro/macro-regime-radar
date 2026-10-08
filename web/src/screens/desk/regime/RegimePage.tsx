@@ -16,7 +16,7 @@ import { droppedOf } from "../data/schema";
 import type { Read, RegimeResponse, NextPrint as NextPrintRow, PublishedPrint, PublishedRow } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
-import { REGIME_TAGGED_LINE, bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
+import { REGIME_TAGGED_LINE, bandWord, capitalize, dayShort, monthLong, monthShort, monthYear, num, oddsPct, ordinalWord, pct, pctPlain, rowWords, year } from "../kit/format";
 import Gauge from "../kit/Gauge";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Signed, Stat, StatRow, Unserved, UnservedCard, UnservedLine, useAdvanced, useBlockUnserved, useUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import "./regime.css";
@@ -170,7 +170,7 @@ function AwaitingStats({ labels, quiet }: { labels: string[]; quiet: boolean }) 
 export function oddsWords(c: NonNullable<RegimeResponse["current"]>): string | null {
   const odds = fin(c.odds) ? c.odds : c.classifier && c.classifier.label === c.label && c.classifier.month === c.print && fin(c.classifier.odds) ? c.classifier.odds : null;
   if (odds == null || !c.label || !monthYear(c.print)) return null;
-  return `${c.label} odds ${pctPlain(odds)} on the ${monthYear(c.print)} data: a strength score from the two trends, not a fitted probability.`;
+  return `${c.label} odds ${oddsPct(odds)} on the ${monthYear(c.print)} data: a strength score from the two trends, not a fitted probability.`;
 }
 
 /** fix/freshness 3a (D2): the one line where events are tagged with a regime (kit/format.ts). */

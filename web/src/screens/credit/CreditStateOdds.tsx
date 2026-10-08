@@ -24,7 +24,7 @@ import Jargon from "../shared/Jargon";
 import ScrollTable from "../shared/ScrollTable";
 import Disclosure from "../shared/Disclosure";
 import { Caption, StateNote, eyebrowStyle, monoNoteStyle } from "../shared/screen-ui";
-import { fmtProb } from "../../lib/format";
+import { fmtProb, roundHalfUp } from "../../lib/format";
 import { CREDIT_OAS_IDS } from "../shared/fresh-state";
 import { SRC, Stamp } from "../shared/Stamp";
 import { useFreshReport } from "../shared/useFreshReport";
@@ -47,7 +47,7 @@ const HORIZONS = [
 /** One cell as a whole percent, or null when the cell is not served. */
 function cellPct(matrix: Matrix | null | undefined, from: string, to: string): number | null {
   const p = matrix?.[from]?.[to];
-  return p != null ? Math.round(p * 100) : null;
+  return p != null ? roundHalfUp(p, 2) : null;
 }
 
 /** A4: a transition odd is a probability; outside 0–100 it prints the dash. */

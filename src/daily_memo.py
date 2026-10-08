@@ -64,6 +64,7 @@ if str(ROOT) not in sys.path:
 
 from src.analytics.news       import REGIME_SYSTEM_PROMPT  # noqa: E402
 from src.analytics.perplexity import sonar_research        # noqa: E402
+from src.utils.format         import pct_text              # noqa: E402
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Config
@@ -489,7 +490,7 @@ def generate_narrative(
 
     user_content = (
         f"Write today's regime narrative for the daily briefing.\n\n"
-        f"CURRENT REGIME: {regime_label} (confidence {confidence:.0%})\n"
+        f"CURRENT REGIME: {regime_label} (confidence {pct_text(confidence)})\n"
         f"PROBABILITIES: {probs}\n\n"
         f"KEY LEVELS:\n{level_lines}\n\n"
         f"HIGH-SIGNIFICANCE HEADLINES (last 36h):\n{news_lines}"
@@ -665,16 +666,16 @@ def build_html(
         )
         regime_detail_html = (
             f"<div style='color:#7f8c8d; font-size:11px; margin-top:4px;'>"
-            f"<b>{dominant_prob:.0%}</b> &bull; as of {regime_as_of}</div>"
+            f"<b>{pct_text(dominant_prob)}</b> &bull; as of {regime_as_of}</div>"
             f"<div style='color:#aaa; font-size:10px; margin-top:2px;'>"
-            f"GL {prob_gl:.0%} &bull; OV {prob_ov:.0%} &bull; "
-            f"ST {prob_st:.0%} &bull; RR {prob_rr:.0%}</div>"
+            f"GL {pct_text(prob_gl)} &bull; OV {pct_text(prob_ov)} &bull; "
+            f"ST {pct_text(prob_st)} &bull; RR {pct_text(prob_rr)}</div>"
             f"<div style='color:#888; font-size:10px;'>Conviction: {conviction_label}</div>"
         )
     else:
         regime_detail_html = (
             f"<div style='color:#7f8c8d; font-size:11px; margin-top:4px;'>"
-            f"{confidence*100:.0f}% conf &bull; as of {regime_as_of}</div>"
+            f"{pct_text(confidence)} conf &bull; as of {regime_as_of}</div>"
         )
 
     # ── 1. HEADER ─────────────────────────────────────────────────────────────

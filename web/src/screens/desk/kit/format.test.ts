@@ -1,6 +1,6 @@
 /** Desk v2 formatting (kit/format.ts, kit/MonitoredRows.tsx): true minus signs, fractions as percents, served dates at their own frequency. */
 import { describe, expect, it } from "vitest";
-import { dayLong, dayShort, etDayTime, etTime, grouped, monthLong, monthShort, monthYear, num, ordinal, ordinalWord, pct, pctPlain, pts, putsVsCalls, signed, year, priceText, tickText } from "./format";
+import { dayLong, dayShort, etDayTime, etTime, grouped, monthLong, monthShort, monthYear, num, oddsPct, ordinal, ordinalWord, pct, pctPlain, pts, putsVsCalls, signed, year, priceText, tickText } from "./format";
 import { levelText, roomTone, roomWords, sortByRoom } from "./MonitoredRows";
 
 describe("numbers", () => {
@@ -138,5 +138,13 @@ describe("endDay (D13)", () => {
     expect(endDay("2026-09-24", "2026-09-24")).toBe("today");
     expect(endDay("2026-09-22", "2026-09-24")).toBe("Sep 22");
     expect(endDay(undefined, "2026-09-24")).toBe("latest");
+  });
+});
+
+describe("classifier odds (fix/site-audit D1)", () => {
+  it("prints odds as whole percents half up on the stored decimal, the app's rule", () => {
+    expect(oddsPct(0.425)).toBe("43%");
+    expect(oddsPct(0.285)).toBe("29%");
+    expect(oddsPct(Number.NaN)).toBe("—");
   });
 });

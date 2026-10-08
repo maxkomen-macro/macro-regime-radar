@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from src.analytics import dbpath
+from src.utils.format import pct_text
 
 # ── Config (self-contained) ──────────────────────────────────────────────────
 # Deliberately NOT imported from src.config: that module raises at import time
@@ -778,7 +779,7 @@ def _build_state_snapshot() -> str:
                 "RR": regime.get("prob_recession"),
             }
             top_prob = max((p for p in probs.values() if p is not None), default=None)
-            top_str = f" ({top_prob:.0%})" if top_prob is not None else ""
+            top_str = f" ({pct_text(top_prob)})" if top_prob is not None else ""
             parts.append(f"Regime: {label}{top_str} as of {regime.get('date','?')}")
     except Exception:
         pass
@@ -789,7 +790,7 @@ def _build_state_snapshot() -> str:
             parts.append(f"Recession model (this month, inputs three months old): {model['probability_pct']:.1f}%")
         odds = rec.get("regime_recession_risk_odds") or {}
         if odds.get("odds_now") is not None:
-            parts.append(f"Regime Recession Risk odds: {odds['odds_now']:.0%}")
+            parts.append(f"Regime Recession Risk odds: {pct_text(odds['odds_now'])}")
     except Exception:
         pass
     try:

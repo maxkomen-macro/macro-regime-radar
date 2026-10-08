@@ -1,4 +1,5 @@
 import React from "react";
+import { roundHalfUp } from "../../lib/format";
 import { Pill } from "../core/Pill";
 
 /* Regime to pill tint (src/regime.py order). Goldilocks is mint (decision 1);
@@ -19,7 +20,7 @@ export function RegimeBadge({ label = "Goldilocks", size = "md", confidence, ton
       {label}
       {confidence != null ? (
         <span className="pct" style={{ color: "inherit", opacity: 0.85, fontVariantNumeric: "tabular-nums" }}>
-          {Math.round(confidence * 100)}%
+          {roundHalfUp(confidence, 2)}%
         </span>
       ) : null}
     </Pill>

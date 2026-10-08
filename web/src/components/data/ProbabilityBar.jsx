@@ -1,5 +1,5 @@
 import React from "react";
-import { fmtProb } from "../../lib/format";
+import { fmtProb, roundHalfUp } from "../../lib/format";
 
 // Fixed classifier order (src/regime.py): the bar's shape stays comparable
 // across screens. Legend abbreviations: two-letter (default) or single-letter.
@@ -38,7 +38,7 @@ export function ProbabilityBar({
     const raw = Number(probs[key]) || 0;
     const bad = raw < 0 || raw > 1;
     const share = bad ? 0 : raw * 100;
-    const pct = Math.round(share);
+    const pct = bad ? 0 : roundHalfUp(raw, 2);
     const served = metrics ? metrics[key] : undefined;
     return {
       key,
