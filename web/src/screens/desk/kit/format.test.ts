@@ -176,5 +176,8 @@ describe("firing words (fix/site-audit S-01)", () => {
     expect(firingNowLabel([today, row({ evaluated_on: "2026-10-07", firing_now: false })], "2026-10-07")).toBe("Firing now");
     expect(firingNowLabel([today, row({})], "2026-10-07")).toBe("Firing");
     expect(firingNowLabel([today, row({ stale: true })], "2026-10-07")).toBe("Firing now"); // a stale row claims nothing
+    // S-01 follow-up: with no current row nothing was evaluated today, so the count claims no "now".
+    expect(firingNowLabel([row({ stale: true }), row({ stale: true, evaluated_on: "2026-09-29" })], "2026-10-07")).toBe("Firing");
+    expect(firingNowLabel([], "2026-10-07")).toBe("Firing");
   });
 });

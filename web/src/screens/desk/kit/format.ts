@@ -258,10 +258,11 @@ export function firingPill(r: FiringRow, today = nyToday(), lastEvent?: string |
 }
 
 /** A count of firing signals says "Firing now" only when every current (served, not stale) signal was
- * evaluated on today's session; otherwise "Firing", each row carrying its own day. */
+ * evaluated on today's session, and there is at least one (with none, nothing was read today); otherwise
+ * "Firing", each row carrying its own day. */
 export function firingNowLabel(rows: readonly FiringRow[], today = nyToday()): string {
   const current = rows.filter((r) => r.firing_now != null && r.stale === false);
-  return current.every((r) => onToday(r, today)) ? "Firing now" : "Firing";
+  return current.length > 0 && current.every((r) => onToday(r, today)) ? "Firing now" : "Firing";
 }
 
 /** A chart's right-end caption (D13): "today" only when the served day is today in New York, else the day ("Sep 22"). */
