@@ -717,6 +717,46 @@ def get_market_cap_weights() -> dict:
     }
 
 
+# ── Weight bounds (fix/site-audit D3) ─────────────────────────────────────────
+
+def cap_weights(weights, max_weight: float, min_weight: float = 0.0) -> np.ndarray:
+    """Long-only weights that sum to 1 with every weight in [min_weight,
+    max_weight], by water-filling: a weight over the cap is fixed at the cap and
+    one under the floor at the floor, and what is left is shared pro rata over
+    the rest by their own weights, repeated until nothing breaches. Clipping and
+    then dividing by the sum lifted every weight, the capped one included, back
+    over the cap: HERC served US Agg Bond at 40.52% under "max 40% per asset".
+    Weights already inside the bounds are only normalized. Raises ValueError
+    when n weights cannot sum to 1 inside the bounds."""
+    w = np.clip(np.nan_to_num(np.asarray(weights, dtype=float), nan=0.0), 0.0, None)
+    n = len(w)
+    if n == 0 or n * max_weight < 1.0 - 1e-12 or n * min_weight > 1.0 + 1e-12:
+        raise ValueError(f"{n} weights cannot sum to 1 within [{min_weight}, {max_weight}]")
+    out = np.zeros(n)
+    fixed = np.zeros(n, dtype=bool)
+    while True:
+        free = ~fixed
+        if not free.any():
+            break
+        room = 1.0 - out[fixed].sum()
+        base = w[free]
+        out[free] = base / base.sum() * room if base.sum() > 0 else room / free.sum()
+        over = free & (out > max_weight)
+        if over.any():
+            out[over] = max_weight
+            fixed |= over
+            continue
+        under = free & (out < min_weight)
+        if under.any():
+            out[under] = min_weight
+            fixed |= under
+            continue
+        break
+    if abs(out.sum() - 1.0) > 1e-9:
+        raise ValueError(f"weights cannot sum to 1 within [{min_weight}, {max_weight}]: {out.sum():.12f}")
+    return out
+
+
 # ── Optimization methods ───────────────────────────────────────────────────────
 
 def mean_variance_optimize(
@@ -741,8 +781,7 @@ def mean_variance_optimize(
     )
 
     w = result.x if result.success else x0
-    w = np.clip(w, 0, max_weight)
-    w /= w.sum()
+    w = cap_weights(w, max_weight, min_weight)
 
     return {
         "weights":         w,
@@ -774,8 +813,7 @@ def minimum_variance_optimize(
     )
 
     w = result.x if result.success else x0
-    w = np.clip(w, 0, max_weight)
-    w /= w.sum()
+    w = cap_weights(w, max_weight, min_weight)
 
     return {
         "weights":   w,
@@ -821,8 +859,7 @@ def risk_parity_optimize(
     )
 
     w = result.x if result.success else x0
-    w = np.clip(w, min_weight, max_weight)
-    w /= w.sum()
+    w = cap_weights(w, max_weight, min_weight)
 
     vol      = _port_vol(w, cov)
     marginal = np.dot(cov, w)
@@ -972,9 +1009,9 @@ def hierarchical_risk_parity_optimize(
     for sorted_pos, w in hrp_dict.items():
         weights[sort_idx[sorted_pos]] = w
 
-    # Apply constraints and renormalize
-    weights = np.clip(weights, min_weight, max_weight)
-    weights = weights / weights.sum()
+    # Apply the bounds by water-filling (fix/site-audit D3): clip-then-divide
+    # could leave a weight under the floor or over the cap.
+    weights = cap_weights(weights, max_weight, min_weight)
 
     port_vol = float(np.sqrt(weights @ cov_matrix @ weights))
 
@@ -1022,10 +1059,7 @@ def cvar_optimize(
         converged = False
     else:
         weights = w_df.reindex(asset_names).to_numpy().flatten()
-        weights = np.nan_to_num(weights, nan=0.0)
-        weights = np.clip(weights, 0.0, max_weight)
-        total = weights.sum()
-        weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+        weights = cap_weights(weights, max_weight, min_weight)
         converged = True
 
     ann_vol = float(np.sqrt(weights @ cov_matrix @ weights))
@@ -1077,8 +1111,10 @@ def herc_optimize(
         # kwargs into _hierarchical_recursive_bisection(), whose signature no
         # longer accepts them — model="HERC" raises TypeError on every call.
         # The ward linkage is already consumed by Step-1 tree clustering and
-        # weight bounds are applied in Step-4 after bisection, so stripping the
-        # stray kwargs from the internal call is behavior-identical HERC.
+        # Step-4's bound fitting reads the constructor's w_max/w_min (unset
+        # here, so it fits nothing; the cap is applied below by cap_weights),
+        # so stripping the stray kwargs from the internal call is
+        # behavior-identical HERC.
         # Remove this shim once fixed upstream.
         inner = port._hierarchical_recursive_bisection
         port._hierarchical_recursive_bisection = lambda Z, **kw: inner(
@@ -1091,10 +1127,9 @@ def herc_optimize(
         converged = False
     else:
         weights = w_df.reindex(asset_names).to_numpy().flatten()
-        weights = np.nan_to_num(weights, nan=0.0)
-        weights = np.clip(weights, 0.0, max_weight)
-        total = weights.sum()
-        weights = weights / total if total > 0 else np.full(n, 1.0 / n)
+        # riskfolio is built without w_max, so its weights are uncapped: the
+        # 40% cap is applied here, by water-filling (fix/site-audit D3).
+        weights = cap_weights(weights, max_weight)
         converged = True
 
     ann_vol = float(np.sqrt(weights @ cov_matrix @ weights))
