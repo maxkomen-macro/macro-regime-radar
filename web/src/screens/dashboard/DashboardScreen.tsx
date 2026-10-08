@@ -39,6 +39,7 @@ import { Caption, MISSING, MISSING_ROW, StateNote, useHashScroll } from "../shar
 import { REGIME_INPUT_IDS, SIGNAL_INPUT_IDS, marketSeries } from "../shared/fresh-state";
 import { useFreshReport } from "../shared/useFreshReport";
 import { rateChange } from "../shared/rate-change";
+import { outlookLine } from "../shared/transition-outlook";
 import { storedVixFromFred, vixShown } from "../shared/vix-shown";
 import { useQuote } from "../../live/quotes";
 import Disclosure, { DisclosureLine } from "../shared/Disclosure";
@@ -275,7 +276,7 @@ export default function DashboardScreen() {
     id: "next-3m",
     label: "Next 3 months",
     value: tr
-      ? `Stays ${tr.current_regime} ${fmtProb(tr.stay_probability_3m, "percent")} · highest-risk path → ${tr.highest_risk_transition} ${fmtProb(tr.highest_risk_prob, "percent")} (hand-set priors)`
+      ? outlookLine(tr, "3m")
       : transitions.isError
         ? <StateNote error missing={MISSING.transitions} />
         : <StateNote loading />,

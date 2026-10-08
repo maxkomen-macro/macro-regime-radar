@@ -851,6 +851,12 @@ class TransitionOutlook(BaseModel):
     highest_risk_transition: str
     highest_risk_prob: float
     highest_risk_color: str
+    # fix/site-audit D2: the 6-month stay and highest-risk path, by the same
+    # rule as the 3-month fields, so no client derives a horizon itself.
+    stay_probability_6m: float
+    highest_risk_6m_transition: str
+    highest_risk_6m_prob: float
+    highest_risk_6m_color: str
 
 
 class Analogue(BaseModel):

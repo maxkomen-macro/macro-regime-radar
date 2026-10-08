@@ -124,6 +124,7 @@ SCALES: dict[tuple[str, str], tuple[float, float]] = {
     **{("/api/regime/history?limit=400", k): ZERO_ONE for k in ("confidence", "prob_goldilocks", "prob_overheating", "prob_stagflation", "prob_recession")},
     ("/api/signals/latest", "distance_pct"): PCT,
     ("/api/regime/transitions", "highest_risk_prob"): PCT,
+    ("/api/regime/transitions", "highest_risk_6m_prob"): PCT,  # fix/site-audit D2
     ("/api/regime/transitions", "probability"): PCT,
     ("/api/regime/transitions", "stay_probability_3m"): PCT,
     ("/api/regime/transitions", "stay_probability_6m"): PCT,

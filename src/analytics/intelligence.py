@@ -1225,11 +1225,15 @@ def get_transition_narrative(current_regime: str) -> dict:
     transitions_3m = _build_transitions(row3)
     transitions_6m = _build_transitions(row6)
 
-    # Highest risk transition (excluding "stay")
-    highest_3m = max(transitions_3m, key=lambda x: x["probability"]) if transitions_3m else {}
-    highest_risk = highest_3m.get("to", "Stagflation")
-    highest_prob = highest_3m.get("probability", 20)
-    highest_color = highest_3m.get("color", "#e74c3c")
+    def _highest_risk(transitions: list[dict]) -> tuple[str, int, str]:
+        """A horizon's highest-risk path: its likeliest exit (the stay excluded).
+        One rule for both horizons (fix/site-audit D2): the web printed the
+        6-month path from its own derivation beside the served 3-month one."""
+        top = max(transitions, key=lambda x: x["probability"]) if transitions else {}
+        return top.get("to", "Stagflation"), top.get("probability", 20), top.get("color", "#e74c3c")
+
+    highest_risk, highest_prob, highest_color = _highest_risk(transitions_3m)
+    highest_6m, highest_6m_prob, highest_6m_color = _highest_risk(transitions_6m)
 
     narrative_3m = (
         f"{stay_3m}% chance of remaining in {norm_regime} over the next 3 months, "
@@ -1251,6 +1255,10 @@ def get_transition_narrative(current_regime: str) -> dict:
         "highest_risk_transition": highest_risk,
         "highest_risk_prob":       highest_prob,
         "highest_risk_color":      highest_color,
+        "stay_probability_6m":        stay_6m,
+        "highest_risk_6m_transition": highest_6m,
+        "highest_risk_6m_prob":       highest_6m_prob,
+        "highest_risk_6m_color":      highest_6m_color,
     }
 
 

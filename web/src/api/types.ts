@@ -369,6 +369,12 @@ export interface TransitionOutlook {
   highest_risk_transition: string;
   highest_risk_prob: number;
   highest_risk_color: string;
+  /** fix/site-audit D2: the 6-month stay and highest-risk path, by the same
+   * rule as the 3-month fields; absent from an API that predates them. */
+  stay_probability_6m?: number;
+  highest_risk_6m_transition?: string;
+  highest_risk_6m_prob?: number;
+  highest_risk_6m_color?: string;
 }
 
 export interface Analogue {

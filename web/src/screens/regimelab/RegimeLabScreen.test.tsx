@@ -129,6 +129,11 @@ const TRANSITIONS: TransitionOutlook = {
   highest_risk_transition: "Recession Risk",
   highest_risk_prob: 12,
   highest_risk_color: "#95a5a6",
+  // fix/site-audit D2: the 6-month stay and path are served, by the 3-month rule.
+  stay_probability_6m: 68,
+  highest_risk_6m_transition: "Recession Risk",
+  highest_risk_6m_prob: 19,
+  highest_risk_6m_color: "#95a5a6",
 };
 
 const dated = (dates: string[], values: number[]) => dates.map((date, i) => ({ date, value: values[i] }));
@@ -421,7 +426,7 @@ describe("RegimeLabScreen (checklist 04 E.1)", () => {
     expect(link).toHaveAttribute("href", "/app/regime-lab#playbook");
   });
 
-  it("Next 3 months prints the R9 form and Next 6 months uses the residual stay with the top 6-month path", async () => {
+  it("Next 3 months prints the R9 form and Next 6 months the served 6-month stay and path (D2: one computation per horizon)", async () => {
     renderLab();
     await awaitHero();
     await waitFor(() => expect(text(ddFor("Next 3 months"))).toBe("Stays Goldilocks 81% · highest-risk path → Recession Risk 12% (hand-set priors)"));
