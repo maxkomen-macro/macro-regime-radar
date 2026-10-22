@@ -2,7 +2,7 @@
 
 **A live macro terminal that reads the US economy into one of four regimes every month, then shows the evidence, the models and the data trail underneath.**
 
-**[Open the live site →]({{LIVE_URL}})** · [Analyst Desk]({{LIVE_URL}}/desk/overview) · [Methodology]({{LIVE_URL}}/app/methodology) · [Today's daily memo](https://maxkomen-macro.github.io/macro-regime-radar/memo/daily_memo.html)
+**[Open the live site →](https://macro-economic-radar.vercel.app)** · [Analyst Desk](https://macro-economic-radar.vercel.app/desk/overview) · [Methodology](https://macro-economic-radar.vercel.app/app/methodology) · [Today's daily memo](https://maxkomen-macro.github.io/macro-regime-radar/memo/daily_memo.html)
 
 ![The Dashboard: the current regime, its odds, and 24 months of regime history](docs/images/dashboard.png)
 
@@ -51,7 +51,7 @@ The Desk turns a macro view into a testable trade idea.
 3. **Odds, not just a label.** A temperature-scaled softmax over the two trends' z-scores turns that into odds for all four regimes, so the site can say how narrow the lead is.
 4. **A separate recession model.** A logistic regression trained on NBER recession dates scores the odds of recession from the yield curve, credit spreads, breakevens, unemployment and industrial production. It is labelled as its own model, never mixed with the classifier's odds.
 
-The [Methodology page]({{LIVE_URL}}/app/methodology) covers the signals, the backtests, and the limits of each model.
+The [Methodology page](https://macro-economic-radar.vercel.app/app/methodology) covers the signals, the backtests, and the limits of each model.
 
 ---
 
