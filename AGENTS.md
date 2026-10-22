@@ -6,7 +6,7 @@ Single source of truth for Codex sessions on this repo. Keep tight; verify again
 
 ## Project at a Glance
 
-- **Live:** macro-regime-radar.streamlit.app
+- **Live:** https://macro-economic-radar.vercel.app/ (the React site; it replaced the Streamlit app at macro-regime-radar.streamlit.app)
 - **Repo:** github.com/maxkomen-macro/macro-regime-radar
 - **Local path:** `/Users/maxkomen/Projects/Macro/macro-regime-radar` (moved Aug 5 2026; the old `/Users/maxkomen/Python Macro/` path is dead)
 - **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI + RSS (feedparser), Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.

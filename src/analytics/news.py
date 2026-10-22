@@ -530,7 +530,7 @@ RSS_FEEDS = [
     ("MarketWatch",     "https://feeds.content.dowjones.io/public/rss/mw_topstories"),
 ]
 
-_RSS_UA = "Mozilla/5.0 (compatible; MacroRegimeRadar/1.0; +https://macro-regime-radar.streamlit.app)"
+_RSS_UA = "Mozilla/5.0 (compatible; MacroRegimeRadar/1.0; +https://macro-economic-radar.vercel.app)"
 
 
 def fetch_rss_news(

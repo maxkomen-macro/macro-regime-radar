@@ -486,7 +486,7 @@ def check_site(client: httpx.Client, site: str, rep: Report) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--api", required=True, help="API origin, e.g. https://mrr-api.onrender.com")
-    ap.add_argument("--site", help="static site origin, e.g. https://macro-regime-radar.vercel.app")
+    ap.add_argument("--site", help="static site origin, e.g. https://macro-economic-radar.vercel.app")
     ap.add_argument("--ops-key", default=None, help="OPS_ACCESS_KEY, to read the relay and plan report")
     ap.add_argument("--skip-provider", action="store_true", help="skip the on-demand provider routes (they spend EODHD quota)")
     ap.add_argument("--my-ip", default=None, help="your own public address, to confirm the rate limits key on it")

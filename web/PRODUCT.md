@@ -165,7 +165,7 @@ auditable data pipeline. The design language states this rather than sells it.
   specimen cards, 1 reference screenshot [bundle].
 - `docs/redesign/`: full 11-tab diagnosis (SUMMARY.md), 27-item confusion index with
   desk-note captions, IA proposals, integrity-fixes report, 11 full-height screenshots [repo].
-- Live deployed app (macro-regime-radar.streamlit.app) and published memos
+- Live deployed app (macro-economic-radar.vercel.app) and published memos
   (maxkomen-macro.github.io/macro-regime-radar) [repo].
 - **Absent — never fabricate:** testimonials, customers, press, benchmarks, pricing.
   The proof of life is real data rendering correctly, nothing else.
