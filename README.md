@@ -33,8 +33,16 @@ Around the tabs: a market strip, an **"Ask the analyst"** assistant that answers
 
 <table>
   <tr>
-    <td><img src="docs/images/regime-lab.png" alt="Regime Lab: cycle position and the growth-inflation quadrant"></td>
-    <td><img src="docs/images/recession.png" alt="Recession: the logistic model's score and its history"></td>
+    <td width="50%"><b>Regime Lab</b><br><img src="docs/images/regime-lab.png" alt="Regime Lab: cycle position and the path through the growth-inflation quadrants"></td>
+    <td width="50%"><b>Markets</b><br><img src="docs/images/markets.png" alt="Markets: the market read and one-week returns across asset classes"></td>
+  </tr>
+  <tr>
+    <td width="50%"><b>Credit</b><br><img src="docs/images/credit.png" alt="Credit: high-yield and investment-grade spreads with stress bands"></td>
+    <td width="50%"><b>Recession</b><br><img src="docs/images/recession.png" alt="Recession: the logistic model's score, gauge and history"></td>
+  </tr>
+  <tr>
+    <td width="50%"><b>News &amp; Calendar</b><br><img src="docs/images/news.png" alt="News and Calendar: the next high-impact release and the upcoming calendar"></td>
+    <td width="50%"><b>Tools</b><br><img src="docs/images/tools.png" alt="Tools: the LBO calculator with its equity value bridge"></td>
   </tr>
 </table>
 
@@ -49,12 +57,7 @@ The Desk turns a macro view into a testable trade idea.
 
 A few Desk cards (options hedging, positioning, an event study on your basket, the volatility column on Technicals, and a Snowflake sync) are **prototypes**: they are drawn finished with illustrative values and say so in a footnote. They will be wired to live data over the coming weeks.
 
-<table>
-  <tr>
-    <td><img src="docs/images/desk-overview.png" alt="Analyst Desk overview: regime, recession, trend and VIX tiles with the active signals"></td>
-    <td><img src="docs/images/desk-event-study.png" alt="Event Study: what the S&P 500 did after gold rose two standard deviations while the S&P was weak"></td>
-  </tr>
-</table>
+![Event Study: what the S&P 500 did after gold rose two standard deviations while the S&P was weak](docs/images/desk-event-study.png)
 
 ---
 
