@@ -487,11 +487,17 @@ DAILY_SOURCED_METRICS = (
 )
 
 
+# Replaced whole as well: a week whose print has no year-earlier month has no
+# CPI YoY row, so an upsert alone would keep the row the 52-week rule wrote (S-09/S-10).
+REPLACED_METRICS = DAILY_SOURCED_METRICS + ("CPI_yoy", "CPI_yoy_z")
+
+
 def clear_daily_sourced_metrics(conn: sqlite3.Connection) -> None:
-    """Delete the daily-sourced metrics' rows (committed by the upsert that follows)."""
+    """Delete the rows of every metric each run replaces whole (REPLACED_METRICS),
+    in the transaction the upsert that follows commits."""
     conn.execute(
-        f"DELETE FROM derived_metrics WHERE name IN ({','.join('?' * len(DAILY_SOURCED_METRICS))})",
-        DAILY_SOURCED_METRICS,
+        f"DELETE FROM derived_metrics WHERE name IN ({','.join('?' * len(REPLACED_METRICS))})",
+        REPLACED_METRICS,
     )
 
 

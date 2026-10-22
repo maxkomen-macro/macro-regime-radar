@@ -42,3 +42,33 @@ def test_a_missing_print_never_borrows_a_neighbouring_month():
 
 def test_an_empty_series_has_no_rows():
     assert surprise.cpi_yoy_weekly(pd.Series(dtype=float)).empty
+
+
+def test_a_refresh_removes_the_cpi_rows_the_old_rule_wrote(tmp_path, monkeypatch):
+    """A week the same-month rule leaves without a row must not keep the row the
+    52-week rule stored there (Codex S-10)."""
+    import sqlite3
+
+    path = tmp_path / "s.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """CREATE TABLE derived_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL,
+               date TEXT NOT NULL, value REAL NOT NULL, computed_at TEXT NOT NULL, UNIQUE(name, date));
+           CREATE TABLE raw_series (series_id TEXT, date TEXT, value REAL, fetched_at TEXT);
+           CREATE TABLE market_daily (symbol TEXT, date TEXT, close REAL);"""
+    )
+    m = _monthly("2019-01-01", "2023-12-01", skip=("2022-10-01",))
+    conn.executemany("INSERT INTO raw_series VALUES ('CPIAUCSL', ?, ?, 'x')", [(d.strftime("%Y-%m-%d"), float(v)) for d, v in m.items()])
+    # what the 52-week rule stored for the weeks of Oct 2023 (their print has no year-earlier month)
+    conn.executemany("INSERT INTO derived_metrics (name, date, value, computed_at) VALUES (?, '2023-10-06', ?, 'x')",
+                     [("CPI_yoy", 10.83), ("CPI_yoy_z", 1.2)])
+    conn.commit()
+    conn.close()
+    monkeypatch.setattr(surprise, "DB_PATH", path)
+    monkeypatch.setattr(surprise, "ROOT", tmp_path)
+    surprise.run()
+    with sqlite3.connect(path) as conn:
+        left = conn.execute("SELECT name FROM derived_metrics WHERE date = '2023-10-06' AND name LIKE 'CPI_yoy%'").fetchall()
+        n = conn.execute("SELECT COUNT(*) FROM derived_metrics WHERE name = 'CPI_yoy'").fetchone()[0]
+    assert left == []
+    assert n > 0
