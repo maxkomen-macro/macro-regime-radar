@@ -6,27 +6,36 @@ Does NOT import src.config (avoids FRED_API_KEY EnvironmentError).
 Run:
     python -m src.analytics.surprise
 
-Reads:  market_daily (market symbols), raw_series (FRED macro series)
+Reads:  market_daily (market symbols), asset_prices (^VIX daily closes),
+        desk_series (FRED DGS10/DGS2 daily), raw_series (FRED monthly series)
 Writes: derived_metrics
 
 Weekly definition:
   - Market: last closing price per ISO week (Mon–Sun) via resample("W-FRI").last()
-  - FRED monthly: forward-filled to weekly via resample("W-FRI").last().ffill()
+  - VIX, 10Y, 2Y, 10Y-2Y spread: last daily observation of each W-FRI week, from
+    the daily stores the full refresh writes before this step. raw_series holds
+    them month-stamped (one row a month), so a weekly change read from it was a
+    month-over-month change dated to the first Friday of the month.
+  - FRED monthly (UNRATE, CPI): forward-filled to weekly via resample("W-FRI").last().ffill()
 
 Rolling z-score: window=104 weeks (2 years), min_periods=26 (6 months).
 
 Metric naming scheme (stored in derived_metrics.name):
   Market:   {SYMBOL}_weekly_ret       percentage weekly return
             {SYMBOL}_weekly_ret_z     rolling z-score of the above
-  Rates:    GS10_weekly_chg           absolute weekly change in 10Y yield
-            GS10_weekly_chg_z         z-score of GS10 weekly changes
-            GS2_weekly_chg_z          z-score of GS2 weekly changes
+  Rates:    DGS10_weekly_chg          absolute weekly change in 10Y yield (percentage points)
+            DGS10_weekly_chg_z        z-score of DGS10 weekly changes
+            DGS2_weekly_chg, DGS2_weekly_chg_z  the same for the 2Y yield
   Spread:   SPREAD_weekly_chg         absolute weekly change in 10Y-2Y spread
             SPREAD_weekly_chg_z       z-score of spread changes
   Macro:    UNRATE_weekly_chg_z       z-score of weekly unemployment changes
             CPI_yoy                   CPI year-over-year % (52-week pct_change)
             CPI_yoy_z                 rolling z-score of CPI_yoy level
+            VIX_weekly_chg            weekly change in the VIX close (index points)
             VIX_weekly_chg_z          z-score of weekly VIX changes
+  Daily:    VIX_daily_chg, DGS10_daily_chg, DGS2_daily_chg   one-session change
+            (index points; percentage points), each dated by its session, and
+            their _z: rolling z-score over 504 sessions (min 126)
 """
 import logging
 import sqlite3
@@ -44,6 +53,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 
 ZSCORE_WINDOW = 104   # weeks (2 years)
 MIN_PERIODS   = 26    # minimum weeks before computing z-scores (~6 months)
+DAILY_ZSCORE_WINDOW = 504  # sessions (2 years), the weekly window in days
+DAILY_MIN_PERIODS   = 126  # sessions (~6 months)
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -78,6 +89,57 @@ def load_market_weekly(conn: sqlite3.Connection, symbol: str) -> pd.Series:
     return weekly
 
 
+def _table_exists(conn: sqlite3.Connection, name: str) -> bool:
+    return conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
+
+
+def _daily_series(rows: list, name: str) -> pd.Series:
+    """(date, value) daily rows -> a date-indexed series. Rows whose date does
+    not parse or whose value is not a finite number are dropped."""
+    if not rows:
+        return pd.Series(dtype=float, name=name)
+    df = pd.DataFrame(rows, columns=["date", "value"])
+    df = df.assign(
+        date=pd.to_datetime(df["date"], errors="coerce"),
+        value=pd.to_numeric(df["value"], errors="coerce"),
+    )
+    df = df[df["date"].notna() & np.isfinite(df["value"])].set_index("date").sort_index()
+    s = df["value"][~df.index.duplicated(keep="last")]
+    s.name = name
+    return s
+
+
+def to_weekly(daily: pd.Series) -> pd.Series:
+    """Last observation of each W-FRI week; a week with no observation is
+    absent, never filled from the week before."""
+    weekly = daily.resample("W-FRI").last().dropna() if len(daily) else daily
+    weekly.name = daily.name
+    return weekly
+
+
+def load_vix_daily(conn: sqlite3.Connection) -> pd.Series:
+    """The VIX's daily closes, from ^VIX in asset_prices (stored from 1990 by
+    the full refresh's allocation-history step)."""
+    if not _table_exists(conn, "asset_prices"):
+        return pd.Series(dtype=float, name="VIX")
+    rows = conn.execute(
+        "SELECT date, close FROM asset_prices WHERE symbol='^VIX' AND interval='1d' ORDER BY date"
+    ).fetchall()
+    return _daily_series(rows, "VIX")
+
+
+def load_desk_daily(conn: sqlite3.Connection, series_id: str) -> pd.Series:
+    """A FRED daily series by its true observation dates, from desk_series
+    (stored by the full refresh's Desk step)."""
+    if not _table_exists(conn, "desk_series"):
+        return pd.Series(dtype=float, name=series_id)
+    rows = conn.execute(
+        "SELECT date, value FROM desk_series WHERE series_id=? ORDER BY date",
+        (series_id,),
+    ).fetchall()
+    return _daily_series(rows, series_id)
+
+
 def load_fred_weekly(conn: sqlite3.Connection, series_id: str) -> pd.Series:
     """
     Load raw_series for series_id, resample monthly data to weekly (W-FRI) via ffill.
@@ -109,13 +171,13 @@ def weekly_abs_change(series: pd.Series) -> pd.Series:
     return series.diff().dropna()
 
 
-def rolling_zscore(series: pd.Series) -> pd.Series:
+def rolling_zscore(series: pd.Series, window: int = ZSCORE_WINDOW, min_periods: int = MIN_PERIODS) -> pd.Series:
     """
     Rolling z-score: (x - rolling_mean) / rolling_std.
-    window=ZSCORE_WINDOW, min_periods=MIN_PERIODS.
+    window=ZSCORE_WINDOW, min_periods=MIN_PERIODS unless given.
     """
-    mu  = series.rolling(window=ZSCORE_WINDOW, min_periods=MIN_PERIODS).mean()
-    std = series.rolling(window=ZSCORE_WINDOW, min_periods=MIN_PERIODS).std()
+    mu  = series.rolling(window=window, min_periods=min_periods).mean()
+    std = series.rolling(window=window, min_periods=min_periods).std()
     return ((series - mu) / std.replace(0, np.nan)).dropna()
 
 
@@ -153,9 +215,9 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
     """
     rows = []
 
-    # DGS10 and DGS2 — absolute weekly changes and z-scores
-    for series_id in ("DGS10", "DGS2"):
-        s = load_fred_weekly(conn, series_id)
+    # DGS10 and DGS2 — absolute weekly changes and z-scores, from daily yields
+    daily = {series_id: to_weekly(load_desk_daily(conn, series_id)) for series_id in ("DGS10", "DGS2")}
+    for series_id, s in daily.items():
         if len(s) < MIN_PERIODS:
             logger.warning("[surprise] %s: insufficient data (%d weeks), skipping.", series_id, len(s))
             continue
@@ -168,8 +230,7 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
             rows.append((f"{series_id}_weekly_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
 
     # 10Y-2Y Yield Spread weekly change and z-score
-    gs10 = load_fred_weekly(conn, "DGS10")
-    gs2  = load_fred_weekly(conn, "DGS2")
+    gs10, gs2 = daily["DGS10"], daily["DGS2"]
     if len(gs10) >= MIN_PERIODS and len(gs2) >= MIN_PERIODS:
         spread     = (gs10 - gs2).dropna()
         spread_chg = weekly_abs_change(spread)
@@ -205,9 +266,11 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
             len(cpi), min_cpi_weeks,
         )
 
-    # VIX weekly change and z-score
-    vix = load_fred_weekly(conn, "VIXCLS")
-    if len(vix) >= MIN_PERIODS:
+    # VIX weekly change (index points) and z-score, from daily closes
+    vix = to_weekly(load_vix_daily(conn))
+    if len(vix) < MIN_PERIODS:
+        logger.warning("[surprise] ^VIX: insufficient daily closes (%d weeks), skipping.", len(vix))
+    else:
         vix_chg = weekly_abs_change(vix)
         vix_z   = rolling_zscore(vix_chg)
         for dt, val in vix_chg.items():
@@ -219,6 +282,50 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
 
 
 # ── DB writer ─────────────────────────────────────────────────────────────────
+
+def build_daily_metrics(conn: sqlite3.Connection) -> list:
+    """
+    One-session changes for the VIX (index points) and the 10Y and 2Y yields
+    (percentage points), each dated by its own session, with rolling z-scores.
+    A session missing from a series is a gap: the change after it spans the gap.
+    Returns list of (metric_name, date_str, value) tuples.
+    """
+    rows = []
+    sources = (("VIX", load_vix_daily(conn)), ("DGS10", load_desk_daily(conn, "DGS10")), ("DGS2", load_desk_daily(conn, "DGS2")))
+    for name, s in sources:
+        if len(s) < DAILY_MIN_PERIODS + 1:
+            logger.warning("[surprise] %s: insufficient daily data (%d days), skipping daily moves.", name, len(s))
+            continue
+        chg   = s.diff().dropna()
+        chg_z = rolling_zscore(chg, DAILY_ZSCORE_WINDOW, DAILY_MIN_PERIODS)
+        for dt, val in chg.items():
+            rows.append((f"{name}_daily_chg", dt.strftime("%Y-%m-%d"), float(val)))
+        for dt, val in chg_z.items():
+            rows.append((f"{name}_daily_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
+    return rows
+
+
+# Built from daily stores: each run replaces every row of these names, so no
+# row from the earlier month-stamped computation (or from a week a restated
+# daily series no longer has) outlives the run. Absent inputs leave them empty.
+DAILY_SOURCED_METRICS = (
+    "DGS10_weekly_chg", "DGS10_weekly_chg_z",
+    "DGS2_weekly_chg", "DGS2_weekly_chg_z",
+    "SPREAD_weekly_chg", "SPREAD_weekly_chg_z",
+    "VIX_weekly_chg", "VIX_weekly_chg_z",
+    "VIX_daily_chg", "VIX_daily_chg_z",
+    "DGS10_daily_chg", "DGS10_daily_chg_z",
+    "DGS2_daily_chg", "DGS2_daily_chg_z",
+)
+
+
+def clear_daily_sourced_metrics(conn: sqlite3.Connection) -> None:
+    """Delete the daily-sourced metrics' rows (committed by the upsert that follows)."""
+    conn.execute(
+        f"DELETE FROM derived_metrics WHERE name IN ({','.join('?' * len(DAILY_SOURCED_METRICS))})",
+        DAILY_SOURCED_METRICS,
+    )
+
 
 def upsert_derived_metrics(conn: sqlite3.Connection, rows: list) -> int:
     """Upsert (name, date, value) tuples into derived_metrics."""
@@ -260,8 +367,13 @@ def run() -> None:
         logger.info("[surprise] Computing macro weekly metrics...")
         macro_rows = build_macro_metrics(conn)
 
-        all_rows = market_rows + macro_rows
+        logger.info("[surprise] Computing daily VIX and Treasury moves...")
+        daily_rows = build_daily_metrics(conn)
+
+        all_rows = market_rows + macro_rows + daily_rows
+        clear_daily_sourced_metrics(conn)
         if not all_rows:
+            conn.commit()
             logger.warning("[surprise] No metrics computed — check that market_daily and raw_series have data.")
             return
 
