@@ -112,3 +112,38 @@ def test_watermark_advances_only_forward():
     wm = watermarks.read_all(c)["fred:DGS10"]
     assert wm["last_obs"] == "2026-09-15" and wm["status"] == "error" and wm["detail"] == "HTTPError"
     assert wm["checked_at"] == "2026-09-18T06:00:00Z"
+
+
+class _FlakyFred:
+    """Fails like FRED's outage page (fredapi's ParseError), then answers."""
+
+    def __init__(self, failures: int):
+        self.failures, self.calls = failures, 0
+
+    def get_series(self, series_id, observation_start=None, observation_end=None):
+        import xml.etree.ElementTree as ET
+
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise ET.ParseError("syntax error: line 1, column 0")
+        return pd.Series([1.0, 2.0], index=pd.to_datetime(["2026-09-01", "2026-10-01"]))
+
+
+def test_download_rides_out_a_fred_outage(monkeypatch):
+    flaky, waits = _FlakyFred(failures=fred_client.FRED_ATTEMPTS - 1), []
+    monkeypatch.setattr(fred_client, "get_fred_client", lambda: flaky)
+    monkeypatch.setattr(fred_client.time, "sleep", waits.append)
+    raw = fred_client._download("INDPRO", 10)
+    assert list(raw) == [1.0, 2.0]
+    assert waits == list(fred_client.FRED_RETRY_DELAYS)
+
+
+def test_download_raises_after_the_last_attempt(monkeypatch):
+    import xml.etree.ElementTree as ET
+
+    flaky = _FlakyFred(failures=fred_client.FRED_ATTEMPTS)
+    monkeypatch.setattr(fred_client, "get_fred_client", lambda: flaky)
+    monkeypatch.setattr(fred_client.time, "sleep", lambda s: None)
+    with pytest.raises(ET.ParseError):
+        fred_client._download("INDPRO", 10)
+    assert flaky.calls == fred_client.FRED_ATTEMPTS

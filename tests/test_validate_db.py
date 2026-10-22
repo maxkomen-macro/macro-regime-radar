@@ -202,6 +202,24 @@ def test_forward_looking_calendar_max_may_move_earlier(tmp_path):
     assert rep["verdict"] == "pass"
 
 
+def test_alert_feed_max_may_move_earlier(tmp_path):
+    """alert_feed is rebuilt whole each full run, so an alert that clears takes
+    its date with it (Oct 20-21 2026: VIX_shock dated 2026-10-02 cleared and the
+    max fell to 2026-09-01, failing every full refresh). A warning, never a block."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    for path, dates in ((prev, ("2026-09-01", "2026-10-02")), (cur, ("2026-09-01",))):
+        _make(path)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE alert_feed(date TEXT, name TEXT)")
+        conn.executemany("INSERT INTO alert_feed VALUES (?, 'alert')", [(d,) for d in dates])
+        conn.commit()
+        conn.close()
+    rep = v.validate(cur, prev, "market-only", now=NOW)
+    assert not any("alert_feed" in f for f in rep["failures"]), rep["failures"]
+    assert any(w.startswith("alert_feed: max date moved earlier 2026-10-02 → 2026-09-01") for w in rep["warnings"]), rep["warnings"]
+    assert rep["verdict"] == "pass"
+
+
 def test_unusable_previous_blocks_upload(tmp_path):
     cur, prev = tmp_path / "cur.db", tmp_path / "prev.db"
     _make(cur)
