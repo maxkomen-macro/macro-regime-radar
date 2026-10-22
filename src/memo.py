@@ -768,7 +768,7 @@ _Z_TO_RAW_MEMO = {
     "DGS10_weekly_chg_z":  "DGS10_weekly_chg",
     "SPREAD_weekly_chg_z": "SPREAD_weekly_chg",
     "CPI_yoy_z":           "CPI_yoy",
-    "VIX_weekly_chg_z":    None,
+    "VIX_weekly_chg_z":    "VIX_weekly_chg",
 }
 
 
@@ -840,10 +840,11 @@ def build_surprise_ranking(derived_df: pd.DataFrame, top_n: int = 10) -> list:
         z = float(s.iloc[0])
         raw_col = _Z_TO_RAW_MEMO.get(col)
         raw_val = None
+        # the raw move at the z row's own date: never a number from another week
         if raw_col and raw_col in derived_df.columns:
-            rs = derived_df[raw_col].dropna()
-            if not rs.empty:
-                raw_val = float(rs.iloc[0])
+            rv = derived_df.at[s.index[0], raw_col]
+            if pd.notna(rv):
+                raw_val = float(rv)
 
         # Shared phrasing (src.utils.format) — knows levels vs changes and units,
         # so the memo can never again call a CPI level a weekly surge.

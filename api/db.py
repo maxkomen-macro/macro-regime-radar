@@ -296,55 +296,44 @@ SURPRISE_Z_METRICS = [
     ("DGS2_daily_chg_z", "DGS2_daily_chg", "2Y Treasury yield (daily)"),
 ]
 
-# The daily store each surprise is computed from, for the newest observation a
-# row has read (`as_of`): a weekly row is stamped by its W-FRI week end, which is
-# ahead of the data while the week is under way. UNRATE and CPI are monthly
-# prints carried through the weeks and have none.
-_SURPRISE_SOURCE_SQL = {
-    "asset_prices": "SELECT MAX(date) FROM asset_prices WHERE symbol = ? AND interval = '1d' AND date <= ?",
-    "desk_series": "SELECT MAX(date) FROM desk_series WHERE series_id = ? AND date <= ?",
-    "market_daily": "SELECT MAX(date) FROM market_daily WHERE symbol = ? AND date <= ?",
-}
-
-
-def _surprise_sources(z_name: str) -> list[tuple[str, str]]:
-    base = z_name.split("_", 1)[0]
-    if base == "VIX":
-        return [("asset_prices", "^VIX")]
-    if base in ("DGS10", "DGS2"):
-        return [("desk_series", base)]
-    if base == "SPREAD":
-        return [("desk_series", "DGS10"), ("desk_series", "DGS2")]
-    if z_name.endswith("_weekly_ret_z"):
-        return [("market_daily", base)]
-    return []
-
-
-# monthly prints carried through the weeks (src/analytics/surprise.load_fred_weekly)
-_MONTHLY_SURPRISES = {"UNRATE_weekly_chg_z", "CPI_yoy_z"}
-
-
 def _surprise_cadence(z_name: str) -> str:
     """daily: one session; weekly: a W-FRI week; monthly: the latest monthly
-    print, carried forward into each week."""
+    print, carried forward into each week (src.utils.format.MONTHLY_Z_METRICS)."""
+    from src.utils.format import MONTHLY_Z_METRICS
+
     if "_daily_" in z_name:
         return "daily"
-    return "monthly" if z_name in _MONTHLY_SURPRISES else "weekly"
+    return "monthly" if z_name in MONTHLY_Z_METRICS else "weekly"
+
+
+def _metric_at(conn: sqlite3.Connection, name: str, date: str) -> float | None:
+    """One derived_metrics value at one date, None when absent."""
+    row = conn.execute("SELECT value FROM derived_metrics WHERE name = ? AND date = ?", (name, date)).fetchone()
+    return row["value"] if row else None
 
 
 def _surprise_as_of(conn: sqlite3.Connection, z_name: str, date: str) -> str | None:
-    """The newest observation (at or before the row's date) the row was computed
-    from; for a spread, the older of its two legs. None when unknown."""
-    dates = []
-    for table, key in _surprise_sources(z_name):
-        try:
-            row = conn.execute(_SURPRISE_SOURCE_SQL[table], (key, date)).fetchone()
-        except sqlite3.OperationalError:
-            return None  # the store predates the table
-        if not row or not row[0]:
-            return None
-        dates.append(str(row[0])[:10])
-    return min(dates) if dates else None
+    """The observation a surprise row was computed from, as the computation
+    wrote it (src/analytics/surprise: `<raw metric>_obs` beside a weekly row; a
+    daily row is dated by its own session). Never re-derived from the daily
+    stores. None for a monthly print and for a store that predates the rows."""
+    from src.analytics.surprise_dates import date_from_ordinal
+
+    cadence = _surprise_cadence(z_name)
+    if cadence == "daily":
+        return date
+    if cadence == "monthly":
+        return None
+    obs = date_from_ordinal(_metric_at(conn, f"{z_name.removesuffix('_z')}_obs", date))
+    return obs.isoformat() if obs else None
+
+
+def _daily_is_current(conn: sqlite3.Connection, z_name: str, date: str) -> bool:
+    """A daily move is the latest session's only when it is dated by the newest
+    observation its series had (`<SERIES>_daily_newest`, written by the same
+    run); without that row (an older store) it is never treated as current."""
+    newest = _latest_metric(conn, f"{z_name.split('_', 1)[0]}_daily_newest")
+    return bool(newest) and newest["date"] == date
 
 
 def _latest_metric(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
@@ -397,7 +386,8 @@ def priced_metrics() -> list[dict]:
 
 def top_surprises(top_n: int) -> list[dict]:
     """Top-|z| weekly and one-day surprises from derived_metrics, mirroring
-    db_helpers.build_surprises_df (each z from its own most-recent date).
+    db_helpers.build_surprises_df (each z from its own most-recent date, its raw
+    move at the same date; a daily row only when it is the latest session's).
     Phrasing comes from src.utils.format.z_interpretation — a standalone
     module (no src.config import), so the API, dashboard, and memo all speak
     the same sentence."""
@@ -409,8 +399,10 @@ def top_surprises(top_n: int) -> list[dict]:
             z = _latest_metric(conn, z_name)
             if not z:
                 continue
-            raw = _latest_metric(conn, raw_name)
-            raw_val = raw["value"] if raw else None
+            if "_daily_" in z_name and not _daily_is_current(conn, z_name, z["date"]):
+                continue  # an older session's move, not the latest session's the panel promises
+            # the raw move at the z row's own date, so the sentence never pairs two dates
+            raw_val = _metric_at(conn, raw_name, z["date"])
             rows.append(
                 {
                     "metric": z_name,

@@ -57,8 +57,9 @@ export interface AlertCopy {
   why: string;
 }
 
-/** The VIX move alerts (src/analytics/alerts.py): a z-score of the VIX's change
- *  from stored daily closes, dated by its session (one-day) or its week. */
+/** The VIX move alerts (src/analytics/alerts.py): a z-score of the VIX's rise
+ *  from stored daily closes, dated by its session (one-day) or by the last
+ *  session its week read (weekly). */
 const VIX_MOVES: Record<string, { title: string; change: string; span: (d: string) => string; why: string }> = {
   VIX_daily_jump: {
     title: "VIX one-day jump",
@@ -66,11 +67,13 @@ const VIX_MOVES: Record<string, { title: string; change: string; span: (d: strin
     span: (d) => `on ${fmtDate(d)}`,
     why: "A one-day VIX jump this far outside its usual range is the first read of stress pricing; it often precedes wider credit spreads.",
   },
+  // dated by the session the week's level came from (VIX_weekly_chg_obs), so "the week to" holds for a
+  // week still under way and for a completed one
   VIX_shock: {
     title: "VIX weekly shock",
-    change: "week-over-week change",
-    span: (d) => `in the week ending ${fmtDate(d)}`,
-    why: "A week-long VIX surge this far outside its usual range marks stress pricing that has lasted beyond a single session.",
+    change: "change from the previous week's last close",
+    span: (d) => `in the week to ${fmtDate(d)}`,
+    why: "A VIX move this far outside its usual weekly range marks stress pricing: risk assets tend to de-rate and credit spreads follow.",
   },
 };
 

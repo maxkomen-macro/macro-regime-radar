@@ -26,9 +26,15 @@ describe("describeAlert: the VIX move alerts", () => {
     expect(copy.trigger).not.toMatch(/pp|Oct 2026\b/);
   });
 
-  it("dates a weekly shock by its week", () => {
-    const copy = describeAlert(alert({ name: "VIX_shock", date: "2026-10-23", value: 3.2, threshold: 3, level: "risk" }));
+  it("dates a weekly shock by the last session its week read, with no persistence claim", () => {
+    // raised on Monday Oct 19: the alert carries that session, not the coming Friday's bucket
+    const copy = describeAlert(alert({ name: "VIX_shock", date: "2026-10-19", value: 3.2, threshold: 3, level: "risk" }));
     expect(copy.title).toBe("VIX weekly shock");
-    expect(copy.trigger).toBe("The VIX's week-over-week change was 3.2σ in the week ending Oct 23, 2026, above the 3σ risk line.");
+    expect(copy.when).toBe("Oct 19, 2026");
+    expect(copy.trigger).toBe(
+      "The VIX's change from the previous week's last close was 3.2σ in the week to Oct 19, 2026, above the 3σ risk line.",
+    );
+    expect(copy.trigger).not.toContain("week ending");
+    expect(copy.why).not.toMatch(/lasted|beyond a single session/);
   });
 });

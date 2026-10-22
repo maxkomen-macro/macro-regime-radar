@@ -156,7 +156,16 @@ const PRICED: PricedMetric[] = [
   priced("Real yields (TIPS)", "DFII10", "10Y real yield", 1.91, 0.05),
 ];
 
-const surprise = (metric: string, label: string, z_score: number, interpretation: string): Surprise => ({ metric, label, date: WEEK_END, z_score, raw_value: z_score * 0.4, interpretation });
+const surprise = (metric: string, label: string, z_score: number, interpretation: string): Surprise => ({
+  metric,
+  label,
+  date: WEEK_END,
+  cadence: "weekly",
+  as_of: WEEK_END,
+  z_score,
+  raw_value: z_score * 0.4,
+  interpretation,
+});
 /** Ten rows; the displayed one-decimal value drives the colour rule (1.46 prints +1.5σ, -2.47 prints -2.5σ). */
 const SURPRISES: Surprise[] = [
   surprise("spy_ret", "SPY weekly return", 2.61, "SPY rose 2.3% on the week \u2014 the largest weekly gain since June."),
@@ -647,7 +656,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(within(surprises).getByRole("heading", { level: 2 })).toHaveTextContent(/^Top surprises$/);
     expect(text(surprises)).toContain("Weekly and one-day moves ranked by z-score, updated daily");
     // Iteration 1 step 6 (A1): the newest observation is the section's stamp (Oct 2026: the
-    // rows are recomputed daily; this fixture's rows carry no as_of, so their date stands in).
+    // rows are recomputed daily; the stamp is the newest served as_of).
     await waitFor(() => expect(text(surprises)).toContain("updated daily from stored closes"));
     expect(surprises.querySelector("[data-stamp]")?.textContent).toBe("Derived pipeline · through Sep 18, 2026");
 
@@ -773,6 +782,19 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     // the stamp is the newest observation read, never the week end still ahead of the data
     expect(section.querySelector("[data-stamp]")?.textContent).toBe(`Derived pipeline · through ${fmtDate("2026-10-21")}`);
     expect(text(section)).toContain("Recomputed with every daily refresh from stored daily closes");
+  });
+
+  it("#top-surprises never uses a weekly row's bucket date as an observation date", async () => {
+    // an older store serves no as_of: the W-FRI bucket (ahead of the data mid-week) is only a label
+    const bucket: Surprise = { ...SURPRISES[0], date: "2026-10-23", cadence: "weekly", as_of: null };
+    stubFetch(routes({ "/api/surprises": () => [bucket] }));
+    renderMarkets();
+    const section = await awaitSection("top-surprises");
+    await waitFor(() => expect(section.querySelectorAll("tbody tr")).toHaveLength(1));
+    expect(text(section)).toContain(`SPY weekly return · week of ${fmtDate("2026-10-23")}`);
+    expect(text(section)).not.toContain(`week ending ${fmtDate("2026-10-23")}`);
+    expect(text(section)).not.toContain(`through ${fmtDate("2026-10-23")}`);
+    expect(section.querySelector("[data-stamp]")?.textContent).not.toContain("through");
   });
 
   it("#top-surprises prints the state copy in place of the table while loading, on error and when empty", async () => {

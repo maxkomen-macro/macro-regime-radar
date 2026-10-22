@@ -24,19 +24,24 @@ Alert levels:
 Market alerts (from derived_metrics):
     SPY_drawdown:   SPY_weekly_ret < -7% → risk; < -3% → watch
     credit_stress:  HYG_weekly_ret - SPY_weekly_ret < -3% → watch
-    VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch (week-over-week, daily closes)
-    VIX_daily_jump: VIX_daily_chg_z > 3 → risk; > 2 → watch (one session, dated by it)
+    VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch (week-over-week, daily closes),
+                    only when the VIX rose that week; dated by VIX_weekly_chg_obs
+    VIX_daily_jump: VIX_daily_chg_z > 3 → risk; > 2 → watch (one session, dated by it),
+                    only when the VIX rose and only for the newest session's move
     USD_breakout:   UUP_weekly_ret_z > 2 → watch
 
 Re-runs: replace every alert_feed row (no UNIQUE constraint); a run with no
 alerts leaves the feed empty.
 """
 import logging
+import math
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
+
+from src.analytics.surprise_dates import date_from_ordinal
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
@@ -120,6 +125,24 @@ def _get_latest_derived(conn: sqlite3.Connection, name: str):
     if row:
         return float(row["value"]), row["date"]
     return None, None
+
+
+def _derived_at(conn: sqlite3.Connection, name: str, date_str: str | None) -> float | None:
+    """One derived_metric's value at one date, or None."""
+    if date_str is None:
+        return None
+    row = conn.execute("SELECT value FROM derived_metrics WHERE name=? AND date=?", (name, date_str)).fetchone()
+    return float(row["value"]) if row else None
+
+
+def _vix_rise(conn: sqlite3.Connection, raw_name: str, date_str: str | None) -> float | None:
+    """The raw VIX change at the z-score's own date when it is a finite rise,
+    else None: a z-score above its line after a run of falls can belong to a fall."""
+    raw = _derived_at(conn, raw_name, date_str)
+    if raw is None:
+        logger.warning("[alerts] %s missing at %s: no VIX alert.", raw_name, date_str)
+        return None
+    return raw if math.isfinite(raw) and raw > 0 else None
 
 
 # How many months back to look for recently-triggered (but currently inactive) signals.
@@ -244,27 +267,30 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
             _add(dt_str, "credit_stress", "watch", spread, -0.03, "below",
                  f"HYG underperformed SPY by {spread:.2%} — credit stress watch.")
 
-    # VIX shock
-    vix_z, vix_date = _get_latest_derived(conn, "VIX_weekly_chg_z")
-    if vix_z is not None:
-        if vix_z > 3.0:
-            _add(vix_date, "VIX_shock", "risk", vix_z, 3.0, "above",
-                 f"VIX weekly z-score={vix_z:.2f} — above 3.0 risk threshold.")
-        elif vix_z > 2.0:
-            _add(vix_date, "VIX_shock", "watch", vix_z, 2.0, "above",
-                 f"VIX weekly z-score={vix_z:.2f} — above 2.0 watch threshold.")
+    # VIX shock: a weekly change far outside its range, raised only for a rise
+    # and dated by the session the week's level came from, never by the W-FRI bucket
+    vix_z, vix_week = _get_latest_derived(conn, "VIX_weekly_chg_z")
+    if vix_z is not None and vix_z > 2.0:
+        rise = _vix_rise(conn, "VIX_weekly_chg", vix_week)
+        obs = date_from_ordinal(_derived_at(conn, "VIX_weekly_chg_obs", vix_week))
+        if obs is None:
+            logger.warning("[alerts] VIX_weekly_chg_obs missing at %s: VIX_shock not raised.", vix_week)
+        elif rise is not None:
+            level, threshold = ("risk", 3.0) if vix_z > 3.0 else ("watch", 2.0)
+            _add(obs.isoformat(), "VIX_shock", level, vix_z, threshold, "above",
+                 f"VIX weekly z-score={vix_z:.2f} — above {threshold:.1f} {level} threshold.")
 
-    # VIX one-session jump: the latest session's close against the one before
+    # VIX one-session jump: only the latest session's own move, and only a rise
     vix_dz, vix_day = _get_latest_derived(conn, "VIX_daily_chg_z")
-    vix_pts, _ = _get_latest_derived(conn, "VIX_daily_chg")
-    if vix_dz is not None:
-        pts = f" ({vix_pts:+.2f} pts)" if vix_pts is not None else ""
-        if vix_dz > 3.0:
-            _add(vix_day, "VIX_daily_jump", "risk", vix_dz, 3.0, "above",
-                 f"VIX one-day change{pts} z-score={vix_dz:.2f} — above 3.0 risk threshold.")
-        elif vix_dz > 2.0:
-            _add(vix_day, "VIX_daily_jump", "watch", vix_dz, 2.0, "above",
-                 f"VIX one-day change{pts} z-score={vix_dz:.2f} — above 2.0 watch threshold.")
+    if vix_dz is not None and vix_dz > 2.0:
+        _, newest_day = _get_latest_derived(conn, "VIX_daily_newest")
+        rise = _vix_rise(conn, "VIX_daily_chg", vix_day)
+        if newest_day != vix_day:
+            logger.info("[alerts] VIX_daily_chg_z %s is not the newest session's move: VIX_daily_jump not raised.", vix_day)
+        elif rise is not None:
+            level, threshold = ("risk", 3.0) if vix_dz > 3.0 else ("watch", 2.0)
+            _add(vix_day, "VIX_daily_jump", level, vix_dz, threshold, "above",
+                 f"VIX one-day change ({rise:+.2f} pts) z-score={vix_dz:.2f} — above {threshold:.1f} {level} threshold.")
 
     # USD breakout
     uup_z, uup_date = _get_latest_derived(conn, "UUP_weekly_ret_z")

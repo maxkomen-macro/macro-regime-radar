@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from api import calendar as cal
 from src.analytics import surprise
 
 
@@ -29,7 +30,9 @@ def _store(path, *, vix=True, desk=True):
         CREATE TABLE market_daily (symbol TEXT, date TEXT, close REAL);
         """
     )
-    days = pd.bdate_range("2024-01-01", "2026-10-21")
+    weekdays = pd.bdate_range("2024-01-01", "2026-10-21")
+    days = pd.DatetimeIndex([d for d in weekdays if cal.is_trading_day(d.date())])  # NYSE sessions
+    bond_days = pd.DatetimeIndex([d for d in weekdays if cal.is_bond_trading_day(d.date())])
     rng = np.random.default_rng(7)
     if vix:
         conn.execute("CREATE TABLE asset_prices (symbol TEXT, interval TEXT, date TEXT, close REAL, provider TEXT, volume REAL)")
@@ -43,10 +46,10 @@ def _store(path, *, vix=True, desk=True):
     if desk:
         conn.execute("CREATE TABLE desk_series (series_id TEXT, date TEXT, value REAL, provider TEXT)")
         for sid, base in (("DGS10", 4.0), ("DGS2", 3.5)):
-            vals = base + np.cumsum(rng.normal(0, 0.03, len(days)))
+            vals = base + np.cumsum(rng.normal(0, 0.03, len(bond_days)))
             conn.executemany(
                 "INSERT INTO desk_series VALUES (?, ?, ?, 'fred')",
-                [(sid, d.strftime("%Y-%m-%d"), float(v)) for d, v in zip(days, vals)],
+                [(sid, d.strftime("%Y-%m-%d"), float(v)) for d, v in zip(bond_days, vals)],
             )
     # the month-stamped rows the old computation read
     for sid in ("VIXCLS", "DGS10", "DGS2"):

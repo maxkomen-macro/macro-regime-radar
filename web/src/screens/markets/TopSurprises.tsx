@@ -23,23 +23,26 @@ import { MetaWithStamp, Stamp } from "../shared/Stamp";
 
 interface Props {
   surprises: { data: Surprise[] | undefined; isLoading: boolean; isError: boolean };
-  /** The newest observation any row read (`surpriseAsOf`), else the newest row date. */
+  /** The newest observation any row read (`surpriseAsOf`); null prints no "through" stamp. */
   surpriseAsOf: string | null;
 }
 
-/** The newest observation the rows read: `as_of` where the API serves it, else
- *  the row's own date (an older API, a monthly macro row). */
+/** The newest observation the rows read, from the served `as_of` only: a row's
+ *  own `date` is a weekly row's W-FRI bucket, ahead of the data mid-week, so it
+ *  never stands in. With no `as_of` (an older store, monthly rows) there is none. */
 export function surpriseAsOf(rows: Surprise[] | undefined): string | null {
-  const dates = (rows ?? []).map((s) => s.as_of ?? s.date);
+  const dates = (rows ?? []).map((s) => s.as_of).filter((d): d is string => !!d);
   return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
 }
 
 /** What span a row measures: one session, a week to date, a whole week, or a
- *  monthly print carried through the weeks. */
+ *  monthly print carried through the weeks. A weekly row without `as_of` names
+ *  its bucket ("week of"), never claiming the week has ended. */
 export function surpriseSpan(r: Surprise): string {
   if (r.cadence === "daily") return `1 day · ${fmtDate(r.as_of ?? r.date)}`;
   if (r.cadence === "monthly") return "latest monthly print";
-  if (r.as_of && r.as_of < r.date) return `week to ${fmtDate(r.as_of)}`;
+  if (!r.as_of) return `week of ${fmtDate(r.date)}`;
+  if (r.as_of < r.date) return `week to ${fmtDate(r.as_of)}`;
   return `week ending ${fmtDate(r.date)}`;
 }
 

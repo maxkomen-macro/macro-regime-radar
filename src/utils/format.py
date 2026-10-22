@@ -6,6 +6,7 @@ dashboard components and the self-contained analytics modules).
 """
 from __future__ import annotations
 
+import math
 from decimal import ROUND_HALF_UP, Decimal
 
 
@@ -84,11 +85,20 @@ _Z_METRIC_KIND: dict[str, str] = {
 }
 
 
+# Monthly prints carried through the weeks (src/analytics/surprise.load_fred_weekly);
+# api/db serves their cadence as "monthly".
+MONTHLY_Z_METRICS = frozenset({"UNRATE_weekly_chg_z", "CPI_yoy_z"})
+
+
 def z_interpretation(metric: str, label: str, z: float, raw_val: float | None) -> str:
     """One-line desk note for a z-score surprise row.
 
     Levels are phrased as readings and changes as moves, each with its native
-    unit — a CPI *level* must never read as a weekly surge.
+    unit — a CPI *level* must never read as a weekly surge. The direction word
+    follows the move itself: a rise smaller than the usual rise has a negative
+    z and still rose, so when the move and z disagree in sign (or either is
+    zero) the sentence says which way the series moved and where the move sits
+    against its usual move. With no raw move there is no direction word.
     """
     kind = _Z_METRIC_KIND.get(metric, "ret")
     if kind == "level_pct":
@@ -98,17 +108,29 @@ def z_interpretation(metric: str, label: str, z: float, raw_val: float | None) -
         name = label.removesuffix(" YoY")
         lvl = f" at {raw_val:.2f}% YoY" if raw_val is not None else ""
         return f"{name} runs{lvl} — a {abs(z):.1f}σ {hilo} reading vs its recent range"
-    span = "day" if "_daily_" in metric else "week"
-    direction = "surged" if z > 0 else "fell"
-    mag = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
+    daily = "_daily_" in metric
+    span = "day" if daily else "week"
+    side = "above" if z > 0 else ("below" if z < 0 else None)
+    if raw_val is not None and not math.isfinite(raw_val):
+        raw_val = None
     if raw_val is None:
-        raw_str = ""
-    elif kind == "yield_chg":
+        where = f"a {abs(z):.1f}σ {'one-day' if daily else 'weekly'} move {side} its usual move" if side else (
+            f"a {'one-day' if daily else 'weekly'} move at its usual move")
+        return f"{label}: {where}"
+    raw_val = raw_val + 0.0  # a negative zero prints "+0.0", never "-0.0" beside "was unchanged"
+    if kind == "yield_chg":
         raw_str = f" ({raw_val * 100:+.0f} bps on the {span})"
     elif kind == "pp_chg":
-        raw_str = f" ({raw_val:+.2f}pp on the {span})"
+        # the latest print available this week minus the one a week earlier: 0 on a week with no new print
+        raw_str = f" ({raw_val:+.2f}pp, latest print vs a week earlier)"
     elif kind == "pt_chg":
         raw_str = f" ({raw_val:+.1f} pts on the {span})"
     else:  # weekly total return, fraction -> percent
         raw_str = f" ({raw_val * 100:+.2f}% on the {span})"
-    return f"{label} {direction} {mag}{raw_str} — {abs(z):.1f}σ move"
+    if (raw_val > 0 and z > 0) or (raw_val < 0 and z < 0):
+        direction = "surged" if z > 0 else "fell"
+        mag = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
+        return f"{label} {direction} {mag}{raw_str} — {abs(z):.1f}σ move"
+    verb = "rose" if raw_val > 0 else ("fell" if raw_val < 0 else "was unchanged")
+    where = f"{abs(z):.1f}σ {side} its usual move" if side else "at its usual move"
+    return f"{label} {verb}{raw_str} — {where}"
