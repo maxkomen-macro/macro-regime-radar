@@ -220,6 +220,22 @@ def test_alert_feed_max_may_move_earlier(tmp_path):
     assert rep["verdict"] == "pass"
 
 
+def test_alert_feed_may_empty(tmp_path):
+    """A run whose triggers have all cleared empties alert_feed (Codex S-03):
+    the published database must still pass validation."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    for path, dates in ((prev, ("2026-09-01", "2026-10-02")), (cur, ())):
+        _make(path)
+        conn = sqlite3.connect(path)
+        conn.execute("CREATE TABLE alert_feed(date TEXT, name TEXT)")
+        conn.executemany("INSERT INTO alert_feed VALUES (?, 'alert')", [(d,) for d in dates])
+        conn.commit()
+        conn.close()
+    rep = v.validate(cur, prev, "market-only", now=NOW)
+    assert not any("alert_feed" in f for f in rep["failures"]), rep["failures"]
+    assert rep["verdict"] == "pass"
+
+
 def test_unusable_previous_blocks_upload(tmp_path):
     cur, prev = tmp_path / "cur.db", tmp_path / "prev.db"
     _make(cur)
