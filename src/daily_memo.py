@@ -851,7 +851,7 @@ def build_html(
       <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/daily_memo.html"
          style="color:#3498db; text-decoration:none; font-size:12px;">View in browser</a>
       &nbsp;&bull;&nbsp;
-      <a href="https://macro-regime-radar.streamlit.app/"
+      <a href="https://macro-economic-radar.vercel.app/"
          style="color:#3498db; text-decoration:none; font-size:12px;">Live Dashboard</a>
       <div style="color:#4a5568; font-size:11px; margin-top:6px;">
         Generated {generated}

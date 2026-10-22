@@ -120,7 +120,7 @@ jobs:
           <div style="font-family: Arial, sans-serif; font-size: 16px; padding: 15px; background-color: #f0f4f8; border-radius: 8px; margin-bottom: 20px;">
             📊 <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/weekly_memo.html" style="color: #1f77b4; text-decoration: none; font-weight: bold;">View full memo with charts in your browser</a>
             &nbsp;|&nbsp;
-            📈 <a href="https://macro-regime-radar.streamlit.app/" style="color: #1f77b4; text-decoration: none; font-weight: bold;">Live Dashboard</a>
+            📈 <a href="https://macro-economic-radar.vercel.app/" style="color: #1f77b4; text-decoration: none; font-weight: bold;">Live Dashboard</a>
           </div>
           <hr style="border: 1px solid #ddd; margin-bottom: 20px;">
           EOF2
