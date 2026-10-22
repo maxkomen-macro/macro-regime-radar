@@ -29,7 +29,7 @@ Metric naming scheme (stored in derived_metrics.name):
   Spread:   SPREAD_weekly_chg         absolute weekly change in 10Y-2Y spread
             SPREAD_weekly_chg_z       z-score of spread changes
   Macro:    UNRATE_weekly_chg_z       z-score of weekly unemployment changes
-            CPI_yoy                   CPI year-over-year % (52-week pct_change)
+            CPI_yoy                   CPI year-over-year %, each print against the same month a year earlier
             CPI_yoy_z                 rolling z-score of CPI_yoy level
             VIX_weekly_chg            weekly change in the VIX close (index points)
             VIX_weekly_chg_z          z-score of weekly VIX changes
@@ -272,6 +272,40 @@ def load_fred_weekly(conn: sqlite3.Connection, series_id: str) -> pd.Series:
     return weekly
 
 
+def load_fred_monthly(conn: sqlite3.Connection, series_id: str) -> pd.Series:
+    """raw_series rows for series_id by their month stamp (the 1st), one per month."""
+    rows = conn.execute(
+        "SELECT date, value FROM raw_series WHERE series_id=? ORDER BY date",
+        (series_id,),
+    ).fetchall()
+    if not rows:
+        return pd.Series(dtype=float, name=series_id)
+    df = pd.DataFrame(rows, columns=["date", "value"])
+    df = df.assign(date=pd.to_datetime(df["date"]), value=pd.to_numeric(df["value"], errors="coerce"))
+    s = df.dropna().set_index("date").sort_index()["value"]
+    s = s[~s.index.duplicated(keep="last")]
+    s.name = series_id
+    return s
+
+
+def cpi_yoy_weekly(monthly: pd.Series) -> pd.Series:
+    """Year-over-year % of each monthly print against the same month a year
+    earlier (absent when that month is missing), carried through the W-FRI weeks
+    the way load_fred_weekly carries the level: a week reads the newest print at
+    or before its end, and a print without a year-earlier month gives its weeks
+    no row rather than the previous print's YoY. Comparing the week 52 weeks back
+    instead compared different months at month boundaries and around a missing print."""
+    if not len(monthly):
+        return pd.Series(dtype=float, name="CPI_yoy")
+    prior = monthly.reindex(monthly.index - pd.DateOffset(years=1))
+    yoy = (monthly.to_numpy() / prior.to_numpy() - 1.0) * 100.0
+    yoy_m = pd.Series(yoy, index=monthly.index)
+    carried = pd.Series(monthly.index, index=monthly.index).resample("W-FRI").last().ffill().dropna()
+    weekly = pd.Series(yoy_m.reindex(carried.to_numpy()).to_numpy(), index=carried.index).dropna()
+    weekly.name = "CPI_yoy"
+    return weekly
+
+
 # ── Computation helpers ───────────────────────────────────────────────────────
 
 def weekly_pct_return(series: pd.Series) -> pd.Series:
@@ -383,16 +417,15 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
         for dt, val in unrate_z.items():
             rows.append(("UNRATE_weekly_chg_z", dt.strftime("%Y-%m-%d"), float(val)))
 
-    # CPI YoY (52-week percent change) and z-score of its level
+    # CPI YoY (each monthly print against the same month a year earlier) and
+    # z-score of its level; each week carries the YoY of the print it carries
     cpi = load_fred_weekly(conn, "CPIAUCSL")
     min_cpi_weeks = 52 + MIN_PERIODS
     if len(cpi) >= min_cpi_weeks:
-        cpi_yoy   = (cpi.pct_change(periods=52) * 100).dropna()
+        cpi_yoy   = cpi_yoy_weekly(load_fred_monthly(conn, "CPIAUCSL"))
         cpi_yoy_z = rolling_zscore(cpi_yoy)
-        for dt, val in cpi_yoy.items():
-            rows.append(("CPI_yoy",   dt.strftime("%Y-%m-%d"), float(val)))
-        for dt, val in cpi_yoy_z.items():
-            rows.append(("CPI_yoy_z", dt.strftime("%Y-%m-%d"), float(val)))
+        _emit(rows, "CPI_yoy", cpi_yoy)
+        _emit(rows, "CPI_yoy_z", cpi_yoy_z)
     else:
         logger.warning(
             "[surprise] CPIAUCSL: only %d weeks — need %d for CPI YoY; skipping.",
