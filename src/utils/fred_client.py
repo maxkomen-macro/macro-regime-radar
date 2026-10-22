@@ -3,6 +3,9 @@ import time
 import pandas as pd
 from src.utils.dates import get_start_date, get_end_date
 
+FRED_RETRY_DELAYS = (5, 15, 30, 60)  # seconds between attempts
+FRED_ATTEMPTS = len(FRED_RETRY_DELAYS) + 1
+
 
 def get_fred_client():
     """Instantiate and return a fredapi.Fred client (imported lazily, so the
@@ -45,16 +48,20 @@ def _download(series_id: str, lookback_years: int) -> pd.Series:
     start  = get_start_date(lookback_years)
     end    = get_end_date()
 
+    # FRED answers an outage with HTTP 200 and a non-XML body, which fredapi
+    # raises as xml.etree.ElementTree.ParseError (Refresh Data #2308, Oct 21
+    # 2026). Those outages outlast seconds, so the waits span about two minutes.
     last_exc: Exception | None = None
-    for attempt in range(1, 4):
+    for attempt in range(1, FRED_ATTEMPTS + 1):
         try:
             raw = client.get_series(series_id, observation_start=start, observation_end=end)
             break
         except Exception as exc:
             last_exc = exc
-            if attempt < 3:
-                delay = 2 ** attempt  # 2s, 4s
-                print(f"[fetch_data] FRED timeout, retrying in {delay}s... (attempt {attempt}/3)")
+            if attempt < FRED_ATTEMPTS:
+                delay = FRED_RETRY_DELAYS[attempt - 1]
+                print(f"[fetch_data] FRED request for {series_id} failed ({type(exc).__name__}: {exc}); "
+                      f"retrying in {delay}s... (attempt {attempt}/{FRED_ATTEMPTS})")
                 time.sleep(delay)
     else:
         raise last_exc  # type: ignore[misc]

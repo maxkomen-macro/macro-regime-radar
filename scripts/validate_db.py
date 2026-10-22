@@ -106,6 +106,12 @@ TRIMMED_TABLES = {"market_intraday", "news_feed"}
 # (2026-09-19): nor is a max date that moves earlier, since a rescheduled
 # earnings report can pull the table's latest date in; that is a warning.
 FORWARD_TABLES = {"event_calendar"}
+# Rebuilt whole by each full run (src/analytics/alerts.py deletes every row and
+# writes the alerts that hold now), so an alert that stops firing takes its date
+# with it: a max date that moves earlier, or rows that fall, is the feed doing its
+# job. Oct 20-21 2026: a VIX_shock alert dated 2026-10-02 cleared, the max fell to
+# 2026-09-01, and every full refresh failed on it while the published DB kept it.
+RECOMPUTED_TABLES = {"alert_feed"}
 # B4 (2026-09-18): ai_spend_ledger is append-only; a run that spent must
 # publish its rows or the next run (which downloads the published DB) forgets
 # the spend, so new ledger rows count as a change in the modes that enrich.
@@ -686,12 +692,14 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
                     warnings.append(f"{t}: max date moved earlier {p['max']} → {info['max']} (a scheduled event was rescheduled)")
                 elif t in ADVISORY_TABLES:
                     warnings.append(f"{t}: max date moved earlier {judged_prev['max']} → {judged['max']} (advisory, never blocking)")
+                elif t in RECOMPUTED_TABLES:
+                    warnings.append(f"{t}: max date moved earlier {judged_prev['max']} → {judged['max']} (rebuilt each run; an alert cleared)")
                 else:
                     failures.append(f"{t}: max date regressed {judged_prev['max']} → {judged['max']}")
             if t in ADVISORY_TABLES:
                 if judged["rows"] < judged_prev["rows"]:
                     warnings.append(f"{t}: rows fell {judged_prev['rows']} → {judged['rows']} (advisory, never blocking)")
-            elif t not in TRIMMED_TABLES and judged_prev["rows"] > 20 and judged["rows"] < 0.8 * judged_prev["rows"]:
+            elif t not in TRIMMED_TABLES and t not in RECOMPUTED_TABLES and judged_prev["rows"] > 20 and judged["rows"] < 0.8 * judged_prev["rows"]:
                 failures.append(f"{t}: rows fell {judged_prev['rows']} → {judged['rows']} (more than a fifth)")
             fp_cur = (cur.get("fingerprints") or {}).get(t)
             fp_prev = (prev.get("fingerprints") or {}).get(t)
