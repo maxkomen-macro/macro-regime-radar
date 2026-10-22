@@ -34,9 +34,11 @@ export function surpriseAsOf(rows: Surprise[] | undefined): string | null {
   return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
 }
 
-/** What span a row measures: one session, a week to date, or a whole week. */
+/** What span a row measures: one session, a week to date, a whole week, or a
+ *  monthly print carried through the weeks. */
 export function surpriseSpan(r: Surprise): string {
   if (r.cadence === "daily") return `1 day · ${fmtDate(r.as_of ?? r.date)}`;
+  if (r.cadence === "monthly") return "latest monthly print";
   if (r.as_of && r.as_of < r.date) return `week to ${fmtDate(r.as_of)}`;
   return `week ending ${fmtDate(r.date)}`;
 }
