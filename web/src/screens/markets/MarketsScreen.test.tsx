@@ -19,7 +19,7 @@ import { DAILY_FETCH, DB_SYMBOLS, SINGLE_NAMES } from "./tape";
 import { NO_SHELL_ACTIONS, ShellActionsContext, type ShellActions } from "../shell/shell-actions";
 import type { LiveQuote, StreamStatus } from "../../live/quotes";
 import type { CreditOAS, CreditSeries, DailyBar, Freshness, PricedMetric, Surprise } from "../../api/types";
-import { fmtDate, fmtSigned, fmtSignedPct } from "../../lib/format";
+import { fmtSigned, fmtSignedPct } from "../../lib/format";
 import { useLocation } from "react-router-dom";
 import { makeClient, renderWithProviders, stubFetch } from "../../test/utils";
 
@@ -644,12 +644,11 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
 
     const surprises = await awaitSection("top-surprises");
     expect(surprises.tagName).toBe("SECTION");
-    expect(within(surprises).getByRole("heading", { level: 2 })).toHaveTextContent(/^Top surprises$/);
-    expect(text(surprises)).toContain("Weekly and one-day moves ranked by z-score, updated daily");
-    // Iteration 1 step 6 (A1): the newest observation is the section's stamp (Oct 2026: the
-    // rows are recomputed daily; this fixture's rows carry no as_of, so their date stands in).
-    await waitFor(() => expect(text(surprises)).toContain("updated daily from stored closes"));
-    expect(surprises.querySelector("[data-stamp]")?.textContent).toBe("Derived pipeline · through Sep 18, 2026");
+    expect(within(surprises).getByRole("heading", { level: 2 })).toHaveTextContent(/^Top surprises this week$/);
+    expect(text(surprises)).toContain("Weekly moves ranked by z-score");
+    // Iteration 1 step 6 (A1): the week is the section's stamp.
+    await waitFor(() => expect(text(surprises)).toContain("weekly derived series"));
+    expect(surprises.querySelector("[data-stamp]")?.textContent).toBe("Derived pipeline · week ending Sep 18, 2026");
 
     const tape = await awaitSection("watchlist");
     expect(tape.tagName).toBe("SECTION");
@@ -753,33 +752,11 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(text(section)).toContain("macro rows read this pipeline, not the monthly signal prints on the dashboard");
   });
 
-  it("#top-surprises says what span each row measures and stamps the newest observation read", async () => {
-    const weekToDate: Surprise = { ...SURPRISES[0], date: "2026-10-23", cadence: "weekly", as_of: "2026-10-21" };
-    const fullWeek: Surprise = { ...SURPRISES[1], date: "2026-10-16", cadence: "weekly", as_of: "2026-10-16" };
-    const oneDay: Surprise = { ...SURPRISES[6], label: "VIX (daily)", date: "2026-10-21", cadence: "daily", as_of: "2026-10-21" };
-    const monthly: Surprise = { ...SURPRISES[3], label: "Unemployment rate", date: "2026-09-04", cadence: "weekly", as_of: null };
-    stubFetch(routes({ "/api/surprises": () => [weekToDate, fullWeek, oneDay, monthly] }));
-    renderMarkets();
-    const section = await awaitSection("top-surprises");
-    const rows = await waitFor(() => {
-      const r = [...section.querySelectorAll("tbody tr")];
-      expect(r).toHaveLength(4);
-      return r;
-    });
-    expect(text(rows[0])).toContain(`SPY weekly return · week to ${fmtDate("2026-10-21")}`);
-    expect(text(rows[1])).toContain(`10Y Treasury yield · week ending ${fmtDate("2026-10-16")}`);
-    expect(text(rows[2])).toContain(`VIX (daily) · 1 day · ${fmtDate("2026-10-21")}`);
-    expect(text(rows[3])).toContain(`Unemployment rate · week ending ${fmtDate("2026-09-04")}`);
-    // the stamp is the newest observation read, never the week end still ahead of the data
-    expect(section.querySelector("[data-stamp]")?.textContent).toBe(`Derived pipeline · through ${fmtDate("2026-10-21")}`);
-    expect(text(section)).toContain("Recomputed with every daily refresh from stored daily closes");
-  });
-
   it("#top-surprises prints the state copy in place of the table while loading, on error and when empty", async () => {
     stubFetch(routes({ "/api/surprises": PENDING }));
     const pending = renderMarkets();
     const section = await awaitSection("top-surprises");
-    await waitFor(() => expect(text(section)).toContain("Ranking the latest moves…"));
+    await waitFor(() => expect(text(section)).toContain("Ranking the week's moves…"));
     expect(section.querySelector("table")).toBeNull();
     pending.unmount();
 
@@ -793,7 +770,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     stubFetch(routes({ "/api/surprises": () => [] }));
     renderMarkets();
     const s3 = await awaitSection("top-surprises");
-    await waitFor(() => expect(text(s3)).toContain("No surprise data on file."));
+    await waitFor(() => expect(text(s3)).toContain("No surprise data on file for this week."));
     expect(s3.querySelector("table")).toBeNull();
   });
 

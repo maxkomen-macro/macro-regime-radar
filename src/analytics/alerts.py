@@ -24,8 +24,7 @@ Alert levels:
 Market alerts (from derived_metrics):
     SPY_drawdown:   SPY_weekly_ret < -7% → risk; < -3% → watch
     credit_stress:  HYG_weekly_ret - SPY_weekly_ret < -3% → watch
-    VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch (week-over-week, daily closes)
-    VIX_daily_jump: VIX_daily_chg_z > 3 → risk; > 2 → watch (one session, dated by it)
+    VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch
     USD_breakout:   UUP_weekly_ret_z > 2 → watch
 
 Re-runs: delete today's alert_feed rows and reinsert (no UNIQUE constraint).
@@ -252,18 +251,6 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
         elif vix_z > 2.0:
             _add(vix_date, "VIX_shock", "watch", vix_z, 2.0, "above",
                  f"VIX weekly z-score={vix_z:.2f} — above 2.0 watch threshold.")
-
-    # VIX one-session jump: the latest session's close against the one before
-    vix_dz, vix_day = _get_latest_derived(conn, "VIX_daily_chg_z")
-    vix_pts, _ = _get_latest_derived(conn, "VIX_daily_chg")
-    if vix_dz is not None:
-        pts = f" ({vix_pts:+.2f} pts)" if vix_pts is not None else ""
-        if vix_dz > 3.0:
-            _add(vix_day, "VIX_daily_jump", "risk", vix_dz, 3.0, "above",
-                 f"VIX one-day change{pts} z-score={vix_dz:.2f} — above 3.0 risk threshold.")
-        elif vix_dz > 2.0:
-            _add(vix_day, "VIX_daily_jump", "watch", vix_dz, 2.0, "above",
-                 f"VIX one-day change{pts} z-score={vix_dz:.2f} — above 2.0 watch threshold.")
 
     # USD breakout
     uup_z, uup_date = _get_latest_derived(conn, "UUP_weekly_ret_z")

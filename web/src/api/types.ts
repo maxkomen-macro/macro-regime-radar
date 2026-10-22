@@ -218,12 +218,8 @@ export interface PricedMetric {
 export interface Surprise {
   metric: string;
   label: string;
-  /** Week-end Friday stamp for a weekly row; the session date for a one-day row. */
+  /** Week-end Friday stamp from the derived-metrics pipeline. */
   date: string;
-  /** "daily" (one session) or "weekly"; absent from an older API (weekly). */
-  cadence?: "daily" | "weekly";
-  /** The newest daily observation the row read; null for a monthly macro row. */
-  as_of?: string | null;
   z_score: number;
   raw_value: number | null;
   interpretation: string;

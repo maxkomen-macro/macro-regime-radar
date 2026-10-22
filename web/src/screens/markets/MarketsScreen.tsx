@@ -59,7 +59,7 @@ import WeekBars, { type WeekBarRow } from "./WeekBars";
 import MacroTape from "./MacroTape";
 import Movers, { moversSummary, useMoversRead } from "./Movers";
 import SectorHeatmap from "./SectorHeatmap";
-import TopSurprises, { surpriseAsOf } from "./TopSurprises";
+import TopSurprises from "./TopSurprises";
 import WhatsPriced from "./WhatsPriced";
 import SingleName, { RANGES } from "./SingleName";
 import SymbolSearch from "./SymbolSearch";
@@ -414,7 +414,10 @@ export default function MarketsScreen() {
     return `5Y and 10Y breakevens sit in line (${t5.toFixed(2)}% / ${t10.toFixed(2)}%): no meaningful term premium on inflation.`;
   }, [pricedByMetric]);
 
-  const surpriseAsOfDate = useMemo(() => surpriseAsOf(surprises.data), [surprises.data]);
+  const surpriseWeek = useMemo(() => {
+    const dates = (surprises.data ?? []).map((s) => s.date);
+    return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+  }, [surprises.data]);
 
   const groupCaptions: Record<string, ReactNode> = {
     "Policy rate proxies": "Where the overnight rate actually sits: the hurdle every risk asset has to clear.",
@@ -913,7 +916,7 @@ export default function MarketsScreen() {
 
           <Movers read={movers} onOpen={openName} />
 
-          <TopSurprises surprises={surprises} surpriseAsOf={surpriseAsOfDate} />
+          <TopSurprises surprises={surprises} surpriseWeek={surpriseWeek} />
         </div>
       </div>
 

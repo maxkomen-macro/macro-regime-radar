@@ -8,7 +8,7 @@
  */
 
 import type { Alert, Signal } from "../../api/types";
-import { fmtDate, fmtMonYr } from "../../lib/format";
+import { fmtMonYr } from "../../lib/format";
 import { SIGNALS_META } from "../dashboard/signals-meta";
 
 /** The metric noun each signal watches, for the sentence subject. */
@@ -57,44 +57,11 @@ export interface AlertCopy {
   why: string;
 }
 
-/** The VIX move alerts (src/analytics/alerts.py): a z-score of the VIX's change
- *  from stored daily closes, dated by its session (one-day) or its week. */
-const VIX_MOVES: Record<string, { title: string; change: string; span: (d: string) => string; why: string }> = {
-  VIX_daily_jump: {
-    title: "VIX one-day jump",
-    change: "one-day change",
-    span: (d) => `on ${fmtDate(d)}`,
-    why: "A one-day VIX jump this far outside its usual range is the first read of stress pricing; it often precedes wider credit spreads.",
-  },
-  VIX_shock: {
-    title: "VIX weekly shock",
-    change: "week-over-week change",
-    span: (d) => `in the week ending ${fmtDate(d)}`,
-    why: "A week-long VIX surge this far outside its usual range marks stress pricing that has lasted beyond a single session.",
-  },
-};
-
-function describeVixMove(a: Alert, move: (typeof VIX_MOVES)[string]): AlertCopy {
-  const z = a.value != null ? `${a.value.toFixed(1)}σ` : "outside its usual range";
-  const line = a.threshold != null ? `, above the ${a.threshold.toFixed(0)}σ ${a.level === "risk" ? "risk" : "watch"} line` : "";
-  return {
-    title: move.title,
-    when: fmtDate(a.date),
-    severity: LEVEL_WORD[a.level] ?? "Informational",
-    trigger: `The VIX's ${move.change} was ${z} ${move.span(a.date)}${line}.`,
-    active: null,
-    status: "Measured from stored daily VIX closes and recomputed with every daily refresh.",
-    why: move.why,
-  };
-}
-
 function humanName(name: string): string {
   return SIGNALS_META[name]?.display ?? name.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
 
 export function describeAlert(a: Alert, latest?: Signal): AlertCopy {
-  const move = VIX_MOVES[a.name];
-  if (move) return describeVixMove(a, move);
   const meta = SIGNALS_META[a.name];
   const fmt = meta?.format ?? ((v: number) => v.toFixed(2));
   const subject = SUBJECT[a.name] ?? humanName(a.name);
