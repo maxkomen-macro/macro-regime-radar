@@ -74,6 +74,10 @@ _Z_METRIC_KIND: dict[str, str] = {
     "UNRATE_weekly_chg_z": "pp_chg",
     # weekly change in the VIX, index points
     "VIX_weekly_chg_z": "pt_chg",
+    # one-session changes (src/analytics/surprise.build_daily_metrics)
+    "VIX_daily_chg_z": "pt_chg",
+    "DGS10_daily_chg_z": "yield_chg",
+    "DGS2_daily_chg_z": "yield_chg",
     # CPI YoY is a LEVEL in percent (4.17 = running at 4.17% YoY); its z-score
     # ranks the level against its recent range — it is NOT a weekly move
     "CPI_yoy_z": "level_pct",
@@ -94,16 +98,17 @@ def z_interpretation(metric: str, label: str, z: float, raw_val: float | None) -
         name = label.removesuffix(" YoY")
         lvl = f" at {raw_val:.2f}% YoY" if raw_val is not None else ""
         return f"{name} runs{lvl} — a {abs(z):.1f}σ {hilo} reading vs its recent range"
+    span = "day" if "_daily_" in metric else "week"
     direction = "surged" if z > 0 else "fell"
     mag = "sharply" if abs(z) >= 2.5 else ("notably" if abs(z) >= 1.5 else "modestly")
     if raw_val is None:
         raw_str = ""
     elif kind == "yield_chg":
-        raw_str = f" ({raw_val * 100:+.0f} bps on the week)"
+        raw_str = f" ({raw_val * 100:+.0f} bps on the {span})"
     elif kind == "pp_chg":
-        raw_str = f" ({raw_val:+.2f}pp on the week)"
+        raw_str = f" ({raw_val:+.2f}pp on the {span})"
     elif kind == "pt_chg":
-        raw_str = f" ({raw_val:+.1f} pts on the week)"
+        raw_str = f" ({raw_val:+.1f} pts on the {span})"
     else:  # weekly total return, fraction -> percent
-        raw_str = f" ({raw_val * 100:+.2f}% on the week)"
+        raw_str = f" ({raw_val * 100:+.2f}% on the {span})"
     return f"{label} {direction} {mag}{raw_str} — {abs(z):.1f}σ move"

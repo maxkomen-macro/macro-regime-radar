@@ -749,6 +749,10 @@ class Surprise(BaseModel):
     metric: str
     label: str
     date: str
+    # "daily" (one session, dated by it) or "weekly" (dated by its W-FRI week end)
+    cadence: str = "weekly"
+    # the newest daily observation the row read; None for the monthly macro rows
+    as_of: str | None = None
     z_score: float
     raw_value: float | None
     interpretation: str
@@ -1119,7 +1123,7 @@ def api_priced() -> list[PricedMetric]:
 
 @api.get("/surprises", response_model=list[Surprise])
 def api_surprises(top_n: int = Query(10, ge=1, le=15)) -> list[Surprise]:
-    """Top-|z| weekly surprises with the shared desk-note interpretation."""
+    """Top-|z| weekly and one-day surprises with the shared desk-note interpretation."""
     rows = _guarded(lambda: db.top_surprises(top_n))
     return [Surprise(**r) for r in rows]
 

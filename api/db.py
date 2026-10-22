@@ -290,7 +290,49 @@ SURPRISE_Z_METRICS = [
     ("UNRATE_weekly_chg_z", "UNRATE_weekly_chg", "Unemployment rate"),
     ("CPI_yoy_z", "CPI_yoy", "CPI YoY"),
     ("VIX_weekly_chg_z", "VIX_weekly_chg", "VIX (volatility)"),
+    # one-session moves from the daily stores (src/analytics/surprise.build_daily_metrics)
+    ("VIX_daily_chg_z", "VIX_daily_chg", "VIX (daily)"),
+    ("DGS10_daily_chg_z", "DGS10_daily_chg", "10Y Treasury yield (daily)"),
+    ("DGS2_daily_chg_z", "DGS2_daily_chg", "2Y Treasury yield (daily)"),
 ]
+
+# The daily store each surprise is computed from, for the newest observation a
+# row has read (`as_of`): a weekly row is stamped by its W-FRI week end, which is
+# ahead of the data while the week is under way. UNRATE and CPI are monthly
+# prints carried through the weeks and have none.
+_SURPRISE_SOURCE_SQL = {
+    "asset_prices": "SELECT MAX(date) FROM asset_prices WHERE symbol = ? AND interval = '1d' AND date <= ?",
+    "desk_series": "SELECT MAX(date) FROM desk_series WHERE series_id = ? AND date <= ?",
+    "market_daily": "SELECT MAX(date) FROM market_daily WHERE symbol = ? AND date <= ?",
+}
+
+
+def _surprise_sources(z_name: str) -> list[tuple[str, str]]:
+    base = z_name.split("_", 1)[0]
+    if base == "VIX":
+        return [("asset_prices", "^VIX")]
+    if base in ("DGS10", "DGS2"):
+        return [("desk_series", base)]
+    if base == "SPREAD":
+        return [("desk_series", "DGS10"), ("desk_series", "DGS2")]
+    if z_name.endswith("_weekly_ret_z"):
+        return [("market_daily", base)]
+    return []
+
+
+def _surprise_as_of(conn: sqlite3.Connection, z_name: str, date: str) -> str | None:
+    """The newest observation (at or before the row's date) the row was computed
+    from; for a spread, the older of its two legs. None when unknown."""
+    dates = []
+    for table, key in _surprise_sources(z_name):
+        try:
+            row = conn.execute(_SURPRISE_SOURCE_SQL[table], (key, date)).fetchone()
+        except sqlite3.OperationalError:
+            return None  # the store predates the table
+        if not row or not row[0]:
+            return None
+        dates.append(str(row[0])[:10])
+    return min(dates) if dates else None
 
 
 def _latest_metric(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
@@ -342,7 +384,7 @@ def priced_metrics() -> list[dict]:
 
 
 def top_surprises(top_n: int) -> list[dict]:
-    """Top-|z| weekly surprises from derived_metrics, mirroring
+    """Top-|z| weekly and one-day surprises from derived_metrics, mirroring
     db_helpers.build_surprises_df (each z from its own most-recent date).
     Phrasing comes from src.utils.format.z_interpretation — a standalone
     module (no src.config import), so the API, dashboard, and memo all speak
@@ -362,6 +404,8 @@ def top_surprises(top_n: int) -> list[dict]:
                     "metric": z_name,
                     "label": label,
                     "date": z["date"],
+                    "cadence": "daily" if "_daily_" in z_name else "weekly",
+                    "as_of": _surprise_as_of(conn, z_name, z["date"]),
                     "z_score": z["value"],
                     "raw_value": raw_val,
                     "interpretation": z_interpretation(z_name, label, z["value"], raw_val),
