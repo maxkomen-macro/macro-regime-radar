@@ -749,8 +749,7 @@ class Surprise(BaseModel):
     metric: str
     label: str
     date: str
-    # "daily" (one session, dated by it), "weekly" (dated by its W-FRI week end)
-    # or "monthly" (a monthly print carried through the weeks)
+    # "daily" (one session, dated by it) or "weekly" (dated by its W-FRI week end)
     cadence: str = "weekly"
     # the newest daily observation the row read; None for the monthly macro rows
     as_of: str | None = None

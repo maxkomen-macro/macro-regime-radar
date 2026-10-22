@@ -757,7 +757,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     const weekToDate: Surprise = { ...SURPRISES[0], date: "2026-10-23", cadence: "weekly", as_of: "2026-10-21" };
     const fullWeek: Surprise = { ...SURPRISES[1], date: "2026-10-16", cadence: "weekly", as_of: "2026-10-16" };
     const oneDay: Surprise = { ...SURPRISES[6], label: "VIX (daily)", date: "2026-10-21", cadence: "daily", as_of: "2026-10-21" };
-    const monthly: Surprise = { ...SURPRISES[3], label: "Unemployment rate", date: "2026-09-04", cadence: "monthly", as_of: null };
+    const monthly: Surprise = { ...SURPRISES[3], label: "Unemployment rate", date: "2026-09-04", cadence: "weekly", as_of: null };
     stubFetch(routes({ "/api/surprises": () => [weekToDate, fullWeek, oneDay, monthly] }));
     renderMarkets();
     const section = await awaitSection("top-surprises");
@@ -769,7 +769,7 @@ describe("MarketsScreen (checklist 05 E.1)", () => {
     expect(text(rows[0])).toContain(`SPY weekly return · week to ${fmtDate("2026-10-21")}`);
     expect(text(rows[1])).toContain(`10Y Treasury yield · week ending ${fmtDate("2026-10-16")}`);
     expect(text(rows[2])).toContain(`VIX (daily) · 1 day · ${fmtDate("2026-10-21")}`);
-    expect(text(rows[3])).toContain("Unemployment rate · latest monthly print");
+    expect(text(rows[3])).toContain(`Unemployment rate · week ending ${fmtDate("2026-09-04")}`);
     // the stamp is the newest observation read, never the week end still ahead of the data
     expect(section.querySelector("[data-stamp]")?.textContent).toBe(`Derived pipeline · through ${fmtDate("2026-10-21")}`);
     expect(text(section)).toContain("Recomputed with every daily refresh from stored daily closes");

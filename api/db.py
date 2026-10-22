@@ -320,18 +320,6 @@ def _surprise_sources(z_name: str) -> list[tuple[str, str]]:
     return []
 
 
-# monthly prints carried through the weeks (src/analytics/surprise.load_fred_weekly)
-_MONTHLY_SURPRISES = {"UNRATE_weekly_chg_z", "CPI_yoy_z"}
-
-
-def _surprise_cadence(z_name: str) -> str:
-    """daily: one session; weekly: a W-FRI week; monthly: the latest monthly
-    print, carried forward into each week."""
-    if "_daily_" in z_name:
-        return "daily"
-    return "monthly" if z_name in _MONTHLY_SURPRISES else "weekly"
-
-
 def _surprise_as_of(conn: sqlite3.Connection, z_name: str, date: str) -> str | None:
     """The newest observation (at or before the row's date) the row was computed
     from; for a spread, the older of its two legs. None when unknown."""
@@ -416,7 +404,7 @@ def top_surprises(top_n: int) -> list[dict]:
                     "metric": z_name,
                     "label": label,
                     "date": z["date"],
-                    "cadence": _surprise_cadence(z_name),
+                    "cadence": "daily" if "_daily_" in z_name else "weekly",
                     "as_of": _surprise_as_of(conn, z_name, z["date"]),
                     "z_score": z["value"],
                     "raw_value": raw_val,
