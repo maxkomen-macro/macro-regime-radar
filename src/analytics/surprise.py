@@ -422,10 +422,15 @@ def build_macro_metrics(conn: sqlite3.Connection) -> list:
     cpi = load_fred_weekly(conn, "CPIAUCSL")
     min_cpi_weeks = 52 + MIN_PERIODS
     if len(cpi) >= min_cpi_weeks:
-        cpi_yoy   = cpi_yoy_weekly(load_fred_monthly(conn, "CPIAUCSL"))
+        monthly   = load_fred_monthly(conn, "CPIAUCSL")
+        cpi_yoy   = cpi_yoy_weekly(monthly)
         cpi_yoy_z = rolling_zscore(cpi_yoy)
         _emit(rows, "CPI_yoy", cpi_yoy)
         _emit(rows, "CPI_yoy_z", cpi_yoy_z)
+        # the newest print, dated by the week that carries it: a CPI row dated
+        # earlier is an older print's YoY (the newest has no year-earlier month)
+        if len(monthly):
+            rows.append(("CPI_yoy_newest", cpi.index[-1].strftime("%Y-%m-%d"), float(monthly.index[-1].date().toordinal())))
     else:
         logger.warning(
             "[surprise] CPIAUCSL: only %d weeks — need %d for CPI YoY; skipping.",
@@ -489,7 +494,7 @@ DAILY_SOURCED_METRICS = (
 
 # Replaced whole as well: a week whose print has no year-earlier month has no
 # CPI YoY row, so an upsert alone would keep the row the 52-week rule wrote (S-09/S-10).
-REPLACED_METRICS = DAILY_SOURCED_METRICS + ("CPI_yoy", "CPI_yoy_z")
+REPLACED_METRICS = DAILY_SOURCED_METRICS + ("CPI_yoy", "CPI_yoy_z", "CPI_yoy_newest")
 
 
 def clear_daily_sourced_metrics(conn: sqlite3.Connection) -> None:

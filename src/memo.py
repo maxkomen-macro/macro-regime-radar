@@ -837,6 +837,10 @@ def build_surprise_ranking(derived_df: pd.DataFrame, top_n: int = 10) -> list:
         s = derived_df[col].dropna()
         if s.empty:
             continue
+        if col == "CPI_yoy_z" and "CPI_yoy_newest" in derived_df.columns:
+            marker = derived_df["CPI_yoy_newest"].dropna()
+            if not marker.empty and marker.index[0] > s.index[0]:
+                continue  # an older print's YoY: the newest print has no year-earlier month
         z = float(s.iloc[0])
         raw_col = _Z_TO_RAW_MEMO.get(col)
         raw_val = None

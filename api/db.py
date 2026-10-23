@@ -328,6 +328,15 @@ def _surprise_as_of(conn: sqlite3.Connection, z_name: str, date: str) -> str | N
     return obs.isoformat() if obs else None
 
 
+def _cpi_is_current(conn: sqlite3.Connection, date: str) -> bool:
+    """The CPI YoY row is the newest print's unless `CPI_yoy_newest` (the week
+    carrying the newest print, written by the same run) is dated later: then the
+    newest print has no year-earlier month and the row is an older print's. A
+    store without the marker predates the same-month rule and is served as before."""
+    newest = _latest_metric(conn, "CPI_yoy_newest")
+    return not newest or newest["date"] <= date
+
+
 def _daily_is_current(conn: sqlite3.Connection, z_name: str, date: str) -> bool:
     """A daily move is the latest session's only when it is dated by the newest
     observation its series had (`<SERIES>_daily_newest`, written by the same
@@ -401,6 +410,8 @@ def top_surprises(top_n: int) -> list[dict]:
                 continue
             if "_daily_" in z_name and not _daily_is_current(conn, z_name, z["date"]):
                 continue  # an older session's move, not the latest session's the panel promises
+            if z_name == "CPI_yoy_z" and not _cpi_is_current(conn, z["date"]):
+                continue  # an older print's YoY: the newest print has no year-earlier month
             # the raw move at the z row's own date, so the sentence never pairs two dates
             raw_val = _metric_at(conn, raw_name, z["date"])
             rows.append(
