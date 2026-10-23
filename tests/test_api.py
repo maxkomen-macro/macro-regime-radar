@@ -202,8 +202,12 @@ def test_api_surprises_ranked_by_abs_z():
     zs = [abs(r["z_score"]) for r in rows]
     assert zs == sorted(zs, reverse=True)
     for r in rows:
-        assert set(r) == {"metric", "label", "date", "z_score", "raw_value", "interpretation"}
+        assert set(r) == {"metric", "label", "date", "z_score", "raw_value", "interpretation", "cadence", "as_of"}
         assert r["interpretation"]  # the shared desk-note phrasing, never empty
+        assert r["cadence"] in {"daily", "weekly", "monthly"}
+    from api.db import _surprise_cadence
+    assert [_surprise_cadence(m) for m in ("VIX_daily_chg_z", "VIX_weekly_chg_z", "CPI_yoy_z", "UNRATE_weekly_chg_z")] == [
+        "daily", "weekly", "monthly", "monthly"]
 
     bad = client.get("/api/surprises", params={"top_n": 99})
     assert bad.status_code == 422

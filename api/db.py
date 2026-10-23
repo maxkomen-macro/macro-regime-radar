@@ -290,7 +290,59 @@ SURPRISE_Z_METRICS = [
     ("UNRATE_weekly_chg_z", "UNRATE_weekly_chg", "Unemployment rate"),
     ("CPI_yoy_z", "CPI_yoy", "CPI YoY"),
     ("VIX_weekly_chg_z", "VIX_weekly_chg", "VIX (volatility)"),
+    # one-session moves from the daily stores (src/analytics/surprise.build_daily_metrics)
+    ("VIX_daily_chg_z", "VIX_daily_chg", "VIX (daily)"),
+    ("DGS10_daily_chg_z", "DGS10_daily_chg", "10Y Treasury yield (daily)"),
+    ("DGS2_daily_chg_z", "DGS2_daily_chg", "2Y Treasury yield (daily)"),
 ]
+
+def _surprise_cadence(z_name: str) -> str:
+    """daily: one session; weekly: a W-FRI week; monthly: the latest monthly
+    print, carried forward into each week (src.utils.format.MONTHLY_Z_METRICS)."""
+    from src.utils.format import MONTHLY_Z_METRICS
+
+    if "_daily_" in z_name:
+        return "daily"
+    return "monthly" if z_name in MONTHLY_Z_METRICS else "weekly"
+
+
+def _metric_at(conn: sqlite3.Connection, name: str, date: str) -> float | None:
+    """One derived_metrics value at one date, None when absent."""
+    row = conn.execute("SELECT value FROM derived_metrics WHERE name = ? AND date = ?", (name, date)).fetchone()
+    return row["value"] if row else None
+
+
+def _surprise_as_of(conn: sqlite3.Connection, z_name: str, date: str) -> str | None:
+    """The observation a surprise row was computed from, as the computation
+    wrote it (src/analytics/surprise: `<raw metric>_obs` beside a weekly row; a
+    daily row is dated by its own session). Never re-derived from the daily
+    stores. None for a monthly print and for a store that predates the rows."""
+    from src.analytics.surprise_dates import date_from_ordinal
+
+    cadence = _surprise_cadence(z_name)
+    if cadence == "daily":
+        return date
+    if cadence == "monthly":
+        return None
+    obs = date_from_ordinal(_metric_at(conn, f"{z_name.removesuffix('_z')}_obs", date))
+    return obs.isoformat() if obs else None
+
+
+def _cpi_is_current(conn: sqlite3.Connection, date: str) -> bool:
+    """The CPI YoY row is the newest print's unless `CPI_yoy_newest` (the week
+    carrying the newest print, written by the same run) is dated later: then the
+    newest print has no year-earlier month and the row is an older print's. A
+    store without the marker predates the same-month rule and is served as before."""
+    newest = _latest_metric(conn, "CPI_yoy_newest")
+    return not newest or newest["date"] <= date
+
+
+def _daily_is_current(conn: sqlite3.Connection, z_name: str, date: str) -> bool:
+    """A daily move is the latest session's only when it is dated by the newest
+    observation its series had (`<SERIES>_daily_newest`, written by the same
+    run); without that row (an older store) it is never treated as current."""
+    newest = _latest_metric(conn, f"{z_name.split('_', 1)[0]}_daily_newest")
+    return bool(newest) and newest["date"] == date
 
 
 def _latest_metric(conn: sqlite3.Connection, name: str) -> sqlite3.Row | None:
@@ -342,8 +394,9 @@ def priced_metrics() -> list[dict]:
 
 
 def top_surprises(top_n: int) -> list[dict]:
-    """Top-|z| weekly surprises from derived_metrics, mirroring
-    db_helpers.build_surprises_df (each z from its own most-recent date).
+    """Top-|z| weekly and one-day surprises from derived_metrics, mirroring
+    db_helpers.build_surprises_df (each z from its own most-recent date, its raw
+    move at the same date; a daily row only when it is the latest session's).
     Phrasing comes from src.utils.format.z_interpretation — a standalone
     module (no src.config import), so the API, dashboard, and memo all speak
     the same sentence."""
@@ -355,13 +408,19 @@ def top_surprises(top_n: int) -> list[dict]:
             z = _latest_metric(conn, z_name)
             if not z:
                 continue
-            raw = _latest_metric(conn, raw_name)
-            raw_val = raw["value"] if raw else None
+            if "_daily_" in z_name and not _daily_is_current(conn, z_name, z["date"]):
+                continue  # an older session's move, not the latest session's the panel promises
+            if z_name == "CPI_yoy_z" and not _cpi_is_current(conn, z["date"]):
+                continue  # an older print's YoY: the newest print has no year-earlier month
+            # the raw move at the z row's own date, so the sentence never pairs two dates
+            raw_val = _metric_at(conn, raw_name, z["date"])
             rows.append(
                 {
                     "metric": z_name,
                     "label": label,
                     "date": z["date"],
+                    "cadence": _surprise_cadence(z_name),
+                    "as_of": _surprise_as_of(conn, z_name, z["date"]),
                     "z_score": z["value"],
                     "raw_value": raw_val,
                     "interpretation": z_interpretation(z_name, label, z["value"], raw_val),

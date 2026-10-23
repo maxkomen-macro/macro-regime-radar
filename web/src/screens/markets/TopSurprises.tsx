@@ -1,10 +1,15 @@
 /**
- * Top surprises panel (redesign Phase 5, checklist 05 B.6): the ten weekly
- * moves ranked by z-score as a DataTable (rank, release with its served
+ * Top surprises panel (redesign Phase 5, checklist 05 B.6): the ten weekly and
+ * one-day moves ranked by z-score as a DataTable (rank, release with its served
  * interpretation under it, the centre-anchored σ bar on today's 3σ scale, the
  * σ figure). Colour keys off the displayed one-decimal value, as today: a row
  * labeled "+1.5σ" is amber even when the raw z is 1.4501. No hooks: the screen
- * passes its query and the week stamp.
+ * passes its query and the newest observation the rows read.
+ *
+ * Oct 2026: the rows are recomputed with every daily refresh, from daily closes
+ * (the VIX, the 10Y and 2Y yields included), so the panel says so: a weekly row
+ * runs to the newest close while its week is under way, and a one-day row is
+ * one session's move. Each row says which.
  */
 
 import type { CSSProperties } from "react";
@@ -18,7 +23,27 @@ import { MetaWithStamp, Stamp } from "../shared/Stamp";
 
 interface Props {
   surprises: { data: Surprise[] | undefined; isLoading: boolean; isError: boolean };
-  surpriseWeek: string | null;
+  /** The newest observation any row read (`surpriseAsOf`); null prints no "through" stamp. */
+  surpriseAsOf: string | null;
+}
+
+/** The newest observation the rows read, from the served `as_of` only: a row's
+ *  own `date` is a weekly row's W-FRI bucket, ahead of the data mid-week, so it
+ *  never stands in. With no `as_of` (an older store, monthly rows) there is none. */
+export function surpriseAsOf(rows: Surprise[] | undefined): string | null {
+  const dates = (rows ?? []).map((s) => s.as_of).filter((d): d is string => !!d);
+  return dates.length ? dates.reduce((a, b) => (a > b ? a : b)) : null;
+}
+
+/** What span a row measures: one session, a week to date, a whole week, or a
+ *  monthly print carried through the weeks. A weekly row without `as_of` names
+ *  its bucket ("week of"), never claiming the week has ended. */
+export function surpriseSpan(r: Surprise): string {
+  if (r.cadence === "daily") return `1 day · ${fmtDate(r.as_of ?? r.date)}`;
+  if (r.cadence === "monthly") return "latest monthly print";
+  if (!r.as_of) return `week of ${fmtDate(r.date)}`;
+  if (r.as_of < r.date) return `week to ${fmtDate(r.as_of)}`;
+  return `week ending ${fmtDate(r.date)}`;
 }
 
 interface Row extends Surprise {
@@ -58,6 +83,7 @@ const COLUMNS = [
     render: (r: Row) => (
       <div style={{ whiteSpace: "normal", minWidth: 0 }}>
         <span style={{ color: "var(--text)" }}>{r.label}</span>
+        <span style={{ color: "var(--text-3)" }}>{` · ${surpriseSpan(r)}`}</span>
         <span className="mrr-nm" style={subLine}>
           {tidyProse(r.interpretation)}
         </span>
@@ -84,18 +110,18 @@ const COLUMNS = [
   },
 ];
 
-export default function TopSurprises({ surprises, surpriseWeek }: Props) {
+export default function TopSurprises({ surprises, surpriseAsOf: asOf }: Props) {
   const rows: Row[] = (surprises.data ?? []).map((s, i) => ({ ...s, id: s.metric, rank: i + 1 }));
   return (
     <Card as="section" variant="panel" id="top-surprises" style={{ minWidth: 0 }}>
       <SectionHeader
         layout="panel"
-        title="Top surprises this week"
-        description="Weekly moves ranked by z-score"
+        title="Top surprises"
+        description="Weekly and one-day moves ranked by z-score, updated daily"
         right={
           <MetaWithStamp
-            meta="weekly derived series"
-            stamp={<Stamp source="Derived pipeline" asOf={surpriseWeek ? `week ending ${fmtDate(surpriseWeek)}` : null} />}
+            meta="updated daily from stored closes"
+            stamp={<Stamp source="Derived pipeline" asOf={asOf ? `through ${fmtDate(asOf)}` : null} />}
           />
         }
         actions={
@@ -105,26 +131,28 @@ export default function TopSurprises({ surprises, surpriseWeek }: Props) {
         }
       />
       {rows.length ? (
-        <DataTable zebra={false} caption="Top surprises this week, ranked by z-score" columns={COLUMNS} rows={rows} />
+        <DataTable zebra={false} caption="Top surprises, ranked by z-score" columns={COLUMNS} rows={rows} />
       ) : (
         <StateNote>
           {surprises.isError
             ? "Surprise feed unavailable: the data service did not answer."
             : surprises.isLoading
-              ? "Ranking the week's moves…"
-              : "No surprise data on file for this week."}
+              ? "Ranking the latest moves…"
+              : "No surprise data on file."}
         </StateNote>
       )}
       <Caption>
-        Weekly moves ranked by <Jargon term="z-score">z-score</Jargon>: how far outside its own recent range each market
-        traveled. Bars scale to 3σ; ±1.5σ turns amber, ±2.5σ red.
+        Weekly and one-day moves ranked by <Jargon term="z-score">z-score</Jargon>: how far outside its own recent range
+        each market traveled. Bars scale to 3σ; ±1.5σ turns amber, ±2.5σ red. Recomputed with every daily refresh from
+        stored daily closes: a weekly row runs to the newest close while its week is under way, and a one-day row (the
+        VIX, the 10Y and 2Y yields) is the latest session&apos;s move. Live quotes are on the tape above.
         {/* Provenance: these rows are the weekly derived-metrics pipeline,
             not the monthly signals snapshot the Dashboard cards read: a
             macro metric legitimately carries two levels across the app. */}
         <div style={{ marginTop: 2 }}>
-          weekly derived series
-          {surpriseWeek ? ` · week ending ${fmtDate(surpriseWeek)}` : ""} · macro rows read this pipeline, not the monthly
-          signal prints on the dashboard; the same metric carries a different level on each surface.
+          derived series
+          {asOf ? ` · through ${fmtDate(asOf)}` : ""} · macro rows read this pipeline, not the monthly signal prints on the
+          dashboard; the same metric carries a different level on each surface.
         </div>
       </Caption>
     </Card>
