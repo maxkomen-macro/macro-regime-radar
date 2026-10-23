@@ -1804,30 +1804,31 @@ def _csp() -> str:
 # Read at request time, so a test can point it at a scratch bundle.
 WEB_DIST = _WEB_DIST
 
+
+def spa_fallback(full_path: str) -> FileResponse:
+    """SPA fallback: a file the bundle ships at its root (the favicons, the
+    validated snapshot) is served as itself; client-side routes (/, /app/*,
+    /kit) get index.html; unknown API-ish paths stay JSON 404s exactly as
+    before the mount (launch-1 verify loop 1: the snapshot and favicons
+    used to come back as index.html)."""
+    if full_path.split("/", 1)[0] in _NON_SPA_FIRST_SEGMENTS:
+        raise HTTPException(status_code=404, detail="Not Found")
+    base = Path(WEB_DIST).resolve()
+    if full_path and full_path != "index.html":
+        try:
+            candidate = (base / full_path).resolve()
+            is_file = base in candidate.parents and candidate.is_file()
+        except (ValueError, OSError):  # a null byte or an impossible path: not a file
+            is_file = False
+        if is_file:
+            cache = "public, max-age=300" if full_path.startswith("snapshot/") else "public, max-age=86400"
+            return FileResponse(candidate, headers={"Cache-Control": cache})
+    return FileResponse(base / "index.html", headers={"Content-Security-Policy": _csp(), "Cache-Control": "no-cache"})
+
+
 if _WEB_DIST.is_dir():
     app.mount("/assets", StaticFiles(directory=_WEB_DIST / "assets"), name="assets")
     app.mount("/fonts", StaticFiles(directory=_WEB_DIST / "fonts"), name="fonts")
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def spa_fallback(full_path: str) -> FileResponse:
-        """SPA fallback: a file the bundle ships at its root (the favicons, the
-        validated snapshot) is served as itself; client-side routes (/, /app/*,
-        /kit) get index.html; unknown API-ish paths stay JSON 404s exactly as
-        before the mount (launch-1 verify loop 1: the snapshot and favicons
-        used to come back as index.html)."""
-        if full_path.split("/", 1)[0] in _NON_SPA_FIRST_SEGMENTS:
-            raise HTTPException(status_code=404, detail="Not Found")
-        base = Path(WEB_DIST).resolve()
-        if full_path and full_path != "index.html":
-            try:
-                candidate = (base / full_path).resolve()
-                is_file = base in candidate.parents and candidate.is_file()
-            except (ValueError, OSError):  # a null byte or an impossible path: not a file
-                is_file = False
-            if is_file:
-                cache = "public, max-age=300" if full_path.startswith("snapshot/") else "public, max-age=86400"
-                return FileResponse(candidate, headers={"Cache-Control": cache})
-        return FileResponse(base / "index.html", headers={"Content-Security-Policy": _csp(), "Cache-Control": "no-cache"})
-
+    app.get("/{full_path:path}", include_in_schema=False)(spa_fallback)
 else:
     log.info("web/dist absent — SPA not mounted; dev flow (Vite :5173) unchanged")

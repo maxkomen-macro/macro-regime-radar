@@ -56,7 +56,8 @@ def _synthetic_db(path: Path, seed: int = 3, *, regimes: bool = True, spx_end: s
     n = len(days)
     spx = 100.0 * np.cumprod(1.0 + rng.normal(0.0003, 0.01, n))
     gold = 300.0 * np.cumprod(1.0 + rng.normal(0.0002, 0.011, n))
-    vix = np.clip(20.0 * np.exp(np.cumsum(rng.normal(0.0, 0.05, n))), 9.0, 90.0)
+    # np.exp's last bit follows the CPU's SIMD path; ten decimals give every machine the same store
+    vix = np.round(np.clip(20.0 * np.exp(np.cumsum(rng.normal(0.0, 0.05, n))), 9.0, 90.0), 10)
     dgs10 = 3.0 + np.cumsum(rng.normal(0.0, 0.03, n))
     dgs2 = dgs10 - 0.5 + np.cumsum(rng.normal(0.0, 0.01, n))
     hy = 4.0 + np.cumsum(rng.normal(0.0, 0.02, n))

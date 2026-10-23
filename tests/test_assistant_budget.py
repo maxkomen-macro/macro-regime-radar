@@ -537,7 +537,7 @@ def test_settlement_stays_on_the_day_the_call_started(ledger):
 # ── fail closed ──────────────────────────────────────────────────────────────
 
 
-def test_a_read_only_ledger_rests_and_refuses_every_hold(ledger):
+def test_a_read_only_ledger_rests_and_refuses_every_hold(ledger, monkeypatch):
     """Verify loop 1, defect 3: a ledger that could be read but not written
     reported 'ok' while every record was silently dropped."""
     import os
@@ -545,6 +545,17 @@ def test_a_read_only_ledger_rests_and_refuses_every_hold(ledger):
 
     _seed(ledger, 0.50)
     os.chmod(ledger, stat.S_IRUSR | stat.S_IRGRP | stat.S_IROTH)
+    if getattr(os, "geteuid", lambda: -1)() == 0:
+        # Root passes every permission check, so the mode bits alone do not make
+        # the file read-only to it. Answer as access(2) does for any other user.
+        real_access = os.access
+
+        def access(path, mode, *args, **kwargs):
+            if mode & os.W_OK and os.path.samefile(path, ledger):
+                return False
+            return real_access(path, mode, *args, **kwargs)
+
+        monkeypatch.setattr(budget.os, "access", access)
     try:
         state = budget.state()
         assert state["resting"] is True and state["ledger"] == "read-only" and state["reason"]

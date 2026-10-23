@@ -8,6 +8,10 @@ month's print with the next month's a year earlier, and a missing print (Oct
 
 from __future__ import annotations
 
+import importlib.util
+import sys
+import types
+
 import pandas as pd
 import pytest
 
@@ -112,6 +116,12 @@ def test_an_older_prints_yoy_is_never_served_as_the_latest(tmp_path, monkeypatch
     wide = pd.DataFrame({"CPI_yoy_z": [None, 1.7], "CPI_yoy": [None, 3.72], "CPI_yoy_newest": [marker[2], None]},
                         index=pd.DatetimeIndex(["2026-10-02", "2026-09-25"]))
     assert memo.build_surprise_ranking(wide) == []
+    if importlib.util.find_spec("streamlit") is None:
+        # The API's environment has no Streamlit; db_helpers needs only its cache decorator to import.
+        stub = types.ModuleType("streamlit")
+        stub.cache_data = lambda *a, **k: (lambda fn: fn)
+        monkeypatch.setitem(sys.modules, "streamlit", stub)
+        monkeypatch.delitem(sys.modules, "dashboard.components.db_helpers", raising=False)
     from dashboard.components import db_helpers
     assert db_helpers.build_surprises_df(wide).empty
     from src.analytics import playbook

@@ -499,7 +499,8 @@ def adaptive_regime_block(
 
     kept, excluded, block = list(universe), [], full_block
     while len(block) < required_months and len(kept) > min_assets:
-        missing = sub[kept].isna().sum().sort_values(ascending=False)
+        # stable: a tie goes to the asset listed first, never to the sort algorithm's whim
+        missing = sub[kept].isna().sum().sort_values(ascending=False, kind="stable")
         worst, cost = str(missing.index[0]), int(missing.iloc[0])
         if cost == 0:
             break                      # every remaining asset is complete; the months are not there

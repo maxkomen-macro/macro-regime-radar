@@ -265,7 +265,24 @@ def test_whoami_reports_what_the_gates_see_behind_the_ops_key(monkeypatch):
     assert body["forwarded_for_entries"] == 1
 
 
-def test_a_single_service_deploy_serves_its_root_files_and_the_snapshot(tmp_path, monkeypatch):
+@pytest.fixture()
+def spa_mounted():
+    """api/main.py mounts the catch-all only when web/dist exists at import, so
+    a checkout without a built bundle mounts it here, last, as a deploy does."""
+    import api.main as main_mod
+
+    if any(getattr(r, "endpoint", None) is main_mod.spa_fallback for r in app.router.routes):
+        yield
+        return
+    app.get("/{full_path:path}", include_in_schema=False)(main_mod.spa_fallback)
+    added = app.router.routes[-1]
+    try:
+        yield
+    finally:
+        app.router.routes.remove(added)
+
+
+def test_a_single_service_deploy_serves_its_root_files_and_the_snapshot(tmp_path, monkeypatch, spa_mounted):
     """The SPA catch-all used to answer /favicon.svg and /snapshot/latest.json
     with index.html; the snapshot fallback then failed to parse."""
     import api.main as main_mod
@@ -287,7 +304,7 @@ def test_a_single_service_deploy_serves_its_root_files_and_the_snapshot(tmp_path
     assert "root:" not in r.text
 
 
-def test_a_crafted_path_is_the_shell_not_a_server_error(tmp_path, monkeypatch):
+def test_a_crafted_path_is_the_shell_not_a_server_error(tmp_path, monkeypatch, spa_mounted):
     """Items 6/7 verify loop 2: a null byte made Path.resolve raise, a 500."""
     import api.main as main_mod
 

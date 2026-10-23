@@ -36,6 +36,24 @@ ITEMS = [(n, f) for n, f in analytics_cache.ITEMS
 
 client = TestClient(app)
 
+# A's fixture recorded the published copy of 2026-09-23, whose store had no ^GSPC close for Sep 22.
+# The copy is republished several times a day, so these tests rebuild that store from it: every
+# asset_prices row after Sep 23 and the Sep 22 ^GSPC close are taken out of a scratch copy.
+AUDIT_AS_OF, AUDIT_GAP = "2026-09-23", "2026-09-22"
+
+
+@pytest.fixture(scope="module")
+def audit_copy(tmp_path_factory) -> Path:
+    from tests.test_generations import _copy
+
+    path = _copy(PUBLISHED, tmp_path_factory.mktemp("audit") / "macro_radar.db")
+    c = sqlite3.connect(path)
+    c.execute("DELETE FROM asset_prices WHERE date > ?", (AUDIT_AS_OF,))
+    c.execute("DELETE FROM asset_prices WHERE symbol = '^GSPC' AND interval = '1d' AND date = ?", (AUDIT_GAP,))
+    c.commit()
+    c.close()
+    return path
+
 
 def _xnys(start: str, end: str) -> pd.DatetimeIndex:
     return es.sessions_between(es.session_calendar(start, end), start, end)
@@ -182,8 +200,8 @@ def test_the_ret_1y_from_date_is_a_real_session_before_the_data():
 # ── the published copy (A's fixture records these values) ───────────────────
 
 @published
-def test_the_published_copy(install_worker, monkeypatch):
-    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+def test_the_published_copy(install_worker, monkeypatch, audit_copy):
+    _serve(install_worker, monkeypatch, audit_copy, items=ITEMS)
     d = _tech()["data"]
     assert (d["price"], d["date"]) == (7706.02978515625, "2026-09-23")
     assert d["chg_1d"] is None and d["chg_1d_dates"] == {"from": "2026-09-22", "to": "2026-09-23"}
@@ -281,9 +299,9 @@ def test_the_route_serves_the_rsi_fields(served):
 
 
 @published
-def test_the_published_copy_rsi(install_worker, monkeypatch):
+def test_the_published_copy_rsi(install_worker, monkeypatch, audit_copy):
     """The audit's store has no Sep 22 close, so the RSI is held on Sep 21 (the value A's fixture records)."""
-    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+    _serve(install_worker, monkeypatch, audit_copy, items=ITEMS)
     d = _tech()["data"]
     assert (d["rsi_date"], d["rsi_prev_date"]) == ("2026-09-21", "2026-09-18")
     assert d["rsi"] == pytest.approx(59.2768, abs=5e-5) and d["rsi_prev"] == pytest.approx(50.7136, abs=5e-5)
@@ -390,9 +408,9 @@ def test_the_route_serves_the_macd(served):
 
 
 @published
-def test_the_published_copy_macd(install_worker, monkeypatch):
+def test_the_published_copy_macd(install_worker, monkeypatch, audit_copy):
     """The audit's store has no Sep 22 close, so the MACD is held on Sep 21, the day the line crossed above its signal."""
-    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+    _serve(install_worker, monkeypatch, audit_copy, items=ITEMS)
     m = _tech()["data"]["macd"]
     assert m["date"] == "2026-09-21" and m["last_cross"] == {"date": "2026-09-21", "kind": "above"}
     assert (m["macd"], m["signal"], m["hist"]) == pytest.approx((3.9720, 3.6872, 0.2849), abs=5e-5)
@@ -468,9 +486,9 @@ def test_the_route_serves_the_seasonality(served):
 
 
 @published
-def test_the_published_copy_seasonality(install_worker, monkeypatch):
+def test_the_published_copy_seasonality(install_worker, monkeypatch, audit_copy):
     """Every stored ^GSPC close, 1990 on: Feb 1990 to Aug 2026 (September not over), checked against a month-end resample."""
-    _serve(install_worker, monkeypatch, PUBLISHED, items=ITEMS)
+    _serve(install_worker, monkeypatch, audit_copy, items=ITEMS)
     s = _tech()["data"]["seasonality"]
     assert s["window"] == {"start": "1990-02", "end": "2026-08", "n": 439}
     by = {r["label"]: r for r in s["rows"]}
