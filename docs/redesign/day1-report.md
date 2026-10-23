@@ -14,7 +14,7 @@ with Lightweight Charts; one critique + audit pass on Markets; this report.
 
 ## Task 0 — Preflight
 
-- Repo root `/Users/maxkomen/Projects/Macro/macro-regime-radar`, HEAD `8c0b466`
+- Repo root (owner's machine), HEAD `8c0b466`
   ("Merge branch 'main' …"), branch `main`.
 - `.env` contains `EODHD_API_TOKEN` (checked by name only) and **is gitignored**.
 - Created **`.env.example`** at repo root with `FRED_API_KEY=` and

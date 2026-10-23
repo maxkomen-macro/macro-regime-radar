@@ -1,6 +1,6 @@
 # DB Freshness Baseline — 2026-08-06
 
-Snapshot of the **local** `data/macro_radar.db` (12.4 MB, file mtime **Aug 5 2026 13:25 local**) used for every screenshot and "stale" judgment in this inventory. Repo: `/Users/maxkomen/Projects/Macro/macro-regime-radar`, HEAD `c1ee4670173f3b536d16c9c79312b112ace1cb7f`.
+Snapshot of the **local** `data/macro_radar.db` (12.4 MB, file mtime **Aug 5 2026 13:25 local**) used for every screenshot and "stale" judgment in this inventory. Repo: the owner's local clone, HEAD `c1ee4670173f3b536d16c9c79312b112ace1cb7f`.
 
 ## Required baselines
 

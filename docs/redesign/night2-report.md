@@ -16,7 +16,7 @@ pass per tab with one fix iteration; this report.
 
 ## Task 0 — Preflight
 
-- Repo root `/Users/maxkomen/Projects/Macro/macro-regime-radar`, HEAD `8c0b466`, branch `main`.
+- Repo root (owner's machine), HEAD `8c0b466`, branch `main`.
 - The day session's dev servers were still holding :8000/:5173 — both killed and
   restarted so every verification ran against tonight's code (uvicorn runs without
   `--reload`; the API restart also picks up `api/` edits).
