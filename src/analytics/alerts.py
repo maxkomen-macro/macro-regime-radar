@@ -27,7 +27,8 @@ Market alerts (from derived_metrics):
     VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch
     USD_breakout:   UUP_weekly_ret_z > 2 → watch
 
-Re-runs: delete today's alert_feed rows and reinsert (no UNIQUE constraint).
+Re-runs: replace every alert_feed row (no UNIQUE constraint); a run with no
+alerts leaves the feed empty.
 """
 import logging
 import sqlite3
@@ -267,10 +268,10 @@ def upsert_alert_feed(conn: sqlite3.Connection, rows: list) -> int:
     """
     Clear all alert_feed rows and reinsert. Table is fully recomputed each run,
     so we truncate rather than delete only today's rows (which would leave stale
-    past-dated macro alerts accumulating on each daily refresh).
+    past-dated macro alerts accumulating on each daily refresh). An empty result
+    empties the table: once every trigger clears, no alert from an earlier run
+    may stay on screen as current.
     """
-    if not rows:
-        return 0
     conn.execute("DELETE FROM alert_feed")
     conn.executemany(
         """
@@ -293,10 +294,10 @@ def run() -> None:
         market_rows = build_market_alerts(conn)
         all_rows    = macro_rows + market_rows
 
+        n = upsert_alert_feed(conn, all_rows)
         if not all_rows:
-            logger.info("[alerts] No alerts generated (no triggered signals or threshold breaches).")
+            logger.info("[alerts] No alerts generated (no triggered signals or threshold breaches); alert_feed cleared.")
         else:
-            n = upsert_alert_feed(conn, all_rows)
             logger.info("[alerts] Done. %d alert_feed rows written.", n)
 
         print(f"\n--- Alert Feed ({len(all_rows)} alerts) ---")
