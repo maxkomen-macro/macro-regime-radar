@@ -30,7 +30,7 @@ Dated notes earlier Claude Code sessions appended to `CLAUDE.md`. Kept for refer
 
 ## CLAUDE.md header before the split (superseded)
 
-The title, intro, "Project at a Glance" and "Phase Status" of `CLAUDE.md` as they stood on `main` at the split, kept verbatim. CLAUDE.md's "What this is" replaces them; some lines are stale (the live site is now on Vercel, not Streamlit Cloud). The old `## What NOT to Do` list is now `## Never` in CLAUDE.md.
+The title, intro, "Project at a Glance" and "Phase Status" of `CLAUDE.md` as they stood on `main` at the split, kept as they were except two edits: the live URL now points to the current site, and the owner's local machine path is removed. CLAUDE.md's "What this is" replaces them; some lines are stale (the stack and hosting line still describe the Streamlit app). The old `## What NOT to Do` list is now `## Never` in CLAUDE.md.
 
 ```markdown
 # Macro Regime Radar — Claude Code Reference
@@ -41,9 +41,8 @@ Single source of truth for Claude Code sessions on this repo. Keep tight; verify
 
 ## Project at a Glance
 
-- **Live:** macro-regime-radar.streamlit.app
+- **Live:** https://macro-economic-radar.vercel.app/
 - **Repo:** github.com/maxkomen-macro/macro-regime-radar
-- **Local path:** `/Users/maxkomen/Projects/Macro/macro-regime-radar` (moved Aug 5 2026; the old `/Users/maxkomen/Python Macro/` path is dead)
 - **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI + RSS (feedparser), Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.
 - **Tabs:** 11 total. Names live in `dashboard/app.py` (around line 893).
 
