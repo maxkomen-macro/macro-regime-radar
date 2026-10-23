@@ -79,7 +79,7 @@ MAX_ABS_LEVEL = 1e6  # a VIX close or a yield in percent; the stored maxima are 
 # bond calendar (api/calendar.is_bond_trading_day) is closed: the 1968 Wednesday
 # paperwork closures, 1969 and 1972-73 closures (DGS10 only), Good Fridays with a
 # jobs report, 2001-09-13/14, the 2007-01-02 and 2025-01-09 mourning days and
-# 2012-10-29 (Sandy). Pinned against the stored series by tests/test_surprise_daily.py.
+# 2012-10-29 (Sandy). Pinned against the stored series by tests/test_surprise_provenance.py.
 TREASURY_EXTRA_SESSIONS = frozenset(date.fromisoformat(d) for d in (
     "1968-06-12", "1968-06-19", "1968-06-26", "1968-07-05", "1968-07-10", "1968-07-17",
     "1968-07-24", "1968-07-31", "1968-08-07", "1968-08-14", "1968-08-21", "1968-08-28",
