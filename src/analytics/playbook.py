@@ -156,6 +156,9 @@ def _zscore_sentences(derived: dict) -> list:
     for metric_name, label, theme in Z_METRIC_LABELS:
         if metric_name not in derived:
             continue
+        newest = derived.get("CPI_yoy_newest") if metric_name == "CPI_yoy_z" else None
+        if newest and newest["date"] > derived[metric_name]["date"]:
+            continue  # an older print's YoY: the newest print has no year-earlier month
         z = derived[metric_name]["value"]
         if abs(z) >= Z_EXTREME:
             adj = "elevated" if z > 0 else "depressed"

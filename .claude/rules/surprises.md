@@ -6,4 +6,4 @@
 - `z_interpretation` (`src/utils/format.py`) takes the direction word from the raw move, never from z alone; every reader (API, dashboard, weekly memo) passes the raw value at the z row's own date.
 - VIX alerts need a positive raw move at the z row's date; `VIX_shock` is dated by `VIX_weekly_chg_obs`, never by the W-FRI bucket.
 - `CPI_yoy` compares each monthly print with the same month a year earlier (`cpi_yoy_weekly`) and carries it through the weeks; never `pct_change(periods=52)` of the weekly level, which compared different months at month boundaries (Codex S-09).
-- `CPI_yoy_newest` marks the week carrying the newest CPI print; the API and the weekly memo skip a CPI row dated earlier (an older print's YoY when the newest has no year-earlier month, Codex S-12).
+- `CPI_yoy_newest` marks the week carrying the newest CPI print; the API, the weekly memo, the Streamlit surprise panels and the playbook skip a CPI row dated earlier (an older print's YoY when the newest has no year-earlier month, Codex S-12).

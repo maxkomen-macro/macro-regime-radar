@@ -112,6 +112,13 @@ def test_an_older_prints_yoy_is_never_served_as_the_latest(tmp_path, monkeypatch
     wide = pd.DataFrame({"CPI_yoy_z": [None, 1.7], "CPI_yoy": [None, 3.72], "CPI_yoy_newest": [marker[2], None]},
                         index=pd.DatetimeIndex(["2026-10-02", "2026-09-25"]))
     assert memo.build_surprise_ranking(wide) == []
+    from dashboard.components import db_helpers
+    assert db_helpers.build_surprises_df(wide).empty
+    from src.analytics import playbook
+    derived = {"CPI_yoy_z": {"value": 3.0, "date": "2026-09-25"}, "CPI_yoy_newest": {"value": marker[2], "date": "2026-10-02"}}
+    assert playbook._zscore_sentences(derived) == []
+    derived["CPI_yoy_newest"]["date"] = "2026-09-25"
+    assert len(playbook._zscore_sentences(derived)) == 1
     # the marker on the row's own week: the row is the newest print's
     path2 = tmp_path / "e.db"
     _derived(path2, SEP_ROWS + [("CPI_yoy_newest", "2026-09-25", float(pd.Timestamp("2026-09-01").date().toordinal()))])

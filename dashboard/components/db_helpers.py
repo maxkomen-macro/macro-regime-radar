@@ -389,6 +389,10 @@ def build_surprises_df(dm: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
         col_series = dm[col].dropna()
         if col_series.empty:
             continue
+        if col == "CPI_yoy_z" and "CPI_yoy_newest" in dm.columns:
+            marker = dm["CPI_yoy_newest"].dropna()
+            if not marker.empty and marker.index[0] > col_series.index[0]:
+                continue  # an older print's YoY: the newest print has no year-earlier month
         z = float(col_series.iloc[0])
         raw_col = _Z_TO_RAW.get(col)
         raw_val = None
