@@ -152,9 +152,8 @@ auditable data pipeline. The design language states this rather than sells it.
   Clear/Watch/Triggered · info/watch/risk · Risk-On/Risk-Off · Aligned/Diverges [bundle].
 - **The footer disclaimer is not optional:** anything that leaves the app ends with
   "Automated briefing from Macro Regime Radar. Not investment advice." [bundle]
-- The design bundle at
-  `/Users/maxkomen/Documents/Trading-Research-Docs/Macro Regime Radar Design System/`
-  is the visual source of truth. Token-level changes and anything softening the
+- The owner's local design bundle (*Macro Regime Radar Design System*, kept
+  outside this repo) is the visual source of truth. Token-level changes and anything softening the
   terminal character are owner-only decisions; disagreements are built to the bundle
   and logged in the session report, not applied [brief].
 

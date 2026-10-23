@@ -5,8 +5,8 @@ Autonomous self-verifying loop. Two phases: (1) land pre-staged header-caching m
 **Everything local. STOP before any push.** Human does final review + deploy.
 
 - **Run started:** 2026-07-09 ~11:52 PDT
-- **Repo:** /Users/maxkomen/Python Macro/macro-regime-radar
-- **Interpreter:** `python3` → venv `/Users/maxkomen/Python Macro/.venv/bin/python3` (Python 3.14.3, streamlit 1.54.0, full deps `VENV_OK`). Matches the already-running instance.
+- **Repo:** the owner's local clone
+- **Interpreter:** `python3` → the owner's local venv (Python 3.14.3, streamlit 1.54.0, full deps `VENV_OK`). Matches the already-running instance.
 - **Evidence dir:** ./proposals/fab_evidence/
 
 ## Hard constraints (acknowledged)
@@ -142,8 +142,8 @@ Untouched: `chat.py`, SQL guard, `_chat_dialog` logic, the no-key caption branch
 
 **Exact next steps for the human (do NOT run autonomously):**
 1. Review the FAB screenshots + `fab_evidence/fab_floating_scroll.gif` and the acceptance table.
-2. Live chat-guard eyeball (spends your Anthropic tokens — your call). The local app is **not currently running** (its background process was reaped). Start it with `ANTHROPIC_API_KEY` in your env: `cd "/Users/maxkomen/Python Macro/macro-regime-radar" && streamlit run dashboard/app.py` → open **http://localhost:8501**, click the floating **💬 AI Analyst** button, ask 2–3 normal questions (should answer, no over-blocking), and confirm a `pragma_table_info('regimes')` probe is rejected.
-3. Push the combined verified set (fast-forward): `cd "/Users/maxkomen/Python Macro/macro-regime-radar" && git push`. Then confirm the Streamlit Cloud redeploy is green.
+2. Live chat-guard eyeball (spends your Anthropic tokens — your call). The local app is **not currently running** (its background process was reaped). Start it with `ANTHROPIC_API_KEY` in your env: `cd <repo root> && streamlit run dashboard/app.py` → open **http://localhost:8501**, click the floating **💬 AI Analyst** button, ask 2–3 normal questions (should answer, no over-blocking), and confirm a `pragma_table_info('regimes')` probe is rejected.
+3. Push the combined verified set (fast-forward): `cd <repo root> && git push`. Then confirm the Streamlit Cloud redeploy is green.
 4. **(Optional) tidy history** — remove the mislabeled `99d0b99`: `git reset --hard 6b4f75c && git merge --no-ff fix/fab-float` (this re-diverges from origin, so `git pull --no-rebase` before pushing). Not required — main is already correct and pushable as-is.
 
 If the FAB ever needs re-work, the verified fix also lives on branch `fix/fab-float` (`8f9eb37`).

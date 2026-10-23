@@ -1,7 +1,7 @@
 # Desk · integration — report
 
 Branch `desk/integration`, cut from `origin/main` @ `a739585` on 2026-09-22 in the worktree
-`/Users/maxkomen/Projects/Macro/macro-regime-radar-integration`. It merges `desk/event-study`
+`macro-regime-radar-integration` (a sibling of the repo). It merges `desk/event-study`
 (`447467d`) and `desk/frame` (`0ac8b5c`) and makes them one product. Nothing pushed; `main` and
 `origin/main` untouched (`a739585`); no `.db` or `data/` path in any commit; every file staged by
 explicit path; the real database never opened for writing (every run used copies in the session's
@@ -229,7 +229,7 @@ Recorded as the review states them; not fixed on this branch.
 Push, once approved (the owner runs it; nothing here pushes):
 
 ```bash
-cd /Users/maxkomen/Projects/Macro/macro-regime-radar-integration
+cd <desk/integration worktree>
 git push -u origin desk/integration
 ```
 
