@@ -464,7 +464,7 @@ Render deploys only by hand (Auto-Deploy is off, `docs/redesign/DEPLOY.md`
 
 1. **Push the branch** (after `PUSH OK desk/cap-weight`):
    ```bash
-   cd /Users/maxkomen/Projects/Macro/mrr-cap-weight
+   cd <desk/cap-weight worktree>
    git push -u origin desk/cap-weight
    ```
    Then merge it into `main`, either as a pull request:
@@ -474,7 +474,7 @@ Render deploys only by hand (Auto-Deploy is off, `docs/redesign/DEPLOY.md`
    ```
    or locally, as fix/freshness was:
    ```bash
-   cd /Users/maxkomen/Projects/Macro/macro-regime-radar
+   cd <repo root>
    git checkout main && git pull --ff-only origin main
    git merge --no-ff desk/cap-weight -m "Merge branch 'desk/cap-weight'"
    git push origin main

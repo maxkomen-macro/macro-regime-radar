@@ -16,4 +16,4 @@
 - `detector/` — the single Impeccable detector run after the last UI change (`run-1.json`), the confirmation run (`run-2-confirmation.json`) and the file list; two intentional `side-tab` rails, no suppression added.
 - `after/after-fix-*.png` — captures after the review corrections: range switching without a crash (`markets-ranges-1440`), the Recession disclosure row at 768, the Dashboard at 390 without duplicated freshness chips.
 
-Playwright console logs for the interaction runs live under `/Users/maxkomen/Projects/Macro/.playwright-mcp/` (not part of the repo).
+Playwright console logs for the interaction runs live in a local `.playwright-mcp/` folder on the owner's machine (not part of the repo).

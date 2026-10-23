@@ -2,7 +2,7 @@
 
 **Reviewer:** independent functionality reviewer (did not implement any of tonight's work)
 **Date:** 2026-08-26, ~05:00–06:00 UTC · Vite dev server :5173 + uvicorn :8000, both already running
-**Evidence:** `/private/tmp/claude-501/-Users-maxkomen-Projects-Macro-macro-regime-radar/686263c6-ed53-4ac7-9820-d5faee2ea0c0/scratchpad/evidence/final-func/` (40 screenshots + 40 JSON reports + `overflow-report.json` + 3 full-text dumps) and `…/evidence/final-func-interactions/` (8 flow screenshots + `report.json` + quirk-verification + lens/assistant spot-checks). Assistant evidence reused from `…/evidence/phase6/panel-live-answer.png` — **zero Anthropic calls were made by this review.**
+**Evidence:** the review session's local scratchpad, not in the repo: `…/evidence/final-func/` (40 screenshots + 40 JSON reports + `overflow-report.json` + 3 full-text dumps) and `…/evidence/final-func-interactions/` (8 flow screenshots + `report.json` + quirk-verification + lens/assistant spot-checks). Assistant evidence reused from `…/evidence/phase6/panel-live-answer.png` — **zero Anthropic calls were made by this review.**
 
 ---
 

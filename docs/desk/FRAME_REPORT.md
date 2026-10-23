@@ -1,7 +1,7 @@
 # Desk · frame, shells, and non-analytical modules — report
 
 Branch `desk/frame`, cut from `324d583` (the launch line). Built 2026-09-21 in the worktree
-`/Users/maxkomen/Projects/Macro/macro-regime-radar-frame`. Frontend (`web/`) and routing, plus the
+`macro-regime-radar-frame` (a sibling of the repo). Frontend (`web/`) and routing, plus the
 one read-only endpoint §7 allows. Nothing pushed, `main` untouched, no secret in any file, the real
 database never written. **Stopped at the gate: waiting for `PUSH OK desk/frame`.**
 

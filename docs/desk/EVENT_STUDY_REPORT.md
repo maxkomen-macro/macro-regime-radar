@@ -209,7 +209,7 @@ Six events in six blocks: every one of the 6^6 = 46,656 block draws is enumerate
 Populate or refresh the scratch copy (owner-run; the second reads `EODHD_API_TOKEN` from `.env` itself, the third `FRED_API_KEY`; tier 1 makes no EODHD calls):
 
 ```bash
-cd /Users/maxkomen/Projects/Macro/macro-regime-radar
+cd <repo root>
 sqlite3 data/macro_radar.db ".backup data/desk_scratch.db"          # only when starting from nothing
 EODHD_PROBE_ON_START=0 .venv/bin/python -m src.market_data.asset_history --db data/desk_scratch.db   # ^GSPC, ^RUT, GC=F … (24 EODHD calls with a token)
 .venv/bin/python -m src.market_data.desk_history --db data/desk_scratch.db --tier 1                   # 5 FRED calls, 0 EODHD

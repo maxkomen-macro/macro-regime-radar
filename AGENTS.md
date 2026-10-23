@@ -8,7 +8,6 @@ Single source of truth for Codex sessions on this repo. Keep tight; verify again
 
 - **Live:** https://macro-economic-radar.vercel.app/ (the React site; it replaced the Streamlit app at macro-regime-radar.streamlit.app)
 - **Repo:** github.com/maxkomen-macro/macro-regime-radar
-- **Local path:** `/Users/maxkomen/Projects/Macro/macro-regime-radar` (moved Aug 5 2026; the old `/Users/maxkomen/Python Macro/` path is dead)
 - **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI + RSS (feedparser), Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.
 - **Tabs:** 11 total. Names live in `dashboard/app.py` (around line 893).
 
@@ -206,7 +205,7 @@ Still contains `data/macro_radar.db merge=ours`. Harmless, left in place. Do not
 ### Before every session
 
 ```bash
-cd "/Users/maxkomen/Python Macro/macro-regime-radar"
+cd <repo root>
 git checkout HEAD -- data/macro_radar.db && git pull --no-rebase
 ```
 
@@ -351,7 +350,7 @@ When in doubt: delete more than you add. Stale documentation is worse than missi
 
 ## React Migration (in progress — nothing ships without explicit user approval)
 
-- **Design source of truth:** `/Users/maxkomen/Documents/Trading-Research-Docs/Macro Regime Radar Design System/` — read `HANDOFF_REACT_MIGRATION.md` there first. `styles.css` + `tokens/` and `components/**/*.jsx` are shippable near as-is; `ui_kits/` are fixture-data references only.
+- **Design source of truth:** the owner's local design bundle (*Macro Regime Radar Design System*, kept outside this repo) — read `HANDOFF_REACT_MIGRATION.md` there first. `styles.css` + `tokens/` and `components/**/*.jsx` are shippable near as-is; `ui_kits/` are fixture-data references only.
 - **Design tooling:** the `impeccable` Codex plugin (v4.0.4, user scope, from `pbakaus/impeccable`) is installed — use `/impeccable` (audit, critique, polish, …) alongside the handoff bundle for all UI work.
 - **Step 1 (API) is built** — see the FastAPI section above.
 - **Steps 2–4 are built on branch `react-rebuild`** (as of 2026-08-26). `web/` is a Vite + React 18 + TypeScript app: all 7 tabs (Dashboard, Regime Lab, Markets, Credit, Recession, News & Calendar, Tools) plus Methodology and the assistant panel (`web/src/screens/shell/AssistantPanel.tsx` over `POST /api/assistant/ask`), a responsive foundation (`web/src/lib/useBreakpoint.ts` — mobile <480 / tablet <768 / desktop <1024 / wide; the sole width-conditional mechanism) and h1→h2→h3 heading semantics. Product and design contracts for it live in `web/PRODUCT.md` and `web/DESIGN.md`. A `Dockerfile` plus `docs/redesign/DEPLOY.md` describe two working deploys (split Vercel + backend host, or a single same-origin host). **Nothing is deployed and the branch is not pushed.** Session ledger: `proposals/OVERNIGHT_BUILD_LOG.md`.
