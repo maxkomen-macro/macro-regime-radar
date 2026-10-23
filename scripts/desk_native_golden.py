@@ -4,10 +4,11 @@ docs/desk/FRAME3_API_PLAN.md §2, layer 2. The base engine runs from a full
 checkout of <base> (a detached `git worktree add`, with PYTHONPATH on it: the
 engine imports src.analytics.dbpath and src.desk.series, so a partial archive
 would not import), on the engine suite's synthetic store
-(tests/test_event_study._synthetic_db, built by the base checkout's own
-builder), with both pins: generation="golden" and as_of="2026-09-24". It
+(tests/test_event_study._synthetic_db, built by HEAD's builder, the store
+the regression test runs on), with both pins: generation="golden" and as_of="2026-09-24". It
 writes tests/fixtures/desk_native_<base>.json, one sha256 of canonical JSON
-per query. tests/test_desk_native_regression.py compares HEAD's output, under
+per query (every float at GOLDEN_DIGITS significant digits, so the golden
+holds across CPUs). tests/test_desk_native_regression.py compares HEAD's output, under
 the same pins, against it.
 
     python scripts/desk_native_golden.py --base origin/main
@@ -26,14 +27,55 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import subprocess
 import sys
 import tempfile
+from decimal import Decimal
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PINS = {"generation": "golden", "as_of": "2026-09-24"}
+
+# The golden digests every float at GOLDEN_DIGITS significant digits. The engine's sums and
+# percentiles move in their last bits with the CPU's SIMD path: the golden written on a Mac never
+# matched a Linux run, and NPY_DISABLE_CPU_FEATURES alone moves values by up to 4e-15 relative.
+# A golden is written only when every float sits at least MIDPOINT_MARGIN (relative) from a
+# rounding midpoint, so noise that small cannot flip a digit; counts, dates and text stay exact.
+GOLDEN_DIGITS = 8
+MIDPOINT_MARGIN = 1e-13
+
+
+def _rounded(o):
+    if isinstance(o, float) and math.isfinite(o):
+        return float(f"{o:.{GOLDEN_DIGITS}g}")
+    if isinstance(o, dict):
+        return {k: _rounded(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_rounded(v) for v in o]
+    return o
+
+
+def golden_text(r: dict) -> str:
+    """A run's canonical JSON for the golden: sorted keys, every float at GOLDEN_DIGITS."""
+    return json.dumps(_rounded(r), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+
+def near_midpoints(o) -> list[float]:
+    """The floats of a run that lie within MIDPOINT_MARGIN of a GOLDEN_DIGITS rounding midpoint."""
+    if isinstance(o, float):
+        if not math.isfinite(o) or o == 0.0:
+            return []
+        d = Decimal(o)
+        unit = Decimal(10) ** (d.adjusted() - GOLDEN_DIGITS + 1)
+        frac = (abs(d) / unit) % 1
+        return [o] if abs(frac - Decimal("0.5")) * unit / abs(d) < Decimal(str(MIDPOINT_MARGIN)) else []
+    if isinstance(o, dict):
+        return [x for v in o.values() for x in near_midpoints(v)]
+    if isinstance(o, (list, tuple)):
+        return [x for v in o for x in near_midpoints(v)]
+    return []
 
 # The three presets and the catalog's ten other engine queries (DESK_FRAME3_SPEC §12.3's
 # "engine query" column). The wti and dxy rows are tier 2: on a store without them they are a
@@ -106,7 +148,13 @@ def _emit(store: str, kind: str, expect_root: str, full_dir: str | None) -> None
             name = es.slug_for(es.validate(q))
             try:
                 r = es.run_on(conn, q, generation=PINS["generation"], as_of=PINS["as_of"])
-                text = json.dumps(r, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+                if kind == "golden":
+                    near = near_midpoints(r)
+                    if near:
+                        raise SystemExit(f"{name}: {near[:3]} within {MIDPOINT_MARGIN:g} of a rounding midpoint")
+                    text = golden_text(r)
+                else:
+                    text = json.dumps(r, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
             except es.NotStored as exc:
                 text = f"NotStored:{exc.series}"
             except es.StudyError as exc:
@@ -180,15 +228,16 @@ def main() -> None:
         ap.error("--base is required")
     with BaseCheckout(a.base) as base, tempfile.TemporaryDirectory() as tmp:
         store = str(Path(tmp) / "synth.db")
-        run_side(base.path, "--build", store)
+        run_side(ROOT, "--build", store)
         side = run_side(base.path, "--emit", store, "--kind", "golden")
         specs = {name: {**spec, "sha256": sha} for spec, (name, sha) in zip(queries("golden"), side["shas"], strict=True)}
         fixture = {
             "base": base.sha,
             "pins": PINS,
-            "store": "tests/test_event_study._synthetic_db(seed=3), built by the base checkout",
-            "method": "sha256 of json.dumps(run_on(conn, q, **pins), sort_keys=True, separators=(',', ':'), "
-                      "ensure_ascii=False); a refusal is 'NotStored:<series>' or 'StudyError:<message>'",
+            "store": "tests/test_event_study._synthetic_db(seed=3), built by HEAD's builder",
+            "method": f"sha256 of json.dumps(run_on(conn, q, **pins), sort_keys=True, separators=(',', ':'), "
+                      f"ensure_ascii=False) with every float at {GOLDEN_DIGITS} significant digits (golden_text); "
+                      "a refusal is 'NotStored:<series>' or 'StudyError:<message>'",
             "queries": specs,
         }
         out = ROOT / "tests" / "fixtures" / f"desk_native_{base.sha[:7]}.json"

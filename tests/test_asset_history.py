@@ -36,6 +36,18 @@ ROOT = Path(__file__).resolve().parent.parent
 NOW = datetime(2026, 9, 21, 12, 0, tzinfo=timezone.utc)  # a Monday; last completed session Fri 2026-09-18
 
 
+def _without_asset_prices(path: Path) -> Path:
+    """A database from before the stored histories: the published snapshot
+    carries the table now, so a copy of it has to have the table taken out."""
+    c = sqlite3.connect(path)
+    c.execute("DROP TABLE IF EXISTS asset_prices")
+    if c.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'source_watermarks'").fetchone():
+        c.execute("DELETE FROM source_watermarks WHERE source = ?", (asset_history.WATERMARK,))
+    c.commit()
+    c.close()
+    return path
+
+
 class _BlockedYahoo(types.ModuleType):
     """Stands in for the yfinance package: any use fails the test."""
 
@@ -237,7 +249,7 @@ def test_without_the_table_the_endpoint_says_the_histories_are_not_stored(tmp_pa
     from fastapi.testclient import TestClient
     from src.analytics import dbpath
 
-    path = _copy(REPO_DB, tmp_path / "macro_radar.db")  # the local snapshot has no asset_prices table
+    path = _without_asset_prices(_copy(REPO_DB, tmp_path / "macro_radar.db"))
     monkeypatch.setattr(db, "DB_PATH", path)
     db.reset_connections_for_tests()
     w = install_worker(worker_mod.AnalyticsWorker(poll_s=0.05))
@@ -294,6 +306,8 @@ def _validate_copy(tmp_path: Path, *, seed: bool, watermark: dict | None = None,
     path = _copy(REPO_DB, tmp_path / f"v{time.monotonic_ns()}.db")
     if seed:
         _seed_asset_prices(path)
+    else:
+        _without_asset_prices(path)
     c = sqlite3.connect(path)
     if bad_close:
         c.execute("UPDATE asset_prices SET close = 0 WHERE symbol = 'SPY' AND interval = '1d'"

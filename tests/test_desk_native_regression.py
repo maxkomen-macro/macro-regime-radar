@@ -9,7 +9,8 @@ event table and signal trace, which leave `_run` on a side channel; the dict
    lacks are the typed `NotStored` on both paths;
 2. HEAD's output, pinned (generation "golden", as-of 2026-09-24), matches the
    golden the base engine wrote (scripts/desk_native_golden.py, one sha256 per
-   query, tests/fixtures/desk_native_<base>.json);
+   query of its golden_text, every float at 8 significant digits,
+   tests/fixtures/desk_native_<base>.json);
 3. the A/B run on the published copy is scripts/desk_native_ab.py, recorded
    in docs/desk/FRAME3_API_REPORT.md.
 
@@ -35,6 +36,7 @@ from dataclasses import replace
 from src.desk import event_study as es
 from src.desk import series as registry
 from tests.test_event_study import _synthetic_db
+from scripts.desk_native_golden import golden_text
 
 ROOT = Path(__file__).resolve().parent.parent
 GOLDENS = sorted((ROOT / "tests" / "fixtures").glob("desk_native_*.json"))
@@ -124,7 +126,7 @@ def test_heads_pinned_output_matches_the_golden(synth, base_vix):
             q = es.parse_slug(spec["slug"]) if "slug" in spec else es.Query(**spec["kwargs"])
             assert es.slug_for(es.validate(q)) == name
             try:
-                text, hits = _as_base_text(_canonical(_run_pinned(conn, q)))
+                text, hits = _as_base_text(golden_text(_run_pinned(conn, q)))
                 reworded += hits
             except es.NotStored as exc:
                 text = f"NotStored:{exc.series}"

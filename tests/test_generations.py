@@ -75,6 +75,18 @@ def _seed_asset_prices(path: Path, seed: int = 7) -> None:
     conn.close()
 
 
+def _until(cond, timeout: float = 10.0) -> bool:
+    """Poll `cond` until it holds or `timeout` passes. A build ends with
+    db.freshness() over the whole copy (100-150 ms on the published one), so a
+    fixed sleep after an item runs can look before the build has finished."""
+    deadline = time.monotonic() + timeout
+    while not cond():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.005)
+    return True
+
+
 def _hy_oas_latest(path: Path) -> float:
     c = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
     try:
@@ -635,10 +647,7 @@ def test_an_item_that_fails_on_a_new_file_holds_the_whole_generation_back_then_p
     old_hy = w.result("hy")
     os.replace(b, a)
     w.poke()
-    deadline = time.monotonic() + 10
-    while builds["n"] < 2 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    time.sleep(0.05)
+    assert _until(lambda: w.status()["held"] is not None), "the new file's build never finished"
     assert w.current.id == first, "held back: the previous generation serves whole"
     assert w.result("flaky") == "good" and w.result("hy") == old_hy == _hy_oas_latest_ro()
     st = w.status()
@@ -795,14 +804,16 @@ def test_the_serving_process_freezes_its_heap_once_so_full_collections_stay_shor
 
     a, b = scratch
     monkeypatch.setattr(worker_mod, "_HEAP_FROZEN", False)
-    assert gc.get_freeze_count() == 0
+    # Some interpreters start with objects already frozen (375 on Ubuntu's CPython 3.12.3), so count from here.
+    before = gc.get_freeze_count()
+    assert before < 1_000, before
     w = serving_worker(items=[("probe", lambda ctx: 1)])
     w.freeze_gc = True
     try:
         w.start(serving=True)
         assert w.wait_published(timeout=30)
         frozen = gc.get_freeze_count()
-        assert frozen > 10_000, frozen
+        assert frozen - before > 10_000, (before, frozen)
         os.replace(b, a)
         w.poke()
         assert w.wait_published(min_id=2, timeout=30)
@@ -941,14 +952,10 @@ def test_a_file_that_reverts_to_the_served_one_clears_the_hold(serving_worker, s
     os.link(a, original)  # keep the served file's inode to move it back
     os.replace(b, a)
     w.poke()
-    deadline = time.monotonic() + 10
-    while builds["n"] < 2 and time.monotonic() < deadline:
-        time.sleep(0.01)
-    time.sleep(0.1)
-    assert w.status()["held"] is not None
+    assert _until(lambda: w.status()["held"] is not None)
     os.replace(original, a)  # the served file, byte for byte and inode for inode
     w.poke()
-    time.sleep(0.3)
+    assert _until(lambda: w.status()["held"] is None)
     st = w.status()
     assert w.current is first and st["held"] is None and st["last_error"] is None and st["current_with_file"] is True
 
