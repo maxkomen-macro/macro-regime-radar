@@ -1,3 +1,18 @@
+---
+paths:
+  - "src/analytics/surprise.py"
+  - "src/analytics/surprise_dates.py"
+  - "src/analytics/alerts.py"
+  - "src/analytics/playbook.py"
+  - "src/utils/format.py"
+  - "src/memo.py"
+  - "api/db.py"
+  - "dashboard/components/db_helpers.py"
+  - "web/src/screens/shell/alert-copy.ts"
+  - "tests/test_surprise*.py"
+  - "tests/test_cpi_yoy.py"
+---
+
 # Surprise metrics (src/analytics/surprise.py)
 
 - The VIX, DGS10, DGS2 and SPREAD weekly rows and the three daily moves are built from daily stores (^VIX in `asset_prices`, DGS10/DGS2 in `desk_series`), never from month-stamped `raw_series` (a change read there is month over month, dated to the first Friday: the flapping 2026-10-02 VIX_shock alert). Each run deletes those metrics' rows first (`REPLACED_METRICS`), and a store without the daily tables leaves them empty, never monthly.

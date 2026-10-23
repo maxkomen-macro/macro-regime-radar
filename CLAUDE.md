@@ -1,328 +1,57 @@
-# Macro Regime Radar — Claude Code Reference
+# Macro Regime Radar — Claude Code
 
-Single source of truth for Claude Code sessions on this repo. Keep tight; verify against code before adding new claims. If you can't confirm a fact in five minutes of reading, don't add it.
-
----
-
-## Project at a Glance
-
-- **Live:** macro-regime-radar.streamlit.app
-- **Repo:** github.com/maxkomen-macro/macro-regime-radar
-- **Local path:** `/Users/maxkomen/Projects/Macro/macro-regime-radar` (moved Aug 5 2026; the old `/Users/maxkomen/Python Macro/` path is dead)
-- **Stack:** Python 3.12, Streamlit, SQLite (`data/macro_radar.db`), FRED + yfinance + Finnhub + NewsAPI + RSS (feedparser), Anthropic API, Perplexity Sonar API, scikit-learn, plotly/altair, openbb, arch, riskfolio-lib, quantstats, prophet. Hosted on Streamlit Community Cloud, automated via GitHub Actions.
-- **Tabs:** 11 total. Names live in `dashboard/app.py` (around line 893).
+Loaded by every session and every Project thread, and re-read after compaction. Keep it under 200 lines: repo facts and rules that are true for every task. Topic detail lives in `.claude/rules/` and loads when you touch matching files (index at the bottom). How threads branch, report and open PRs lives in the Claude Code Project's instructions, not here.
 
 ---
 
-## Phase Status
+## What this is
 
-Phases 0–12 are complete. For per-phase scope, read `git log` and recent commit messages.
+- A quant macro terminal: a FastAPI service (`api/`) and a Vite + React 18 + TypeScript front end (`web/`) over one SQLite store that GitHub Actions rebuilds. `dashboard/` is the legacy Streamlit app.
+- Python 3.12, Node 22. Sources: FRED, EODHD (API and live relay), Finnhub, NewsAPI, RSS, yfinance (pipeline only), Anthropic, Perplexity Sonar.
+- **Front end:** Vercel, production branch `main`. A merge to `main` ships the public site.
+- **API:** Render, built from `Dockerfile`, Auto-Deploy off; the owner deploys by hand. Runbooks: `docs/redesign/DEPLOY.md`, `docs/RUNBOOK.md`.
+- **Data:** `data/macro_radar.db` is not in git. The refresh workflows publish it as the `data-latest` GitHub Release asset (`.claude/rules/database.md`).
+- **`main` moves on its own:** the workflows commit memos and the playbook to `main` several times a day (`[skip ci]`). Expect it to move under your branch.
+- **Public on purpose:** the repo is open so people can see how it works; the product is the website. Point user-facing text (UI copy, README, docs) to the site, not to cloning or self-hosting: no "run it yourself" guides, deploy buttons or badges. There is no LICENSE file; don't add one without the owner. Never commit keys, tokens or local machine paths.
 
----
+## Layout
 
-## Bloomberg Design System
-
-Dark theme only. No alternative palettes.
-
-| Token | Value |
+| Path | What |
 |---|---|
-| Background | `#0d1117` |
-| Card background | `#161b22` |
-| Borders | `#30363d` |
-| Accent blue | `#4a9eff` |
-
-- Use `streamlit.components.v1.html()` for all styled cards (see Streamlit Constraints for why).
-- Sparklines on numeric metric cards where time series supports it.
-- Monospace for numeric values; small uppercase labels above large values.
-
----
-
-## Streamlit Constraints (Hard-Won)
-
-1. **HTML sanitizer strips CSS from `st.markdown` even with `unsafe_allow_html=True`.** For any styled card, use `streamlit.components.v1.html(html_string, height=...)`. Reserve `st.markdown` for plain markdown only.
-2. **Caching:** `@st.cache_resource` for scikit-learn estimators, fitted pipelines, and other model objects. `@st.cache_data` for DataFrames, arrays, dicts. Mixing these causes pickling errors or silently stale models.
-3. **DataFrames:** pass `width="stretch"` (the new syntax replacing deprecated `use_container_width=True`).
-4. **Pandas:** use `df.loc[mask, col] = value`. Never use chained indexing `df[col][mask] = value` — raises `ChainedAssignmentError` in modern pandas.
-5. **Fragments:** scope `st.fragment(run_every=N)` narrowly. Wrapping a whole tab in a fragment causes session state issues. Example: the Events & Intelligence two-column feed (`_render_feed` in `events_tab.py`) is a fragment, and headline clicks call `st.rerun(scope="fragment")` so selecting an article re-renders only the feed — not the summary-bar / calendar `components.html` iframes. That full-tab rerun was the source of click latency.
-
----
-
-## Data Source Rules
-
-- **FRED yields:** daily series only — `DGS2`, `DGS10`. Not monthly averages `GS2`, `GS10`.
-- **IG OAS:** `BAMLC0A0CM`. Not `BAMLC0A0CAAA`. Other BAML series in active use: `BAMLH0A0HYM2` (US HY), `BAMLH0A1HYBB` (BB), `BAMLH0A2HYB` (B), `BAMLH0A3HYC` (CCC).
-- **Inflation expectations:** `T10YIE` and `T5YIE` are the live signals. Breakeven proxy `T10YIE − T5YIE` is the operative input for current readings.
-- **FRED daily series are stored month-stamped (B6, 2026-09-18).** `fred_client` keeps one `raw_series` row per month dated the 1st, holding the newest in-month value (published history every monthly model reads; never change it). The true date of each series' newest observation lives in `source_watermarks` (`src/watermarks.py`, written by `fetch_data.py`); `api/freshness.py` and `scripts/validate_db.py` read it. Counting lag from the month stamp produced the "nine business days behind" report on current values. Treasury yields (DGS*) follow the bond-market calendar (`api/calendar.py` `is_bond_trading_day`).
-- **Daily bars are stored only after their session completes (B6).** `src/market_data/session.py` (`bar_is_complete`: real NYSE close incl. 13:00 half-days, +20 min; tables pinned to `api/calendar.py` by a parity test). Intraday runs capture the official close after the session; `intraday-refresh.yml` validates with `--mode intraday` (a stale daily close warns, never blocks). `scripts/restate_market_daily.py` restates the four known mid-session closes (2026-09-01/02/03/10); owner-run only.
-- **`USSLIND` is a frozen historical series, and the recession model no longer trains on it.** FRED stopped publishing it in February 2020 — the local DB has 288 rows ending `2020-02-01` and that is the entire dataset that will ever exist. Because those rows are more than two years old, `src/analytics/recession.py` (`_usslind_stale`, ~lines 103–115) takes its fallback on every run: the fifth feature (`lei_proxy`) is the 10-year minus 5-year breakeven spread, `T10YIE − T5YIE`, for both **training and the live reading**. The series stays in `RECESSION_SERIES` (`src/config.py`) only so the stored history and the fallback check keep working. Corrected 2026-09-19 (iteration 1, decision I8); the earlier claim that the 288 rows are training data was wrong.
-- **IRR:** `numpy.irr` was removed in recent numpy versions. Use binary search on NPV. Do not reintroduce `numpy.irr`. Implementation lives in `src/analytics/lbo.py` (look for `_compute_irr`).
-- **LBO cash sweep (B1, 2026-09-18):** cash for debt service is 60% of EBITDA (`CASH_FOR_DEBT_SERVICE`); it pays interest first (a shortfall is added to the debt), scheduled amortization is a floor, and the remainder sweeps to debt; cash left after payoff goes to equity at exit. Before this the rate never reached the IRR. Documented in `docs/lbo-model.md`; pinned by `tests/test_lbo.py`.
-- **Market data (pipeline):** `yfinance` (keyless) for both stored daily and intraday bars. (The on-demand API layer and the live tape are EODHD-first since 2026-09-06 — see the FastAPI section.) The active client is `src/market_data/yfinance_client.py` (`fetch_daily` + `fetch_intraday_5m`); `src/market_data/fetch_market.py` uses it for every mode (`backfill`, `incremental`, `intraday-only`) and **no longer requires `POLYGON_API_KEY`**. `src/market_data/polygon.py` and `config/providers.yml` remain on disk as dormant legacy — imported by nothing in the live pipeline. If you find yourself touching `polygon.py`, you're on the wrong path — verify with the user before continuing.
-- **Migrated daily fetch off Polygon → yfinance (May 26 2026).** Symptom was Polygon free-tier 429s: the 12s-per-request throttle plus 60/120/240s backoffs made `--mode incremental` stall for 13+ min across the 23 daily symbols. The daily path now uses the same keyless yfinance source the intraday path already used. Daily rows are written with `source='yfinance'`.
-- **The Desk's ETFs live in `asset_prices` (desk/fill-etf, 2026-09-27).** The eleven sector ETFs, SPY, RSP, IWM, QQQ, SMH, SOXX, IGV, TLT, IEF, HYG, LQD, GLD and UUP are registry series with store `asset_prices` (`src/desk/series.py`, tier 2), fetched by the full refresh's "Store allocation price histories" step (`src/market_data/asset_history.py`, EODHD first, Yahoo fallback, like ^GSPC) from 1990, so the row set is the provider's whole history (XLC from 2018-06-19, XLRE from 2015-10-08; a later first close is named `short` in the watermark). Daily rows carry the session's `volume` (nullable; `ensure_table` adds the column in place to a published table that predates it, so no DB file is ever edited by hand). `scripts/validate_db.py` fingerprints `asset_prices` over its column list and every column (`_asset_prices_fingerprint`, volume and provider included; `asset_history.STORED_COLUMNS` pins the layout), so a volume-only correction, or the column's arrival, publishes (Codex R-02). The nine sector ETFs listed from 1998 keep their event-study roles (the frozen entries name them); the other fifteen have none. `/study`'s `series[]` (the Event Study page's Shock and Target choices) lists only the series some catalog study reads (`desk_catalog.series_read`, Codex R-03), so the sector ETFs appear only in the legacy `/api/desk/event-study`.
-- **News enrichment follows the page, not the run (N-B1, 2026-09-20).** `enrich_new_rows` used to see only the ids a run inserted, ranked by rule score, while the News tab asks `/api/news?hours=168` ordered by significance — so the cards on screen were almost never the enriched ones. `select_display_topups` (`src/analytics/news.py`) now reads the top ten of the display window that carry no AI read, mirroring `api/db.py`'s window clause and ORDER BY, and those ids take the hourly room first inside the same ledger, floor and $50 cap. Write that SQL in `news.py`, never import `api/db.py`: `tests/test_workflows.py` pins the module's imports to `requirements-news.txt`. `scripts/backfill_enrichment.py` does the same once for a database that is behind (read-only until `--apply`).
-- **The top-up and the page mean the same ten stories (B-H2, fix/prelaunch-1).** The page merges near-identical headlines (`headlineKey` in `web/src/screens/news/news-copy.ts`) before it shows ten cards, so `select_display_topups` reads the page's 150 rows and collapses them on `news.headline_key`, a port that spells out JavaScript's whitespace set by code point (Python's `str.strip()`/`split()` differ on U+001C–U+001F, U+0085 and U+FEFF); `pendingReadIds` merges before it takes ten. One fixture, `web/src/screens/news/__fixtures__/story-keys.json`, drives both suites. A read replaces the rule score with Claude's, so a run re-reads the ten after its top-ups and settles newcomers (`settle`), pays for each story once, and `share_story_reads` lends a read to unread copies of the same story. One story, for paying once, settling and lending alike, is the same key published less than 12 h apart (`SHARE_SPAN`): a recurring title further apart is a different article.
-- **The News hero leads with a read (fix/site-audit D5).** `leadStory` (`web/src/screens/news/news-copy.ts`) picks the highest-scored story of the merged feed that carries a stored read (`hasAiRead`: Claude's interpretation or Perplexity's research), else the top story, and `whySentence` prints its interpretation, else its research as plain prose (`plainResearch`: no markdown bold, no `[n]` citations); "No model interpretation was stored for it" only when no story in the window has a read. Stored text only, never a request-time model call.
-- **News pipeline:** Finnhub (general + M&A), NewsAPI (macro + M&A), and keyless **RSS feeds** (`fetch_rss_news` + `RSS_FEEDS`: Federal Reserve, NYT Business, CNBC, FT Markets, MarketWatch — via `feedparser`) are ingested via `src/analytics/news.py`. All three flow through the same dedupe → classify → five-dimension significance scoring → store path. Rows are stored first; only rows new in this run with a rule score ≥ 2.5 get an Anthropic interpretation pass and a per-item Perplexity Sonar (cited research) enrichment, at most 10 per rolling hour under a $50/month hard cap, each call recorded with its cost from usage in the append-only `ai_spend_ledger` (never prune it; `src/analytics/ai_spend.py`, B4 2026-09-18). Both outputs persist into `news_feed` (`regime_interpretation` and `perplexity_research` columns). RSS source labels are tier-colored in the dashboard via `events_tab.SOURCE_TIERS`.
-- **Share counts (desk/cap-weight):** The preset baskets' share counts live in `share_counts` (desk/cap-weight): Yahoo's, read by the full refresh's 'Store share counts' step (`src/market_data/share_counts.py`), checked against Yahoo's market cap (ADR units, a multi-class company's listed class), advisory in `validate_db`; the API reads them through the worker item `desk_share_counts` and never calls Yahoo.
-
----
-
-## Analytics Patterns
-
-- **Regime engine:** 4-way softmax classifier — Goldilocks, Overheating, Stagflation, Recession Risk. Temperature = 0.7 (`src/regime.py:75`). Daily output stored in `regimes` table including 4 probability columns (`prob_goldilocks`, `prob_overheating`, `prob_stagflation`, `prob_recession`).
-- **Signal card fill bars:** threshold-ratio formula.
-  - "above" condition: `fill_pct = value / threshold * 100`
-  - "below" condition: `fill_pct = threshold / value * 100`
-  - Do not use historical-range-based `fill_pct` — it produced incorrect "all triggered" results.
-- **Odds as whole percents (fix/site-audit D1):** a stored probability prints as a whole percent rounded half up on its decimal (0.425 → 43%): `round_half_up`/`pct_text` in `src/utils/format.py`, `roundHalfUp` in `web/src/lib/format.ts` (`fmtProb`, the Desk's `oddsPct`); one fixture, `web/src/lib/__fixtures__/whole-percent.json`, drives both suites. Never `round()`, `:.0%` or `Math.round(x * 100)` for odds: the first sends a tie to even, the other two round the double (the takeaway printed 42% beside 43% everywhere else). Codex S-03: a model that computes on percent points carries the stored odds unrounded (`to_pct`: 0.425 → 42.5; the scenario's state and stressed odds), and only the printer rounds; Both guards read the parse tree, so comments and strings never trip them and parentheses never hide a print (fix/site-audit D-e): `whole_percent_offences` in `tests/test_whole_percent.py` (`round`/`np.around`/`np.round` of ×100 to 0 places, `format(p, ".0%")`, `"{:.0%}".format`, `f"{p:.0%}"`, `f"{p*100:.0f}%"`, `"%.0f%%" % (p*100)`) over every Python module that prints a probability, the weekly memo and the Streamlit header and tabs included, and `wholePercentOffences` in `web/src/lib/whole-percent-guard.test.ts` (`Math.round(…×100)`, `(…×100).toFixed(0)`) over the web's probability formatters; a print in one of them that is not a probability (a weight, a basis-point change) says `# not a probability` / `// not a probability` on its line. Wherever the four odds print together the web says so, `ODDS_ROUNDING_NOTE` ("Rounded; may not sum to 100", fix/site-audit D-b): under `ProbabilityBar`'s legend (`roundingNote={false}` for a caller that prints one note for several bars), under the Dashboard odds chart, and once under the Scenarios pair; the rounding stays independent half up.
-- **Transition outlook, one computation per horizon (fix/site-audit D2):** `/api/regime/transitions` serves each horizon's stay and highest-risk path by one rule (`stay_probability_3m`/`highest_risk_*` and `stay_probability_6m`/`highest_risk_6m_*`, `get_transition_narrative`); the Dashboard and the Regime Lab print both rows through `web/src/screens/shared/transition-outlook.ts` and never derive a horizon in the browser (the 6-month row once read `transitions_6m[0]` and 100 minus its exits). Both tables are still the hand-set priors: `_compute_transitions_from_db`'s `< 50` check counts distinct pairs (at most 16), so the counted matrix never serves (docs/FRESHNESS_REPORT.md, D4, not applied).
-- **Macro surprise scoring:** rolling z-scores over the configured window. Inspect `src/analytics/surprise.py` for current window length and the mix of 1-period diffs vs YoY changes — implementation evolves; do not memorize specific window values here.
-- **Recession model:** logistic regression in `src/analytics/recession.py`, trained on NBER dates. Its fifth feature is the `T10YIE − T5YIE` breakeven spread for both training and the live reading, because USSLIND has been stale since Feb 2020 (see the USSLIND note above). Inspect that file for the current feature set and lag.
-- **Allocation optimizer, adaptive universe (N-B2, 2026-09-20).** The optimizers fit on months where every asset has a return; across all ten that block starts Feb 2010, because HYG (2007) and DJP (2006) have no earlier history and no index proxy, so Goldilocks never cleared the 24-month bar and the optimizer had never produced weights. `adaptive_regime_block` drops the assets whose gaps cost the most months, but only while dropping still buys the bar; when it cannot, it keeps every asset and lowers the bar to what they support, never below `MIN_OPTIMIZER_MONTHS`/`MIN_OPTIMIZER_ASSETS`. `optimizations.universe` carries the excluded assets, the months used and a ready-to-print sentence, which the Tools panel states above the weights. No index history is spliced: FRED serves the ICE BofA total-return indices for a rolling three years only, and the commodity index Yahoo carries (`^SPGSCI`) tracks a different benchmark from DJP's.
-- **The 40% cap holds after normalization (fix/site-audit D3).** Every optimizer that post-processes its weights (MVO, min variance, risk parity, HRP, CVaR, HERC) goes through `cap_weights` in `src/analytics/allocation.py`: the Euclidean projection onto the bounded simplex, w = clip(x + λ, floor, cap) with Σw = 1 (λ by bisection), floors and caps met together (Codex S-02: the pro-rata water-filling it replaced rejected the feasible [.8, .19, .005, .005] with cap .4, floor .2). Black-Litterman's market-cap fallback (SLSQP failed) goes through it too (Codex S-04: renormalized over a universe without US Agg Bond, US Large Cap read 44.4%). Never clip and then divide by the sum: that lifted HERC's US Agg Bond back to 40.52% under "max 40% per asset" (riskfolio's `HCPortfolio` is built without `w_max`, so its Step-4 bound fitting caps nothing). Pinned by `tests/test_allocation_cap.py`.
-- **Perplexity Sonar enrichment:** `src/analytics/perplexity.py` calls the Sonar API; result strings are stored in `news_feed.perplexity_research` and rendered in both the Events & Intelligence tab and the daily memo.
-
----
-
-## Database
-
-`data/macro_radar.db` is the SQLite store (11 tables; 10 excluding `sqlite_sequence`).
-
-**It is NOT in git.** Committing this ~10 MB binary on every hourly refresh bloated the repo
-to ~283 MB and broke Streamlit Cloud's deploy clone (the clone timed out → "Failed to
-download the sources"). As of Jun 2026 the DB is **gitignored** and shipped as a rolling
-**GitHub Release asset** on the **`data-latest`** tag instead:
-
-- **Writers** (`refresh-data.yml`, `intraday-refresh.yml`) `gh release download` the DB from
-  `data-latest` at job start, run their incremental update, then `gh release upload … --clobber`
-  it back. They are in the `data-write` concurrency group so uploads don't race.
-- **Readers** (`daily-memo.yml`, `weekly-memo.yml`) download it read-only to build the memos.
-- **Dashboard** (`dashboard/app.py`) downloads the latest asset into `DB_PATH` at startup via
-  the GitHub API, authenticated with **`GH_DB_TOKEN`** (a read-only PAT in Streamlit Cloud
-  secrets — the repo is private, so the asset is not publicly reachable), cached
-  `@st.cache_resource(ttl=900)`. No token locally → dev uses the on-disk DB untouched.
-- Do **not** re-add the DB to git tracking. Inspect locally: `sqlite3 data/macro_radar.db ".tables"`.
-
-Tables added since v1: `news_feed` (Phase 11) and `factor_data` (Fama-French factors via openbb).
-
----
-
-## FastAPI Service (`api/` — Atlas + React front end)
-
-A **FastAPI** service (`version="1.3.0"`) in the top-level `api/` package — intentionally self-contained: it does **not** import `src.config` (so it runs without `FRED_API_KEY`), and every heavy dep (`anthropic`, pandas/scikit-learn, riskfolio) is imported lazily at the point of use, never at module import. Endpoint groups:
-
-- **Unprefixed** (6 routes: `/health`, `/regime/latest`, `/signals/latest`, `/series`, `/series/latest`, `/series/{series_id}/latest`) — the original latest-snapshot contract for Atlas. Do not rename fields without coordinating with Atlas's MacroBridge agent.
-- **`/api/*`** (31 routes on the `api` router) — one endpoint per table or computation the Streamlit dashboard reads: table endpoints mirror the dashboard loaders' SQL (`api/db.py`), computed ones call the same `src/analytics/*` modules the tabs do. Regime (`/latest`, `/history`, `/intelligence`, `/playbooks`, `/duration`, `/transitions`, `/analogues`, `/scenarios`, POST `/scenario`), `/signals/latest` (server-computed threshold, direction, distance-to-trigger, status — the frozen Atlas route keeps the old shape), `/priced`, `/surprises`, `/alerts`, `/news` (optional `ticker` filter) + `/news/latest`, `/market/daily`, `/market/intraday`, `/calendar` (upcoming window) + `/calendar/recent`, `/backtests` (pivoted long→wide server-side), `/credit/oas` (pct **and** bps + sparklines) + `/credit/metrics`, `/recession/probability` + POST `/recession/scenario`, `/lbo/defaults` + POST `/lbo/run`, `/allocation`, `/freshness`. **On-demand symbol layer** (`api/providers/`, rebuilt 2026-09-06; `api/lookup.py` is the compatibility seam): `/market/search?q=`, `/market/profile/{symbol}`, `/market/candles/{symbol}?range=` (provenance envelope, never a bare list; `range=2Y` since desk/books is two years of daily bars, completed New York sessions only, cached per ticker per session in `market.daily_bars`, which also carries EODHD's unadjusted `close_raw` for dollar volume), `/market/actions/{symbol}`, `/market/options/{symbol}/expirations` + `/market/options/{symbol}?expiration=`, `/market/ticks/{symbol}`, `/providers/status` — **EODHD only since fix/prelaunch-1 (the API process never calls Yahoo; an EODHD failure is a typed, disclosed error)**, one provider per series, typed errors (`{detail, kind, provider, retryable}` mapped from `api/providers/errors.py`), keyed single-flight TTL caches, symbol normalization in `api/providers/symbols.py` (never send Yahoo syntax to EODHD or vice versa). Entitlements are probed once per family at startup (`api/providers/entitlements.py`); on 2026-09-06 fundamentals and ticks are not in the plan (403 → explicit unavailable), options are. Tests: `tests/test_providers.py` (mock transport), `tests/test_symbols.py`, `tests/test_api_lookup.py`.
-- **Live + assistant:** WebSocket `/api/stream/ws` and `GET /api/stream/debug` (EODHD relay, `api/stream.py` — one upstream connection per feed, the token never crosses to the client; 2026-09-06: stale-tick flags, degraded verdict, bounded dynamic `watch`/`unwatch` subscriptions ≤20 symbols with 10-min idle expiry). 2026-09-10: the upstream reconnect backoff resets only after EODHD's 200 ack or a tick, so a refused subscribe (`422 Symbols limit reached` — usually a second local uvicorn holding the per-token quota) backs off 1→30 s instead of reconnecting every second (`tests/test_stream_hub.py`); the Dockerfile CMD carries `--timeout-graceful-shutdown 10` so a hung shutdown cannot leave an orphan holding the feeds, and **POST `/api/assistant/ask`** (`api/chat.py`) which streams the Phase-12 agent as SSE (`data: {"delta"}` frames, terminal `event: done`) — gated by `ASSISTANT_ACCESS` (off by default when `CORS_ORIGINS` is set).
-- **Per-series freshness (B3, 2026-09-18):** `/api/freshness` adds `series[]` (state live·delayed·close·stale·fallback·unknown, `as_of`, `delay_min`, `cycles_behind`, `stale`, `discontinued`, `reason`); `/api/credit/metrics`, `/api/credit/oas`, `/api/recession/probability`, `/api/signals/latest` and `/api/lbo/defaults` carry a `freshness` block (not the Atlas `/regime/latest` pair, not the bare lists). The four-word `verdict`/`overall` are unchanged. `/api/lbo/defaults` flags the stated defaults (`status: "fallback"`, `is_fallback`). `lbo.py`, `credit.py` and `recession.py` open the DB read-only. Seeded snapshots mark every state unknown (`scripts/build_snapshot.py seed_freshness`). Spec: `docs/redesign-v2/FRESHNESS_CONTRACT.md` (local).
-- **Freshness tone is lateness against the expected lag (fix/site-audit D7).** A per-series state carries `late` (api/freshness `_state`): for a `delayed` state, false within the source's expected lag (the web reads neutral), true past it (amber); null otherwise, and an older API without it reads amber (`fresh-state.ts`). Stored intraday bars in the session follow one rule for the drawer's verdict and the state (`intraday_in_session`: on time ≤ 20 min, the previous close in the 30 minutes after the open reads "Close · <day>", late ≤ 60, stale past it; in that window the drawer's intraday row carries `word` "Awaiting opening bars", printed neutral in place of the verdict, which stays `current` for `overall` and validate_db); the VIX poll reads "15-min delayed" in neutral and is late only when the relay flags the poll (`feed_stale.vix`); the News chip's "delayed" is amber, "stale" warn-hot. A monthly print is due at its dated release plus `RELEASE_BUFFER` (60 min), never at midnight: CPI and the jobs report (`event` in the registry) on the event calendar (`freshness.release_times` reads `event_calendar`, passed as `db_fresh["release_times"]` by `api/db`, `validate_db` and the Desk pipeline; Codex S-05: the day-15 rule made Oct 14's CPI a day late and Sep 11's four days), a month the calendar does not date at its approximate day and `release_et` (08:30 ET, INDPRO 09:15). The API image ships no `events/`, so the table is the source. The Ledger counts a FRED input's lag with the drawer's `_daily_expected_and_lag` (`desk_v2.inputs_behind`, `fred_anchor_offset`), so an input current in the drawer is current on the Ledger after the bell. After the close, until the D4 grace deadline (06:00 UTC), the per-series `market_daily` and `asset_prices` states read `close` on the previous session ("Close · T−1", neutral, `cycles_behind` 0); past it they are stale. Within the same grace the drawer's rows for those two and the Desk history's table-wide path print `GRACE_WORD` "Awaiting daily refresh" in the neutral tone (fix/site-audit D-c), while their verdict stays `delayed` for `overall`, `validate_db` and the smoke check.
-- **US day change is the relay's (fix/freshness 1, 2026-10-01).** EODHD's US trade frames carry `{s, p, c, v, dp, ms, t}` and no `dc`/`dd`, so `api/stream.py` keeps each US symbol's previous regular-session close (the anchor) for the target session (`target_session`: today if a trading day, else the next) and serves `dd = p − prev`, `dc = dd / prev × 100` on a US tick (null without an anchor for the tick's session). Codex R-01..R-03: an anchor comes only from (a) a REST row dated the target session (its `previousClose`) or (b) a row dated the trading session just before it, stamped within the last five minutes of that session's regular hours up to and including the close, early closes included (its `close`; Codex R-25: only that is evidence of the regular close); (a) supersedes (b), and any other row sets nothing. Codex R-04: a US REST row stamped outside its own session's regular hours never replaces a regular-session quote (`us_rest_held` counts them); with no quote yet it is stored. A new or changed anchor re-prices the retained WS quote (`_reprice_ws`); `_f` refuses non-finite numbers, so nothing non-finite is stored or broadcast. Decision D1: a US tick with `ms` `extended-hours` (or `closed`) never changes the stored quote. FX, crypto and REST rows keep EODHD's own `dc`/`dd`. Tests: `tests/test_stream_day_change.py`.
-- **Rate and spread changes say their lookback (fix/freshness 2).** `/api/credit/oas` reads DGS10 and the HY OAS from `desk_series` (true observation dates) through the Desk's own reader, `event_study.load_level` + `validate_values` (committed run, nothing after the as-of or its run's day, finite values; Codex R-05), and only when the `fred:<id>` source watermark exists and the desk row is not behind it, else raw_series (Codex R-06): `change_basis` `1w` is the newest observation at or before seven calendar days earlier (at most ten back), with `change_from` its date; a month-stamped series (IG, BB, B, CCC, or a desk store trailing the month row) is `month_end` against the previous month's row. `change_1w_bps` is set only on a true week. The web reads one helper, `web/src/screens/shared/rate-change.ts` ("1W" or "vs Aug month-end"). fix/freshness 8: `/api/credit/oas` also serves `ust30y` (FRED DGS30, held only in `desk_series`, from 1977) through the same `_oas_daily` path and Desk rules, its source watermark the writer's `desk:DGS30`, and the response's `freshness` block carries its `DGS30` state (the Desk's FRED daily rule on the bond calendar). It is its own field so no Credit chart draws it; the strip hides the US 30Y card when an older API omits the field and dashes it when it is served null. `/api/priced` adds `observation_month` (its `date` is the run date); `/api/recession/probability` adds `probability_month`, `inputs_through`, `current_input_months` and the training sample (`training_window`, `training_n`, `training_recession_months`, `training_recessions`): metadata only, no fit changes.
-- **The recession model's vintage, one vocabulary (fix/site-audit D6).** Every recession stamp and caption on the Dashboard, the Recession page, the Regime Lab and the Desk prints `recessionVintage` (`web/src/screens/shared/recession-vintage.ts`): "Scored for Sep 2026 · inputs from Jun 2026", from the served `probability_month` and `inputs_through`. Never `data_as_of`'s month (the newest raw input row, month-end stamped, which the score does not read: it printed "Oct 2026" on Oct 7) and never "this month". "Latest data" labels the newest stored inputs; "Inputs from" the month the score reads.
-- **`live_quotes` dates itself from a quote, not from a frame (BH2, 2026-09-20).** `_mark_frame` stamps the wall clock when *any* frame lands on a socket — acks, heartbeats and after-hours prints included — so on a Sunday the US feed dated itself Sunday. `api/stream.py` now keeps `feed_last_tick_at` beside `feed_last_frame_at`, stamped from each quote's own timestamp and resolved per symbol (VIX and crypto can never date the US feed), and `api/freshness.py` reads the tick stamp with arrival as the fallback. Arrival still drives the stale flags and the reconnect backoff; do not repoint those at the tick stamp.
-- **Data status (fix/freshness 8):** the per-source drawer (`FreshnessDrawer.tsx`, id `freshness-drawer`, no route of its own) is titled "Data status". The strip is four quote cards (SPY, QQQ, US 10Y, US 30Y; four across from 1620 px, two by two below, one per row on a phone) and has no status card. The sidebar footer reads "● Data status" over the markets as-of, its dot the worse of the markets and the macro inputs (`shell-status.ts` `dataStatusTone`: one cycle behind amber, further behind warn-hot, no report red). The rail, the phone menu, the Dashboard summary card's "Data status ›" and a command-palette action open it too.
-- **Health + freshness (2026-09-06):** `/health/live`, `/health/ready` (503 until the DB opens with regime rows), `/api/freshness` (six stored maxima plus `overall`, NYSE `session`, per-feed `sla` verdicts from `api/freshness.py` + `api/calendar.py`, `regime.blockers`, `bootstrap`, `relay`). `scripts/validate_db.py` reuses the same verdicts in the workflows.
-- **Public deploy posture (launch-1, branch `release/launch-1`, 2026-09-22):** `DEPLOY_PUBLIC=1` (or any `CORS_ORIGINS`) closes the diagnostics without `OPS_ACCESS_KEY` (503), turns off `/docs` and the schema, defaults the assistant to `off`, and makes the relay socket accept only the allowlisted Origin. The launch deploy runs the assistant **open** under a hard **$1-a-day ceiling** (`api/assistant_budget.py`): every model call is held in an append-only ledger (`ASSISTANT_LEDGER_PATH`, on a mounted disk) at its worst case before it is made, then settled at its real cost; a hang-up keeps the hold; the chip shows a plain resting state; `GET /api/assistant/status` follows the mode but not the question bucket. Visitors are keyed on `CLIENT_IP_HEADER` (Render: `cf-connecting-ip`), else `TRUSTED_PROXY_HOPS` from the right of `X-Forwarded-For`; `GET /api/ops/whoami` (ops-gated) shows what the limits see. EODHD timers follow the US session (prefetch off, REST loops half-hourly outside it; `api/providers/quota.py` counts units; idle ≈ 8,500 units on a weekday, 1,500 at a weekend, plan limit 100,000). Fundamentals come from **Finnhub** (`api/providers/finnhub.py`, free tier, 60/min, 12 h cache; a listing Finnhub answers for another share class or currency is refused). The free-form query tool is off unless `ASSISTANT_FREEFORM_SQL` is set (desk/hardening); when on, it bounds a value at 16 KB, a row at 32 columns, a call at 2 MB and 250 ms (see Phase 12). Runbook: `docs/redesign/DEPLOY.md` (Vercel + Render, prices dated 2026-09-21, the merge order, rollback); smoke: `scripts/smoke_public.py`; env template: `deploy/api.env.example`; report: `docs/redesign-v2/LAUNCH_REPORT.md` (git-excluded).
-- **Security (2026-09-06, `api/security.py`):** pure-ASGI middleware — body caps (64 KB; 16 KB assistant), per-client (600/min, burst 120) and global token buckets keyed on the socket peer or `TRUSTED_PROXY_HOPS` entries from the right of `X-Forwarded-For`, concurrency ceilings for the calculators, provider calls and stored-data reads (`DB_MAX_CONCURRENCY`), relay-socket caps (`WS_MAX_PER_CLIENT` / `WS_MAX_TOTAL`), security headers, CSP on the served `index.html`, `OPS_ACCESS_KEY` for the diagnostics views; `api/logsafe.py` keeps `api_token` values out of every log line (httpx logged full URLs before). `api/db.py` reuses one read-only connection per worker thread (per-request open/close churn deadlocked the pool under a burst — review 2026-09-06).
-
-Details:
-
-- **Deps:** `requirements-api.txt` — `fastapi`, `uvicorn[standard]`, `httpx`, `websockets`, `pandas`/`numpy`/`scikit-learn` (recession), `riskfolio-lib==7.3.*` (allocation), `anthropic` (assistant), `exchange_calendars==4.13.2` (the Desk engine's XNYS calendar). **No yfinance since launch-1**: the API never calls Yahoo; the refresh pipeline installs it from its own file. The image installs **`requirements-api.lock`** (`pip freeze` of the tested `.venv`, kept to this file's closure; `scripts/lock_api_requirements.py` regenerates it byte for byte; run it after changing `requirements-api.txt`; its `ROOTS` must list every package there, pinned by `tests/test_api_lock.py`, because desk/event-study's `exchange_calendars` once reached the txt file but not the lock). Kept **separate from `requirements.txt`** so the Streamlit Cloud build doesn't pull them. The riskfolio pin is load-bearing: `herc_optimize` in `src/analytics/allocation.py` carries a shim for 7.3.0's broken HERC kwarg forwarding — remove the pin only together with the shim.
-- **Run:** `uvicorn api.main:app --host 127.0.0.1 --port 8000` (local `.venv/` in the repo has the deps). **Port 8000 everywhere** — the Vite dev server on :5173 proxies to it.
-- **CORS:** the Vite dev origins (`localhost:5173` / `127.0.0.1:5173`) by default; the `CORS_ORIGINS` env var (comma-separated) **replaces** them for a split deploy. Methods are **GET + POST** — every POST (scenario, recession sensitivity, LBO, assistant) is pure computation over stored data; nothing writes. The built bundle served same-origin needs no CORS. Effective origins are logged in the lifespan startup block.
-- **Static bundle:** when `web/dist` exists, `api/main.py` mounts `/assets` + `/fonts` and adds an SPA catch-all, so one process serves the API and the built React app. Paths whose first segment is `api|health|regime|signals|series` stay JSON 404s. No `dist` → nothing is mounted and the Vite dev flow is unchanged.
-- **DB bootstrap:** `api/bootstrap.py` checks the `macro_radar.db` asset on the `data-latest` Release at lifespan start (and every `BOOTSTRAP_DB_REFRESH_MIN` minutes when > 0) using `GH_DB_TOKEN`, and downloads only when the **asset's identity** changed (id, updated_at, size, digest, recorded in `data/*.asset.json`, gitignored); the local mtime never decides, and `BOOTSTRAP_DB_MAX_AGE_MIN` is legacy (reported, decides nothing). Temp file beside `DB_PATH` + `os.replace` atomic swap, then the worker is poked. No token → no-op; dev keeps the on-disk DB untouched. An unchanged refresh is no download, no swap, no rebuild (fix/prelaunch-1, B-H1). **The published verdict (desk/frame-3-api-b2a, S-01):** both writers upload `validation.json` (`{verdict, mode, timestamp, db_sha256}`) beside the DB; bootstrap binds it in memory only, through one bracketed check on the file it verifies (`bind_validation`: file key, `-wal` absent or empty, sha256 equal, key and WAL again, bind the first key; at a download on the new file before the swap, on a poll of an unchanged asset whenever nothing held matches the listed digest), and `/api/desk/pipeline` serves it only for the generation whose key is the bound key (`validation_for`). A failed fetch binds nothing and never touches the DB refresh.
-- **Generations (fix/prelaunch-1):** a background worker (`api/worker.py`, started in the lifespan) builds every database-derived result (`api/analytics_cache.ITEMS`: credit, recession metrics + fitted model, takeaway, duration, transitions, analogues, playbooks, scenario defs, LBO defaults, allocation) into a **generation**: an in-memory shared-cache copy of the DB file plus those results. A change in the file key (`src/analytics/dbpath.file_key`: inode, mtime, size, plus a non-empty `-wal`) starts the next generation; reads (`api/db.py` and every analytics module through `dbpath.connect_ro`) and results switch together once it is complete, and the previous one answers until then. Handlers only look results up and never compute. Before the first pass a request waits 5 s (`WAIT_S`), then gets 503 `warming` with `Retry-After`; `/health/ready` is 503 `warming` until the first pass. The TTL caches that outlived a DB swap by up to an hour (B-H1) are gone; the assistant's recession view is a worker item (`assistant_recession`), and outside the API it keys on `dbpath.current_key`. `PinGeneration` (pure ASGI, innermost) pins each HTTP request to the generation published when it arrived, and a replaced generation stays readable until the next publish, so one response never mixes two. The last good result is the last good generation, whole: an item the served generation answers well that fails on a new file holds the new generation back (unless the failure is a fact about the file: `api.db.NotStored`, or an error flagged `awaiting_refresh` such as a Desk preset on a database without its histories; that file publishes at once) (the previous one serves everything), is retried at 30 s and 60 s, and after `HOLD_ATTEMPTS` consecutive failed builds (whatever the file) publishes with that item as its error; a failure the served generation already has publishes at once. Never carry one item's result into another file's generation: that was B-H1 again. Stored errors keep no traceback and requests raise copies (re-raising the stored object chained every request's frames onto it). The serving process freezes its heap after the first build (`GC_FREEZE`): full collections walked ~180k objects with the GIL held. Allocation builds in a spawned child (`api/allocation_child.py`): SciPy/riskfolio hold the GIL long enough to stall the event loop otherwise, and the frontier's SLSQP callbacks `sleep(0)` for the same reason. Tests that install their own worker use the `install_worker` fixture (`tests/conftest.py`).
-- **DB access:** `api/db.py` keeps one read-only connection per worker thread, reading the published generation (keyed on the generation's uri) or, with no generation, the file via `file:...?mode=ro`. Verified byte-identical DB after a full test run.
-- **Recession model:** trained by the worker once per generation (no artifact on disk). Its probability is the **recession model's**, not `regimes.prob_recession` — the response carries `probability_source: "recession_model"` to disambiguate.
-- **Allocation:** computed from the price histories the `full` refresh stores in the additive `asset_prices` table (`src/market_data/asset_history.py`: EODHD first where it carries the instrument, Yahoo as the disclosed fallback, one provider per series, completed sessions only; validated by `validate_db`, carried by `/api/freshness` as the `asset_prices` series). On a database without the table `/api/allocation` answers 503 `not_stored` and never downloads. It is the one endpoint without a strict response model (asset×regime matrices keyed by data).
-- **Assistant:** shares `src/analytics/chat.py` — `is_safe_select` and the tool table are **imported, never copied**; `tests/test_api.py::test_assistant_guard_identity_no_local_copy` asserts `api/chat.py` carries no guard symbols of its own. That module no longer imports `src.config`: it has its own `DB_PATH` and `get_secret` (env → `st.secrets` → repo-root `.env`), plus a `TAB_CONTEXT` ContextVar so `explain_current_view` works without Streamlit session state. `POST /api/assistant/ask` is gated by `api/security.py` (2026-09-06): `ASSISTANT_ACCESS=off|key|open`, 10 req/min per client, 16 KB bodies, no persistence — `docs/redesign/DEPLOY.md` documents the modes.
-- **Basket & Hedge (desk/books):** `GET /api/desk/basket/price` and `/basket/hedge` (spec §12.15, §12.16; `api/desk_basket.py`) price a basket the browser keeps, on request, from `market.daily_bars` (EODHD, two years): the one exception to "no compute on the request path", because the basket is the visitor's and cannot be a worker item. They share the provider calls' ceiling (`api/security.DESK_BASKET_PATHS`), never the stored-data one, and answer in the §12.0 envelope with the request's generation; refusals are 422 `unsupported` (a bad parameter), 422 `unknown_symbol` (a ticker EODHD does not list), or `provider` with the provider's own status. The engine is `src/desk/basket.py` (pure: index, buy-and-hold or monthly, contribution, concentration, liquidity, regression, the ETF hedge, the linear stress) and the technicals are `src/desk/technicals.level_technicals`, the one level function `/technicals` also reads (moved from `api/desk_items.py`), over the one indicator module `src/analytics/technicals` (desk/fill-compute's RSI, realized vol, MACD, seasonality): `api/desk_items.technicals_from_level` adds /technicals' RSI, MACD and seasonality to it from the aligned closes it returns (`_aligned`, not served). Fixtures: `scripts/desk_basket_fixture.py` prices the fixture baskets from Yahoo's closes through the served functions (a developer tool; the API never calls Yahoo) and says `provider: "Yahoo"`. Report: `docs/desk/BOOKS_REPORT.md`.
-- **Cap weight (desk/cap-weight):** `/api/desk/basket/price` and `/hedge` take `weighting=cap`; `GET /api/desk/basket/shares` (§12.18).
-- **Desk v2 in the §12.0 envelope (desk/frame-3-api-b2a):** `api/desk_v2_macro.py` serves `GET /api/desk/regime`, `/macro`, `/pipeline` (envelope from B1's `api/desk_envelope.py`, contract in `tests/desk_contract.py`) and `/pipeline/ddl` (`api/static/snowflake_proposed.sql` verbatim, `text/plain`); B1's `api/desk_v2.py` carries the other routes; both routers answer through `env.answer`, so every route pins the request's generation. Worker items `desk_regime` (the one item: `/regime` serves it whole, `/overview`'s regime and recession tiles read it through `direction` and `recession_tile`, so the two agree by construction), `desk_macro` (`api/desk_items_macro.py`) and `desk_pipeline` (`api/desk_pipeline.py`) hold what depends on the generation; what depends on "now" (the K−2 row from `api/calendar.last_completed_session`, the next CPI release date, each pipeline row's status, the verdict) is computed per response and never stored. An item's blocks are stored apart, so one failed block awaits with "Awaiting refresh: …" and the rest serve; `SchemaCheckFailed` and `ImportError` fail the whole item. `src/analytics/recession.recession_provenance()` dates the served score (pinned equal to `recession_prob_series`); the next-print thresholds mirror `ROLLING_WINDOW` and the `REGIMES` table (AST parity tests) and are checked against the real classifier. The Data Pipeline's feeds are derived from what each tab's served values are computed from (`api/desk_pipeline.tab_readers`: every study reads the regime label, so INDPRO and CPI feed every study tab; the recession model reads HY and the breakevens), and every string `/pipeline` serves passes the Desk's language ban list (the registry's gold note is served reworded). Tests: `tests/test_desk_v2_{regime,macro,pipeline}.py` on a hermetic store (`tests/desk_macro_store.py`), `tests/test_bootstrap_validation.py` (fake release: `tests/desk_release.py`). Report: `docs/desk/FRAME3_API_REPORT_B2A.md`.
-- **The DDL fixture is generated:** `web/src/fixtures/desk/pipeline-ddl.ts` is written by `web/scripts/gen-ddl-fixture.mjs` from `api/static/snowflake_proposed.sql` (edit the `.sql`, then `node scripts/gen-ddl-fixture.mjs` from `web/`); `pipeline-ddl.test.ts` holds it byte-equal, and nothing under `web/` imports a `.sql` file (pinned by `tests/test_desk_v2_pipeline.py`). `web/src/fixtures/desk/pipeline.json` is what `/pipeline` serves on the audit's store.
-- **Gotcha:** a local commit to the served file (an operator's repair, an `ai_spend_ledger` row) moves its file key (WAL frames count; a checkpoint moves the mtime and size), so `/api/desk/pipeline`'s `validation` reads null ("unknown") until the next upload is verified. So does a file replaced by identical bytes under a new inode (`make sync-data` of the same asset).
-- **Gotcha:** FastAPI 0.141 keeps an included router as one `_IncludedRouter` entry in `app.routes` (no `.path`); enumerate routes with `app.openapi()["paths"]`, or a router's own `.routes`.
-- **Gotcha:** `/api/credit/oas` anchors its `days` window to `date('now')`; if FRED credit data is stale beyond the window, the endpoint 404s. Default `days=90` gives ample slack.
-- **Tests:** `tests/test_api.py` (FastAPI `TestClient` against the real read-only DB; skips if the DB file is absent) covers every route group plus the SSE frame contract (stub agent, no tokens spent) and the SPA-fallback/JSON-404 split. Alerts tests are shape-only — `alert_feed` has ~1 row.
-
----
-
-## Desk · Event Study and frame (integrated on `desk/integration`, 2026-09-22; in `main` since `45cdbae`)
-
-- **Registry:** `src/desk/series.py` (stdlib, keyless). Every asset the engine may read is declared there: store (`fred` / `market` → `desk_series`; `asset_prices` for `^GSPC`, `^RUT`, `GC=F`, `^VIX`), shock unit (price → log return; yields and OAS → bp with `scale=100`, FRED serves percent; VIX → log change), declared `history_from`, tier, roles, and two clock times in ET (`fixed_at`: when the day's value is determined; `known_at`: when it is observable; `known_by` is derived for the API). Gold is **GC=F from `asset_prices`** (COMEX front month, 2000-08-30); FRED stopped serving `GOLDPMGBD228NLBM` (listed as unavailable with the reason). A study on gold says "since 2000", the cross study "since 1990", never "since data start". The curve tenors DGS3MO, DGS5 and DGS30 (`us3m`, `us5y`, `us30y`; desk/frame-3-api-b2a) are tier-1 FRED rows with **no roles**, read only by `/api/desk/macro`: no study can select them, and the event-study results are byte-identical with them registered. **The VIX is `^VIX` in `asset_prices` (desk/fill-compute, 2026-09-27)**, stored from 1990 by the full refresh beside ^GSPC (`asset_history.DESK_DAILY`), not FRED's VIXCLS (published a day or more late); the stored VIXCLS rows stay, unread and no longer refreshed. A store the first full refresh after that has not reached has no ^VIX: the vol tile and the VIX studies await "the next full refresh", the regime table serves `vix_avg` null. Tests that need the VIX on an older store copy use `tests/desk_vix.py`.
-- **Store:** `desk_series (series_id, date, value, provider)`, written by `python -m src.market_data.desk_history --tier 1` in the `full` refresh (after `asset_history`, before `rm -f .env`). FRED rows are **merged**, never replaced: FRED now serves the ICE BofA OAS series as a rolling three-year window ("Starting in April 2026, this series will only include 3 years of observations"), so `BAMLH0A0HYM2` is declared from 2023-09-22 and the store keeps everything it was ever served. Market rows are replaced whole (adjusted closes restate). A series served short of its declared start gets watermark status `short`; `validate_db` warns, never blocks, and fails a full-mode DB without the table. `/api/freshness` carries a `desk_series` verdict (T+1: FRED posts next day). Tier 1 makes no provider calls; tier 2 adds three EODHD/Yahoo series. The server process never imports the writer. **Gotcha:** `validate_db` fails a full-mode DB that lacks any tier-1 series (hardening R-02), so a newly registered tier-1 series must be stored by the first full refresh after its merge (a failed first fetch holds that run's upload; later a failed fetch only warns), and until then the drawer's `desk_series` verdict reads Behind and the assets list's `awaiting_refresh` names it.
-- **Engine:** `src/desk/event_study.py` (reads through `dbpath.connect_ro`, never writes, never fetches, never recomputes a regime). After the two 2026-09-21 reviews (R-01…R-20, `docs/desk/EVENT_STUDY_REPORT.md` §9): the session calendar is `exchange_calendars` XNYS (pinned 4.13.2 in `requirements-api.txt`) over the inputs' span, never derived from stored rows; every series is aligned onto it, off-session observations and calendar sessions without a value (the S&P's included) are counted exclusions, dates outside the calendar are rejected; a window is incomplete when a session it reads is missing (a move reads t−w and t, a forward window e and e+h; the z window needs 240 of 252 moves); non-finite or non-positive prices before a log are exclusions with a reason; one evaluability mask (z exists, condition computable, target present, lagged regime label exists) for events and baseline, every baseline candidate taking the same entry delay and completeness rules, Unlabeled events in their own row outside the totals; timing rules per series (`fixed`, `known`, `defer_as_target`) resolved per session against the calendar's open and close, FRED daily Treasury and OAS values known at the next open, gold and copper deferred as targets; strict crosses whose side state resets on an unevaluable session; cluster bootstrap over overlapping-window blocks, enumerated exactly up to 7 blocks (7^7 draws) and 10,000 Monte Carlo draws above, an interval needs 5 blocks and an exclusion claim 10 blocks plus an adverse share under 3% with zero counted as adverse and the interval bounds resampled values rounded outward (else "exclusion not established"); the calendar is built one session past the last input; the verdict cites n and blocks per horizon, needs two eligible regimes and a 0.5 pp (5 bp) contrast for a ranking, and names the stage that emptied a zero-event set; `inputs_hash` covers the generation id, content hashes of every input and the regime table, every parameter and the resampling method and draws; validation rejects non-finite thresholds, invalid seeds and parse failures (422) and clamps `cond_value` to ±1e6. Desk never shows `regimes.prob_recession`; the only recession number it may surface is the logistic model's.
-- **API:** `GET /api/desk/event-study/assets` (worker item `desk_assets`) and `GET /api/desk/event-study?study=<slug>|params` (`api/desk.py`). Presets (`desk_preset:*` items) are looked up at the default seed; any other seed and every free-form query computes on request behind its own ceiling (`DESK_STUDY_PATHS`, 4 slots, never the calculators' `EXPENSIVE_PATHS`), pinned to the request's generation, cached by (generation key, slug, seed), and answers **202 `computing`** with `Retry-After` past 8 s (under the browser's 15 s abort) and **429 `busy`** when `CACHE_MAX` computations are outstanding, never a blank panel. A job leases the generation it was submitted under (its own connection to that copy, never the served fallback); an expired generation cancels the job and the client's retry lands on the current one. The cache key is the losslessly serialized validated parameters. 422 for a query the engine cannot run; 503 `not_stored` for a planned series. Slugs are permalinks with `repr` floats (`gold-2sigma-spx-weak`, `spx-golden-cross`, `spx-death-cross`, or `shock-w20-z2.0-up-cond=value-target[-regime]`).
-- **One router (desk/integration):** `api/desk.py` carries the event-study routes above and desk/frame's `GET /api/desk/pipeline/inventory`: the freshness report's `series[]` followed by one `desk:<series_id>` row per desk_series series (the refresh's `REFRESH_TIER` set, then anything else stored), judged by `api/freshness.desk_series_states` with the FRED daily rule; `/api/freshness` itself carries no desk rows (its `desk_series` sla verdict is labelled "Desk daily history" in the drawer). The module reaches the engine through a lazy proxy (`_Engine`), so `import api.main` loads no pandas, numpy or exchange_calendars (`test_importing_the_app_loads_no_heavy_dependency`). A database that predates the full refresh storing a study's inputs answers **200 `awaiting_refresh`** with the engine's words (`registry.stored_by_refresh`: asset_prices rows always, desk_series rows at or below `REFRESH_TIER`, which is pinned to the workflow's `--tier`); a planned tier-2 series stays 503 `not_stored`. The deployed database has no desk_series until the first full refresh after the merge; the three presets read asset_prices and regimes only and are ready before it.
-- **Web (desk/integration):** the Event Study page addresses a study by the engine's own slug; `web/src/screens/desk/event-study/studies.ts` ports `slug_for`/`parse_slug`, pinned through `__fixtures__/slugs.json` (generated from the engine; `tests/test_event_study.py` checks it against the engine, `studies.test.ts` the port against it). `web/src/api/desk.ts` is gone (frame-3): the Desk v2 pages read `/api/desk/*` through `web/src/screens/desk/data/api.ts` (the §12 envelope and schemas of `docs/desk/DESK_FRAME3_SPEC.md`), and dev and tests answer from `web/src/fixtures/desk/`. The engine payloads saved under `__fixtures__/` stay for the Python pins (`tests/test_event_study.py` checks their keys against a fresh engine run).
-- **Verification:** `tests/test_event_study.py` (synthetic rules + §8 against `data/desk_scratch.db`, an owner-populated copy; `DESK_DB` overrides; skipped without it), `tests/test_desk_api.py`, `tests/test_desk_history.py`; `scripts/desk_event_study.py` prints a study read-only. Report: `docs/desk/EVENT_STUDY_REPORT.md`.
-- **Desk ETF blocks (desk/fill-etf, 2026-09-27):** `api/desk_items_etf.py` is one worker item, `desk_etf`, that reads SPY and the ETFs through `event_study.load_level`, aligns them on the XNYS calendar (a gap is never filled) and stores each block as a part (`desk_items_macro.part`). `GET /api/desk/sectors` (§12.14) is served from it (no longer a stub; `breadth`, of the 11 sector ETFs and never stocks, is its nested block) and `/technicals`' `sectors` block is the same leadership object, and `/macro`'s `stock_bond` (SPY against TLT) and `correlations` (TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ, and VIX when stored) blocks come from the same item, and so does `matrix` (desk/matrix, 2026-09-28: every pair of SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP and ^VIX through the same `corr_at`, 60 daily returns to the newest session every stored one closes on, an asset without a complete window "no data" with its reason, the lead by `matrix-lead-v1`); while the store lacks the ETFs both answer awaiting with "Awaiting refresh: the full refresh stores …". The fixtures' ETF values come from `scripts/desk_etf_fixtures.py` (the audit's store plus a refreshed copy's ETF rows cut at 2026-09-23). Since desk/fill-compute the VIX those correlations read is ^VIX (asset_prices), and each block names only the providers of the series it reads (`Store.providers_of`); the fixture store also carries the ^VIX rows.
-- **Desk v2 study routes (`desk/frame-3-api`, 2026-09-26):** `api/desk_v2.py` (router `/api/desk`) serves `GET /study`, `/study/catalog`, `/study/events` (§12.4's CSV with `Accept: text/csv`), `/ledger`, `/technicals` and `/overview`, plus six awaiting stubs (`/sectors`, `/vol`, `/positions`, `/basket/{id}`, `/basket/price`, `/hedge`). `api/desk_envelope.py` holds the §12.0 envelope `{status, generation_id, as_of, engine_version, data, unavailable, error}`, the block envelopes, the error map and the enveloped 405. `engine_version` is `ENGINE_VERSION`, else `RENDER_GIT_COMMIT` (production's source, and the Dockerfile sets nothing), else `"unknown"`. Hardening's `_schema_check_failed` steps aside on these routes, which answer the envelope's 503 `schema_check`. The contract is `docs/desk/DESK_FRAME3_SPEC.md` §12, transcribed in `tests/desk_contract.py` and checked against the client's `web/src/fixtures/desk` (`DESK_WEB_SRC` points at another `web/src`). Report: `docs/desk/FRAME3_API_REPORT.md`.
-- **Shared technicals (desk/fill-compute):** `src/analytics/technicals.py` (numpy/pandas only, symbol-agnostic: a close series in) holds `rsi` (Wilder 14), `realized_vol` (21-day, annualized), `ema`/`macd`/`macd_crossings` (12, 26, 9) and `monthly_returns`/`monthly_seasonality`; a NaN close breaks every run (nothing bridges a gap). `/technicals` serves RSI, MACD and seasonality for ^GSPC, the RSI studies (`kind` `rsi`) and the regime table's month returns read the same functions. Add an indicator here, never a second copy.
-- **Stale by publication cadence (desk/fill-compute):** a study is `stale` when its `evaluated_on` trails the comparison session by more XNYS sessions than its slowest input allows (`desk_v2.publication_allowance`: 0 for exchange closes, `api/freshness.DAILY_TOLERANCE` = 3 for FRED daily, 8 for weekly WTI), or is dated after it, or any of its inputs' newest validated observation (`SignalTrace.inputs_last`, after alignment and validation, never the newest raw row) trails the comparison session by more than its own tolerance on its own calendar (`desk_v2.inputs_behind`, Codex R-03: a FRED grace never covers a stale close). A stale study never reports firing (`firing_now` false); `/study` names the inputs behind in `stale_inputs`. **The close's grace (fix/site-audit D4):** the comparison session turns at the bell but only the evening full refresh stores that close, so until its deadline (`api/freshness.close_grace_until`: 06:00 UTC the next day, the rule `/overview`'s data status already follows) `desk_v2.close_grace` gives one session of slack to the study and its closes; after Oct 7's close every Ledger row read "○ Stale · Oct 6" without it. The Ledger's Latest column (headed "Now" until fix/site-audit D-d) and its labels by time of day are in `close_grace`'s docstring. A signal evaluated on an earlier session than New York's today is dated, never called today's ("● Fired Oct 6", "○ Quiet · Oct 6", "Not firing on Oct 6"; "Firing now" only when there is a current row and every one was evaluated today): `firingCell`, `firingPill`, `firingNowLabel` in `web/src/screens/desk/kit/format.ts` (fix/site-audit S-01).
-- **Regime statistics are measured from when each regime was known (Codex R-01):** a row stamped M governs month M+2 (the engine's K−2), so `/regime` `stats` pairs each label with the S&P's return and the VIX of the month it governed, and `changes` dates each change by its effective month. Returns carry a status (`complete`, `pending`, `missing`; `MonthReturns` in `api/desk_items_macro.py`); the VIX is aligned and validated like every engine input before it is averaged, against every XNYS session of the governed months (Codex R-09: missing sessions stay in the denominator). `next_prints` separates rows already published from upcoming prints, each release bound to its own reference month (Codex R-05, R-06).
-- **Catalog and items:** `api/desk_catalog.py` (stdlib) holds the 15 studies (all 15 engine queries since desk/fill-compute scored the two RSI rows), `normalize()` (a request names exactly one catalog row, else 422 `unsupported` naming what), the Ledger order and the technicals allowlist. The builders live in `api/desk_items.py` and are registered in `analytics_cache.ITEMS`: `desk_study:<slug>` (each study through `run_on_traced`, whose native payload the `desk_preset:*` items reuse), `desk_technicals`, and `desk_facts`; the regime tile and the recession tile read B2a's `desk_regime` item (`api/desk_items_macro.py`). Projections are memoized on (generation id, route key, `VERDICT_RULE`, `ADAPTER_SCHEMA`), 256 entries. Every field that depends on "now" (firing state, since last close, data status) is computed per response over the memo, never stored in it.
-- **One generation per request (Codex R-01):** every route reads through `desk_envelope.answer`, which pins one generation before its first item read and holds it through the projection, the memo key and the envelope. `request_generation()` returns the request's pin; without one it waits up to the worker's `wait_s` for the first usable publication, else it answers `computing`. `PinGeneration` pins only a request that arrives after a publication, so a cold request once read generation 1's numbers under generation 2's id.
-- **Engine trace, native results unchanged:** `run_traced`/`run_on_traced` in `src/desk/event_study.py` return `(dict, EventTable, SignalTrace)` beside the untouched `run`/`run_on`, and `trigger_mask` factors the threshold test out of `detect_events`. After any change to `src/desk/`, run the three-layer regression gate:
-  - `tests/test_desk_native_regression.py`: layer 1, traced equals untraced; layer 2, the golden `tests/fixtures/desk_native_<base>.json` written by `scripts/desk_native_golden.py --base origin/main`, rebuilt when the base moves;
-  - `scripts/desk_native_ab.py --base origin/main --db <copy>`: layer 3, byte-identical 16/16 on the published copy and on the scratch store.
-- **NYSE holidays 1962–2023** in `api/calendar.py` and `src/market_data/session.py` are generated by `scripts/gen_nyse_holidays.py`, which then writes the web's copy, `web/src/screens/desk/positions/sessions.ts`, every year 1962–2027 from the fresh `api/calendar.py` (`--check` verifies all three; `sessions.test.ts` holds the web's year for year) from exchange_calendars 4.13.2's bounded definitions.
-  - **Before 1970 the engine's XNYS disagrees:** it keeps 69 regular holidays as sessions, so `/study`'s warnings disclose the pre-1970 holidays in an input's count (67 for DGS10 on the published copy), and parity with the engine is asserted from 1970 only.
-  - **`bond_extra_closures`:** Columbus Day is 12 October through 1970, and Veterans Day the fourth Monday of October in 1971–1973 only (the stored DGS10 days put the bond market back on 11 November from 1974).
-- **PROTOTYPE cards (spec §1.0.3, desk/prototypes):** a third state beside LIVE and UNAVAILABLE for parts that would take many hours to build: drawn finished with illustrative values, no badge, and one last-line footnote `Illustrative values · In production: …` (`web/src/screens/desk/kit/Prototype.tsx`). Five cards under `web/src/screens/desk/prototypes/`: Technicals' vol column (until `/technicals` serves `vol`), Basket & Hedge's "Hedge with options", "Positioning" and "Event study on this basket", Data Pipeline's "Sync to Snowflake". Their values come only from `web/src/fixtures/desk/proto-*.json` and `vol.json`, read only under `prototypes/`; `prototypes.test.tsx` fails if a module outside it imports one, or a card's markers (`prototypes/markers.ts`) print outside its `[data-prototype]`. The options card fills step 3's `data-slot="hedge-options"` (`basket/BasketHedgeStep.tsx`) and its inputs row reads that step's served `/basket/hedge` answer (§12.16) through `prototypes/basket-inputs.ts` `inputsFrom`; with no answer to read, the slot prints its reason.
-- **Desk usability (`desk/usability`, 2026-09-27/28; spec §14, report `docs/desk/USABILITY_REPORT.md`):** `/api/market/search?scope=us` keeps US equities and ETFs, primary listings first; `/api/market/candles/{sym}?range=2Y` is daily; `GET /api/desk/instruments` (worker item `desk_instruments`, §12.17) names the instruments this store prices (every stored daily ETF must be in `api/desk_items.INSTRUMENT_NAMES`: `tests/test_desk_instruments.py`), the search's fallback; `/api/desk/technicals?symbol=` serves any US stock or ETF through main's `technicals_from_level` and the shared `src/analytics/technicals` (RSI, MACD, seasonality) plus drawdown, 21-day realized vol and strength vs the S&P, its crosses shown but never scored, a stock's bars cut at the last completed session (`excluded_bars`); `/study` and `/study/events` compute any well-formed six-slot question on request (202 `computing`, 429 `busy`), the builder offering every stored series with a role. Web kit: `InstrumentSearch` (header, Position Monitor, Basket & Hedge's ticker field), `glossary.ts` + `Term.tsx` (hover definitions), `FailedScope` ("Couldn't load · Retry" per card), `LoadingLine`. The e2e guard (`web/e2e/desk-usability.spec.ts`, item 13) fails any Desk page with a visible disabled control, an Advanced that opens onto nothing, or "Generation g…", "<n> ms", "cached", "<Month> row", "not specified"; whitelist `[data-unserved]`, `[data-prototype]`, the Position Monitor's gated Save. `.github/workflows/keep-api-warm.yml` ("Keep the API warm") pings `/health/live` every ten minutes.
-- **One number per concept (fix/freshness 3, decision D2, 2026-10-01):** `/overview`'s regime tile, the sidebar's Today card and `/regime`'s `current` (and the next prints) read the **newest stored regimes row**, the label and month the Dashboard shows, with `odds` (the classifier's odds for that label, null for Recession Risk); the event-study engine keeps `REGIME_LAG_MONTHS = 2` for tagging events, and the Regime page and Event Study rail say so in one line. Since-last-close's regime changes only when the store learned the newest row (`desk_items_macro.newest_known_at`: the later CPI/INDPRO watermark advance) after the previous close. The Desk prints the recession score to one decimal (the app's 9.8%, never 10%). The Desk VIX tile and the Dashboard VIX card share `web/src/screens/shared/vix-shown.ts` (fix/freshness 7): the live quote store the Markets tape reads (`web/src/live/quotes.ts`, the tape's own number and stamp), else the newest stored close labeled `Close · <date>` by its true observation date (Desk: ^VIX from `asset_prices`; Dashboard: FRED VIXCLS, dated from `/api/freshness` `series[]`), and the band word and the gap are computed against the value shown; a quote counts only when it was observed at or after the stored close (a later New York day, or the close's day from 16:15 ET; Codex R-09), since the quote store keeps a quote after its socket drops; the S&P trend tile says `Close · <date>`, never Live. `since_last_close.refreshed_at_utc` is the `desk_series` watermark's `checked_at` (the full refresh's last run), and `oldest_behind` names the oldest data-status contributor that is behind.
-- **Gotchas (Desk v2):**
-  - A regimes row gives the regime tile a direction only from a finite stored slope. A NULL or non-finite growth or inflation trend makes the block awaiting, never "falling" (Codex R-03).
-  - `get_recession_metrics` answers empty when the latest `regimes.prob_recession` is NULL.
-  - `api/db.freshness` needs the `signals`, `market_daily`, `market_intraday` and `news_feed` tables, so a hermetic test store must create them.
-- **Gotcha:** a blank `EODHD_API_TOKEN` does not disable the relay or the provider layer: both loaders treat an empty value as absent and fall through to the repo-root `.env`. Only a missing `.env` (or no token in it) keeps them off.
-
----
-
-## GitHub Actions Workflow Conflict Pattern (DO NOT REVERT)
-
-**Status:** Fixed and deployed May 2 2026 (commit `e581a49`, "Fix workflow binary conflict pattern (Refresh Data #295 fix)"). Validation: confirmed clean by README audit on May 2 2026 (`grep -c "git stash"` returns 0 in both files; `grep -c "git reset --soft origin/main"` returns 1 in each). Continue to monitor scheduled runs.
-
-### What's in place
-
-Both `refresh-data.yml` and `intraday-refresh.yml` share a single concurrency group:
-
-```yaml
-concurrency:
-  group: data-write
-  cancel-in-progress: false
-```
-
-The two workflows queue against each other instead of racing — still important now that both
-publish the DB to the same `data-latest` release asset (serialized so `--clobber` uploads don't race).
-
-**Update (Jun 2026):** the DB is no longer committed to git — it's downloaded from and uploaded
-to the `data-latest` Release (see **Database**). The retry / `reset --soft origin/main` loop below
-now guards only `refresh-data.yml`'s small `output/playbook.json` commit; `intraday-refresh.yml`
-no longer pushes to git at all.
-
-Note: `daily-memo.yml` and `weekly-memo.yml` generate HTML memos and do not write the DB back, so
-they are not in the `data-write` concurrency group (they only download the DB read-only).
-
-### Retry loop pattern
-
-The "Commit and push" step in BOTH DB-writing workflows uses a 5-attempt retry loop with `git reset --soft origin/main` instead of the old `git stash` / `git pull --rebase` / `git stash pop` pattern. The **entire attempt — fetch, reset, commit, push — is one `&&` conditional** so a transient failure on any step retries instead of aborting:
-
-```yaml
-git config user.name "github-actions[bot]"
-git config user.email "github-actions[bot]@users.noreply.github.com"
-git add data/macro_radar.db
-git add output/playbook.json 2>/dev/null || true   # refresh-data.yml only
-git commit -m "<EXISTING_COMMIT_MESSAGE>"
-COMMIT_MSG=$(git log -1 --pretty=%B)
-for i in 1 2 3 4 5; do
-  if git fetch origin main \
-     && git reset --soft origin/main \
-     && git commit -m "$COMMIT_MSG" \
-     && git push; then
-    echo "Push succeeded on attempt $i"
-    exit 0
-  fi
-  echo "Attempt $i failed (fetch/reset/commit/push), retrying..."
-  sleep $((RANDOM % 10 + 5))
-done
-echo "Push failed after 5 attempts"
-exit 1
-```
-
-### Why this works
-
-`git reset --soft origin/main` moves the branch pointer to origin's tip while keeping the staged DB changes, then re-commits on top. **No rebase, no merge, no binary conflict possible.** Each attempt has a 5–14s random backoff.
-
-**Why the whole attempt is one `if … &&` chain (2026-05-26 fix):** GitHub Actions runs `run:` steps under `bash -e` (errexit). A *bare* `git fetch origin main` inside the loop would, on a transient HTTP 403 during ref listing, abort the entire step immediately — the retry loop never executes (no "retrying…" line is ever printed). Only `git push` was previously protected by its `if`. Folding fetch/reset/commit into the same conditional makes every network step retryable. This is what the 2026-05-26 transient-403 failure exposed: the loop existed but was dead for fetch-side errors.
-
-### Commit messages preserved across the soft reset
-
-- `refresh-data.yml`: `"Auto-refresh data [skip ci]"`
-- `intraday-refresh.yml`: `"Intraday refresh [skip ci]"`
-
-### `.gitattributes`
-
-Still contains `data/macro_radar.db merge=ours`. Harmless, left in place. Do not remove.
-
-### Modes and validation (2026-09-06)
-
-`refresh-data.yml` has four explicit modes — `full` (11:17 UTC daily, 00:23 UTC Tue–Sat), `news-only` (hourly at :41, lean `requirements-news.txt`), `market-only` (`requirements-market.txt`), `verify-only` — resolved by `scripts/workflow_mode.py` (an unknown cron becomes `verify-only`, never `full`). Every DB-writing run keeps `data/previous.db`, runs `scripts/validate_db.py` (integrity, tables, counts, max-date regression, mode-scoped SLA verdicts, step summary) and uploads only on `pass` + changed. Full runs publish `snapshot-latest.json` and a `validated-db` artifact; after a validated morning full run the refresh dispatches `daily-memo.yml` / `weekly-memo.yml` with its run id and they consume that artifact, refusing anything but `mode=full` (no stash/rebase anywhere). `make sync-data` pulls the Release asset locally with the same validation. Both DB writers then run a separate **"Publish the validation verdict"** step right after the DB publish step (same condition, `timeout-minutes: 1`, `continue-on-error: true`): `scripts/validation_asset.py` (stdlib) writes `publish/validation.json` `{verdict, mode, timestamp, db_sha256}` and it is uploaded with `--clobber`; a failure only leaves the verdict absent, and the DB publish step never mentions it (pinned by `tests/test_workflows.py`). `weekly-memo.yml` builds the memo with `python -m src.memo` from the repo root (fix/site-audit S-06: `python src/memo.py` put `src/` on the path, the memo's `src.utils.format` import failed, and no weekly memo was built from at least Sep 7); `tests/test_weekly_memo_entrypoint.py` runs the workflow's own command.
-
-`validate_db` judges `alert_feed` as a recomputed table (`RECOMPUTED_TABLES`): the full run rebuilds it whole, so a cleared alert moving its max date earlier, or its rows falling, is a warning. Oct 20–21 2026 a cleared VIX_shock alert (dated 2026-10-02) failed every full refresh, because the failing run never published and the baseline kept the alert. A run with no alerts empties the table (`upsert_alert_feed` always replaces it; before, it returned early and the last run's alerts stayed on screen, Codex S-03). `fred_client._download` retries five times over about two minutes: FRED's outage page is an HTTP 200 with a non-XML body, which fredapi raises as `ParseError` (Refresh Data #2308).
-
-### Rules for future workflow edits
-
-1. **Never replace the retry loop with stash/rebase patterns.** They will reintroduce the binary conflict.
-2. If adding a third workflow that writes to `data/macro_radar.db`, give it the same `concurrency: { group: data-write, cancel-in-progress: false }` block.
-3. The `for i in 1 2 3 4 5` loop is load-bearing — do not reduce attempts below 3 or remove the backoff.
-4. If a scheduled run fails, investigate as a new bug, not the old conflict pattern.
-
----
-
-## Git Session Routine
-
-### Before every session
-
-```bash
-cd "/Users/maxkomen/Python Macro/macro-regime-radar"
-git checkout HEAD -- data/macro_radar.db && git pull --no-rebase
-```
-
-### Commit and push
-
-```bash
-git add -A
-git commit -m "<message>"
-git pull --no-rebase
-git push
-```
-
-### Local binary DB conflict (rare since the workflow fix)
-
-```bash
-git checkout HEAD -- data/macro_radar.db
-git add <other-files>
-git commit -m "<message>"
-git pull --no-rebase
-git push
-```
-
----
-
-## API Keys & Secrets
-
-All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). Locally, `.streamlit/secrets.toml` (gitignored). GitHub Actions secrets in repo settings.
-
-**Never hardcode keys. Never commit `.streamlit/secrets.toml`.** The committed `.streamlit/secrets.toml.example` contains all key names; copy it to `.streamlit/secrets.toml` and fill values.
-
-| Key | Status |
-|---|---|
-| `FRED_API_KEY` | Required — raises in `src/config.py:17` if missing |
-| `FINNHUB_API_KEY` | Optional — news ingest, and since launch-1 the single-name panel's fundamentals on the API host (`api/providers/finnhub.py`; the key rides in a header, never a URL) |
-| `NEWS_API_KEY` | Optional — required for news ingest. **Note the underscore.** Code uses `NEWS_API_KEY`, not `NEWSAPI_KEY` |
-| `ANTHROPIC_API_KEY` | Optional — required for AI regime interpretation |
-| `PERPLEXITY_API_KEY` | Optional — required for Sonar research enrichment |
-| `POLYGON_API_KEY` | Legacy — yfinance is the active path; no longer read by the pipeline. Safe to leave in secrets or remove |
-| `GH_DB_TOKEN` | Fine-grained PAT with **Contents: Read** on this repo. Lets `dashboard/app.py` (Streamlit Cloud secret) and `api/bootstrap.py` (env var) download `data/macro_radar.db` from the private `data-latest` Release. Not needed locally; workflows use the built-in `GITHUB_TOKEN` |
-| `EODHD_API_TOKEN` | API only — read by `api/stream.py` and `api/providers/market.py` (env, else repo-root `.env`) for the live-quote relay and the on-demand provider layer. Absent → feeds stay off, on-demand lookups answer a typed `missing_token` error (no Yahoo fallback since fix/prelaunch-1), the client falls back to its DB poll. The refresh pipeline's stored histories use it when present (EODHD first) and fall back to Yahoo, disclosed, when absent. Never sent to the browser; redacted from logs by `api/logsafe.py`. **Not a GitHub Actions secret and not needed there** — an owner action on the API host |
-
-Without the four optional Phase-11 keys, the news, AI interpretation, and research-citation pipelines silently produce no output (this is intentional — the dashboard still works for non-news functionality).
-
----
-
-## What NOT to Do
+| `api/` | FastAPI: routes, the background worker and its generations, provider layer (EODHD, Finnhub), live relay, assistant |
+| `src/` | Data pipeline and analytics: `regime.py`, `analytics/` (recession, news, allocation, LBO, technicals), `market_data/`, `desk/` (Desk engine) |
+| `web/` | React app. `web/DESIGN.md` (tokens, type, regime colors) and `web/PRODUCT.md` are the design and product contracts |
+| `dashboard/` | Legacy Streamlit app |
+| `scripts/` | Ops and fixture scripts (`validate_db.py`, `build_snapshot.py`, `sync_data.sh`, `lock_api_requirements.py`, `smoke_public.py`) |
+| `tests/` | pytest. Web tests: vitest under `web/src`, Playwright under `web/e2e` |
+| `.github/workflows/` | `refresh-data`, `intraday-refresh`, `daily-memo`, `weekly-memo`, `keep-api-warm` |
+| `docs/` | Specs, reports, runbooks. Session history: `docs/agent-history.md` |
+
+## Commands
+
+- **Database for tests:** the release asset is public. `mkdir -p data && curl -fsSL -o data/macro_radar.db https://github.com/maxkomen-macro/macro-regime-radar/releases/download/data-latest/macro_radar.db` (≈30 MB, seconds), then `make validate-db PY=python3`. `make sync-data` does the same with validation but needs `gh` auth. Without the file, DB-backed tests skip (`tests/test_api.py` is module-wide `skipif`); a skip is not a pass, so name skips in reports.
+- **Python deps:** `pip install -r requirements-api.lock pytest yfinance feedparser pyyaml python-dotenv requests` (about a minute) covers `make test-api`. `src/config.py` raises without `FRED_API_KEY`; a placeholder value is enough for tests. `requirements.txt` (Streamlit, prophet, openbb) is only for the legacy dashboard and the refresh pipeline.
+- **Python tests:** `make test-api PY=python3` (the Makefile defaults to the owner's `.venv`). The full suite (~2,100 tests) takes 20–25 minutes, longer than one foreground command may run: run the tests that cover your change in the foreground (`python3 -m pytest tests/test_x.py -q`), and the full suite in the background before calling work done.
+- **Judge failures against a baseline:** some tests are pinned to an older copy of the database (`test_desk_v2_technicals.py`'s `test_the_published_copy*`, the golden in `test_desk_native_regression.py`) or to the machine (a `chmod` read-only test can't fail a write as root). These and a few others can fail on an untouched `main` with today's database. Run the same tests on `origin/main` in the same environment and report only failures your change introduced, plus the baseline list.
+- **Web:** `cd web && npm ci` once, then `make test-web` (typecheck + vitest), `make build-web`, `npm run e2e` (Playwright; needs browsers).
+- **Run locally:** `uvicorn api.main:app --host 127.0.0.1 --port 8000`, then `cd web && npm run dev` (Vite on :5173 proxies to :8000).
+- After editing `requirements-api.txt`: `python3 scripts/lock_api_requirements.py` (`tests/test_api_lock.py` pins it).
+
+## Git and deploy rules (hard)
+
+- Changes reach `main` only through a pull request. Never push to `main` directly, and never force-push or rebase a branch you didn't create.
+- Merging is the owner's call: merge a PR only when the owner has approved that merge, or a standing rule from the owner covers it. Use a merge commit (the history uses them). A merge to `main` deploys the site.
+- API changes don't go live on merge: Render deploys are manual. Say in the PR when a change needs one.
+- Never touch deploy infrastructure: no Vercel or Render actions, no deploy hooks, no `gh workflow run`, no `gh release upload`, no secret changes.
+- Stage explicit paths; never `git add -A` or `git add .`. The database, `web/node_modules` and `web/dist` have all been committed by accident before.
+- Never commit `.env`, `.streamlit/secrets.toml`, `data/*.db`, or anything under `proposals/` that `.gitignore` excludes.
+
+## Never
 
 - Do not hardcode API keys or secrets anywhere in source.
 - Do not commit `data/macro_radar.db`.
 - Do not commit `.streamlit/secrets.toml`.
-- Do not use `st.markdown()` for styled HTML cards — use `streamlit.components.v1.html()`.
-- Do not change the Bloomberg dark aesthetic.
 - Do not use chained pandas indexing (`df[col][mask] = value`) — use `df.loc[mask, col] = value`.
-- Do not use `@st.cache_data` on scikit-learn model objects — use `@st.cache_resource`.
 - Do not reintroduce `numpy.irr` — use binary search on NPV.
 - Do not use `BAMLC0A0CAAA` for IG OAS — use `BAMLC0A0CM`.
 - Do not use `GS2` / `GS10` for daily yield analysis — use `DGS2` / `DGS10`.
@@ -342,113 +71,28 @@ Without the four optional Phase-11 keys, the news, AI interpretation, and resear
 - Do not replace `desk_series` FRED rows whole or fetch them with a lookback: FRED serves the ICE BofA OAS series as a rolling three years since April 2026, and the store's merge is what keeps the older observations (see Desk · Event Study).
 - Do not surface `regimes.prob_recession` in Desk; only the logistic model's probability, labelled as such.
 - Do not read a worker result on a Desk v2 route outside `desk_envelope.answer`: it pins the one generation that the item lookup, the memo key and the envelope share (Codex R-01).
+- Do not hardcode design tokens or regime colors from memory: read them from `web/DESIGN.md` and `web/src/styles/tokens/`.
 
----
+## Topic rules (`.claude/rules/`)
 
-## Phase 12 — Conversational AI Assistant
+Each file loads automatically when you read or edit a file matching its `paths`. If one didn't load, read it before editing those paths.
 
-**Status:** Complete (May 3 2026).
+| File | Covers | Loads for |
+|---|---|---|
+| `data-sources.md` | FRED series choices, month stamping, session-complete bars, market and news pipelines | `src/`, `scripts/`, `api/`, `tests/`, news screen, workflows |
+| `analytics.md` | Regime engine, odds rounding, transition outlook, recession model, allocation caps | `src/`, `api/`, `dashboard/`, `tests/`, `web/src/lib`, `web/src/screens` |
+| `database.md` | Why the DB is a Release asset, who reads and writes it | `data/`, `src/`, `scripts/`, `api/db.py`, `api/bootstrap.py`, workflows |
+| `api.md` | FastAPI routes, worker generations, bootstrap, freshness, security, deploy posture | `api/`, `Dockerfile`, `deploy/`, API tests and scripts, `web/src/api`, `web/src/live` |
+| `desk.md` | Desk engine, event study, Desk v2 envelope, NYSE calendars, regression gate | `src/desk/`, `api/desk*`, Desk screens and fixtures, Desk tests |
+| `workflows.md` | The `data-write` concurrency group and retry loop (do not revert), modes, validation | `.github/workflows/`, validation and mode scripts |
+| `secrets.md` | Every key, where it is read, what happens without it | config, `api/`, env templates, workflows |
+| `assistant.md` | The chat agent, its tools, SQL guard, cost and persistence rules | assistant modules and tests |
+| `streamlit.md` | Legacy Streamlit constraints and its own palette | `dashboard/`, `.streamlit/` |
+| `web.md` | React app notes and where the design contract lives | `web/` |
+| `surprises.md` | Surprise metrics: daily-store sources, session calendars, observation dates, CPI YoY, VIX alerts | `src/analytics/surprise*.py`, alerts, playbook, memo, `src/utils/format.py`, `api/db.py`, surprise tests |
 
-**Where it lives:** Floating bottom-right FAB rendered on every tab. Click opens an `@st.dialog` modal containing the chat. Wired in once at the end of `dashboard/app.py`, after the last `with tab_meth:` block.
+## Keeping this file useful
 
-**Files added:**
-- `src/analytics/chat.py` — `MacroRadarAgent`, `SYSTEM_PROMPT_TEMPLATE`, 8 tool definitions (`active_tools()` offers 7 unless `ASSISTANT_FREEFORM_SQL` is on), tool-use loop (10-iteration cap), `is_safe_select` SQL guard, `RateLimited` / `NetworkError` / `AgentError` exception hierarchy.
-- `dashboard/components/chat_widget.py` — `render_chat_launcher()` (FAB) and `_chat_dialog()` (modal). Streams via `st.write_stream` over `MacroRadarAgent.ask_streaming`.
-- `dashboard/utils/tab_context.py` — `register_tab_context(tab_name, metrics, kind="live")` writes to `st.session_state.current_tab_context`.
-- `tests/test_chat_sql_guard.py` — unit tests covering allowed SELECT/CTE forms and rejecting DDL/DML/PRAGMA/ATTACH/chained statements.
-
-**Files modified:** `dashboard/app.py` (launcher wire-up + Dashboard tab context call); all 11 tab render functions in `dashboard/components/` plus the inline Dashboard block (`register_tab_context` call at entry).
-
-**Tools (8; 7 offered by default):**
-- `query_database(sql)` — **off by default** (desk/hardening): offered only when `ASSISTANT_FREEFORM_SQL` is `1`/`true`/`yes`/`on`; otherwise `active_tools()` omits it and `_run_tool` refuses it. Read-only SELECT only; capped at 200 rows.
-- `get_current_regime()` — latest `regimes` row (label, confidence, growth/inflation trends, 4 probabilities).
-- `get_signal_status(signal_name?)` — latest signal rows from `signals`.
-- `get_recession_probability()` — latest + 1m / 3m / 6m prior `prob_recession`.
-- `get_credit_snapshot()` — latest IG/HY/CCC/BB/B OAS plus 10Y UST (returned in both pct and bps).
-- `get_market_snapshot(ticker)` — latest close + 1d/5d/1m/YTD return from `market_daily`.
-- `get_recent_headlines(limit, min_significance)` — top items from `news_feed` with `regime_interpretation` and `perplexity_research`.
-- `explain_current_view()` — reads the `TAB_CONTEXT` ContextVar (set per request by `api/chat.py`), falling back to `st.session_state.current_tab_context`.
-
-**Model:** `claude-sonnet-4-5-20250929` via the official `anthropic` SDK (already in `requirements.txt`).
-
-**API key:** `ANTHROPIC_API_KEY` loaded via `src/analytics/chat.py`'s own `get_secret` (env → `st.secrets` → repo-root `.env`) — *not* `src.config`, which would drag in the `FRED_API_KEY` requirement and break the key-less FastAPI path. Missing key → FAB silently replaced with a muted "AI Assistant unavailable — API key not configured" caption; no traceback.
-
-**SQL guard:** `is_safe_select` rejects anything that isn't a single `SELECT` (or `WITH … SELECT`) statement. Bans interior `;`, all DDL/DML, PRAGMA (including table-valued `pragma_*`), ATTACH/DETACH, VACUUM, REINDEX, TRUNCATE, `randomblob`/`zeroblob`, `load_extension`. When `query_database` is on, `sql_guard_refusal` also caps a statement at 2 KB of SQL, 16 function calls and no two-argument `trim`/`ltrim`/`rtrim`, and each call reads its own in-memory copy (`dbpath.copy_private_ro`) under a 250 ms wall-clock budget (`_interrupt_after` re-fires `conn.interrupt()`), with one value capped at 16 KB and a LIKE/GLOB pattern at 256 bytes. There is no progress-handler (VM-instruction) budget any more (desk/hardening, `docs/desk/HARDENING_REPORT.md` decisions 36, 42, 44).
-
-**Cost guards:** history sent to the API is capped at the last `HISTORY_TURN_LIMIT = 20` turns. Token usage accumulates in `st.session_state.chat_token_log` (input/output) and renders in the dialog footer.
-
-**Persistence model:** Session-only via `st.session_state.chat_messages`. NO new DB table. Reason: public Streamlit app shared across visitors; persistent history would leak prior visitors' conversations to recruiters. Refresh clears history.
-
-**Suggested prompts (recruiter-facing — do not change without thinking):**
-1. "What's driving the current regime?"
-2. "Explain what I'm looking at on this tab"
-3. "Should I be worried about recession risk right now?"
-4. "Top headlines today and why they matter"
-
-**Tab context pattern:** every tab calls `register_tab_context("<TabName>", {...})` at the top of its render function. The metrics dict is intentionally a small static description (`shows`, `key_tools`) plus 0–6 live numeric metrics where they are cheap to extract — the agent's other tools fetch live data when needed. `Methodology` registers with `kind="reference"` since its content is static.
-
-**Known gotchas discovered during build:**
-- `anthropic` was pinned in `requirements.txt` but not actually installed locally — installed it during dev. The Streamlit Cloud build will pick it up from `requirements.txt` automatically.
-- BAML OAS values in `raw_series` are stored as percent (e.g., `0.81`), not basis points — `get_credit_snapshot` returns both `value_pct` and `value_bps` to avoid ambiguity in tool output.
-- The FAB uses CSS `:has()` selectors targeting a marker `<div id="macro-chat-fab-mark">` to position the next `stElementContainer` (the button) as fixed bottom-right. Modern browsers only.
-- `st.dialog` (Streamlit ≥1.31) needs to be called during a script run to open. The button click triggers a rerun and re-invokes the decorated function, which is sufficient.
-- Streaming uses `client.messages.stream(...).text_stream` events — tool_use blocks resolve silently between iterations.
-
-**Deferred to Phase 12.5:**
-- Web search tool (latest news beyond `news_feed`).
-- Inline chart generation in chat responses.
-- Persistent history with auth.
-- Voice I/O.
-
----
-
-## Maintaining This File
-
-Every Claude Code session that ships code to `main` is responsible for updating this file before its final commit:
-
-1. If you completed a phase, update "Phase Status".
-2. If you discovered a new gotcha (Streamlit behavior, library quirk, data source issue), add a one-line entry under the relevant section.
-3. If you changed workflow files, update the GitHub Actions section.
-4. If you added a new dependency or external service, note it in "Project at a Glance" and "API Keys & Secrets" if applicable.
-5. If you removed or renamed a tab, update the tab count.
-6. Do not add Phase Nx architecture sections until that phase has shipped — speculative documentation drifts faster than no documentation.
-
-When in doubt: delete more than you add. Stale documentation is worse than missing documentation.
-
----
-
-## React Migration (in progress — nothing ships without explicit user approval)
-
-- **Design source of truth:** `/Users/maxkomen/Documents/Trading-Research-Docs/Macro Regime Radar Design System/` — read `HANDOFF_REACT_MIGRATION.md` there first. `styles.css` + `tokens/` and `components/**/*.jsx` are shippable near as-is; `ui_kits/` are fixture-data references only.
-- **Design tooling:** the `impeccable` Claude Code plugin (v4.0.4, user scope, from `pbakaus/impeccable`) is installed — use `/impeccable` (audit, critique, polish, …) alongside the handoff bundle for all UI work.
-- **Step 1 (API) is built** — see the FastAPI section above.
-- **Steps 2–4 are built on branch `react-rebuild`** (as of 2026-08-26). `web/` is a Vite + React 18 + TypeScript app: all 7 tabs (Dashboard, Regime Lab, Markets, Credit, Recession, News & Calendar, Tools) plus Methodology and the assistant panel (`web/src/screens/shell/AssistantPanel.tsx` over `POST /api/assistant/ask`), a responsive foundation (`web/src/lib/useBreakpoint.ts` — mobile <480 / tablet <768 / desktop <1024 / wide; the sole width-conditional mechanism) and h1→h2→h3 heading semantics. Product and design contracts for it live in `web/PRODUCT.md` and `web/DESIGN.md`. A `Dockerfile` plus `docs/redesign/DEPLOY.md` describe two working deploys (split Vercel + backend host, or a single same-origin host). **The branch is pushed to origin as of 2026-09-10; nothing is merged or deployed.** Session ledger: `proposals/OVERNIGHT_BUILD_LOG.md`.
-- **Do not commit, push, merge, or deploy any migration work without the user's explicit say-so.**
-
----
-
-*Oct 1 2026 — `fix/freshness` (worktree `mrr-freshness`, from main `b116f584`; unpushed, gate `PUSH OK fix/freshness`): the relay's US day change (D1), true-dated 1W changes and month-end labels, one number per concept across the Dashboard and the Desk (D2), wording that matched the code (D3–D5: Streamlit untouched, transition odds called hand-set priors, "recession odds for this month, scored from inputs three months old"), the Regime Lab quadrant on per-axis scales, the tape's fund names; item 7 (the Dashboard VIX card on the tape's quote); Codex round 1 (R-01..R-24: relay anchors, rates through the Desk's reader, VIX by observation time, training copy from served metadata, wording; R-10, R-11 deferred, R-07 rejected); item 8 (the US 30Y strip card, "Data status"); Codex round 2 (R-25 close-evidence anchors, R-04 the REST hold, the 2008 peak from the served history, R-20's last strings incl. one engine provenance sentence pinned by `REWORDED` in the native gate). Report: `docs/FRESHNESS_REPORT.md`.*
-
-*Sep 27 2026 — `desk/books` (worktree `mrr-books`, from main `4394e59`, rebased onto main `23014d0` after desk/fill-etf and desk/fill-compute merged): Basket & Hedge live from real prices. `range=2Y` daily candles, the basket engine (`src/desk/basket.py`), the shared technicals (`src/desk/technicals.py`), `/api/desk/basket/price` and `/basket/hedge`, named baskets with notional and method, the AI Infrastructure 10 preset, `?add=`, the three-step page, the options slot for desk/prototypes. Report: `docs/desk/BOOKS_REPORT.md`.*
-
-*Sep 27 2026 — `desk/fill-compute` (worktree `mrr-compute`, unpushed): the empty Desk cards filled from stored data (RSI, the RSI studies, the VIX gap and band, what each regime has meant and the last five changes, one label on Regime, the classifier line, MACD, seasonality), the VIX moved to ^VIX, stale by publication cadence, FRED daily tolerance 3. Report: `docs/desk/FILL_COMPUTE_REPORT.md`.*
-
-*Sep 28 2026 — `desk/usability` (worktree `mrr-usability`, rebased onto main `2c62d403`): the Desk walkable cold: Desk-wide stock search, Technicals for any US stock, Event Study on any question, saved positions first, grouped navigation, one line and one action per page, Start here, the landing link, deep links, loading and per-card failure states, hover definitions, the no-dead-control guard, the keep-warm cron. Report: `docs/desk/USABILITY_REPORT.md`.*
-
-*Sep 26 2026 — `desk/frame-3-api-b2a` (session B2a, worktree `mrr-b2a`, rebased onto main `9979fe9` after frame-3 merged): Desk v2 `/regime`, `/macro`, `/pipeline`, `/pipeline/ddl` in the envelope, the three FRED curve tenors registered, the published `validation.json` verdict (both writers, bootstrap binding, per-generation key gate), the Data Pipeline's feeds derived from the code, the pipeline fixture from the served payload, the generated DDL fixture. Report: `docs/desk/FRAME3_API_REPORT_B2A.md`.*
-
-*Sep 22 2026 — `desk/integration` (worktree `macro-regime-radar-integration`, cut from origin/main `a739585`; unpushed, gate `PUSH OK desk/integration`): desk/event-study and desk/frame merged, the lock carries `exchange_calendars`, one `api/desk.py`, the inventory's desk_series rows, the `awaiting_refresh` state for a database that predates the first full refresh, the Event Study page on the engine's real contract and slugs, the smoke's Desk checks. Report: `docs/desk/INTEGRATION_REPORT.md`.*
-
-*Sep 22 2026 — `release/launch-1` (unmerged, unpushed): the public-deploy pass. Every gate at production values, the relay Origin allowlist, closed diagnostics, the assistant's $1/day ledger ceiling, an independent SQL-guard re-audit, `web/vercel.json`, `deploy/api.env.example`, the non-root one-worker image on a pinned lock, session-aware EODHD timers, the Vercel snapshot fetch and deploy hook, DEPLOY.md, `scripts/smoke_public.py`, generation-keyed cache invalidation, Finnhub fundamentals, and every e2e spec green (814). Nothing deployed.*
-
-*Sep 21 2026 — `desk/frame` (worktree `macro-regime-radar-frame`): the Desk analyst workspace at `/desk` (`web/src/screens/desk/`, `web/src/styles/desk.css`, content in `web/src/content/desk/`), the one read-only endpoint `/api/desk/pipeline/inventory` (`api/desk.py`), spec `docs/desk/DESK_FRAME_SPEC.md`, report `docs/desk/FRAME_REPORT.md`. Unpushed; gate `PUSH OK desk/frame`.*
-
-*Sep 10 2026 — committed the Sep 6 release-readiness pass as five commits and pushed `react-rebuild` to origin (force-with-lease over the Aug WIP commit that had `web/node_modules` and `web/dist` committed; that commit is kept locally as tag `backup/origin-react-rebuild-20260910`). Fixed the relay reconnect loop, the validator's event-calendar false positive, and added a graceful-shutdown timeout to the Dockerfile CMD. Review screenshots under `proposals/` are gitignored. Nothing merged or deployed.*
-
-*Last meaningful update: Sep 6 2026 — release-readiness pass on `react-rebuild` (uncommitted): EODHD-first provider layer (`api/providers/`), security gates (`api/security.py`, `api/logsafe.py`), source-aware freshness (`api/freshness.py`, `api/calendar.py`), relay hardening, health endpoints, snapshot mode (`scripts/build_snapshot.py` + `web/src/api/snapshot.ts`), workflow modes with validation gates (`scripts/validate_db.py`), `make sync-data`, vitest suite, docs (`docs/RUNBOOK.md`, `docs/redesign/DEPLOY.md`, `proposals/FINAL_RELEASE_READINESS.md`). Nothing committed, pushed, dispatched or deployed.*
-
-*Aug 27 2026 — owner-directed revamp on `react-rebuild` (uncommitted): type ramp up one rung with mono narrowed to data-only (`web/DESIGN.md` records it), ~115 UI-copy fixes banning em-dash asides plus a `tidyProse()` display filter for model-composed text, mobile header collapse, and the Phase-2 single-name layer (`api/lookup.py` + `/api/market/search|profile|candles`, SymbolSearch/SingleName in Markets). A running uvicorn needs a restart to pick up the new routes.*
-
-*Aug 26 2026 — refreshed the FastAPI section for the `react-rebuild` branch (assistant SSE endpoint, EODHD relay, DB bootstrap, same-origin bundle serving, env-driven CORS, port 8000) and recorded that migration steps 2–4 are built but neither pushed nor deployed.*
-
-*Jun 2 2026 — stopped committing `data/macro_radar.db` to git (it bloated the repo to ~283 MB and broke Streamlit Cloud's deploy clone); purged it from history and now ship it as the `data-latest` GitHub Release asset, downloaded by the workflows (built-in `GITHUB_TOKEN`) and by the dashboard at startup (authenticated with `GH_DB_TOKEN`, since the repo is private).*
+- Do not append dated session notes here: that is how this file reached 450 lines and ~38k tokens. Put reports under `docs/`; older notes are in `docs/agent-history.md`.
+- Add a line only for a gotcha that will bite the next session, in the matching `.claude/rules/` file. Add it here only if it applies to every task.
+- Verify against the code before adding a claim. When in doubt, delete more than you add.
