@@ -118,7 +118,15 @@ def test_an_older_prints_yoy_is_never_served_as_the_latest(tmp_path, monkeypatch
     derived = {"CPI_yoy_z": {"value": 3.0, "date": "2026-09-25"}, "CPI_yoy_newest": {"value": marker[2], "date": "2026-10-02"}}
     assert playbook._zscore_sentences(derived) == []
     derived["CPI_yoy_newest"]["date"] = "2026-09-25"
-    assert len(playbook._zscore_sentences(derived)) == 1
+    # the newest print's YoY, read weeks later: dated by its week, never called today's (Codex S-14)
+    assert playbook._zscore_sentences(derived) == [
+        "Because CPI inflation is extreme in the latest reading (week of 2026-09-25, z=+3.00), "
+        "the CPI signal is significantly elevated versus 2-year norms."
+    ]
+    derived["CPI_yoy_z"]["value"] = 1.69
+    assert playbook._zscore_sentences(derived) == [
+        "Because CPI inflation is above trend in the latest reading (week of 2026-09-25, z=+1.69)."
+    ]
     # the marker on the row's own week: the row is the newest print's
     path2 = tmp_path / "e.db"
     _derived(path2, SEP_ROWS + [("CPI_yoy_newest", "2026-09-25", float(pd.Timestamp("2026-09-01").date().toordinal()))])

@@ -160,16 +160,18 @@ def _zscore_sentences(derived: dict) -> list:
         if newest and newest["date"] > derived[metric_name]["date"]:
             continue  # an older print's YoY: the newest print has no year-earlier month
         z = derived[metric_name]["value"]
+        # a weekly row, or a monthly print carried through the weeks: dated by its week, never "today"
+        week = derived[metric_name]["date"]
         if abs(z) >= Z_EXTREME:
             adj = "elevated" if z > 0 else "depressed"
             sentences.append(
-                f"Because today {label} {theme} is extreme (z={z:+.2f}), "
+                f"Because {label} {theme} is extreme in the latest reading (week of {week}, z={z:+.2f}), "
                 f"the {label} signal is significantly {adj} versus 2-year norms."
             )
         elif abs(z) >= Z_NOTABLE:
             direction = "above" if z > 0 else "below"
             sentences.append(
-                f"Because today {label} {theme} is {direction} trend (z={z:+.2f})."
+                f"Because {label} {theme} is {direction} trend in the latest reading (week of {week}, z={z:+.2f})."
             )
     return sentences
 
