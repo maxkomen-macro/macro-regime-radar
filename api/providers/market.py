@@ -21,7 +21,7 @@ import logging
 import os
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 
@@ -681,6 +681,87 @@ def _as_of(rows: list[dict]) -> str | None:
     return max(stamps)[:19].replace("T", " ") if stamps else None
 
 
+# ── the session end-of-day marks describe (Options Finder F1) ─────────────────
+
+STAMP_YEARS = (2000, 2100)
+_STAMP_SLACK = timedelta(minutes=5)
+
+
+def _parse_stamp(text: Any) -> datetime | None:
+    """A quote stamp ("YYYY-MM-DD HH:MM[:SS]", "T" accepted) as a naive datetime, years 2000 to 2100, else None."""
+    s = str(text or "").strip().replace("T", " ")[:19]
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            d = datetime.strptime(s, fmt)
+        except ValueError:
+            continue
+        return d if STAMP_YEARS[0] <= d.year <= STAMP_YEARS[1] else None
+    return None
+
+
+def eod_session(stamp: Any, now: datetime | None = None) -> str | None:
+    """The New York session an end-of-day mark describes, or None.
+
+    EODHD stamps its end-of-day option marks overnight, between the session's close and the next open,
+    and does not say whether the stamp is UTC or New York time. A stamp names a session only when, read
+    both ways, it falls between one session's close and the next session's open, both readings name the
+    same session, the calendar's holiday table covers it, and that session has closed by `now`. An
+    intraday mark, a stamp in the band where the two readings disagree, or a stamp in the future names
+    none, so nothing is ever labelled a close it is not."""
+    from api.calendar import NY, calendar_known, last_completed_session, next_trading_day, session_bounds
+
+    naive = _parse_stamp(stamp)
+    if naive is None:
+        return None
+    now = now or _utcnow()
+    try:
+        # the UTC reading is the earlier instant: a stamp is in the future when even that one is
+        if naive.replace(tzinfo=timezone.utc) > now + _STAMP_SLACK:
+            return None
+        named: set[date] = set()
+        for tz in (timezone.utc, NY):
+            t = naive.replace(tzinfo=tz)
+            x = last_completed_session(t)
+            nxt = next_trading_day(x)
+            if not (calendar_known(t.astimezone(NY).date()) and calendar_known(x) and calendar_known(nxt)):
+                return None
+            closed, opens = session_bounds(x), session_bounds(nxt)
+            if closed is None or opens is None or not (closed[1] <= t < opens[0]):
+                return None
+            named.add(x)
+        if len(named) != 1:
+            return None
+        x = named.pop()
+        return x.isoformat() if x <= last_completed_session(now) else None
+    except (ValueError, OverflowError):
+        return None
+
+
+def chain_session(rows: list[dict], now: datetime | None = None) -> str | None:
+    """The session a set of contracts describes: `eod_session` of the newest parseable bid or ask stamp
+    that is not in the future (read as UTC), chosen before any session is read from it."""
+    now = now or _utcnow()
+    best: datetime | None = None
+    for r in rows:
+        for s in (_parse_stamp(r.get("bid_date")), _parse_stamp(r.get("ask_date"))):
+            if s is not None and s.replace(tzinfo=timezone.utc) <= now + _STAMP_SLACK and (best is None or s > best):
+                best = s
+    return eod_session(best.strftime("%Y-%m-%d %H:%M:%S"), now) if best is not None else None
+
+
+# The expirations scan seeks on the expiry date, at most ten pages (Options Finder F1).
+EXP_PAGES = 10
+EXP_PAGE_LIMIT = 1000
+
+
+def _exp_date(value: Any) -> date | None:
+    try:
+        d = date.fromisoformat(str(value)[:10])
+    except (TypeError, ValueError):
+        return None
+    return d if STAMP_YEARS[0] <= d.year <= STAMP_YEARS[1] else None
+
+
 def options_expirations(symbol: str) -> dict:
     try:
         inst = parse(symbol)
@@ -689,19 +770,47 @@ def options_expirations(symbol: str) -> dict:
     underlying = _require_options(inst)
 
     def compute() -> dict:
-        try:
-            today = datetime.now(timezone.utc).date().isoformat()
-            d = _with_slot(lambda: client().options_contracts(underlying, exp_date_from=today, limit=1000, sort="exp_date", fields="exp_date,bid_date,ask_date,tradetime"))
-            entitlements.record_live("options", True, 200, "ok")
-        except ProviderError as exc:
-            if exc.kind in ("unauthorized", "missing_token"):
-                entitlements.record_live("options", False, exc.status, f"{exc.kind}: {exc.public}")
-            raise
-        rows = [r.get("attributes", r) for r in d.get("data") or []]
-        exps = sorted({str(r.get("exp_date")) for r in rows if r.get("exp_date")})
+        anchor = datetime.now(timezone.utc).date()
+        inclusive = False  # set once a page shows the provider's exp_date_from includes its own date
+        exps: set[str] = set()
+        rows: list[dict] = []
+        truncated = False
+        recorded = False
+        for _ in range(EXP_PAGES):
+            frm = anchor.isoformat()
+            try:
+                d = _with_slot(lambda: client().options_contracts(underlying, exp_date_from=frm, limit=EXP_PAGE_LIMIT, sort="exp_date", fields="exp_date,bid_date,ask_date,tradetime"))
+                if not recorded:
+                    entitlements.record_live("options", True, 200, "ok")
+                    recorded = True
+            except ProviderError as exc:
+                if exc.kind in ("unauthorized", "missing_token"):
+                    entitlements.record_live("options", False, exc.status, f"{exc.kind}: {exc.public}")
+                raise
+            page = [r.get("attributes", r) for r in d.get("data") or []]
+            rows.extend(page)
+            exps.update(str(r.get("exp_date")) for r in page if r.get("exp_date"))
+            if not (d.get("links") or {}).get("next"):
+                truncated = False  # the provider has nothing more past this page
+                break
+            truncated = True  # stays true when the scan stops below with a next link outstanding
+            # the newest expiry on the page; one that is missing, malformed or outside 2000 to 2100 gives
+            # no anchor, and a next link with nothing to anchor on is never called complete
+            raw = [str(r.get("exp_date"))[:10] for r in page if r.get("exp_date")]
+            newest = _exp_date(max(raw)) if raw else None
+            if newest is None:
+                break
+            # Anchor on the newest expiry, right whether the filter is inclusive or exclusive. A page that
+            # got no further than its anchor proves the filter inclusive; from then on anchor a day later.
+            if newest <= anchor:
+                inclusive = True
+            nxt = newest + timedelta(days=1) if inclusive else newest
+            if nxt.year > STAMP_YEARS[1]:
+                break
+            anchor = max(nxt, anchor + timedelta(days=1)) if inclusive else nxt
         if not exps:
             raise EmptyResult(eod.PROVIDER, f"No listed options on file for {inst.canonical}.")
-        return {"symbol": inst.canonical, "underlying": underlying, "provider": eod.PROVIDER, "as_of": _as_of(rows), "cadence": "end_of_day", "fetched_at": _now_iso(), "expirations": exps, "truncated": bool((d.get("links") or {}).get("next"))}
+        return {"symbol": inst.canonical, "underlying": underlying, "provider": eod.PROVIDER, "as_of": _as_of(rows), "session": chain_session(rows), "cadence": "end_of_day", "fetched_at": _now_iso(), "expirations": sorted(exps), "truncated": truncated}
 
     return _exp_cache.get(inst.canonical, compute)
 
@@ -770,6 +879,7 @@ def options_chain(symbol: str, *, expiration: str, type_: str | None, strike_fro
             "provider": eod.PROVIDER,
             "cadence": "end_of_day",
             "as_of": _as_of(rows),
+            "session": chain_session(rows),
             "fetched_at": _now_iso(),
             "expiration": expiration,
             "type": type_,
