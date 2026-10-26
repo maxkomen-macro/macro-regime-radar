@@ -51,13 +51,14 @@ def business_closes(days: int, start: date = CONVENTION_START) -> list[int]:
 
 
 _SESSION = None
+SESSION_PY = REPO / "src" / "market_data" / "session.py"   # it sets the Bermudan schedules, so it is a run key (OB-09)
 
 
 def _session():
     """src/market_data/session.py loaded by path (stdlib only), so it never collides with the engine's src."""
     global _SESSION
     if _SESSION is None:
-        spec = importlib.util.spec_from_file_location("options_bench_session", REPO / "src" / "market_data" / "session.py")
+        spec = importlib.util.spec_from_file_location("options_bench_session", SESSION_PY)
         _SESSION = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(_SESSION)
     return _SESSION
@@ -138,7 +139,9 @@ def manifest(args, shard: str, n_cases: int) -> dict:
                                       "GCI safety factor 1.25 on monotone three-level studies, order capped at 2",
                                       "uncertainty is an estimate from observed refinement, not a proved bound"]},
         "domain": cases.DOMAIN,
-        "convention_calendar": "src/market_data/session.py holiday tables; cases expiring after their last year skip the study",
+        "convention_calendar": {"source": "src/market_data/session.py holiday tables; cases expiring after their last year skip the study",
+                                 "sha256": _sha(SESSION_PY), "last_day": calendar_last_day().isoformat(),
+                                 "start": CONVENTION_START.isoformat()},
         "versions": {"python": sys.version.split()[0], "numpy": np.__version__, "scipy": scipy.__version__,
                      "quantlib": crosscheck.quantlib_version()},
         "platform": {"machine": platform.machine(), "system": platform.platform(), "cpus": os.cpu_count()},

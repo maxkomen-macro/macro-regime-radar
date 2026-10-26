@@ -187,17 +187,38 @@ def test_the_gate_counts_missing_groups_dividends_and_named_cases():
     full = {g: _group(score.PER_GROUP_TARGET) for g in cases.IN_DOMAIN_GROUPS}
     full["G2-dividends"] = _group(score.PER_GROUP_TARGET, div={"pass": score.DIVSENS_TARGET})
     overall = {"accepted_scored": score.OVERALL_TARGET}
-    ok = [{"id": "named/B8", "regression": "pass"}]
-    assert score.gate_result(full, overall, ok)["met"]
+    ok = [{"id": c.id, "regression": "pass"} for c in cases.NAMED]
+    assert score.gate_result(full, overall, ok, complete=True)["met"]
+    assert not score.gate_result(full, overall, ok, complete=False)["met"]
     missing = {g: v for g, v in full.items() if g != "G6-long"}
-    gate = score.gate_result(missing, overall, ok)
+    gate = score.gate_result(missing, overall, ok, complete=True)
     assert not gate["per_group_met"]["G6-long"] and not gate["met"]
     bad_div = dict(full, **{"G3-carry-itm": _group(score.PER_GROUP_TARGET, div={"fail": 1})})
-    assert not score.gate_result(bad_div, overall, ok)["met"]
-    unresolved = [{"id": "named/B8", "regression": "unresolved"}]
-    gate = score.gate_result(full, overall, unresolved)
-    assert not gate["met"] and gate["named_unresolved"] == ["named/B8"] and not gate["named_failures"]
-    assert not score.gate_result(full, overall, [])["met"]
+    assert not score.gate_result(bad_div, overall, ok, complete=True)["met"]
+    b8 = next(c.id for c in cases.NAMED if c.id.endswith("B8"))
+    unresolved = [n if n["id"] != b8 else {"id": b8, "regression": "unresolved"} for n in ok]
+    gate = score.gate_result(full, overall, unresolved, complete=True)
+    assert not gate["met"] and gate["named_unresolved"] == [b8] and not gate["named_failures"]
+    one = score.gate_result(full, overall, ok[:1], complete=True)   # a shard holding one named case (OB-08)
+    assert not one["met"] and len(one["named_missing"]) == len(cases.NAMED) - 1
+    assert not score.gate_result(full, overall, [], complete=True)["met"]
+
+
+def test_a_partial_run_is_scored_but_marked_incomplete():
+    man = {k: "x" for k in score.RUN_KEYS} | {"seed": 3, "per_group": 2, "named": True}
+    expected = [c.id for c in cases.suite(3, 2)]
+    got = score.completeness([man | {"shard": "0/4"}], set(expected[::4]))
+    assert not got["complete"] and got["missing_shards"] == ["1/4", "2/4", "3/4"]
+    assert got["expected"] == len(expected) and got["missing"] == len(expected) - len(expected[::4])
+    assert score.completeness([man | {"shard": "0/1"}], set(expected))["complete"]
+    with pytest.raises(ValueError, match="not in this run"):
+        score.completeness([man | {"shard": "0/1"}], set(expected) | {"G1-nodiv/99"})
+
+
+def test_a_calendar_change_separates_runs():
+    man = {k: "x" for k in score.RUN_KEYS}
+    with pytest.raises(ValueError, match="convention_calendar"):
+        score.check_compatible([man | {"shard": "0/2"}, man | {"convention_calendar": "y", "shard": "1/2"}])
 
 
 def test_a_skipped_convention_study_is_counted_not_crashed():
@@ -264,6 +285,13 @@ def test_resuming_a_run_with_other_inputs_is_refused(tmp_path):
     assert run.main(common) == 0
     with pytest.raises(SystemExit, match="seed"):
         run.main(common + ["--seed", "1"])
+    man_path = tmp_path / "manifest-0of1.json"
+    man = json.loads(man_path.read_text())
+    assert man["convention_calendar"]["sha256"] == run._sha(run.SESSION_PY)
+    man["convention_calendar"]["sha256"] = "0" * 64      # as if the holiday tables had changed (OB-09)
+    man_path.write_text(json.dumps(man))
+    with pytest.raises(SystemExit, match="convention_calendar"):
+        run.main(common)
 
 
 @pytest.mark.skipif(crosscheck.ql is None, reason="QuantLib is test-only and not installed")

@@ -201,7 +201,8 @@ def _summary(rows: list[dict]) -> dict:
 
 
 # Manifest fields every shard of one run must share; anything else (shard, timestamps, resumes) may differ.
-RUN_KEYS = ("bench_files_sha256", "engine", "seed", "per_group", "named", "options", "reference", "domain", "versions")
+RUN_KEYS = ("bench_files_sha256", "engine", "seed", "per_group", "named", "options", "reference", "domain", "versions",
+            "convention_calendar")
 
 
 def check_compatible(manifests: list[dict]) -> None:
@@ -216,6 +217,22 @@ def check_compatible(manifests: list[dict]) -> None:
     n = int(shards[0].split("/")[1])
     if len(set(shards)) != len(shards) or any(int(x.split("/")[1]) != n for x in shards):
         raise ValueError(f"inconsistent shard set {shards}")
+
+
+def completeness(manifests: list[dict], ids: set[str]) -> dict:
+    """The run's case list, regenerated from its manifest, against the results received: a partial run (missing
+    shards or unfinished cases) is scored but marked incomplete, and an incomplete run never meets the gate
+    (Codex OB-08). A result the run could not have produced is an error."""
+    first = manifests[0]
+    expected = {c.id for c in cases.suite(first["seed"], first["per_group"], named=first["named"])}
+    extra = ids - expected
+    if extra:
+        raise ValueError(f"{len(extra)} results are not in this run's case list (e.g. {sorted(extra)[0]})")
+    n = int(first["shard"].split("/")[1])
+    have = {m["shard"] for m in manifests}
+    return {"expected": len(expected), "received": len(ids), "missing": len(expected - ids),
+            "missing_shards": [f"{i}/{n}" for i in range(n) if f"{i}/{n}" not in have],
+            "complete": not (expected - ids)}
 
 
 def named_verdict(exp: str, got: str | None, price: str | None, delta: str | None) -> str:
@@ -233,9 +250,9 @@ def named_verdict(exp: str, got: str | None, price: str | None, delta: str | Non
 DIVSENS_TARGET = 300   # scored dividend-scenario cases across the in-domain groups [Proposed]
 
 
-def gate_result(groups: dict, overall: dict | None, named: list[dict]) -> dict:
+def gate_result(groups: dict, overall: dict | None, named: list[dict], complete: bool) -> dict:
     """Every required group appears, absent ones as unmet (Codex OB-06); the dividend scenario and the named
-    regressions are gates too (OB-07)."""
+    regressions are gates too (OB-07), and every named regression must be present (OB-08)."""
     per_group = {g: bool(g in groups and groups[g]["accepted_scored"] >= PER_GROUP_TARGET) for g in cases.IN_DOMAIN_GROUPS}
     in_dom = [groups[g] for g in cases.IN_DOMAIN_GROUPS if g in groups]
     price_fail = sum(s["price_failures"] for s in in_dom)
@@ -248,12 +265,14 @@ def gate_result(groups: dict, overall: dict | None, named: list[dict]) -> dict:
             "zero_failures": price_fail == 0 and bool(in_dom),
             "divsens": {"target_scored": DIVSENS_TARGET, "outcome": dict(div),
                         "met": div.get("fail", 0) == 0 and div.get("pass", 0) + div.get("fail", 0) >= DIVSENS_TARGET},
-            "named_all_pass": bool(named) and all(n["regression"] == "pass" for n in named),
+            "named_missing": sorted({c.id for c in cases.NAMED} - {n["id"] for n in named}),
+            "named_all_pass": all(n["regression"] == "pass" for n in named),
+            "complete": complete,
             "named_failures": [n["id"] for n in named if n["regression"] == "FAIL"],
             "named_unresolved": [n["id"] for n in named if n["regression"] == "unresolved"]}
     # An unresolved named regression is not certified, so it holds the gate open as a failure would.
-    gate["met"] = (all(per_group.values()) and gate["overall_met"] and gate["zero_failures"]
-                   and gate["divsens"]["met"] and gate["named_all_pass"])
+    gate["met"] = (complete and all(per_group.values()) and gate["overall_met"] and gate["zero_failures"]
+                   and gate["divsens"]["met"] and gate["named_all_pass"] and not gate["named_missing"])
     return gate
 
 
@@ -271,6 +290,7 @@ def score(dirs: list[Path]) -> dict:
             raise ValueError(f"case {cid} appears twice in the results; score one run's shards at a time")
         seen[cid] = r
     uniq = list(seen.values())
+    run_status = completeness(manifests, set(seen))
     rows = [classify(r) for r in uniq]
     by = defaultdict(list)
     for r in rows:
@@ -283,6 +303,7 @@ def score(dirs: list[Path]) -> dict:
         exp = rec["case"]["expect"]
         eng = rec.get("engine", {})
         got = eng.get("status")
+        rv, rd = (rec.get("ref") or {}).get("value") or {}, (rec.get("ref") or {}).get("delta") or {}
         if got == "served" and eng.get("delta") is None:
             got_short = "served:no-delta"
         elif got and got.startswith("refused"):
@@ -292,10 +313,10 @@ def score(dirs: list[Path]) -> dict:
         named.append({"id": r["id"], "note": rec["case"]["note"], "expect": exp, "got": got_short,
                       "regression": named_verdict(exp, got_short, r.get("price"), r.get("delta")),
                       "engine_value": eng.get("value"), "engine_delta": eng.get("delta"),
-                      "reason": eng.get("reason"), "ref_value": rec["ref"]["value"]["ref"],
-                      "ref_value_u": rec["ref"]["value"]["u"], "ref_value_status": rec["ref"]["value"]["status"],
-                      "ref_delta": rec["ref"]["delta"]["ref"], "ref_delta_u": rec["ref"]["delta"]["u"],
-                      "ref_delta_status": rec["ref"]["delta"]["status"], "price": r.get("price"), "delta": r.get("delta"),
+                      "reason": eng.get("reason") or rec.get("error"),
+                      "ref_value": rv.get("ref"), "ref_value_u": rv.get("u"), "ref_value_status": rv.get("status", "missing"),
+                      "ref_delta": rd.get("ref"), "ref_delta_u": rd.get("u"), "ref_delta_status": rd.get("status", "missing"),
+                      "price": r.get("price"), "delta": r.get("delta"),
                       "convention_shift_tol": r.get("convention_shift_tol")})
     controls = [r for r in rows if "control_eu_err_over_u" in r]
     ctl = {"european_cases": len(controls),
@@ -306,8 +327,8 @@ def score(dirs: list[Path]) -> dict:
            "european_delta_within_u": sum(r["control_eu_delta_err_over_u"] <= 1 for r in controls),
            "exempt_american_cases": sum("exempt_american_err_over_u" in r for r in rows),
            "exempt_american_within_u": sum(r.get("exempt_american_err_over_u", 2) <= 1 for r in rows)}
-    gate = gate_result(groups, overall, named)
-    return {"manifests": manifests, "groups": groups, "overall_in_domain": overall, "named": named,
+    gate = gate_result(groups, overall, named, run_status["complete"])
+    return {"manifests": manifests, "run": run_status, "groups": groups, "overall_in_domain": overall, "named": named,
             "controls": ctl, "gate": gate, "errors": [r for r in rows if r["price"] == "error"]}
 
 
@@ -324,6 +345,11 @@ def _f(x, nd=3):
 def markdown(sc: dict) -> str:
     m0 = sc["manifests"][0] if sc["manifests"] else {}
     L = ["# Options bench scorecard", ""]
+    rs = sc["run"]
+    if not rs["complete"]:
+        L += [f"**Partial run: {rs['received']} of {rs['expected']} cases"
+              + (f"; shards not received: {', '.join(rs['missing_shards'])}" if rs["missing_shards"] else "")
+              + ". Nothing below certifies the engine.**", ""]
     if m0:
         L += [f"- Engine: `{m0['engine']['files_sha256'].get('src/desk/options_math.py', '')[:12]}` (options_math.py sha256), "
               f"`{(m0['engine']['files_sha256'].get('src/desk/options_finder.py') or '')[:12]}` (options_finder.py), commit {m0['engine'].get('git_commit')}",
@@ -395,7 +421,9 @@ def markdown(sc: dict) -> str:
           f"- At least {gt['overall_target']} overall: {'met' if gt['overall_met'] else 'not met'}; zero observed price failures: {'yes' if gt['zero_failures'] else 'no'}",
           f"- Dividend scenario: {gt['divsens']['outcome']}; at least {gt['divsens']['target_scored']} scored with zero failures: {'met' if gt['divsens']['met'] else 'not met'}",
           f"- Named regressions all pass: {'yes' if gt['named_all_pass'] else 'no'}" + (f" (failures: {', '.join(gt['named_failures'])})" if gt["named_failures"] else "")
-          + (f" (unresolved: {', '.join(gt['named_unresolved'])})" if gt["named_unresolved"] else ""),
+          + (f" (unresolved: {', '.join(gt['named_unresolved'])})" if gt["named_unresolved"] else "")
+          + (f" (missing: {', '.join(gt['named_missing'])})" if gt["named_missing"] else ""),
+          f"- Run complete: {'yes' if gt['complete'] else 'no'} ({sc['run']['received']} of {sc['run']['expected']} cases)",
           f"- **Gate {'met' if gt['met'] else 'not met'}** (an unresolved named regression holds the gate open)",
           "- Clopper-Pearson limits assume independent draws from each group's sampling distribution; they are not a claim about real chains or whole requests.",
           ""]
