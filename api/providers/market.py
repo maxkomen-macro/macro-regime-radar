@@ -129,6 +129,11 @@ def _executor() -> ThreadPoolExecutor:
 def clear_caches() -> None:
     for c in (_search_cache, _identity_cache, _profile_cache, _candles_cache, _actions_cache, _exp_cache, _chain_cache, _ticks_cache, _fundamentals_cache, _daily_cache):
         c.clear()
+    # the Options Finder's (design F3): its chain windows and its own earnings reads
+    _window_cache.clear()
+    from api.providers import finnhub_finder
+
+    finnhub_finder.clear_caches()
 
 
 def _now_iso() -> str:
@@ -896,6 +901,173 @@ def options_chain(symbol: str, *, expiration: str, type_: str | None, strike_fro
     return _chain_cache.get(key, compute)
 
 
+# ── the Options Finder's chain window (design F3 §3; additive, options_chain is unchanged) ──
+
+WINDOW_REQUESTS = 8
+WINDOW_PAGE_LIMIT = 1000
+WINDOW_RETRY_S = 900.0
+_window_cache = KeyedTTLCache(36 * 3600.0, 256)
+
+
+def finder_row(r: dict, now: datetime | None = None) -> dict:
+    """One provider row as the Finder's engine reads it: exactly options_chain's fields and conversions
+    (tests/test_desk_options_api.py feeds one row through both), plus the raw bid and ask stamps and the
+    session each names at `now`."""
+    now = now or _utcnow()
+    return {
+        "contract": r.get("contract"),
+        "type": r.get("type"),
+        "strike": _f(r.get("strike")),
+        "exp_date": r.get("exp_date"),
+        "expiration_type": r.get("expiration_type"),
+        "dte": r.get("dte"),
+        "bid": _f(r.get("bid")),
+        "ask": _f(r.get("ask")),
+        "last": _f(r.get("last")),
+        "midpoint": _f(r.get("midpoint")),
+        "volume": _f(r.get("volume")),
+        "open_interest": _f(r.get("open_interest")),
+        "implied_vol": _f(r.get("volatility")),
+        "delta": _f(r.get("delta")),
+        "gamma": _f(r.get("gamma")),
+        "theta": _f(r.get("theta")),
+        "vega": _f(r.get("vega")),
+        "rho": _f(r.get("rho")),
+        "moneyness": _f(r.get("moneyness")),
+        "tradetime": r.get("tradetime"),
+        "last_quote": (str(r.get("bid_date") or r.get("ask_date") or "")[:19].replace("T", " ") or None),
+        "bid_date": r.get("bid_date"),
+        "ask_date": r.get("ask_date"),
+        "bid_session": eod_session(r.get("bid_date"), now),
+        "ask_session": eod_session(r.get("ask_date"), now),
+    }
+
+
+def _contracts(underlying: str, **kw: Any) -> dict:
+    try:
+        d = _with_slot(lambda: client().options_contracts(underlying, **kw))
+        entitlements.record_live("options", True, 200, "ok")
+        return d
+    except ProviderError as exc:
+        if exc.kind in ("unauthorized", "missing_token"):
+            entitlements.record_live("options", False, exc.status, f"{exc.kind}: {exc.public}")
+        raise
+
+
+def _scan_window(underlying: str, type_: str, exp_lo: date, exp_hi: date, strike_lo: int, strike_hi: int) -> dict:
+    """Every contract of one type in the window, proved complete per expiry (design F3 §3): seek pages
+    sorted by expiry, and one exact-expiry fill for the page's last expiry, at most WINDOW_REQUESTS
+    requests. Rows are kept only for expiries proven complete."""
+    rows: dict[str, dict] = {}
+    complete: set[date] = set()
+    budget = WINDOW_REQUESTS
+    anchor = exp_lo
+    inclusive: bool | None = None
+    done = False
+    base = dict(type_=type_, strike_from=float(strike_lo), strike_to=float(strike_hi), fields=_OPTION_FIELDS)
+    while budget > 0:
+        budget -= 1
+        page_d = _contracts(underlying, exp_date_from=anchor.isoformat(), exp_date_to=exp_hi.isoformat(), sort="exp_date",
+                            limit=WINDOW_PAGE_LIMIT, offset=0, **base)
+        page = [r.get("attributes", r) for r in page_d.get("data") or []]
+        more = bool((page_d.get("links") or {}).get("next"))
+        exps = [_exp_date(r.get("exp_date")) for r in page]
+        if any(e is None for e in exps) or any(b < a for a, b in zip(exps, exps[1:])) or any(e < anchor for e in exps):
+            break  # a provider contradiction: nothing on this page is relied on
+        if not page:
+            done = not more  # an empty page with a next link has no anchor to read: truncated
+            break
+        if anchor in complete and inclusive is None:
+            inclusive = exps[0] == anchor  # an inclusive filter returns the anchor's own rows first
+        for r in page:
+            rows.setdefault(str(r.get("contract")), r)
+        if not more:
+            complete.update(exps)
+            done = True
+            break
+        last = exps[-1]
+        complete.update(e for e in exps if e < last)
+        if last not in complete:
+            if budget <= 0:
+                break
+            budget -= 1
+            fill_d = _contracts(underlying, exp_date_eq=last.isoformat(), sort="strike", limit=WINDOW_PAGE_LIMIT, offset=0, **base)
+            fill = [r.get("attributes", r) for r in fill_d.get("data") or []]
+            seen_l = {c for c, r in rows.items() if _exp_date(r.get("exp_date")) == last}
+            got = {str(r.get("contract")) for r in fill}
+            if any(_exp_date(r.get("exp_date")) != last for r in fill) or not seen_l <= got:
+                break  # an empty or partial fill contradicts the page
+            for r in fill:
+                rows.setdefault(str(r.get("contract")), r)
+            if (fill_d.get("links") or {}).get("next"):
+                break  # over a page of one type in one expiry's strike window
+            complete.add(last)
+        anchor = last + timedelta(days=1) if inclusive else last
+    kept = [r for r in rows.values() if done or _exp_date(r.get("exp_date")) in complete]
+    return {"raw": kept, "truncated": not done, "complete_through": max(complete).isoformat() if complete else None,
+            "requests": WINDOW_REQUESTS - budget}
+
+
+def _window_stale(key_session: str) -> Callable[[Any, float], bool]:
+    """An entry whose quotes name no session, or an older one than the key's, is asked again after 900 s
+    (the overnight publication, a weekend, an empty window); the session is read at the request's clock."""
+    def stale(value: Any, age: float) -> bool:
+        if age < WINDOW_RETRY_S:
+            return False
+        c = chain_session(value["raw"])
+        return c is None or c < key_session
+    return stale
+
+
+def options_window(symbol: str, type_: str, exp_lo: date, exp_hi: date, strike_lo: int, strike_hi: int) -> dict:
+    """The Options Finder's windowed chain (design F3 §3): rows in the Finder's engine shape with the
+    sessions their stamps name at this request's clock, the chain session, whether the scan was cut short
+    (`truncated`, with `complete_through`), and the marketplace requests this answer used (0 from the cache).
+    Cached per window and session for 36 hours; never served to the lens."""
+    try:
+        inst = parse(symbol)
+    except SymbolError as exc:
+        raise UnknownSymbol("api", str(exc)) from exc
+    underlying = _require_options(inst)
+    if type_ not in ("call", "put"):
+        raise ValueError("type must be call or put")
+    session = last_session()
+    key = f"{inst.canonical}:{type_}:{exp_lo.isoformat()}:{exp_hi.isoformat()}:{int(strike_lo)}:{int(strike_hi)}:{session}"
+    fresh = []
+
+    def compute() -> dict:
+        fresh.append(True)
+        return _scan_window(underlying, type_, exp_lo, exp_hi, int(strike_lo), int(strike_hi))
+
+    v = _window_cache.get(key, compute, stale=_window_stale(session))
+    now = _utcnow()
+    return {"symbol": inst.canonical, "rows": [finder_row(r, now) for r in v["raw"]], "chain_session": chain_session(v["raw"], now),
+            "truncated": v["truncated"], "complete_through": v["complete_through"], "requests": v["requests"] if fresh else 0}
+
+
+def options_probe(symbol: str, type_: str, exp_lo: date, exp_hi: date) -> dict:
+    """One page of a type's contracts in an expiry range at any strike, stamps only (design F3 §2 step 5):
+    whether any contract expires in the range, and the session its stamps name. Cached as the window is."""
+    try:
+        inst = parse(symbol)
+    except SymbolError as exc:
+        raise UnknownSymbol("api", str(exc)) from exc
+    underlying = _require_options(inst)
+    session = last_session()
+    key = f"probe:{inst.canonical}:{type_}:{exp_lo.isoformat()}:{exp_hi.isoformat()}:{session}"
+    fresh = []
+
+    def compute() -> dict:
+        fresh.append(True)
+        d = _contracts(underlying, type_=type_, exp_date_from=exp_lo.isoformat(), exp_date_to=exp_hi.isoformat(),
+                       sort="exp_date", limit=WINDOW_PAGE_LIMIT, offset=0, fields="exp_date,bid_date,ask_date")
+        raw = [r.get("attributes", r) for r in d.get("data") or []]
+        return {"raw": raw, "more": bool((d.get("links") or {}).get("next"))}
+
+    v = _window_cache.get(key, compute, stale=_window_stale(session))
+    return {"rows": len(v["raw"]), "more": v["more"], "chain_session": chain_session(v["raw"]), "requests": 1 if fresh else 0}
+
+
 # ── bounded tick requests (aggregated, never persisted) ───────────────────────
 
 
@@ -993,7 +1165,7 @@ def status() -> dict:
         "finnhub_configured": bool(fh.client().token),
         "primary": {k: {"primary": v[0], "fallback": v[1]} for k, v in PRIMARY_MATRIX.items()},
         "entitlements": ents,
-        "cache": {"candles": _candles_cache.size, "search": _search_cache.size, "profile": _profile_cache.size, "options": _chain_cache.size},
+        "cache": {"candles": _candles_cache.size, "search": _search_cache.size, "profile": _profile_cache.size, "options": _chain_cache.size, "options_window": _window_cache.size},
         # What this process has spent at EODHD since it started, in the
         # plan's own units (launch-1): the runbook's daily figure.
         "quota": quota.snapshot(),

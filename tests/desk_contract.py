@@ -75,6 +75,14 @@ class MapOf:
 
 
 @dataclass(frozen=True)
+class OneOf:
+    """A value that keeps any one of these schemas (the Options Finder's early-exercise premium is a number,
+    or the words "below $x" when a proved bound stood in for it)."""
+
+    options: tuple
+
+
+@dataclass(frozen=True)
 class Block:
     """A block envelope (§12.0): ready with `data`, or awaiting with a reason."""
 
@@ -526,6 +534,71 @@ BASKET_SHARES = obj(
 )
 
 
+# ── GET /options/finder (the Options Finder, design F3 §5; engine method finder-2) ─
+
+OPTION_TYPE = E("call", "put")
+OPTION_MODEL = E("black76-escrowed", "american-bbsr-escrowed", "intrinsic")
+CARRY_SOURCE = E("market", "dividends only", "none", "outside domain")
+SCENARIO_PNL = obj(target=NUM, half=NUM, flat=NUM)  # dollars on the date at the target, halfway, and the close
+OPTION_SCREENS = ("bad_row", "outside_window", "beyond_calendar", "nonstandard", "no_bid", "bad_ask", "stale_quote",
+                  "no_arbitrage", "low_oi", "wide_spread", "over_budget", "bad_iv", "unpriceable")
+OPTION_ROW = obj(
+    contract=STR, type=OPTION_TYPE, exp=DATE, strike=NUM, days_past_date=INT, bid=NUM, ask=NUM, mid=NUM, fill=NUM,
+    commission=NUM, quote_ts=null(STR), oi=null(NUM), iv=NUM, delta=null(NUM), delta_note=null(STR),
+    theta_dollars_day=null(NUM), spread_pct=NUM, n=INT, cost=NUM, unused=NUM, max_loss=NUM,
+    breakeven_expiry=null(NUM), breakeven_on_date=null(NUM), breakeven_on_date_note=null(STR),
+    pnl=SCENARIO_PNL, modelled=BOOL, iv_minus_10=null(SCENARIO_PNL), iv_plus_10=null(SCENARIO_PNL),
+    rn_prob_breakeven=FRAC,
+    model=obj(session=OPTION_MODEL, on_date=OneOf((Const("intrinsic"),
+                                                   obj(target=OPTION_MODEL, half=OPTION_MODEL, flat=OPTION_MODEL)))),
+    model_inputs=obj(rate_session=NUM, rate_on_date=null(NUM), q=NUM, pv_dividends=NUM, forward=NUM, sigma=NUM,
+                     t_years=NUM),
+    european_value=NUM,
+    early_exercise=obj(premium=OneOf((NUM, STR)), flag=E("yes", "no", "within the pricer's tolerance of a cent")),
+    event_ids=obj(before_date=Arr(STR), before_expiry=Arr(STR), uncertain=Arr(STR)),
+    flags=Arr(STR), carry_source=CARRY_SOURCE,
+    provider=obj(iv=null(NUM), delta=null(NUM), theta=null(NUM)),
+)
+CURVE_SERIES = E("DGS3MO", "DGS2", "DGS5")
+OPTIONS_FINDER = obj(
+    symbol=STR,
+    inputs=obj(view=E("up", "down"), type=OPTION_TYPE, target=NUM, by=DATE, budget=NUM, min_oi=INT, max_spread=NUM,
+               fill=E("ask", "mid"), scan_months=INT, commission=NUM, implied_move_pct=NUM, half_price=NUM),
+    universe=obj(window=obj(type=OPTION_TYPE, exp_from=DATE, exp_to=DATE, strike_from=NUM, strike_to=NUM),
+                 seen=INT, passed=INT, dropped=obj(**{s: INT for s in OPTION_SCREENS}), ranked_out=INT,
+                 ranked_out_words=null(STR), truncated=BOOL),
+    picks=obj(payoff=null(STR), forgiving=null(STR), time=null(STR)),
+    lens_reasons=obj(time=null(STR)),
+    empty=null(STR),
+    rows=Arr(OPTION_ROW),
+    curve=obj(prices=Arr(NUM, min=1), marks=obj(close=NUM, half=NUM, target=NUM), pnl=MapOf(Arr(null(NUM)))),
+    rates=obj(points=Arr(obj(series=CURVE_SERIES, date=DATE, yield_pct=NUM, zero_rate=NUM), min=3, max=3), rule=STR),
+    carry=Arr(obj(exp=DATE, forward=null(NUM), q=null(NUM), pv_market=null(NUM), pv_schedule=NUM,
+                  difference=null(NUM), pairs=INT, source=CARRY_SOURCE, words=STR, atm_vol=null(NUM))),
+    dividends=Arr(obj(ex_date=DATE, cum_session=DATE, amount=NUM, period=null(STR),
+                      label=E("projected, not declared", "declared"))),
+    events=Arr(obj(id=STR, kind=E("earnings", "macro", "dividend"), name=STR, date=DATE,
+                   timing=E("bmo", "amc", "dmh", "unknown", "exact", "cum_close"), at=null(TS), source=STR,
+                   placement=STR, amount=F(NUM, opt=True), label=F(E("projected, not declared", "declared"), opt=True))),
+    coverage=Arr(STR, min=1),
+    earnings_moves=Arr(obj(event_id=STR, date=DATE, move_sd_pct=null(NUM), expiries=null(Arr(DATE, min=2, max=2)),
+                           reason=null(STR)), max=2),
+    stale=null(STR),
+    work=obj(used=INT, limit=INT),
+    method=obj(version=Const("finder-2"),
+               tolerances=obj(value=STR, european_iv=NUM, american_iv=STR, breakeven_european=NUM, delta_tree=NUM,
+                              delta_zone=STR),
+               lattice=obj(n_min=INT, k_min=INT), notes=Arr(STR)),
+    # the route's own (design F3 §5): the scan's coverage, what the answer was priced from, and its sources
+    scan=obj(truncated=BOOL, complete_through=null(DATE), requested_through=DATE, requests=INT,
+             queried=obj(type=OPTION_TYPE, exp_from=DATE, exp_to=DATE, strike_from=INT, strike_to=INT)),
+    market_as_of=obj(chain_session=null(DATE), latest_quote=null(STR), underlying_close=NUM, underlying_close_date=DATE,
+                     curve=Arr(obj(series=CURVE_SERIES, date=DATE, value=NUM), min=3, max=3)),
+    provider=Const("EODHD"),
+    sources=Arr(STR, min=2),
+)
+
+
 # ── The routes ──────────────────────────────────────────────────────────────
 
 # The live routes' ready payloads (the nine of §12.1–§12.9, /sectors since desk/fill-etf, Basket & Hedge's since desk/books,
@@ -545,6 +618,7 @@ ROUTES: dict[str, Obj] = {
     "/basket/hedge": BASKET_HEDGE,  # desk/books
     "/instruments": INSTRUMENTS,  # desk/usability (§12.17)
     "/basket/shares": BASKET_SHARES,  # desk/cap-weight (§12.18)
+    "/options/finder": OPTIONS_FINDER,  # the Options Finder (design F3; its page ships unlisted)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons
@@ -682,6 +756,12 @@ def _walk(t: Any, v: Any, path: str, errs: list[str]) -> None:
             if not isinstance(k, str) or not k:
                 errs.append(f"{path}: key {k!r} is not a name")
             _walk(t.value, item, f"{path}.{k}", errs)
+    elif isinstance(t, OneOf):
+        tried = [[] for _ in t.options]
+        for o, e in zip(t.options, tried):
+            _walk(o, v, path, e)
+        if all(tried):
+            errs.append(f"{path}: {v!r:.80} keeps none of its {len(t.options)} declared shapes")
     elif isinstance(t, (Block, Deferred)):
         _walk_block(t, v, path, errs)
     else:
@@ -851,6 +931,8 @@ def example(t: Any, *, nulls: bool = False) -> Any:
         return [example(t.item, nulls=nulls) for _ in range(max(t.min, 1 if t.max != 0 else 0))]
     if isinstance(t, MapOf):
         return {"k": example(t.value, nulls=nulls)}
+    if isinstance(t, OneOf):
+        return example(t.options[0], nulls=nulls)
     if isinstance(t, Block):
         return {"status": "ready", "data": example(t.data, nulls=nulls), "unavailable": None}
     if isinstance(t, Deferred):

@@ -23,6 +23,7 @@ All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). 
 |---|---|
 | `FRED_API_KEY` | Required — raises in `src/config.py:17` if missing |
 | `FINNHUB_API_KEY` | Optional — news ingest, and since launch-1 the single-name panel's fundamentals on the API host (`api/providers/finnhub.py`; the key rides in a header, never a URL) |
+| `FINNHUB_FINDER_API_KEY` | Optional, API host only — the Options Finder's earnings-calendar reads (`api/providers/finnhub_finder.py`), its own key, client and token bucket so they never spend the dashboard's Finnhub minute. Absent, or equal to `FINNHUB_API_KEY` → no Finnhub request from the Finder: it uses the stored earnings rows or says the calendar could not be read. Header only, never a URL or a log line; an owner action on the API host, not a GitHub Actions secret |
 | `NEWS_API_KEY` | Optional — required for news ingest. **Note the underscore.** Code uses `NEWS_API_KEY`, not `NEWSAPI_KEY` |
 | `ANTHROPIC_API_KEY` | Optional — required for AI regime interpretation |
 | `PERPLEXITY_API_KEY` | Optional — required for Sonar research enrichment |

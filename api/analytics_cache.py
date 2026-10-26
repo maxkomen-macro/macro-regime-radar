@@ -362,6 +362,14 @@ def _desk_pipeline(ctx: dict) -> dict:
     return desk_pipeline(ctx)
 
 
+def _desk_options_inputs(ctx: dict) -> dict:
+    """The Options Finder's stored inputs (api/desk_options.py, design F3 §4): the Treasury curve, the macro
+    calendar and the stored earnings rows. It never raises and reads no other item."""
+    from api.desk_options import desk_options_inputs
+
+    return desk_options_inputs(ctx)
+
+
 ITEMS = [
     ("credit", _credit),
     ("recession", _recession),
@@ -392,6 +400,8 @@ ITEMS = [
     ("desk_etf", _desk_etf),
     # desk/cap-weight: the preset baskets' share counts, for Basket & Hedge's cap weight
     ("desk_share_counts", _desk_share_counts),
+    # the Options Finder (design F3 §4), appended last so no other item's order changes
+    ("desk_options_inputs", _desk_options_inputs),
 ]
 
 
