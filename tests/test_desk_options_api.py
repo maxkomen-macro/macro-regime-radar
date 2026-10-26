@@ -750,3 +750,15 @@ def test_a_report_on_an_expiry_day_takes_the_pair_its_release_time_allows(world,
     (move,) = d["earnings_moves"]
     assert move["date"] == "2026-12-18" and move["expiries"] == pair
     assert move["reason"] != "Two listed expiries after the report are not in the quotes."
+
+
+def test_two_reports_give_the_first_its_move_and_the_second_none_of_its_own(world):
+    """Codex S-8: Jan 27's expiries (Feb 19, Mar 19) also hold Nov 30's jump, so only Nov 30 gets a move."""
+    world.fh.items = {"SYN": [{"symbol": "SYN", "date": d, "hour": "amc", "quarter": q, "year": y}
+                              for d, q, y in (("2026-11-30", 3, 2026), ("2027-01-27", 4, 2026))]}
+    d = world.serve().ok(**{**UP, "by": "2027-03-19"})
+    first, second = d["earnings_moves"]
+    assert first["date"] == "2026-11-30" and first["expiries"] == ["2026-12-18", "2027-01-15"]
+    assert second["date"] == "2027-01-27" and second["move_sd_pct"] is None
+    assert second["reason"] == "Another earnings date falls before the second expiry."
+    assert first["reason"] is None and first["move_sd_pct"] > 0

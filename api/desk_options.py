@@ -573,9 +573,9 @@ def _event_rows(symbol: str, session: date, spot: float, earnings: list[dict], l
         # engine decides from the release time, so it is read too: the day's expiry and the two after it (Codex S-7).
         after = [d for d in listed if d >= day]
         after = after[:3] if after and after[0] == day else after[:2]
-        # another report before after[1] spoils every pair the engine could take; one later spoils only some, and
-        # the engine checks its own pair
-        if len(after) < 2 or any(o != day and day < o <= after[1] for o in all_reports):
+        # another report from the session to after[1], earlier ones included (Codex S-8), spoils every pair the
+        # engine could take; one later spoils only some, and the engine checks its own pair
+        if len(after) < 2 or any(o != day and session <= o <= after[1] for o in all_reports):
             continue
         pairs.append(tuple(after))
     if not pairs:

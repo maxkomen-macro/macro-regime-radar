@@ -523,6 +523,26 @@ def test_the_implied_earnings_move_is_the_jump_between_the_two_expiries_after_th
         "Two listed expiries after the report are not in the quotes."
 
 
+def test_a_second_report_shares_its_expiries_variance_with_the_first_so_it_gets_no_move_of_its_own():
+    """Codex S-8: with Nov 30 and Jan 27 both before the Feb 19 / Mar 19 pair, the pair's jump is the two reports'
+    together; it is not Jan 27's alone."""
+    evs, _ = of.normalize_events([{"kind": "earnings", "name": n, "date": d, "time": "amc", "at": None, "source": "test"}
+                                  for n, d in (("Q3", "2026-11-30"), ("Q4", "2027-01-27"))])
+    e0, e1, e2 = date(2026, 12, 18), date(2027, 2, 19), date(2027, 3, 19)
+    carries = {e: of.Carry(100.0, 0.0, "market", 3, s) for e, s in ((e0, 0.45), (e1, 0.36), (e2, 0.33))}
+    first, second = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e0, e1, e2])
+    assert second["date"] == "2027-01-27" and second["move_sd_pct"] is None
+    assert second["reason"] == "Another earnings date falls before the second expiry."
+    assert first["date"] == "2026-11-30" and first["reason"] == "Another earnings date falls before the second expiry."
+    # the first report's own pair (Dec 18, Feb 19) holds the second report too; with expiries that hold only the
+    # first, it gets its move
+    e1b = date(2027, 1, 15)
+    only = {**carries, e1b: of.Carry(100.0, 0.0, "market", 3, 0.40)}
+    first, second = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, only, [e0, e1b, e1, e2])
+    assert first["expiries"] == [e0.isoformat(), e1b.isoformat()] and first["reason"] is None and first["move_sd_pct"] > 0
+    assert second["move_sd_pct"] is None and second["reason"] == "Another earnings date falls before the second expiry."
+
+
 def test_unusable_event_rows_are_counted():
     a = of.run([], _thesis(), syn.market(), dividends={"status": "ok", "rows": []},
                events=[{"kind": "earnings", "name": "x", "date": "not a date", "time": "bmo"}])

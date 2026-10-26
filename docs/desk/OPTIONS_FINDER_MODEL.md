@@ -161,7 +161,9 @@ everything on synthetic chains and comparing).
   report.
 - **Implied earnings move**: from the two nearest expiries after a report, assuming the same diffusive
   variance rate over both and one variance jump at the report: e² = T1·T2·(σ1² − σ2²)/(T2 − T1), served as one
-  standard deviation of the move, or null with the reason.
+  standard deviation of the move, or null with the reason. A report gets no move of its own when another report
+  not yet in the session's prices falls before its second expiry, earlier ones included: the pair's jump would
+  be both reports' together.
 - Coverage sentences never claim an absence the data cannot prove ("No earnings date found ... through
   <date>", "Other company events ... are not tracked").
 

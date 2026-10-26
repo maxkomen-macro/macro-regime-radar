@@ -941,14 +941,18 @@ def earnings_moves(evs: Sequence[Event], session: date, last_expiry: date, close
         if position(ev, session, closes) == "uncertain":
             item["reason"] = "The report's time against the session close is not known."
             continue
+        # an earlier report not yet in the session's prices sits in any pair after this one (Codex S-8)
+        if any(o is not ev and o.kind == "earnings" and o.day <= ev.day and position(o, session, closes) != "before" for o in evs):
+            item["reason"] = "Another earnings date falls before the second expiry."
+            continue
         after = sorted(e for e in expiries if position(ev, e, closes) == "before")[:2]
         if len(after) < 2:
             item["reason"] = "Two listed expiries after the report are not in the quotes."
             continue
         e1, e2 = after
         item["expiries"] = [e1.isoformat(), e2.isoformat()]
-        if any(o is not ev and o.kind == "earnings" and o.day >= ev.day and between(o, session, e2, closes) is not None
-               for o in evs):
+        # any other report priced into either expiry, earlier ones included, adds its own jump (Codex S-8)
+        if any(o is not ev and o.kind == "earnings" and between(o, session, e2, closes) is not None for o in evs):
             item["reason"] = "Another earnings date falls before the second expiry."
             continue
         c1, c2 = carries.get(e1), carries.get(e2)
