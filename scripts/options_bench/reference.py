@@ -80,7 +80,7 @@ BAD_KINDS = {"not-converging", "low-order", "high-order"}
 NEGLIGIBLE = 0.1   # of the reference limit: a flagged study whose own estimate is below this does not count
 
 
-PECLET_MAX = 0.5   # |drift|·dx/σ² on the finest grid, so the coarsest space level (4·dx) keeps a cell Péclet of 2
+PECLET_MAX = 0.25  # |drift|·dx/σ² on the finest grid, so the coarsest space level (4·dx) keeps it at 1
 
 
 def grid(c: Case) -> tuple[int, int, float]:
@@ -103,7 +103,7 @@ def grid(c: Case) -> tuple[int, int, float]:
     return m, p, width
 
 
-PECLET_MONOTONE = 2.0  # central differences are monotone (an M-matrix) up to this cell Péclet number
+PECLET_MONOTONE = 1.0  # |drift|·dx/σ² at most 1 keeps both off-diagonals nonnegative (fd.coefficients; OB-13)
 
 
 def peclet(c: Case, m: int, width: float) -> float:

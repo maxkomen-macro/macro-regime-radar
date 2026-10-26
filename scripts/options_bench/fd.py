@@ -36,6 +36,15 @@ def pv_owed(divs: Sequence[tuple[int, float]], rho: float, t_days: float) -> flo
     return sum(a * math.exp(-rho * (d - t_days) / YEAR_DAYS) for d, a in divs if d >= t_days - 1e-9)
 
 
+def coefficients(rho: float, q: float, sigma: float, dx: float) -> tuple[float, float, float]:
+    """The operator's (sub, main, super) diagonal in x = ln X: central differences for drift and diffusion.
+    Both off-diagonals are nonnegative (monotone) when |rho − q − σ²/2|·dx/σ² <= 1."""
+    mu = rho - q - 0.5 * sigma * sigma
+    a = 0.5 * sigma * sigma / (dx * dx)
+    b = mu / (2.0 * dx)
+    return a - b, -2.0 * a - rho, a + b
+
+
 def smoothed_payoff(is_call: bool, x: np.ndarray, dx: float, strike: float) -> np.ndarray:
     """The payoff averaged over each node's cell [x − dx/2, x + dx/2] (Pooley, Vetzal and Forsyth 2003): with
     Rannacher steps it keeps the strike's kink from making the spatial convergence oscillate."""
@@ -69,10 +78,7 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
     n_steps = per_day * days
     dt = tau / n_steps
     sgn = 1.0 if is_call else -1.0
-    mu = rho - q - 0.5 * sigma * sigma
-    a = 0.5 * sigma * sigma / (dx * dx)
-    b = mu / (2.0 * dx)
-    lo_c, di_c, up_c = a - b, -2.0 * a - rho, a + b
+    lo_c, di_c, up_c = coefficients(rho, q, sigma, dx)
     n = m + 1
     scale = max(1.0, spot)
     stats = {"penalty_unconverged": 0}
@@ -153,20 +159,26 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
     if american:
         for d, _ in divs:
             restart |= {d * per_day, d * per_day - 1}
+    # Continuous exercise holds the obstacle inside every implicit solve (penalty). A Bermudan schedule does
+    # not: the continuation value propagates freely and is projected onto the exercise value only at the
+    # exercise dates, since an obstacle inside the solve would also lift neighbouring continuation values
+    # (Codex OB-12)
+    continuous = american and allowed is None
     for k in range(n_steps, 0, -1):
         if k in restart:  # two implicit half-steps
-            half = k - 0.5
-            g = exercise_value(half) if (american and allowed is None) else None
+            g = exercise_value(k - 0.5) if continuous else None
             v, active = step(v, 1.0, dt / 2.0, g, active)
-            g = exercise_value(k - 1) if can_exercise(k - 1) else None
+            g = exercise_value(k - 1) if continuous else None
             v, active = step(v, 1.0, dt / 2.0, g, active)
         else:
-            g = exercise_value(k - 1) if can_exercise(k - 1) else None
+            g = exercise_value(k - 1) if continuous else None
             v, active = step(v, 0.5, dt, g, active)
         if g is not None:
             np.maximum(v, g, out=v)
         else:
             active[:] = False
+        if not continuous and can_exercise(k - 1):
+            np.maximum(v, exercise_value(k - 1), out=v)
     if diag is not None:
         diag.update(stats)
     i = m // 2

@@ -99,6 +99,35 @@ def test_bermudan_value_lies_between_european_and_american():
     assert eu < berm < am
 
 
+def test_bermudan_exercise_is_projected_only_on_its_dates():
+    """OB-12: exercise only today is max(intrinsic, European); no exercise date is the European value; the
+    90-day business-close put matches a free-propagate-then-project solve."""
+    c = _case(strike=105.0, days=30, rho=0.10, q=0.0, sigma=0.2)
+    eu = fd.solve(c.is_call, c.spot, c.strike, c.days, c.rho, c.q, c.sigma, (), 1600, 2, 1.0, american=False)[0]
+    for per_day in (1, 2):
+        today = fd.solve(c.is_call, c.spot, c.strike, c.days, c.rho, c.q, c.sigma, (), 1600, per_day, 1.0,
+                         exercise_days=[0])[0]
+        assert abs(today - max(c.strike - c.spot, eu)) < 1e-12
+    never = fd.solve(c.is_call, c.spot, c.strike, c.days, c.rho, c.q, c.sigma, (), 1600, 2, 1.0, exercise_days=[])[0]
+    assert abs(never - eu) < 1e-12
+    berm = fd.solve(False, 100.0, 105.0, 90, 0.10, 0.0, 0.2, (), 1600, 4, 1.0, exercise_days=run.business_closes(90))[0]
+    assert abs(berm - 5.935155711) < 1e-8   # the reviewer's independent projection solve
+
+
+def test_the_monotonicity_veto_matches_the_operator_signs():
+    """OB-13: reference.peclet <= 1 exactly when fd's off-diagonals are nonnegative."""
+    for g, i in (("G5-extreme-vol", 12), ("G5-extreme-vol", 3), ("G1-nodiv", 0), ("X1-outside", 7)):
+        c = cases.case(20261026, g, i)
+        m, _, w = reference.grid(c)
+        for mm in (m // 4, m // 2, m):
+            lo, _, up = fd.coefficients(c.rho, c.q, c.sigma, 2.0 * w / mm)
+            assert (min(lo, up) >= -1e-9 * max(abs(lo), abs(up))) == (reference.peclet(c, mm, w) <= 1.0 + 1e-12), (g, i, mm)
+    c = cases.case(20261026, "G5-extreme-vol", 12)
+    r = reference.reference(c)
+    assert reference.peclet(c, r["grid"]["space_levels"][-3], r["grid"]["width"]) <= 1.0 or \
+        "convection-dominated" in r["value"]["status"]
+
+
 def test_reference_brackets_closed_forms_within_its_uncertainty():
     eu_case = _case(is_call=True, strike=95.0, days=200, q=0.03, divs=((45, 1.5),))
     r = reference.reference(eu_case, american=False)
