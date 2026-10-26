@@ -67,7 +67,7 @@ def _session():
 def _pack(r: dict | None) -> dict | None:
     if r is None:
         return None
-    return {k: r[k] for k in ("ref", "u", "status", "limit", "raw_finest", "u_width", "u_penalty", "tol")
+    return {k: r[k] for k in ("ref", "u", "status", "limit", "raw_finest", "u_width", "width_steps", "u_penalty", "tol")
             if k in r} | {"time": r["time"], "space": r["space"]}
 
 

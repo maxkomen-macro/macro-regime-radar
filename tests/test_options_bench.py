@@ -119,6 +119,22 @@ def test_gci_reads_the_observed_order():
     assert reference.gci(1.0, 1.1, 0.95, 1e-15)["kind"] == "oscillating"
     assert reference.gci(1.0, 1.01, 1.03, 1e-15)["kind"] == "not-converging"
     assert reference.gci(1.0, 1.0, 1.0, 1e-15)["kind"] == "flat"
+    fast = reference.gci(1.0, 1.0 + 7.5e-3, 1.0 + 8.5e-3, 1e-15)   # order 2.9: pre-asymptotic (OB-10)
+    assert fast["kind"] == "above-order" and math.isclose(fast["u"], 1e-3, rel_tol=1e-9)   # the last change
+
+
+def test_low_volatility_high_carry_reference_is_never_trusted_wrongly():
+    """OB-10: S=K=100, a year, rho 10%, q 2%, sigma 0.1%: the forward drifts eleven standard deviations, which
+    the old grid did not cover (0.697 ± 0.35 against Black-76's 7.536)."""
+    c = _case(is_call=True, strike=100.0, days=365, rho=0.10, q=0.02, sigma=0.001)
+    assert reference.grid(c)[3] and "convection-dominated" in reference.grid(c)[3]
+    r = reference.reference(c, escalate=False)
+    assert r["value"]["status"].startswith("unresolved") and "convection-dominated" in r["value"]["status"]
+    assert abs(r["value"]["ref"] - _bs(c)[0]) <= max(r["value"]["u"], 1e-6)
+    put = _case(strike=100.0, days=365, rho=0.10, q=0.02, sigma=0.02)   # erratic space convergence
+    rp = reference.reference(put)
+    truth = 0.0917968   # FD at 15,872 intervals (0.09179673) and QuantLib QdFp (0.09179769)
+    assert abs(rp["value"]["ref"] - truth) <= rp["value"]["u"]
 
 
 # ── scoring ──────────────────────────────────────────────────────────────────

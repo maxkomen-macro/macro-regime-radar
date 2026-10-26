@@ -67,6 +67,11 @@ def gci(coarse: float, mid: float, fine: float, floor: float, cap: float = ORDER
         return {"corr": 0.0, "u": GCI_FS_WIDE * abs(e21), "order": order, "kind": "high-order"}
     used = min(order, cap)
     corr = e21 / (2.0 ** used - 1.0)
+    if order > cap:
+        # above the scheme's order but below ORDER_MAX: still pre-asymptotic, so the correction uses the cap
+        # and the uncertainty is at least the last change (a low-volatility put read 2.9 from three levels,
+        # then 1.5 and 3.5 on the next two; Codex OB-10)
+        return {"corr": corr, "u": max(GCI_FS3 * abs(corr), abs(e21)), "order": order, "kind": "above-order"}
     kind = "low-order" if order < ORDER_MIN else "monotone"
     return {"corr": corr, "u": GCI_FS3 * abs(corr), "order": order, "kind": kind}
 
@@ -75,27 +80,41 @@ BAD_KINDS = {"not-converging", "low-order", "high-order"}
 NEGLIGIBLE = 0.1   # of the reference limit: a flagged study whose own estimate is below this does not count
 
 
-def grid(c: Case) -> tuple[int, int, float]:
-    """(M, p, half-width): M intervals on the finest grid, p steps a day at the middle time level."""
+PECLET_MAX = 0.5   # |drift|·dx/σ² on the finest grid, so the coarsest space level (4·dx) keeps a cell Péclet of 2
+
+
+def grid(c: Case) -> tuple[int, int, float, str | None]:
+    """(M, p, half-width, note): M intervals on the finest grid, p steps a day at the middle time level.
+
+    The grid is centred at ln X0 and X drifts at rho − q − σ²/2 in log terms, so the half-width covers that
+    displacement plus seven standard deviations, and the strike plus five (Codex OB-10). Central differences
+    need a cell Péclet number of at most 2 to stay monotone; a low-volatility, high-carry case that would need
+    more than M_MAX intervals for that gets a note, and its reference is unresolved, never trusted."""
     tau = c.days / 365.0
     sd = c.sigma * math.sqrt(tau)
     x0 = c.spot - c.pv()
-    width = max(7.0 * sd, abs(math.log(c.strike / x0)) + 5.0 * sd)
+    drift = c.rho - c.q - 0.5 * c.sigma * c.sigma
+    width = max(abs(drift) * tau + 7.0 * sd, abs(math.log(c.strike / x0)) + 5.0 * sd)
     dx = min(0.004, sd / 30.0)
-    m = int(min(M_MAX, max(M_MIN, 2.0 * width / dx)))
-    m -= m % 8  # m/4, m/2 and 3m/4 stay even, so the centre is a node on every grid
+    if drift:
+        dx = min(dx, PECLET_MAX * c.sigma * c.sigma / abs(drift))
+    need = 2.0 * width / dx
+    note = None if need <= M_MAX else f"convection-dominated: {need:.0f} space intervals needed, cap {M_MAX}"
+    m = int(min(M_MAX, max(M_MIN, need)))
+    m -= m % 16  # m/4, m/2, 3m/4 and 9m/8 stay even, so the centre is a node on every grid
     p = 2 * max(1, math.ceil(STEPS_MID / (2 * c.days)))
-    return m, p, width
+    return m, p, width, note
 
 
 CELL_CAP = 4e8      # grid nodes times time steps, summed over a case's runs, before escalation stops
 ESCALATE_MAX = 2    # extra levels per dimension at most
 WIDTH_FACTOR = 1.5
+WIDTH_SETTLED = 0.5  # the second widening must change a quantity by at most half of what the first did
 PENALTY_LOW = 1e7
 
 
 def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels: list[int], w: float,
-            american: bool = True) -> dict:
+            american: bool = True, note: str | None = None) -> dict:
     out = {}
     pt, ms = t_levels[-3:], s_levels[-3:]
     for k, name, floor in ((0, "value", 1e-12 * c.spot), (1, "delta", 1e-12)):
@@ -106,10 +125,16 @@ def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels
         # the space correction is for the base grid m0: the change from m0 to the finest grid, plus the GCI
         # correction of the finest grid (both at p0 steps a day; errors assumed additive across dimensions)
         s_corr = runs[(ms[-1], p0, w, fd.PENALTY)][k] - runs[(m0, p0, w, fd.PENALTY)][k] + sp["corr"]
-        u_w = abs(runs[(3 * m0 // 4, p0, WIDTH_FACTOR * w, fd.PENALTY)][k] - runs[(m0 // 2, p0, w, fd.PENALTY)][k])
+        # boundary truncation: widen the domain at fixed dx, twice (W → 1.5W → 2.25W). Both changes are
+        # summed, and a second change that is not much smaller than the first means the boundary has not
+        # settled (OB-10)
+        w1 = abs(runs[(3 * m0 // 4, p0, WIDTH_FACTOR * w, fd.PENALTY)][k] - runs[(m0 // 2, p0, w, fd.PENALTY)][k])
+        w2 = abs(runs[(9 * m0 // 8, p0, WIDTH_FACTOR ** 2 * w, fd.PENALTY)][k]
+                 - runs[(3 * m0 // 4, p0, WIDTH_FACTOR * w, fd.PENALTY)][k])
+        u_w = w1 + w2
         u_p = abs(runs[(m0 // 4, p0, w, PENALTY_LOW)][k] - runs[(m0 // 4, p0, w, fd.PENALTY)][k]) / (fd.PENALTY / PENALTY_LOW - 1.0)
         out[name] = {"ref": base + t["corr"] + s_corr, "u": t["u"] + sp["u"] + u_w + u_p + floor, "time": t,
-                     "space": sp, "u_width": u_w, "u_penalty": u_p, "raw_finest": base}
+                     "space": sp, "u_width": u_w, "width_steps": [w1, w2], "u_penalty": u_p, "raw_finest": base}
     v = out["value"]
     v["tol"] = tolerance(v["ref"], c.spot)
     for name, limit in (("value", REF_FRACTION * v["tol"]), ("delta", REF_FRACTION * DELTA_TOL)):
@@ -118,6 +143,11 @@ def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels
         # estimate is negligible (rounding-level changes have no meaningful order)
         why = [f"{name} {r[d]['kind']} in {d}" for d in ("time", "space")
                if r[d]["kind"] in BAD_KINDS and r[d]["u"] > NEGLIGIBLE * limit]
+        w1, w2 = r["width_steps"]
+        if w2 > WIDTH_SETTLED * w1 and w2 > NEGLIGIBLE * limit:
+            why.append(f"{name} boundary not settled")
+        if note:
+            why.append(note)
         if r["u"] > limit:
             why.append(f"{name} uncertainty above {REF_FRACTION:g} of its tolerance")
         r["limit"] = limit
@@ -130,7 +160,7 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
     """The case's reference value and delta with their uncertainty, escalating the time or space refinement
     (one level at a time, whichever dominates the worse quantity) while a quantity is unresolved."""
     t0 = time.time()
-    m0, p0, w = grid(c)
+    m0, p0, w, note = grid(c)
     ex = None if exercise_days is None else sorted(set(exercise_days))
     runs: dict = {}
     cells = 0.0
@@ -153,8 +183,9 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
     for x in s_levels:
         run(x, p0)
     run(3 * m0 // 4, p0, WIDTH_FACTOR * w)
+    run(9 * m0 // 8, p0, WIDTH_FACTOR ** 2 * w)
     run(m0 // 4, p0, w, PENALTY_LOW)
-    out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
+    out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american, note)
     steps = {"time": 0, "space": 0}
     while escalate:
         worst = max(("value", "delta"), key=lambda n: out[n]["u"] / out[n]["limit"])
@@ -176,13 +207,13 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
             s_levels.append(nxt)
             run(nxt, p0)
         steps[d] += 1
-        out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
+        out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american, note)
     if solver_misses[0]:  # a penalty step stopped at its iteration cap: no quantity of this case is trusted
         for name in ("value", "delta"):
             r = out[name]
             r["status"] = ("unresolved: " if r["status"] == "reliable" else r["status"] + "; ") + \
                 f"penalty iteration cap hit on {solver_misses[0]} steps"
-    out["grid"] = {"m": m0, "p": p0, "width": w, "time_levels": t_levels, "space_levels": s_levels,
+    out["grid"] = {"m": m0, "p": p0, "width": w, "note": note, "time_levels": t_levels, "space_levels": s_levels,
                    "escalations": steps, "cells": cells, "penalty_cap_steps": solver_misses[0]}
     out["secs"] = time.time() - t0
     return out

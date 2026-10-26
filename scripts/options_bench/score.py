@@ -74,6 +74,9 @@ def classify(rec: dict) -> dict:
             out["price_err_tol"] = err / tol
             out["price_u_tol"] = rv["u"] / tol
             out["price"] = judge(err, rv["u"], tol)
+            if eng.get("bound") is not None:
+                # the route's claim: American − European is at most the bound (the served value is European)
+                out["bound_covered"] = rv["ref"] - eng["value"] <= eng["bound"] + rv["u"]
         if eng.get("delta") is None:
             out["delta"] = "withheld"
             out["delta_note"] = eng.get("delta_note")
@@ -173,6 +176,8 @@ def _summary(rows: list[dict]) -> dict:
     qlr = [r["quantlib_diff_tol"] for r in rows if "quantlib_diff_tol" in r]
     qdf = [r for r in rows if r.get("quantlib_method") == "qdfp-high-precision" and r.get("ref_value_status") == "reliable"]
     cov = [r["quantlib_diff_tol"] / r["ref_u_tol"] for r in qdf if r.get("ref_u_tol")]
+    bc = [r["bound_covered"] for r in rows if "bound_covered" in r]
+    s["bound_route"] = {"checked": len(bc), "not_covered": sum(not x for x in bc)}
     s["quantlib_coverage"] = {"compared": len(cov), "outside_u": sum(x > 1 for x in cov),
                               "ratio_p50": _q(cov, 0.5), "ratio_p99": _q(cov, 0.99), "ratio_max": max(cov) if cov else None}
     s["quantlib_check"] = {"compared": len(qlr), "over_half_tol": sum(x > 0.5 for x in qlr),
@@ -387,6 +392,9 @@ def markdown(sc: dict) -> str:
           "- American references against QuantLib's high-precision QdFp engine (no dividends; an independent third method, its own error not estimated): "
           + "; ".join(f"{g} {s['quantlib_coverage']['compared']} compared, {s['quantlib_coverage']['outside_u']} outside the stated uncertainty (|QL − R|/u p99 {_f(s['quantlib_coverage']['ratio_p99'], 2)}, max {_f(s['quantlib_coverage']['ratio_max'], 2)})"
                       for g, s in sc["groups"].items() if s["quantlib_coverage"]["compared"]),
+          "- Early-exercise bound (bound-European route, served value European): "
+          + "; ".join(f"{g} {s['bound_route']['checked']} checked, {s['bound_route']['not_covered']} where the reference premium exceeds the bound"
+                      for g, s in sc["groups"].items() if s["bound_route"]["checked"]) + ".",
           f"- Exempt group, American reference against Black-76: {c['exempt_american_within_u']} of {c['exempt_american_cases']} inside the stated uncertainty.",
           ""]
     L += ["## Cross-checks (diagnostics, not references)", ""]
