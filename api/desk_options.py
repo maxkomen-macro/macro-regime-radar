@@ -11,8 +11,8 @@ here reads the file. The pure engine prices it, one run at a time (the Finder lo
 the §12.0 envelope like every Desk route.
 
 Additive and isolated (C1): the lens's chain, the dividends panel and the fundamentals panel are read
-through their existing functions or not at all. The Finder's earnings reads use their own Finnhub key and
-bucket (api/providers/finnhub_finder.py) and the route never calls `market.profile`, so no dashboard
+through their existing functions or not at all. The Finder sends no Finnhub request: its earnings dates are
+the stored rows the refresh writes (design A-3), and the route never calls `market.profile`, so no dashboard
 panel's Finnhub capacity is spent here.
 
 The page this route serves ships unlisted (OPTIONS_FINDER_LISTED = false in the web app): reachable by its
@@ -44,7 +44,6 @@ MACRO_LOOKBACK_DAYS = 30
 OTHER_STRIKES = (0.8, 1.2)
 EVENT_STRIKES = (0.9, 1.1)
 STORED_TIMES = {(8, 0): "bmo", (16, 30): "amc"}
-FINNHUB_TIMES = ("bmo", "amc", "dmh")
 PROVIDER = "EODHD"
 
 _lock = threading.Lock()
@@ -500,56 +499,25 @@ def _stored_time(at: str) -> tuple[str, str] | None:
 
 
 def _earnings(symbol: str, session: date, item: dict) -> tuple[list[dict], dict, str | None, list[str]]:
-    """(event rows, coverage, the source sentence or None, notes): Finnhub on demand through the Finder's own
-    client; stored rows, with no checked horizon, when that fails."""
-    from api.providers import finnhub_finder as ff
-    from api.providers.errors import MissingToken, ProviderError
-    from src.events.earnings import parse_item
-
-    def no_date(v: Any) -> bool:
-        try:
-            date.fromisoformat(str(v or "")[:10])
-        except ValueError:
-            return True
-        return False
-
+    """(event rows, coverage, the source sentence or None, notes): the item's stored rows for the symbol, with no
+    Finnhub request (design A-3). A stored row is a date Finnhub listed at some refresh; when it was last checked,
+    and whether every report is stored, is not recorded, so the coverage is never complete."""
     sym = symbol
-    notes: list[str] = []
     if share_class(sym):
-        # No request: an unverified spelling could read as "no earnings date found" (Codex S-1).
-        return [], {"earnings": "not_checked", "earnings_through": None}, None, notes
-    try:
-        got = ff.earnings(sym, session)
-    except ProviderError as exc:
-        if isinstance(exc, MissingToken):
-            notes.append(ff.NOT_CONFIGURED)
-        stored, unreadable = [], 0
-        for e in item.get("earnings") or []:
-            if e.get("symbol") != sym:
-                continue
-            placed = _stored_time(e.get("at"))
-            if placed is None:
-                unreadable += 1  # this symbol's report, not placed: discovery is incomplete (design S-10 step 5)
-                continue
-            stored.append({"kind": "earnings", "name": e.get("name") or f"{sym} earnings", "date": placed[0],
-                           "time": placed[1], "at": None, "source": "finnhub_earnings (stored)"})
-        if stored:
-            return (stored, {"earnings": "stored", "earnings_through": None, "unreadable": unreadable},
-                    "Finnhub earnings calendar (stored rows)", notes)
-        return [], {"earnings": "unavailable", "earnings_through": None, "unreadable": unreadable}, None, notes
-    out, unreadable = [], 0
-    for it in got["items"]:
-        rep = parse_item(it, sym, got["start"], got["end"])
-        if rep is None:
-            # this symbol's item with no readable date (another symbol, or a date outside the horizon, is not one)
-            if isinstance(it, dict) and str(it.get("symbol") or "").strip().upper() == sym and no_date(it.get("date")):
-                unreadable += 1
+        # an unverified spelling could read as "no earnings date found" (Codex S-1)
+        return [], {"earnings": "not_checked", "earnings_through": None}, None, []
+    stored, unreadable = [], 0
+    for e in item.get("earnings") or []:
+        if e.get("symbol") != sym:
             continue
-        hour = str(it.get("hour") or "").strip().lower()
-        out.append({"kind": "earnings", "name": rep.event_name, "date": rep.day.isoformat(),
-                    "time": hour if hour in FINNHUB_TIMES else "unknown", "at": None, "source": "Finnhub earnings calendar"})
-    cov = {"earnings": "fetched" if out else "not_found", "earnings_through": got["end"].isoformat(), "unreadable": unreadable}
-    return out, cov, "Finnhub earnings calendar", notes
+        placed = _stored_time(e.get("at"))
+        if placed is None:
+            unreadable += 1  # this symbol's report, not placed: discovery is incomplete (design S-10 step 5)
+            continue
+        stored.append({"kind": "earnings", "name": e.get("name") or f"{sym} earnings", "date": placed[0],
+                       "time": placed[1], "at": None, "source": "Finnhub earnings calendar (stored)"})
+    cov = {"earnings": "stored" if stored else "unknown", "earnings_through": None, "unreadable": unreadable}
+    return stored, cov, ("Finnhub earnings calendar (stored by the site's refresh)" if stored else None), []
 
 
 def _macro_events(rows: list[dict]) -> list[dict]:

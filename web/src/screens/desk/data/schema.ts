@@ -898,6 +898,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       }),
     ),
     coverage: l("s!"),
+    earnings_status: e(["known", "unknown", "not_checked"]),
     earnings_moves: l(o({ event_id: "s!", date: "s!", move_sd_pct: "n", expiries: t(["s!", "s!"], { nul: true }), reason: "s?" })),
     stale: "s?",
     work: o({ used: "n", limit: "n" }),

@@ -153,19 +153,23 @@ everything on synthetic chains and comparing).
 
 ## Events
 
-- Earnings (Finnhub's calendar, fetched for the symbol, or stored rows when that fails; not checked for a
-  share-class listing such as BRK.B, whose spelling there is not verified), macro releases (the
+- Earnings (the rows the site's refresh stores from Finnhub's calendar; the Finder sends no Finnhub request.
+  Not checked for a share-class listing such as BRK.B, whose spelling there is not verified), macro releases (the
   stored calendar, with release instants), and dividends (at their cum close) are placed against the session,
   the date and each expiry. A release time that is not known is "may be on either side", never guessed.
 - A modelled row with earnings before the date is flagged: the volatility held flat usually fails after a
-  report.
+  report. While the earnings coverage is not complete through the date, every modelled row also says earnings
+  dates are unknown, and the answer's `earnings_status` is "unknown" (or "not_checked"): unknown is never shown
+  as no earnings. Stored rows record no checked horizon, so with them the status is always "unknown".
 - **Implied earnings move**: from the two nearest expiries after a report, assuming the same diffusive
   variance rate over both and one variance jump at the report: e² = T1·T2·(σ1² − σ2²)/(T2 − T1), served as one
   standard deviation of the move, or null with the reason. A report gets no move of its own when another report
   not yet in the session's prices falls before its second expiry, earlier ones included: the pair's jump would
   be both reports' together. That check reads every report the calendar returned, not only those before the
   last expiry scanned; rows for one day are one report (conflicting times become unknown); and when any earnings
-  row could not be read, no move is served and no absence of earnings is claimed.
+  row could not be read, no move is served and no absence of earnings is claimed. A move also needs the earnings
+  coverage complete through its second expiry; stored rows never are, so with them every move is null with the
+  reason ("Earnings dates past the stored ones are unknown...").
 - Coverage sentences never claim an absence the data cannot prove ("No earnings date found ... through
   <date>", "Other company events ... are not tracked").
 

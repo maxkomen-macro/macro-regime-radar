@@ -8,7 +8,7 @@ back what the chain was built from, and every rule of the model document is chec
 from __future__ import annotations
 
 import math
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -18,6 +18,7 @@ from src.desk import options_math as om
 from tests import options_synth as syn
 
 BY = date(2026, 12, 18)
+FAR = date(2030, 1, 1)  # earnings coverage complete far past every expiry (design A-3)
 
 
 def _thesis(view: str = "up", target: float = 120.0, by: date = BY, budget: float = 5000.0, **kw) -> of.Thesis:
@@ -492,13 +493,77 @@ def test_events_are_placed_against_the_dates_and_coverage_is_worded():
 
 def test_coverage_words_for_every_earnings_status():
     w = of.coverage_words
-    assert w({"earnings": "stored"}, "SYN", True, True)[0].startswith("Finnhub's calendar could not be read now")
+    assert w({"earnings": "stored"}, "SYN", True, True)[0] == (
+        "Earnings dates listed are from Finnhub's calendar as stored by the site's refresh; when they were last "
+        "checked is not recorded, and other earnings dates are unknown.")
+    assert w({"earnings": "unknown"}, "SYN", True, False)[0] == \
+        "Earnings dates unknown for SYN: no usable dates are available from the stored calendar."
     assert w({"earnings": "not_found", "earnings_through": "2027-11-27"}, "SYN", True, False)[0] == \
         "No earnings date found for SYN in Finnhub's calendar through Nov 27, 2027."
     assert w({"earnings": "unavailable"}, "SYN", True, False)[0] == "Earnings dates could not be read."
     assert w({"earnings": "not_checked"}, "BRK.B", True, False)[0] == \
         "Earnings dates are not checked for share-class listings such as BRK.B."
     assert "Dividend data unavailable." in w({}, "SYN", False, False)
+
+
+# ── stored earnings only (design A-3) ────────────────────────────────────────
+
+STORED_EV = [{"kind": "earnings", "name": "SYN earnings", "date": "2026-11-30", "time": "amc", "at": None,
+              "source": "Finnhub earnings calendar (stored)"}]
+NUMERIC = ("contract", "exp", "strike", "bid", "ask", "mid", "iv", "value_session", "european_value", "delta",
+           "n", "cost", "pnl", "iv_minus_10", "iv_plus_10", "breakeven_expiry", "breakeven_on_date",
+           "rn_prob_breakeven", "model_inputs", "early_exercise", "event_ids", "carry_source", "modelled")
+
+
+def _scan(cov: dict) -> dict:
+    return syn.scan("up", 120.0, BY, months=4, events=STORED_EV, known_earnings=STORED_EV, coverage=cov)
+
+
+def test_stored_rows_flag_every_modelled_row_unknown_and_withhold_every_move():
+    a = _scan({"earnings": "stored", "earnings_through": None})
+    modelled = [r for r in a["rows"] if r["modelled"]]
+    assert modelled and all(of.UNKNOWN_FLAG in r["flags"] for r in modelled)
+    assert a["earnings_status"] == "unknown"
+    assert a["earnings_moves"] and all(m["move_sd_pct"] is None and m["reason"] == of.UNKNOWN_MOVE
+                                       for m in a["earnings_moves"])
+    assert [e["date"] for e in a["events"] if e["kind"] == "earnings"] == ["2026-11-30"]  # the found date stays
+
+
+def test_earnings_coverage_changes_no_number_only_flags_moves_and_words():
+    stored = _scan({"earnings": "stored", "earnings_through": None})
+    full = _scan({"earnings": "fetched", "earnings_through": FAR.isoformat()})
+    assert full["earnings_status"] == "known" and stored["earnings_status"] == "unknown"
+    for key in ("picks", "curve", "carry", "dividends", "rates", "work", "universe", "empty", "lens_reasons"):
+        assert stored[key] == full[key], key
+    assert len(stored["rows"]) == len(full["rows"])
+    for a, b in zip(stored["rows"], full["rows"]):
+        assert {k: a.get(k) for k in NUMERIC} == {k: b.get(k) for k in NUMERIC}
+        assert [f for f in a["flags"] if f != of.UNKNOWN_FLAG] == b["flags"]
+
+
+def test_a_move_needs_coverage_through_its_second_expiry():
+    evs, _ = of.normalize_events([{"kind": "earnings", "name": "SYN earnings", "date": "2027-01-27", "time": "amc",
+                                   "at": None, "source": "test"}])
+    e1, e2 = date(2027, 2, 19), date(2027, 3, 19)
+    carries = {e: of.Carry(100.0, 0.0, "market", 3, s) for e, s in ((e1, 0.36), (e2, 0.33))}
+    short = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e1, e2], complete_through=date(2027, 3, 1))
+    assert short[0]["move_sd_pct"] is None and short[0]["reason"] == of.UNKNOWN_MOVE
+    none = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e1, e2])
+    assert none[0]["reason"] == of.UNKNOWN_MOVE
+    ok = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e1, e2], complete_through=e2)
+    assert ok[0]["move_sd_pct"] is not None
+
+
+def test_a_flag_says_unknown_when_coverage_ends_before_the_date():
+    assert of.event_flags([], syn.SESSION, BY, syn.CLOSES, None) == [of.UNKNOWN_FLAG]
+    assert of.event_flags([], syn.SESSION, BY, syn.CLOSES, BY - timedelta(days=1)) == [of.UNKNOWN_FLAG]
+    assert of.event_flags([], syn.SESSION, BY, syn.CLOSES, BY) == []
+
+
+def test_a_share_class_is_not_checked_and_still_flags_unknown():
+    a = _scan({"earnings": "not_checked", "earnings_through": None})
+    assert a["earnings_status"] == "not_checked"
+    assert all(of.UNKNOWN_FLAG in r["flags"] for r in a["rows"] if r["modelled"])
 
 
 def test_the_implied_earnings_move_is_the_jump_between_the_two_expiries_after_the_report():
@@ -508,18 +573,18 @@ def test_the_implied_earnings_move_is_the_jump_between_the_two_expiries_after_th
     t1, t2 = (e1 - syn.SESSION).days / 365, (e2 - syn.SESSION).days / 365
     s1, s2 = 0.36, 0.33
     carries = {e: of.Carry(100.0, 0.0, "market", 3, s) for e, s in ((e1, s1), (e2, s2))}
-    got = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [BY, e1, e2])
+    got = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [BY, e1, e2], complete_through=FAR)
     assert len(got) == 1 and got[0]["reason"] is None and got[0]["expiries"] == [e1.isoformat(), e2.isoformat()]
     jump = t1 * t2 * (s1 * s1 - s2 * s2) / (t2 - t1)
     assert got[0]["move_sd_pct"] == pytest.approx(100 * math.sqrt(jump), rel=1e-12)
     # equal volatilities price no jump; a fallen-back expiry has no market volatility; one expiry is not two
     flat = {e: of.Carry(100.0, 0.0, "market", 3, 0.3) for e in (e1, e2)}
-    assert of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, flat, [e1, e2])[0]["reason"].startswith(
+    assert of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, flat, [e1, e2], complete_through=FAR)[0]["reason"].startswith(
         "The two expiries' volatilities do not price a jump")
     fell = {**carries, e2: of.Carry(100.0, 0.0, "dividends only", 0, None)}
-    assert of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, fell, [e1, e2])[0]["reason"].startswith(
+    assert of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, fell, [e1, e2], complete_through=FAR)[0]["reason"].startswith(
         "An expiry's forward fell back")
-    assert of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e1])[0]["reason"] == \
+    assert of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e1], complete_through=FAR)[0]["reason"] == \
         "Two listed expiries after the report are not in the quotes."
 
 
@@ -530,7 +595,7 @@ def test_a_second_report_shares_its_expiries_variance_with_the_first_so_it_gets_
                                   for n, d in (("Q3", "2026-11-30"), ("Q4", "2027-01-27"))])
     e0, e1, e2 = date(2026, 12, 18), date(2027, 2, 19), date(2027, 3, 19)
     carries = {e: of.Carry(100.0, 0.0, "market", 3, s) for e, s in ((e0, 0.45), (e1, 0.36), (e2, 0.33))}
-    first, second = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e0, e1, e2])
+    first, second = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, carries, [e0, e1, e2], complete_through=FAR)
     assert second["date"] == "2027-01-27" and second["move_sd_pct"] is None
     assert second["reason"] == "Another earnings date falls before the second expiry."
     assert first["date"] == "2026-11-30" and first["reason"] == "Another earnings date falls before the second expiry."
@@ -538,7 +603,7 @@ def test_a_second_report_shares_its_expiries_variance_with_the_first_so_it_gets_
     # first, it gets its move
     e1b = date(2027, 1, 15)
     only = {**carries, e1b: of.Carry(100.0, 0.0, "market", 3, 0.40)}
-    first, second = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, only, [e0, e1b, e1, e2])
+    first, second = of.earnings_moves(evs, syn.SESSION, e2, syn.CLOSES, only, [e0, e1b, e1, e2], complete_through=FAR)
     assert first["expiries"] == [e0.isoformat(), e1b.isoformat()] and first["reason"] is None and first["move_sd_pct"] > 0
     assert second["move_sd_pct"] is None and second["reason"] == "Another earnings date falls before the second expiry."
 
@@ -556,11 +621,11 @@ def test_a_report_after_the_last_scanned_expiry_still_rules_out_a_move_it_shares
     e0, e1, e2 = date(2026, 11, 20), date(2026, 12, 18), date(2027, 1, 15)
     carries = {e: of.Carry(100.0, 0.0, "market", 3, v) for e, v in ((e0, 0.55), (e1, 0.50), (e2, 0.45))}
     alone, ids, bad = of.earnings_reports(window, [], syn.SESSION, syn.CLOSES)
-    (m,) = of.earnings_moves(alone, syn.SESSION, e1, syn.CLOSES, carries, [e0, e1, e2], eligible=ids)
+    (m,) = of.earnings_moves(alone, syn.SESSION, e1, syn.CLOSES, carries, [e0, e1, e2], eligible=ids, complete_through=FAR)
     assert m["reason"] is None and m["move_sd_pct"] > 0 and m["expiries"] == [e1.isoformat(), e2.isoformat()]
     reports, ids, bad = of.earnings_reports(window, [_earn("2026-11-20"), _earn("2026-12-22")], syn.SESSION, syn.CLOSES)
     assert bad == 0 and [r.day for r in reports] == [e0, date(2026, 12, 22)]
-    (m,) = of.earnings_moves(reports, syn.SESSION, e1, syn.CLOSES, carries, [e0, e1, e2], eligible=ids)
+    (m,) = of.earnings_moves(reports, syn.SESSION, e1, syn.CLOSES, carries, [e0, e1, e2], eligible=ids, complete_through=FAR)
     assert m["move_sd_pct"] is None and m["reason"] == "Another earnings date falls before the second expiry."
 
 
@@ -571,7 +636,7 @@ def test_one_report_per_day_its_conflicting_times_merged_to_unknown():
     carries = {e: of.Carry(100.0, 0.0, "market", 3, v) for e, v in ((e0, 0.55), (e1, 0.50), (e2, 0.45))}
     reports, ids, _ = of.earnings_reports(window, [], syn.SESSION, syn.CLOSES)
     assert len(reports) == 1 and reports[0].time == "unknown" and reports[0].id == window[0].id
-    (m,) = of.earnings_moves(reports, syn.SESSION, e2, syn.CLOSES, carries, [e0, e1, e2], eligible=ids)
+    (m,) = of.earnings_moves(reports, syn.SESSION, e2, syn.CLOSES, carries, [e0, e1, e2], eligible=ids, complete_through=FAR)
     assert m["expiries"] == [e1.isoformat(), e2.isoformat()]
 
 

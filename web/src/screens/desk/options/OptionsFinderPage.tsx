@@ -533,7 +533,11 @@ function Events({ d }: { d: OptionsFinderResponse }) {
           ))}
         </ul>
       ) : (
-        <p className="of-note">No events are listed before the last expiry.</p>
+        <p className="of-note" data-testid="of-no-events">
+          {d.earnings_status === "known"
+            ? "No events are listed before the last expiry."
+            : "No events are listed before the last expiry, but earnings dates are unknown, so a report is not ruled out."}
+        </p>
       )}
       {moves.map((m) =>
         isFiniteNumber(m.move_sd_pct) ? (

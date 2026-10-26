@@ -129,11 +129,8 @@ def _executor() -> ThreadPoolExecutor:
 def clear_caches() -> None:
     for c in (_search_cache, _identity_cache, _profile_cache, _candles_cache, _actions_cache, _exp_cache, _chain_cache, _ticks_cache, _fundamentals_cache, _daily_cache):
         c.clear()
-    # the Options Finder's (design F3): its chain windows and its own earnings reads
+    # the Options Finder's (design F3): its chain windows
     _window_cache.clear()
-    from api.providers import finnhub_finder
-
-    finnhub_finder.clear_caches()
 
 
 def _now_iso() -> str:

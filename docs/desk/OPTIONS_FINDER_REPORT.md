@@ -23,10 +23,7 @@ session the end-of-day marks describe ("Oct 22 close").
 1. **Merge** (the owner's call). Vercel then ships the front end with the page unlisted.
 2. **Deploy the API on Render by hand.** The route and the expirations fix live in the API. Until it is deployed,
    the unlisted page says "not deployed on the data service yet" (tested) and the lens keeps its short expiry list.
-3. **Optional: add `FINNHUB_FINDER_API_KEY` on Render.** It is the Finder's own Finnhub key, so its earnings-calendar
-   reads never spend the dashboard's Finnhub minute. Without it (or set to the same key as `FINNHUB_API_KEY`), the
-   Finder makes no Finnhub request: it uses the stored earnings rows, or says the calendar could not be read.
-4. **Before listing:** EODHD's answer on public display of options quotes (and whether OPRA's fee is included).
+3. **Before listing:** EODHD's answer on public display of options quotes (and whether OPRA's fee is included).
    Listing is then a one-line change to the flag, plus a Build Notes line (see "Departures").
 
 ## What was built
@@ -35,7 +32,7 @@ session the end-of-day marks describe ("Oct 22 close").
 |---|---|---|
 | F1 | Expirations page through the provider's list; an additive `session` field on the expirations and chain answers; the lens's stamp | `api/providers/market.py`, `web/src/screens/markets/SingleName.tsx` |
 | F2 | The engine, `finder-2`: screens, carry from the market's forward, sizing in whole cents, European closed forms, an American lattice with a certified early-exercise bound, events, the three lenses, top-20 pruning by value bounds | `src/desk/options_math.py`, `src/desk/options_finder.py`, `docs/desk/OPTIONS_FINDER_MODEL.md` |
-| F3 | `GET /api/desk/options/finder` in the Desk v2 envelope: the paging chain scan, the session checks, the stored inputs as a worker item, the Finder's own Finnhub client | `api/desk_options.py`, `api/providers/finnhub_finder.py`, `api/analytics_cache.py` |
+| F3 | `GET /api/desk/options/finder` in the Desk v2 envelope: the paging chain scan, the session checks, the stored inputs (earnings included) as a worker item; no Finnhub request | `api/desk_options.py`, `api/analytics_cache.py` |
 | F4 | Types, the response-boundary schema (a row missing a required field is dropped and counted), `useOptionsFinder` with a 90 s timeout, the fixture server | `web/src/screens/desk/data/` |
 | F5 | The page: the view form (state in the address), the summary with every screen's drop count, the three lens cards, the payoff chart from the served curve, the events, the sortable table, how it was priced, the disclosure footer | `web/src/screens/desk/options/` |
 | F6 | Entry links, drawn only when listed: the lens, Event Study (an S&P 500 study maps to SPY), the command palette | `options/entry.tsx`, `options/lens-link.tsx`, `screens/shell/sections.ts` |
@@ -59,9 +56,8 @@ Every change to shared code is additive and inert while the Finder is unlisted:
   and import unchanged (tested against the fixture store).
 - `data/api.ts`: `deskGet` takes an optional `timeoutMs`; every existing caller passes none and keeps 15 s.
 - API: one route, one worker item appended last (it never raises and reads no other item), the route in the
-  provider ceiling and the Desk envelope's route list. `api/providers/finnhub.py` is unchanged.
-- `deploy/api.env.example`: one documentation line for `FINNHUB_FINDER_API_KEY` (the env-template test requires
-  every variable the API reads to be named there). It changes no deploy setting; the owner was asked to confirm it.
+  provider ceiling and the Desk envelope's route list. `api/providers/finnhub.py` is unchanged, and the Finder
+  sends Finnhub nothing. `deploy/` is unchanged.
 
 ## Tests
 
@@ -131,7 +127,14 @@ decision; the adaptive-pricing proposal is the place to settle it.
 - **Build Notes is unchanged.** The plan gives it a line on what is live; while the Finder is unlisted, a line on the
   public Build Notes page would list it. The line goes in with the flag: "Live on request: the Options Finder, one
   end-of-day option chain priced against your view, ranked three ways, never a recommendation."
-- **The Data Pipeline row is deferred** (the owner chose "Yes to both" on that card).
+- **The Data Pipeline row is deferred** (the owner chose "Yes to both" on that card, 2026-10-25; it ships with the
+  flag flip, and that decision does not itself authorize listing the page).
+- **Earnings dates are the stored rows only** (the owner's choice, 2026-10-26). The plan's decision 8 fetched a
+  symbol's dates from Finnhub on demand. Finnhub gives an account one API limit, shared with the dashboard's
+  fundamentals, so the Finder sends no Finnhub request: it shows the dates the refresh stores for the 12 tape names,
+  says other earnings dates are unknown, flags every modelled contract with that, and serves no implied earnings
+  move (the stored rows record no checked horizon). Prices are unchanged. A shared earnings cache with recorded
+  coverage and freshness is its own planned PR; it needs the owner's approval for its refresh-workflow step.
 - **`finder2_carry` lives in `options_finder.py`**, not its own module.
 - **F7's tests are in `positions/option.test.tsx`**, not spread over the three files the plan names.
 
@@ -143,4 +146,4 @@ decision; the adaptive-pricing proposal is the place to settle it.
 | Marketplace quota | Per-session chain cache, the provider ceiling, one scan at a time, typed refusals (`busy`, `rate_limited`). |
 | Wide chains | The work budget refuses with a reason, never a partial ranking; top-20 pruning by proved value bounds. |
 | Modelled values | Labelled modelled, with the volatility held and the ±10-point sensitivity on every modelled contract. |
-| Events | Earnings, macro releases and dividends before the date are listed and flagged on each contract; other company events are named as not tracked. |
+| Events | Earnings, macro releases and dividends before the date are listed and flagged on each contract; earnings dates beyond the stored ones are "unknown", never "none", and no implied earnings move is served until the cache records coverage; other company events are named as not tracked. |

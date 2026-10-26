@@ -207,6 +207,29 @@ describe("Options Finder: the answer", () => {
     expect(screen.queryByText(/Every contract that passed/)).toBeNull();
   });
 
+  it("never reads unknown earnings as none: the flag on every modelled row, and the empty events line says unknown (design A-3)", async () => {
+    expect(UP.earnings_status).toBe("unknown");
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const unknown = /Earnings dates are unknown for this name, so a report before your date is not ruled out/;
+    const modelled = (UP.rows as OptionRow[]).filter((r) => r.modelled);
+    expect(modelled.length).toBeGreaterThan(0);
+    expect(modelled.every((r) => r.flags.some((f) => unknown.test(f)))).toBe(true);
+    fireEvent.click(screen.getByTestId("of-all"));
+    expect(screen.getAllByTitle(unknown)).toHaveLength(modelled.length);  // each modelled row's flag in the table
+    expect(screen.getByText(/Earnings dates past the stored ones are unknown/)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["unknown", "No events are listed before the last expiry, but earnings dates are unknown, so a report is not ruled out."],
+    ["known", "No events are listed before the last expiry."],
+  ])("with no events and earnings %s, the events card says so (design A-3)", async (status, words) => {
+    stubDesk({ [ROUTE]: () => ({ ...UP, events: [], earnings_moves: [], earnings_status: status }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.getByTestId("of-no-events")).toHaveTextContent(words);
+  });
+
   it("shows the served early-exercise flag on the cards and in the table (Codex S-5)", async () => {
     renderTab(UP_URL);
     await stateOf("answered");

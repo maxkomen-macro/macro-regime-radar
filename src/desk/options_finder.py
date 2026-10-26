@@ -910,7 +910,13 @@ def between(ev: Event, start: date, end: date, closes) -> str | None:
     return "yes" if (a, b) == ("after", "before") else "maybe"
 
 
-def event_flags(evs: Sequence[Event], session: date, by: date, closes) -> list[str]:
+UNKNOWN_FLAG = ("Earnings dates are unknown for this name, so a report before your date is not ruled out; the "
+                "modelled value holds this contract's volatility flat.")
+
+
+def event_flags(evs: Sequence[Event], session: date, by: date, closes, known_through: date | None = None) -> list[str]:
+    """The earnings flags of one modelled row: each found report before (or perhaps before) the visitor's date, and
+    UNKNOWN_FLAG while the earnings coverage is not complete through that date (design A-3)."""
     out = []
     for ev in evs:
         if ev.kind != "earnings":
@@ -922,6 +928,8 @@ def event_flags(evs: Sequence[Event], session: date, by: date, closes) -> list[s
         elif got == "maybe":
             out.append(f"Earnings on {_day(ev.day)} may be before your date (the release time is not known); the "
                        "modelled value holds this contract's volatility flat, which usually fails after a report.")
+    if known_through is None or known_through < by:
+        out.append(UNKNOWN_FLAG)
     return out
 
 
@@ -962,13 +970,17 @@ def event_list(evs: Sequence[Event], session: date, by: date, closes) -> list[di
 
 
 INCOMPLETE_MOVE = "Some earnings rows could not be read, so another report before the second expiry cannot be ruled out."
+UNKNOWN_MOVE = ("Earnings dates past the stored ones are unknown, so another report before the second expiry cannot be "
+                "ruled out.")
 
 
 def earnings_moves(evs: Sequence[Event], session: date, last_expiry: date, closes, carries: Mapping[date, Carry],
-                   expiries: Sequence[date], *, eligible: set[str] | None = None, incomplete: bool = False) -> list[dict]:
+                   expiries: Sequence[date], *, eligible: set[str] | None = None, incomplete: bool = False,
+                   complete_through: date | None = None) -> list[dict]:
     """Decision 10: the move priced for each upcoming report (at most 2), from the two nearest expiries after it.
     `evs` holds one report per day (earnings_reports); only `eligible` ids carry a move, and none does while
-    discovery is `incomplete` (design S-10)."""
+    discovery is `incomplete` (design S-10) or the earnings coverage is not complete through the pair's second
+    expiry (`complete_through`, design A-3)."""
     out = []
     earnings = [ev for ev in evs if ev.kind == "earnings" and between(ev, session, last_expiry, closes) is not None
                 and (eligible is None or ev.id in eligible)]
@@ -977,6 +989,9 @@ def earnings_moves(evs: Sequence[Event], session: date, last_expiry: date, close
         out.append(item)
         if incomplete:
             item["reason"] = INCOMPLETE_MOVE
+            continue
+        if complete_through is None:
+            item["reason"] = UNKNOWN_MOVE
             continue
         if position(ev, session, closes) == "uncertain":
             item["reason"] = "The report's time against the session close is not known."
@@ -990,6 +1005,9 @@ def earnings_moves(evs: Sequence[Event], session: date, last_expiry: date, close
             item["reason"] = "Two listed expiries after the report are not in the quotes."
             continue
         e1, e2 = after
+        if e2 > complete_through:
+            item["reason"] = UNKNOWN_MOVE
+            continue
         item["expiries"] = [e1.isoformat(), e2.isoformat()]
         # any other report priced into either expiry, earlier ones included, adds its own jump (Codex S-8)
         if any(o is not ev and o.kind == "earnings" and between(o, session, e2, closes) is not None for o in evs):
@@ -1019,8 +1037,10 @@ def coverage_words(cov: Mapping[str, Any], symbol: str, dividends_ok: bool, foun
         # no absence claim while a row could not be read (design S-10 step 5)
         out.append("Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out.")
     elif status == "stored" and through is None:
-        out.append("Finnhub's calendar could not be read now: the earnings dates listed are stored ones, and when "
-                   "they were last checked is not recorded.")
+        out.append("Earnings dates listed are from Finnhub's calendar as stored by the site's refresh; when they were "
+                   "last checked is not recorded, and other earnings dates are unknown.")
+    elif status == "unknown":
+        out.append(f"Earnings dates unknown for {symbol}: no usable dates are available from the stored calendar.")
     elif status in ("stored", "fetched", "not_found") and through is not None:
         if found_earnings:
             out.append(f"Earnings dates are from Finnhub's calendar through {_day(through)}.")
@@ -1068,6 +1088,7 @@ class RowCtx:
     comm_c: int
     budget_c: int
     events: list[Event]
+    earnings_through: date | None = None  # earnings coverage complete through this date, else None (design A-3)
 
 
 def _context_on(rc: RowCtx, q: Quote, sigma: float, start: date, spot: float) -> om.Context:
@@ -1316,7 +1337,7 @@ def _row(rc: RowCtx, z: Sized, vs: list, target_d: Decimal, be: tuple | None) ->
         "european_value": now.european,
         "early_exercise": {"premium": premium_out, "flag": flag},
         "event_ids": row_event_ids(rc.events, m.session, t.by, q.exp, m.closes),
-        "flags": event_flags(rc.events, m.session, t.by, m.closes) if modelled else [],
+        "flags": event_flags(rc.events, m.session, t.by, m.closes, rc.earnings_through) if modelled else [],
         "carry_source": rc.carries[q.exp].source,
         "provider": provider,
         "_sigma": sigma,
@@ -1610,6 +1631,9 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
     unusable = bad_known + bad_window + max(0, int(_num((coverage or {}).get("unreadable")) or 0))
     if unusable:
         run_notes.append(f"{unusable} earnings rows were unusable and were ignored.")
+    # complete only when a calendar was read through a date with nothing unusable; stored rows never are (design A-3)
+    cov = coverage or {}
+    complete_through = _date(cov.get("earnings_through")) if cov.get("earnings") in ("fetched", "not_found") and not unusable else None
     evs = sorted(evs + dividend_events(sched), key=lambda ev: (ev.day, ev.id))
 
     # carry per expiry (no up-front estimate: the counter refuses at the charge that would pass the budget, DR-44)
@@ -1627,7 +1651,8 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
     s0_d, x_d = _dec(s0), _dec(t.target)
     half_d = s0_d + (x_d - s0_d) / 2
     prices = {"target": x_d, "half": half_d, "flat": s0_d}
-    rc = RowCtx(t, m, curve, sched, carries, pricer, prices, commission_cents(t.commission), budget_cents(t.budget), evs)
+    rc = RowCtx(t, m, curve, sched, carries, pricer, prices, commission_cents(t.commission), budget_cents(t.budget), evs,
+                complete_through)
     sized: list[Sized] = []
     for q in survivors:  # screen 10 before 9 (rev 5): sizing is exact and needs no volatility
         if carries[q.exp].source == "outside domain":
@@ -1715,6 +1740,13 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
                           "pv_schedule": f["pv_schedule"], "difference": (pv_mkt - f["pv_schedule"]) if pv_mkt is not None else None,
                           "pairs": c.pairs, "source": c.source, "words": CARRY_WORDS[c.source], "atm_vol": c.atm_vol})
     found_earnings = any(r.day >= session for r in reports)
+    last_scanned = max((q.exp for q in survivors), default=t.by)
+    if cov.get("earnings") == "not_checked":
+        earnings_status = "not_checked"
+    elif complete_through is not None and complete_through >= last_scanned:
+        earnings_status = "known"
+    else:
+        earnings_status = "unknown"
     answer = {
         "inputs": {"view": t.view, "type": t.kind, "target": t.target, "by": t.by.isoformat(),
                    "budget": budget_cents(t.budget) / 100.0, "min_oi": t.min_oi, "max_spread": t.max_spread,
@@ -1738,8 +1770,9 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
                        "period": d.period, "label": "projected, not declared" if d.projected else "declared"} for d in sched],
         "events": event_list(evs, session, t.by, m.closes),
         "coverage": coverage_words(coverage or {}, m.symbol or m.occ_root, div_ok, found_earnings, unusable > 0),
-        "earnings_moves": earnings_moves(reports, session, max((q.exp for q in survivors), default=t.by), m.closes,
-                                         carries, event_expiries, eligible=move_ids, incomplete=unusable > 0),
+        "earnings_status": earnings_status,
+        "earnings_moves": earnings_moves(reports, session, last_scanned, m.closes, carries, event_expiries,
+                                         eligible=move_ids, incomplete=unusable > 0, complete_through=complete_through),
         "stale": stale,
         "work": {"used": work.used, "limit": work.limit},
         "method": {

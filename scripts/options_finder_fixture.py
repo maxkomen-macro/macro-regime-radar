@@ -4,8 +4,9 @@
 
 The answers are the route's own (api/desk_options.finder through api/desk_v2 and the envelope) on an invented
 chain: tests/options_synth.py's $100 stock with quarterly dividends, its quotes priced by the engine's lattice,
-served by the fake EODHD and Finnhub of tests/options_route_fake.py at the HTTP transport, with the clock at
-Saturday 2026-10-24 so the quotes describe the Oct 23 session. No provider data is involved, so nothing in the
+served by the fake EODHD of tests/options_route_fake.py at the HTTP transport, its earnings date stored in the
+fixture database as the refresh stores one, with the clock at Saturday 2026-10-24 so the quotes describe the
+Oct 23 session. No provider data is involved, so nothing in the
 fixture is anyone's quote: the repository is public. A developer tool: it never runs in the API process, and it
 writes only that one file.
 
@@ -26,8 +27,6 @@ from urllib.parse import urlencode
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("FRED_API_KEY", "fixture")
-os.environ["FINNHUB_FINDER_API_KEY"] = "fixture-finder-key"
-os.environ["FINNHUB_API_KEY"] = "fixture-dashboard-key"
 
 OUT = ROOT / "web" / "src" / "fixtures" / "desk" / "options-finder.json"
 REQUESTS = [
@@ -47,7 +46,6 @@ def main() -> None:
     from api import worker as worker_mod
     from api.main import app
     from api.providers import eodhd as eod
-    from api.providers import finnhub_finder as ff
     from api.providers import market
     from api.providers.cache import TokenBucket
     from tests import options_route_fake as fk
@@ -57,14 +55,13 @@ def main() -> None:
     closes = {d: 95.0 for d in fk.sessions(date(2024, 10, 1), syn.SESSION)}
     closes[syn.SESSION] = 100.0
     fake = fk.FakeEodhd({"SYN": [fk.provider_row(r) for r in rows]}, {"SYN": closes}, dividends={"SYN": syn.DIV_ROWS})
-    finnhub = fk.FakeFinnhub({"SYN": [{"symbol": "SYN", "date": "2026-11-30", "hour": "amc", "quarter": 3, "year": 2026}]})
     market._utcnow = lambda: fk.NOW
     eod._bucket = TokenBucket(rate=1e6, burst=10**6)
     market.set_client_for_tests(eod.EodhdClient("fixture", transport=httpx.MockTransport(fake), max_retries=0))
-    ff._transport = httpx.MockTransport(finnhub)
     with tempfile.TemporaryDirectory() as tmp:
         db.DB_PATH = fk.store(Path(tmp) / "fixture.db", macro=[("CPI", "2026-11-12T13:30:00Z"),
-                                                               ("FOMC", "2026-12-09T19:00:00Z")])
+                                                               ("FOMC", "2026-12-09T19:00:00Z")],
+                               earnings=[("SYN", "2026-11-30T21:30:00Z", "SYN earnings (Q3 2026)")])
         w = worker_mod.AnalyticsWorker(items=[("desk_options_inputs", analytics_cache._desk_options_inputs)],
                                        poll_s=0.05, preload=False)
         worker_mod._worker = w

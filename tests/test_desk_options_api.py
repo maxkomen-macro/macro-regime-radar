@@ -26,7 +26,6 @@ from api.main import app
 from api.providers import eodhd as eod
 from api.providers import entitlements, market
 from api.providers import finnhub as fh
-from api.providers import finnhub_finder as ff
 from api.providers.cache import TokenBucket
 from src.desk import options_finder as of
 from tests import desk_contract as dc
@@ -37,7 +36,16 @@ client = TestClient(app, raise_server_exceptions=False)
 SYN_ROWS, TRUTH = syn.chain()
 CHAIN = [fk.provider_row(r) for r in SYN_ROWS]
 OCT21, OCT22, OCT23 = date(2026, 10, 21), date(2026, 10, 22), syn.SESSION
-EARNINGS = {"SYN": [{"symbol": "SYN", "date": "2026-11-30", "hour": "amc", "quarter": 3, "year": 2026}]}
+STORED = [("SYN", "2026-11-30T21:30:00Z", "SYN earnings (Q3 2026)")]  # Nov 30, after the close (16:30 New York)
+STORED_SOURCE = "Finnhub earnings calendar (stored by the site's refresh)"
+STORED_WORDS = ("Earnings dates listed are from Finnhub's calendar as stored by the site's refresh; when they were "
+                "last checked is not recorded, and other earnings dates are unknown.")
+NY_AT = {"bmo": "13:00:00Z", "amc": "21:30:00Z", "": "17:00:00Z"}  # 08:00, 16:30 and 12:00 New York (EST)
+
+
+def stored(*reports: tuple[str, str]) -> list[tuple[str, str, str]]:
+    """Stored earnings rows as the refresh writes them: (New York day, bmo | amc | "")."""
+    return [("SYN", f"{d}T{NY_AT[h]}", f"SYN earnings ({d})") for d, h in reports]
 MACRO = [("CPI", "2026-11-12T13:30:00Z"), ("FOMC", "2026-12-09T19:00:00Z")]
 UP = dict(symbol="SYN", view="up", target="120", by="2026-12-18", budget="5000", commission="0.65")
 ITEM = [("desk_options_inputs", analytics_cache._desk_options_inputs)]
@@ -61,14 +69,11 @@ class World:
     def __init__(self, tmp_path, monkeypatch, install_worker):
         self.tmp, self.mp, self.install = tmp_path, monkeypatch, install_worker
         self.fake = fk.FakeEodhd({"SYN": CHAIN}, {"SYN": closes()}, dividends={"SYN": syn.DIV_ROWS})
-        self.fh = fk.FakeFinnhub(EARNINGS)
+        self.fh = fk.FakeFinnhub({})  # the dashboard client's transport: the Finder must send it nothing
         monkeypatch.setattr(market, "_utcnow", lambda: fk.NOW)
-        monkeypatch.setenv("FINNHUB_FINDER_API_KEY", "finder-key")
         monkeypatch.setenv("FINNHUB_API_KEY", "dashboard-key")
         monkeypatch.setattr(eod, "_bucket", TokenBucket(rate=1e6, burst=10**6))
         monkeypatch.setattr(market, "_client", eod.EodhdClient("tok", transport=httpx.MockTransport(self.fake), max_retries=0))
-        monkeypatch.setattr(ff, "_transport", httpx.MockTransport(self.fh))
-        monkeypatch.setattr(ff, "_finder_bucket", TokenBucket(rate=50 / 60, burst=10))
         monkeypatch.setattr(fh, "_client", fh.FinnhubClient("dashboard-key", transport=httpx.MockTransport(self.fh)))
         monkeypatch.setattr(fh, "_bucket", TokenBucket(rate=50 / 60, burst=10))
         entitlements.reset_for_tests()
@@ -76,7 +81,7 @@ class World:
         self.worker = None
 
     def serve(self, **store_kw) -> "World":
-        path = fk.store(self.tmp / f"store{len(list(self.tmp.iterdir()))}.db", **{"macro": MACRO, **store_kw})
+        path = fk.store(self.tmp / f"store{len(list(self.tmp.iterdir()))}.db", **{"macro": MACRO, "earnings": STORED, **store_kw})
         self.mp.setattr(db, "DB_PATH", path)
         self.worker = self.install(worker_mod.AnalyticsWorker(items=ITEM, poll_s=0.05, preload=False))
         self.worker.start(serving=True)
@@ -129,25 +134,25 @@ def test_a_view_is_answered_in_the_envelope_and_keeps_the_contract(served):
                                            for s in ("DGS3MO", "DGS2", "DGS5")]}
     assert d["sources"] == ["EODHD options (end of day, 2026-10-23 close)", "EODHD daily bars",
                             "FRED DGS3MO, DGS2, DGS5 (2026-10-23, 2026-10-23, 2026-10-23)", "EODHD dividends",
-                            "Finnhub earnings calendar", "Macro release calendar (stored through 2026-12-09)"]
+                            STORED_SOURCE, "Macro release calendar (stored through 2026-12-09)"]
     u = d["universe"]
     assert u["seen"] == u["passed"] + sum(u["dropped"].values()) + u["ranked_out"] and u["passed"] > 0
     assert all(d["picks"].values()) and not u["truncated"]
     assert "delayed_price" not in json.dumps(d)
 
 
-def test_the_route_recovers_the_synthetic_forwards_and_prices_the_report(served):
+def test_the_route_recovers_the_synthetic_forwards_and_withholds_the_stored_reports_move(served):
     d = served.ok(**UP)
     market_carry = [c for c in d["carry"] if c["source"] == "market"]
     assert len(market_carry) == len(d["carry"]) == 7
     for c in market_carry:  # cent quotes around the lattice's values (tests/options_synth.py)
         assert abs(c["forward"] - TRUTH[date.fromisoformat(c["exp"])]) < 0.011 * syn.S0
-    (move,) = d["earnings_moves"]
-    assert move["date"] == "2026-11-30" and move["expiries"] == ["2026-12-18", "2027-01-15"]
-    assert move["reason"] is None and move["move_sd_pct"] > 0
+    (move,) = d["earnings_moves"]  # stored rows never rule out another report (design A-3)
+    assert move["date"] == "2026-11-30" and move["move_sd_pct"] is None and move["reason"] == of.UNKNOWN_MOVE
     kinds = [(e["kind"], e["name"]) for e in d["events"]]
     assert ("macro", "CPI") in kinds and ("earnings", "SYN earnings (Q3 2026)") in kinds
-    assert d["coverage"][0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027."
+    assert d["coverage"][0] == STORED_WORDS and d["earnings_status"] == "unknown"
+    assert all(of.UNKNOWN_FLAG in r["flags"] for r in d["rows"] if r["modelled"])
 
 
 def test_a_repeated_view_spends_no_provider_request(served):
@@ -602,74 +607,48 @@ def test_dividends_unavailable_are_named_in_the_coverage_never_as_a_source(serve
     assert d["dividends"] == []
 
 
-def test_a_name_with_no_report_in_the_horizon_says_so(served):
-    served.fh.items = {}
-    d = served.ok(**UP)
-    assert d["coverage"][0] == "No earnings date found for SYN in Finnhub's calendar through Nov 27, 2027."
-    assert "Finnhub earnings calendar" in d["sources"] and d["earnings_moves"] == []
+def test_a_name_with_no_stored_rows_reads_unknown_never_absent(world):
+    d = world.serve(earnings=[]).ok(**UP)
+    assert d["coverage"][0] == "Earnings dates unknown for SYN: no usable dates are available from the stored calendar."
+    assert not any("Finnhub" in s for s in d["sources"]) and d["earnings_moves"] == []
+    assert d["earnings_status"] == "unknown" and world.fh.calls == []
+    assert all(of.UNKNOWN_FLAG in r["flags"] for r in d["rows"] if r["modelled"])
 
 
-def test_a_failed_calendar_read_falls_back_to_the_stored_rows_with_no_horizon(world):
-    world.fh.status = 401
-    d = world.serve(earnings=[("SYN", "2026-11-30T21:30:00Z", "SYN earnings (Q3 2026)")]).ok(**UP)
-    assert d["coverage"][0] == ("Finnhub's calendar could not be read now: the earnings dates listed are stored "
-                                "ones, and when they were last checked is not recorded.")
-    assert "Finnhub earnings calendar (stored rows)" in d["sources"]
-    (ev,) = [e for e in d["events"] if e["kind"] == "earnings"]
-    assert ev["date"] == "2026-11-30" and ev["timing"] == "amc" and ev["source"] == "finnhub_earnings (stored)"
-
-
-def test_a_failed_calendar_read_without_stored_rows_is_unavailable(world):
-    world.fh.status = 401
+def test_the_stored_rows_are_the_earnings_dates_with_their_source_and_timing(world):
     d = world.serve().ok(**UP)
-    assert d["coverage"][0] == "Earnings dates could not be read." and not any("Finnhub" in s for s in d["sources"])
+    assert d["coverage"][0] == STORED_WORDS and STORED_SOURCE in d["sources"]
+    (ev,) = [e for e in d["events"] if e["kind"] == "earnings"]
+    assert ev["date"] == "2026-11-30" and ev["timing"] == "amc" and ev["source"] == "Finnhub earnings calendar (stored)"
 
 
-def test_a_short_scan_and_a_long_scan_read_the_same_earnings_horizon(served):
-    """DR-20: the horizon is fixed (C to C + 400 days), so one cached read serves both."""
+def test_a_short_scan_and_a_long_scan_read_the_same_stored_earnings(served):
     short = served.ok(**{**UP, "scan_months": "1"})
     long = served.ok(**{**UP, "scan_months": "4"})
-    assert len(served.fh.calls) == 1
-    assert short["coverage"][0] == long["coverage"][0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027."
+    assert served.fh.calls == []
+    assert short["coverage"][0] == long["coverage"][0] == STORED_WORDS
     ev = lambda d: [e for e in d["events"] if e["kind"] == "earnings"]  # noqa: E731
     assert ev(short) == ev(long)
 
 
 def test_an_exclusive_provider_still_gives_both_event_expiries(world):
-    """DR-21: E1 and E2 are consecutive listed expiries; the padded range reads both under an exclusive filter."""
+    """DR-21: E1 and E2 are consecutive listed expiries; the padded range reads both under an exclusive filter.
+    Their quotes calibrate those expiries' carries (DR-62), though the move itself is withheld (design A-3)."""
     world.fake.inclusive = False
     d = world.serve().ok(**UP)
+    carry = {c["exp"]: c["source"] for c in d["carry"]}
+    assert carry["2026-12-18"] == carry["2027-01-15"] == "market"
     (move,) = d["earnings_moves"]
-    assert move["expiries"] == ["2026-12-18", "2027-01-15"] and move["move_sd_pct"] > 0
+    assert move["reason"] == of.UNKNOWN_MOVE
 
 
-# ── the Finder shares no Finnhub capacity with the dashboard (DR-28, DR-29) ─
+# ── the Finder sends no Finnhub request (DR-28, DR-29, design A-3) ────────
 
-def test_the_finders_earnings_read_takes_only_its_own_bucket(world, monkeypatch):
-    monkeypatch.setattr(fh, "_bucket", TokenBucket(rate=0.0, burst=2))  # exactly one fundamentals pair
-    got = ff.earnings("SYN", OCT23)
-    assert got["items"] and world.fh.calls[-1][2] == "finder-key" and fh._bucket.available(2)
-    fields = fh.fundamentals("SYN")
-    assert fields["market_cap"] == 1000.0 * 1e6 and not fh._bucket.available(1)
-    assert [c[2] for c in world.fh.calls] == ["finder-key", "dashboard-key", "dashboard-key"]
-
-
-@pytest.mark.parametrize("finder_key", [None, "dashboard-key"])
-def test_without_its_own_key_the_finder_sends_no_finnhub_request(world, monkeypatch, finder_key):
-    if finder_key is None:
-        monkeypatch.delenv("FINNHUB_FINDER_API_KEY")
-    else:
-        monkeypatch.setenv("FINNHUB_FINDER_API_KEY", finder_key)
+@pytest.mark.parametrize("earnings", [STORED, [], [("SYN", "2026-11-30T16:30:00", "SYN earnings")]])
+def test_the_finder_sends_no_finnhub_request_whatever_is_stored(world, monkeypatch, earnings):
     monkeypatch.setattr(fh, "_bucket", TokenBucket(rate=0.0, burst=2))
-    d = world.serve().ok(**UP)
+    world.serve(earnings=earnings).ok(**UP)
     assert world.fh.calls == [] and fh._bucket.available(2)
-    assert ff.NOT_CONFIGURED in d["method"]["notes"] and d["coverage"][0] == "Earnings dates could not be read."
-
-
-def test_an_empty_finder_bucket_sends_nothing_and_uses_the_stored_rows(world, monkeypatch):
-    monkeypatch.setattr(ff, "_finder_bucket", TokenBucket(rate=0.0, burst=0))
-    d = world.serve(earnings=[("SYN", "2026-11-30T21:30:00Z", "SYN earnings (Q3 2026)")]).ok(**UP)
-    assert world.fh.calls == [] and d["coverage"][0].startswith("Finnhub's calendar could not be read now")
 
 
 def test_the_finder_never_reads_a_profile_and_a_dashboard_profile_after_it_is_whole(world, monkeypatch):
@@ -743,65 +722,52 @@ def test_a_share_class_listing_keeps_its_standard_contracts_and_asks_finnhub_not
 
 # ── a report on an expiry's own day (Codex S-7) ─────────────────────────────
 
-@pytest.mark.parametrize("hour, pair", [
-    ("bmo", ["2026-12-18", "2027-01-15"]),   # before that close: the day's own expiry already holds the report
-    ("amc", ["2027-01-15", "2027-02-19"]),   # after it: the next two
-    ("", ["2027-01-15", "2027-02-19"]),      # time unknown: only expiries certainly after it
-])
-def test_a_report_on_an_expiry_day_takes_the_pair_its_release_time_allows(world, hour, pair):
-    world.fh.items = {"SYN": [{"symbol": "SYN", "date": "2026-12-18", "hour": hour, "quarter": 3, "year": 2026}]}
-    d = world.serve().ok(**UP)
+@pytest.mark.parametrize("hour, timing", [("bmo", "bmo"), ("amc", "amc"), ("", "unknown")])
+def test_a_stored_report_on_an_expiry_day_keeps_its_time_and_gets_no_move(world, hour, timing):
+    """Codex S-7's route read (the day's own expiry) stays for the carries; the move is withheld (design A-3)."""
+    d = world.serve(earnings=stored(("2026-12-18", hour))).ok(**UP)
+    (ev,) = [e for e in d["events"] if e["kind"] == "earnings"]
+    assert ev["date"] == "2026-12-18" and ev["timing"] == timing
     (move,) = d["earnings_moves"]
-    assert move["date"] == "2026-12-18" and move["expiries"] == pair
-    assert move["reason"] != "Two listed expiries after the report are not in the quotes."
+    assert move["date"] == "2026-12-18" and move["move_sd_pct"] is None and move["reason"] == of.UNKNOWN_MOVE
 
 
-def test_two_reports_give_the_first_its_move_and_the_second_none_of_its_own(world):
-    """Codex S-8: Jan 27's expiries (Feb 19, Mar 19) also hold Nov 30's jump, so only Nov 30 gets a move."""
-    world.fh.items = {"SYN": [{"symbol": "SYN", "date": d, "hour": "amc", "quarter": q, "year": y}
-                              for d, q, y in (("2026-11-30", 3, 2026), ("2027-01-27", 4, 2026))]}
-    d = world.serve().ok(**{**UP, "by": "2027-03-19"})
+def test_two_stored_reports_get_no_move(world):
+    """Codex S-8 at the route: with stored rows neither report can be shown alone in its pair (design A-3)."""
+    d = world.serve(earnings=stored(("2026-11-30", "amc"), ("2027-01-27", "amc"))).ok(**{**UP, "by": "2027-03-19"})
     first, second = d["earnings_moves"]
-    assert first["date"] == "2026-11-30" and first["expiries"] == ["2026-12-18", "2027-01-15"]
-    assert second["date"] == "2027-01-27" and second["move_sd_pct"] is None
-    assert second["reason"] == "Another earnings date falls before the second expiry."
-    assert first["reason"] is None and first["move_sd_pct"] > 0
+    assert (first["date"], second["date"]) == ("2026-11-30", "2027-01-27")
+    assert first["reason"] == second["reason"] == of.UNKNOWN_MOVE and first["move_sd_pct"] is None
 
 
 # ── earnings beyond the scanned window (Codex S-10, S-11; design S-10) ──────
 
-def test_a_report_past_the_last_scanned_expiry_rules_out_a_move_whose_pair_it_shares(world):
-    """S-10: a one-month scan from Nov 20 ends at Dec 18; the Nov 20 report (after the close, an expiry day) takes
-    Dec 18 / Jan 15, and the Dec 22 report falls in that pair although it is past the scan, so Nov 20 gets no move
-    of its own."""
-    world.fh.items = {"SYN": [{"symbol": "SYN", "date": d, "hour": "amc", "quarter": q, "year": 2026}
-                              for d, q in (("2026-11-20", 3), ("2026-12-22", 4))]}
-    d = world.serve().ok(**{**UP, "by": "2026-11-20", "scan_months": "1"})
+def test_a_stored_report_past_the_last_scanned_expiry_stays_off_the_list_and_no_move_is_shown(world):
+    """S-10 at the route: a one-month scan from Nov 20 ends at Dec 18; the Dec 22 report is past the scan."""
+    d = world.serve(earnings=stored(("2026-11-20", "amc"), ("2026-12-22", "amc"))).ok(
+        **{**UP, "by": "2026-11-20", "scan_months": "1"})
     assert max(r["exp"] for r in d["rows"]) == "2026-12-18"
     assert [e["date"] for e in d["events"] if e["kind"] == "earnings"] == ["2026-11-20"]  # the list keeps to the scan
     (move,) = d["earnings_moves"]
-    assert move["date"] == "2026-11-20" and move["move_sd_pct"] is None
-    assert move["reason"] == "Another earnings date falls before the second expiry."
+    assert move["date"] == "2026-11-20" and move["move_sd_pct"] is None and move["reason"] == of.UNKNOWN_MOVE
 
 
 def test_a_report_only_past_the_scan_is_found_not_called_absent(world):
-    """S-11: Finnhub found a report after the scan's last expiry; the coverage names the calendar, not an absence."""
-    world.fh.items = {"SYN": [{"symbol": "SYN", "date": "2027-06-30", "hour": "amc", "quarter": 2, "year": 2027}]}
-    d = world.serve().ok(**{**UP, "scan_months": "1"})
-    assert d["coverage"][0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027."
+    """S-11: the stored report falls after the scan's last expiry; the coverage names the stored calendar."""
+    d = world.serve(earnings=stored(("2027-06-30", "amc"))).ok(**{**UP, "scan_months": "1"})
+    assert d["coverage"][0] == STORED_WORDS
     assert d["earnings_moves"] == [] and not [e for e in d["events"] if e["kind"] == "earnings"]
 
 
-def test_an_unreadable_finnhub_row_for_the_symbol_suppresses_the_move(world):
-    """DR-56, DR-57: the route counts this symbol's item with no readable date; no move is served while it might
-    be a report inside a pair, and the run says so."""
-    world.fh.items = {"SYN": [*EARNINGS["SYN"], {"symbol": "SYN", "date": "soon", "hour": "amc", "quarter": 4, "year": 2026}]}
-    d = world.serve().ok(**UP)
+def test_an_unreadable_stored_row_for_the_symbol_is_counted_and_never_read_as_absence(world):
+    """DR-56, DR-57, DR-64: the route counts this symbol's stored row with no placeable time; the run says so,
+    and when no row is usable the coverage says no usable dates, not that none is stored."""
+    naive = ("SYN", "2026-12-01T16:30:00", "SYN earnings (Q4 2026)")  # no zone: not placeable
+    d = world.serve(earnings=[*STORED, naive]).ok(**UP)
     (move,) = d["earnings_moves"]
     assert move["date"] == "2026-11-30" and move["move_sd_pct"] is None and move["reason"] == of.INCOMPLETE_MOVE
     assert "1 earnings rows were unusable and were ignored." in d["method"]["notes"]
-    assert d["coverage"][0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027."
-    world.fh.items = {"SYN": [{"symbol": "SYN", "date": None, "hour": "amc"}]}
-    market.clear_caches()
-    d = world.ok(**UP)
-    assert d["coverage"][0] == "Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out."
+    assert d["coverage"][0] == STORED_WORDS
+    d = world.serve(earnings=[naive]).ok(**UP)
+    assert d["coverage"][0] == "Earnings dates unknown for SYN: no usable dates are available from the stored calendar."
+    assert "1 earnings rows were unusable and were ignored." in d["method"]["notes"]

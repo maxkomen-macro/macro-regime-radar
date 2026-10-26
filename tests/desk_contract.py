@@ -581,6 +581,8 @@ OPTIONS_FINDER = obj(
                    timing=E("bmo", "amc", "dmh", "unknown", "exact", "cum_close"), at=null(TS), source=STR,
                    placement=STR, amount=F(NUM, opt=True), label=F(E("projected, not declared", "declared"), opt=True))),
     coverage=Arr(STR, min=1),
+    # design A-3: "known" only when the earnings coverage is complete through the scan's last expiry
+    earnings_status=E("known", "unknown", "not_checked"),
     earnings_moves=Arr(obj(event_id=STR, date=DATE, move_sd_pct=null(NUM), expiries=null(Arr(DATE, min=2, max=2)),
                            reason=null(STR)), max=2),
     stale=null(STR),
