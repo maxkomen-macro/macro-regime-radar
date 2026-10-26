@@ -256,6 +256,8 @@ def test_the_gate_counts_missing_groups_dividends_and_named_cases():
     assert not gate["met"] and gate["named_unresolved"] == [b8] and not gate["named_failures"]
     one = score.gate_result(full, overall, ok[:1], complete=True)   # a shard holding one named case (OB-08)
     assert not one["met"] and len(one["named_missing"]) == len(cases.NAMED) - 1
+    assert score.gate_open(score.gate_result(full, overall, ok, complete=False)) == ["run incomplete"]
+    assert score.gate_open(gate) == [f"named {b8} unresolved"]
     assert not score.gate_result(full, overall, [], complete=True)["met"]
 
 
@@ -398,14 +400,16 @@ def test_named_regressions_route_as_documented():
 def test_resuming_a_run_with_other_inputs_is_refused(tmp_path):
     common = ["--engine-root", ENGINE, "--out", str(tmp_path), "--per-group", "0", "--no-named", "--workers", "1"]
     assert run.main(common) == 0
-    with pytest.raises(SystemExit, match="seed"):
+    assert run.main(common) == 0                       # the same inputs resume (the saved manifest went through JSON)
+    assert len(json.loads((tmp_path / "manifest-0of1.json").read_text())["sessions"]) == 1
+    with pytest.raises(SystemExit, match=r"\(seed\)"):    # and only the key that changed is named
         run.main(common + ["--seed", "1"])
     man_path = tmp_path / "manifest-0of1.json"
     man = json.loads(man_path.read_text())
     assert man["convention_calendar"]["sha256"] == run._sha(run.SESSION_PY)
     man["convention_calendar"]["sha256"] = "0" * 64      # as if the holiday tables had changed (OB-09)
     man_path.write_text(json.dumps(man))
-    with pytest.raises(SystemExit, match="convention_calendar"):
+    with pytest.raises(SystemExit, match=r"\(convention_calendar\)"):
         run.main(common)
 
 

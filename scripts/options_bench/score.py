@@ -303,6 +303,19 @@ def gate_result(groups: dict, overall: dict | None, named: list[dict], complete:
     return gate
 
 
+def gate_open(gt: dict) -> list[str]:
+    """What holds the gate open, in words, so the scorecard never names the wrong reason."""
+    why = [] if gt["complete"] else ["run incomplete"]
+    why += [f"{g} below {gt['per_group_target']}" for g, ok in gt["per_group_met"].items() if not ok]
+    why += [] if gt["overall_met"] else [f"fewer than {gt['overall_target']} overall"]
+    why += [] if gt["zero_failures"] else ["price failures"]
+    why += [] if not gt["crashes"] else [f"{gt['crashes']} crashes"]
+    why += [] if gt["divsens"]["met"] else ["dividend scenario"]
+    why += [f"named {x} {k}" for k, xs in (("failed", gt["named_failures"]), ("unresolved", gt["named_unresolved"]),
+                                           ("missing", gt["named_missing"])) for x in xs]
+    return why
+
+
 def score(dirs: list[Path]) -> dict:
     recs, manifests = [], []
     for d in dirs:
@@ -455,7 +468,7 @@ def markdown(sc: dict) -> str:
           + (f" (unresolved: {', '.join(gt['named_unresolved'])})" if gt["named_unresolved"] else "")
           + (f" (missing: {', '.join(gt['named_missing'])})" if gt["named_missing"] else ""),
           f"- Run complete: {'yes' if gt['complete'] else 'no'} ({sc['run']['received']} of {sc['run']['expected']} cases)",
-          f"- **Gate {'met' if gt['met'] else 'not met'}** (an unresolved named regression holds the gate open)",
+          f"- **Gate {'met' if gt['met'] else 'not met'}**" + ("" if gt["met"] else " (open: " + ", ".join(gate_open(gt)) + ")"),
           f"- Crashes (any group, including diagnostics after a price was scored): {gt['crashes']}; any crash holds the gate open.",
           "- Clopper-Pearson limits assume independent draws from each group's sampling distribution, and are conditional on the reference resolving (unscored cases are counted, not in the rate). The table's limit counts every indeterminate outcome as a failure. They are not a claim about real chains or whole requests.",
           ""]

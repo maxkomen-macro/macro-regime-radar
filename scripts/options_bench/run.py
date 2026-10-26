@@ -191,7 +191,8 @@ def main(argv=None) -> int:
         for line in res_path.read_text().splitlines():
             if line.strip():
                 done.add(json.loads(line)["case"]["id"])
-    man = manifest(args, args.shard, len(mine))
+    # through JSON, as the saved manifest went, so tuples and lists compare equal on resume
+    man = json.loads(json.dumps(manifest(args, args.shard, len(mine))))
     man_path = out / f"manifest-{tag}.json"
     prior = json.loads(man_path.read_text()) if man_path.exists() else None
     if prior:
