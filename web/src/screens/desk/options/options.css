@@ -190,6 +190,8 @@
 }
 .of-chart svg {
   display: block;
+  /* SVG paints black by default; every mark here sets its own stroke or fill. */
+  fill: none;
 }
 .of-mark {
   stroke: var(--dk-t4);
