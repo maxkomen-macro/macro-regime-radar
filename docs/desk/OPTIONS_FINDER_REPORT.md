@@ -61,15 +61,21 @@ Every change to shared code is additive and inert while the Finder is unlisted:
 
 ## Tests
 
-- Python: the full suite at the branch's head, 2,456 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
+- Python: the full suite at the branch's head, 2,459 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
   and 1 failed at the base. The failure is the baseline's `test_no_secret_in_logs` (a uvicorn startup-log race),
-  which passes alone. A second timing test, the profile's two calls in parallel, misses its bound by about 10 ms in
-  some full runs (three of the branch's first seven, one of the base's three) and passes alone. One full run also
-  failed the worker's commit-race test (`test_the_worker_never_publishes_a_copy_taken_across_a_commit`, a 30-second
-  wait); it passed in the next full run and in 22 isolated runs at the head and the base under load, and has not
-  been seen to fail at the base. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent from the
-  base's checkout. The Finder's own tests: route 92, numerical library 140, engine 62, on synthetic chains, plus the contract and route-list tests.
-- Web: vitest 156 files, 1,992 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
+  which passes alone. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent
+  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 67, on synthetic chains,
+  plus the contract and route-list tests.
+- Timing tests, kept apart from this branch's own results. Two tests with a wall-clock bound failed in some full
+  runs and passed alone. The profile's two-calls-in-parallel test misses its bound by about 10 ms under load; it
+  fails on the base too (one of the base's three full runs in round 2, one of three more in round 7), so it is a
+  property of `main`, not of this branch. The worker's commit-race test
+  (`test_desk_v2_pipeline::test_the_worker_never_publishes_a_copy_taken_across_a_commit`, a 30-second wait) failed
+  once in nine full runs at the branch's head and in none of six at the base, so it is not shown to fail on `main`.
+  It is also not shown to be this branch's: its worker runs only the Desk pipeline item, and the branch changes
+  none of the worker, the bootstrap, the pipeline or the database-path code it runs; it passed 16 of 16 isolated
+  runs (head and base, under CPU load), its whole file 6 of 6, and 3 of 3 after the Finder's test files.
+- Web: vitest 156 files, 1,995 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
   `desk.spec.ts`, `desk-usability.spec.ts` and `desk-mobile.spec.ts` 98 of 98, the Finder added to the palette and
   language audits.
 - Fixtures are synthetic: an invented $100 stock (SYN) whose quotes the engine's own lattice priced
@@ -101,6 +107,14 @@ and the coverage sentence could say no earnings date was found while Finnhub had
 check now reads every reported date, one report per day (conflicting times on a day count as unknown); any
 earnings row that could not be read suppresses every move estimate and any claim that none was found. Prices and
 picks are unchanged. This fix went through its own design review first (five passes).
+Its seventh round found the sixth round's fix sound and raised three more. Two said the branch departed from the
+plan without the owner's approval: the engine's pricing method and the deferred Data Pipeline row. Both were the
+owner's own decisions, given in the thread but not yet written into the reviewer's approved list; with the owner's
+approval they were added there verbatim. The third was the commit-race timing test above, which one full run had
+failed; it is documented under Tests as not reproduced at the base and not running the branch's code. In the same
+round the owner chose to drop the Finder's on-demand Finnhub read (Departures, "Earnings dates are the stored rows
+only"); that change went through its own design review (three passes) and is in the two A-3 commits, the first of
+which holds only the deleted client and the reverted deploy template line and is meant to be read with the second.
 
 ## Capacity
 
