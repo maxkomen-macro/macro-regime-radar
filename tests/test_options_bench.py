@@ -7,6 +7,7 @@ test skips without QuantLib (test-only, not in requirements-api.lock).
 
 from __future__ import annotations
 
+import json
 import math
 import os
 from datetime import date, timedelta
@@ -146,6 +147,69 @@ def test_every_case_gets_one_outcome_per_quantity():
     assert score.classify({"case": {"id": "x", "group": "G1-nodiv", "kind": "random"}, "error": "boom"})["price"] == "error"
 
 
+def test_a_case_scored_twice_is_refused_not_deduplicated(tmp_path):
+    man = {k: "x" for k in score.RUN_KEYS}
+    for k in (0, 1):
+        (tmp_path / f"manifest-{k}of2.json").write_text(json.dumps(man | {"shard": f"{k}/2"}))
+        (tmp_path / f"results-{k}of2.jsonl").write_text(json.dumps(_rec()) + "\n")
+    with pytest.raises(ValueError, match="appears twice"):
+        score.score([tmp_path])
+    with pytest.raises(ValueError, match="shard set"):
+        score.score([tmp_path, tmp_path])            # the same run directory passed twice
+    with pytest.raises(ValueError, match="no manifest"):
+        score.check_compatible([])
+
+
+def test_shards_from_different_runs_are_not_combined():
+    man = {k: "x" for k in score.RUN_KEYS}
+    score.check_compatible([man | {"shard": "0/2"}, man | {"shard": "1/2"}])
+    with pytest.raises(ValueError, match="seed"):
+        score.check_compatible([man | {"shard": "0/2"}, man | {"seed": 2, "shard": "1/2"}])
+    with pytest.raises(ValueError, match="shard set"):
+        score.check_compatible([man | {"shard": "0/2"}, man | {"shard": "0/2"}])
+
+
+def test_a_named_case_needs_a_resolved_reference_to_pass():
+    assert score.named_verdict("served", "served", "pass", "pass") == "pass"
+    assert score.named_verdict("served", "served", "unscored", "pass") == "unresolved"
+    assert score.named_verdict("served:no-delta", "served:no-delta", "pass", "withheld") == "pass"
+    assert score.named_verdict("served:no-delta", "served:no-delta", "indeterminate", "withheld") == "unresolved"
+    assert score.named_verdict("served", "served", "fail", "pass") == "FAIL"
+    assert score.named_verdict("refused:domain", "served", "pass", "pass") == "FAIL"
+    assert score.named_verdict("refused:domain", "refused:domain", "refused", "refused") == "pass"
+
+
+def _group(n, fails=0, div=None):
+    return {"accepted_scored": n, "price_failures": fails, "divsens": {"outcome": div or {}}}
+
+
+def test_the_gate_counts_missing_groups_dividends_and_named_cases():
+    full = {g: _group(score.PER_GROUP_TARGET) for g in cases.IN_DOMAIN_GROUPS}
+    full["G2-dividends"] = _group(score.PER_GROUP_TARGET, div={"pass": score.DIVSENS_TARGET})
+    overall = {"accepted_scored": score.OVERALL_TARGET}
+    ok = [{"id": "named/B8", "regression": "pass"}]
+    assert score.gate_result(full, overall, ok)["met"]
+    missing = {g: v for g, v in full.items() if g != "G6-long"}
+    gate = score.gate_result(missing, overall, ok)
+    assert not gate["per_group_met"]["G6-long"] and not gate["met"]
+    bad_div = dict(full, **{"G3-carry-itm": _group(score.PER_GROUP_TARGET, div={"fail": 1})})
+    assert not score.gate_result(bad_div, overall, ok)["met"]
+    unresolved = [{"id": "named/B8", "regression": "unresolved"}]
+    gate = score.gate_result(full, overall, unresolved)
+    assert not gate["met"] and gate["named_unresolved"] == ["named/B8"] and not gate["named_failures"]
+    assert not score.gate_result(full, overall, [])["met"]
+
+
+def test_a_skipped_convention_study_is_counted_not_crashed():
+    rec = _rec()
+    rec["convention"] = {"skipped": "expiry after 2027-12-31"}
+    out = score.classify(rec)
+    assert out["convention_skipped"] and "convention_shift_tol" not in out
+    rec["convention"] = {"value": {"ref": 10.001, "u": 1e-5, "status": "reliable"}}
+    out = score.classify(rec)
+    assert math.isclose(out["convention_shift_tol"], 0.001 / reference.tolerance(10.0, 100.0))
+
+
 def test_clopper_pearson_zero_failures():
     lo, hi, one = score.clopper_pearson(0, 1000)
     assert lo == 0.0
@@ -162,6 +226,9 @@ def test_business_closes_skip_weekends_and_holidays():
         if day.weekday() >= 5 or day == date(2026, 11, 26):
             assert d not in got
     assert (date(2026, 11, 27) - start).days in got  # the day after Thanksgiving is an (early-close) session
+    past = (run.calendar_last_day() - start).days + 1
+    with pytest.raises(ValueError, match="holiday tables end"):
+        run.business_closes(past)        # past the tables a holiday would read as a session (Codex OB-05)
 
 
 # ── engine-dependent ─────────────────────────────────────────────────────────
@@ -191,10 +258,28 @@ def test_named_regressions_route_as_documented():
             assert got["status"] == "served" and got["delta"] is not None, c.id
 
 
+@needs_engine
+def test_resuming_a_run_with_other_inputs_is_refused(tmp_path):
+    common = ["--engine-root", ENGINE, "--out", str(tmp_path), "--per-group", "0", "--no-named", "--workers", "1"]
+    assert run.main(common) == 0
+    with pytest.raises(SystemExit, match="seed"):
+        run.main(common + ["--seed", "1"])
+
+
 @pytest.mark.skipif(crosscheck.ql is None, reason="QuantLib is test-only and not installed")
 def test_reference_agrees_with_quantlib_on_an_american_put():
     c = _case(strike=110.0, rho=0.06, q=0.0, days=120, sigma=0.25)
     r = reference.reference(c)
     q = crosscheck.quantlib(c)
     assert q["method"] == "qdfp-high-precision"
-    assert abs(q["value"] - r["value"]["ref"]) <= r["value"]["u"] + 1e-4 * c.spot
+    assert abs(q["value"] - r["value"]["ref"]) <= r["value"]["u"]   # no slack beyond the stated uncertainty
+
+
+@pytest.mark.skipif(crosscheck.ql is None, reason="QuantLib is test-only and not installed")
+def test_deep_itm_put_uncertainty_covers_quantlib():
+    """B9a: the space study converges faster than second order, which the plain GCI read as near-zero
+    uncertainty (Codex OB-02); the high-order rule keeps QuantLib inside the stated band."""
+    b9a = {c.id.split("/")[1]: c for c in cases.NAMED}["B9a"]
+    r = reference.reference(b9a)
+    assert r["value"]["status"] == "reliable"
+    assert abs(crosscheck.quantlib(b9a)["value"] - r["value"]["ref"]) <= r["value"]["u"]

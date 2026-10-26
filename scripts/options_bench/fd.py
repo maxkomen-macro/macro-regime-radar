@@ -147,8 +147,14 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
 
     v = smoothed_payoff(is_call, x, dx, strike)  # no dividend is owed at expiry (each cum close is before it)
     active = np.zeros(n, dtype=bool)
+    # Rannacher steps: the first two from expiry, and the two after each cum close (the exercise value jumps
+    # there by the dividend, which kinks V the way the payoff does; Crank-Nicolson alone would ring)
+    restart = {n_steps, n_steps - 1}
+    if american:
+        for d, _ in divs:
+            restart |= {d * per_day, d * per_day - 1}
     for k in range(n_steps, 0, -1):
-        if n_steps - k < 2:  # Rannacher: two implicit half-steps
+        if k in restart:  # two implicit half-steps
             half = k - 0.5
             g = exercise_value(half) if (american and allowed is None) else None
             v, active = step(v, 1.0, dt / 2.0, g, active)

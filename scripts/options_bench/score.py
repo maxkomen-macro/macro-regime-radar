@@ -62,6 +62,7 @@ def classify(rec: dict) -> dict:
     out["ref_delta_status"] = rd["status"]
     tol = rv["tol"]
     out["tol"] = tol
+    out["ref_u_tol"] = rv["u"] / tol if rv["u"] else None
     if eng["status"] != "served":
         out["price"] = "refused"
         out["delta"] = "refused"
@@ -128,7 +129,9 @@ def classify(rec: dict) -> dict:
             out["divsens_move_tol"] = abs(d_ref) / tol
             out["divsens"] = judge(err, up["ref"]["u"] + dn["ref"]["u"], tol)
     cv = rec.get("convention")
-    if cv:
+    if cv and "skipped" in cv:
+        out["convention_skipped"] = True
+    elif cv:
         out["convention_shift_tol"] = (cv["value"]["ref"] - rv["ref"]) / tol
         out["convention_reliable"] = cv["value"]["status"] == "reliable" and rv["status"] == "reliable"
     return out
@@ -168,6 +171,10 @@ def _summary(rows: list[dict]) -> dict:
     s["lattice_check"] = {"compared": len(lat), "disputed": sum(r["lattice_disputed"] for r in lat),
                           "diff_tol_max": max((r["lattice_diff_tol"] for r in lat), default=None)}
     qlr = [r["quantlib_diff_tol"] for r in rows if "quantlib_diff_tol" in r]
+    qdf = [r for r in rows if r.get("quantlib_method") == "qdfp-high-precision" and r.get("ref_value_status") == "reliable"]
+    cov = [r["quantlib_diff_tol"] / r["ref_u_tol"] for r in qdf if r.get("ref_u_tol")]
+    s["quantlib_coverage"] = {"compared": len(cov), "outside_u": sum(x > 1 for x in cov),
+                              "ratio_p50": _q(cov, 0.5), "ratio_p99": _q(cov, 0.99), "ratio_max": max(cov) if cov else None}
     s["quantlib_check"] = {"compared": len(qlr), "over_half_tol": sum(x > 0.5 for x in qlr),
                            "diff_tol_p50": _q(qlr, 0.5), "diff_tol_max": max(qlr) if qlr else None}
     ivs = [r for r in rows if "iv_status" in r]
@@ -188,8 +195,66 @@ def _summary(rows: list[dict]) -> dict:
     sh = [abs(r["convention_shift_tol"]) for r in cs]
     s["convention"] = {"compared": len(cs), "abs_shift_tol_p50": _q(sh, 0.5), "abs_shift_tol_p95": _q(sh, 0.95),
                        "abs_shift_tol_max": max(sh) if sh else None, "over_one_tol": sum(x > 1 for x in sh),
-                       "unresolved": sum(1 for r in rows if "convention_shift_tol" in r and not r["convention_reliable"])}
+                       "unresolved": sum(1 for r in rows if "convention_shift_tol" in r and not r["convention_reliable"]),
+                       "skipped": sum(1 for r in rows if r.get("convention_skipped"))}
     return s
+
+
+# Manifest fields every shard of one run must share; anything else (shard, timestamps, resumes) may differ.
+RUN_KEYS = ("bench_files_sha256", "engine", "seed", "per_group", "named", "options", "reference", "domain", "versions")
+
+
+def check_compatible(manifests: list[dict]) -> None:
+    if not manifests:
+        raise ValueError("no manifest found: these results cannot be traced to a run")
+    first = manifests[0]
+    for m in manifests[1:]:
+        bad = [k for k in RUN_KEYS if m.get(k) != first.get(k)]
+        if bad:
+            raise ValueError(f"shards from different runs ({', '.join(bad)} differ); score them separately")
+    shards = sorted(m["shard"] for m in manifests)
+    n = int(shards[0].split("/")[1])
+    if len(set(shards)) != len(shards) or any(int(x.split("/")[1]) != n for x in shards):
+        raise ValueError(f"inconsistent shard set {shards}")
+
+
+def named_verdict(exp: str, got: str | None, price: str | None, delta: str | None) -> str:
+    """pass only when the route is the documented one and every numerical check that applies passed; a served
+    case whose reference is unresolved is "unresolved", never a pass (Codex OB-03)."""
+    if got != exp or price == "fail" or delta == "fail":
+        return "FAIL"
+    if got == "served":
+        return "pass" if price == "pass" and delta == "pass" else "unresolved"
+    if got == "served:no-delta":
+        return "pass" if price == "pass" and delta == "withheld" else "unresolved"
+    return "pass"
+
+
+DIVSENS_TARGET = 300   # scored dividend-scenario cases across the in-domain groups [Proposed]
+
+
+def gate_result(groups: dict, overall: dict | None, named: list[dict]) -> dict:
+    """Every required group appears, absent ones as unmet (Codex OB-06); the dividend scenario and the named
+    regressions are gates too (OB-07)."""
+    per_group = {g: bool(g in groups and groups[g]["accepted_scored"] >= PER_GROUP_TARGET) for g in cases.IN_DOMAIN_GROUPS}
+    in_dom = [groups[g] for g in cases.IN_DOMAIN_GROUPS if g in groups]
+    price_fail = sum(s["price_failures"] for s in in_dom)
+    div = Counter()
+    for s in in_dom:
+        div.update(s["divsens"]["outcome"])
+    gate = {"per_group_target": PER_GROUP_TARGET, "overall_target": OVERALL_TARGET,
+            "per_group_met": per_group,
+            "overall_met": bool(overall and overall["accepted_scored"] >= OVERALL_TARGET),
+            "zero_failures": price_fail == 0 and bool(in_dom),
+            "divsens": {"target_scored": DIVSENS_TARGET, "outcome": dict(div),
+                        "met": div.get("fail", 0) == 0 and div.get("pass", 0) + div.get("fail", 0) >= DIVSENS_TARGET},
+            "named_all_pass": bool(named) and all(n["regression"] == "pass" for n in named),
+            "named_failures": [n["id"] for n in named if n["regression"] == "FAIL"],
+            "named_unresolved": [n["id"] for n in named if n["regression"] == "unresolved"]}
+    # An unresolved named regression is not certified, so it holds the gate open as a failure would.
+    gate["met"] = (all(per_group.values()) and gate["overall_met"] and gate["zero_failures"]
+                   and gate["divsens"]["met"] and gate["named_all_pass"])
+    return gate
 
 
 def score(dirs: list[Path]) -> dict:
@@ -198,11 +263,14 @@ def score(dirs: list[Path]) -> dict:
         for p in sorted(d.glob("results-*.jsonl")):
             recs += [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
         manifests += [json.loads(p.read_text()) for p in sorted(d.glob("manifest-*.json"))]
-    seen, uniq = set(), []
+    check_compatible(manifests)
+    seen: dict = {}
     for r in recs:
-        if r["case"]["id"] not in seen:
-            seen.add(r["case"]["id"])
-            uniq.append(r)
+        cid = r["case"]["id"]
+        if cid in seen:  # never pick one of two results silently (Codex OB-01)
+            raise ValueError(f"case {cid} appears twice in the results; score one run's shards at a time")
+        seen[cid] = r
+    uniq = list(seen.values())
     rows = [classify(r) for r in uniq]
     by = defaultdict(list)
     for r in rows:
@@ -222,7 +290,7 @@ def score(dirs: list[Path]) -> dict:
         else:
             got_short = got
         named.append({"id": r["id"], "note": rec["case"]["note"], "expect": exp, "got": got_short,
-                      "regression": "pass" if got_short == exp and r.get("price") != "fail" and r.get("delta") != "fail" else "FAIL",
+                      "regression": named_verdict(exp, got_short, r.get("price"), r.get("delta")),
                       "engine_value": eng.get("value"), "engine_delta": eng.get("delta"),
                       "reason": eng.get("reason"), "ref_value": rec["ref"]["value"]["ref"],
                       "ref_value_u": rec["ref"]["value"]["u"], "ref_value_status": rec["ref"]["value"]["status"],
@@ -238,10 +306,7 @@ def score(dirs: list[Path]) -> dict:
            "european_delta_within_u": sum(r["control_eu_delta_err_over_u"] <= 1 for r in controls),
            "exempt_american_cases": sum("exempt_american_err_over_u" in r for r in rows),
            "exempt_american_within_u": sum(r.get("exempt_american_err_over_u", 2) <= 1 for r in rows)}
-    gate = {"per_group_target": PER_GROUP_TARGET, "overall_target": OVERALL_TARGET,
-            "per_group_met": {g: groups[g]["accepted_scored"] >= PER_GROUP_TARGET for g in cases.IN_DOMAIN_GROUPS if g in groups},
-            "overall_met": bool(overall and overall["accepted_scored"] >= OVERALL_TARGET),
-            "zero_failures": bool(overall and overall["price_failures"] == 0)}
+    gate = gate_result(groups, overall, named)
     return {"manifests": manifests, "groups": groups, "overall_in_domain": overall, "named": named,
             "controls": ctl, "gate": gate, "errors": [r for r in rows if r["price"] == "error"]}
 
@@ -293,6 +358,9 @@ def markdown(sc: dict) -> str:
           f"- European control (exercise off, against Black-76): {c['european_cases']} cases, {c['european_reliable']} reliable, "
           f"{c['european_within_u']} with the error inside the stated uncertainty (worst error {_f(c['european_err_over_u_max'], 2)} u, {_f(c['european_err_tol_max'], 4)} tol); "
           f"delta inside its uncertainty on {c['european_delta_within_u']}.",
+          "- American references against QuantLib's high-precision QdFp engine (no dividends; an independent third method, its own error not estimated): "
+          + "; ".join(f"{g} {s['quantlib_coverage']['compared']} compared, {s['quantlib_coverage']['outside_u']} outside the stated uncertainty (|QL − R|/u p99 {_f(s['quantlib_coverage']['ratio_p99'], 2)}, max {_f(s['quantlib_coverage']['ratio_max'], 2)})"
+                      for g, s in sc["groups"].items() if s["quantlib_coverage"]["compared"]),
           f"- Exempt group, American reference against Black-76: {c['exempt_american_within_u']} of {c['exempt_american_cases']} inside the stated uncertainty.",
           ""]
     L += ["## Cross-checks (diagnostics, not references)", ""]
@@ -319,12 +387,16 @@ def markdown(sc: dict) -> str:
           "Continuous exercise (the default) against exercise only at NYSE closes from Monday 2026-10-26 and at expiry (a Bermudan approximation), same model and inputs. Shift = Bermudan − continuous, in price tolerances.", ""]
     for g, s in sc["groups"].items():
         cv = s["convention"]
-        if cv["compared"] or cv["unresolved"]:
-            L.append(f"- {g}: {cv['compared']} compared ({cv['unresolved']} unresolved), |shift| p50 {_f(cv['abs_shift_tol_p50'], 3)}, p95 {_f(cv['abs_shift_tol_p95'], 3)}, max {_f(cv['abs_shift_tol_max'], 3)} tol; {cv['over_one_tol']} above 1 tol")
+        if cv["compared"] or cv["unresolved"] or cv["skipped"]:
+            L.append(f"- {g}: {cv['compared']} compared ({cv['unresolved']} unresolved; {cv['skipped']} skipped, expiring past the holiday tables), |shift| p50 {_f(cv['abs_shift_tol_p50'], 3)}, p95 {_f(cv['abs_shift_tol_p95'], 3)}, max {_f(cv['abs_shift_tol_max'], 3)} tol; {cv['over_one_tol']} above 1 tol")
     gt = sc["gate"]
     L += ["", "## Statistical gate (decision 10)", "",
           f"- At least {gt['per_group_target']} accepted, scored contexts per in-domain group: " + ", ".join(f"{g} {'met' if v else 'not met'}" for g, v in gt["per_group_met"].items()),
           f"- At least {gt['overall_target']} overall: {'met' if gt['overall_met'] else 'not met'}; zero observed price failures: {'yes' if gt['zero_failures'] else 'no'}",
+          f"- Dividend scenario: {gt['divsens']['outcome']}; at least {gt['divsens']['target_scored']} scored with zero failures: {'met' if gt['divsens']['met'] else 'not met'}",
+          f"- Named regressions all pass: {'yes' if gt['named_all_pass'] else 'no'}" + (f" (failures: {', '.join(gt['named_failures'])})" if gt["named_failures"] else "")
+          + (f" (unresolved: {', '.join(gt['named_unresolved'])})" if gt["named_unresolved"] else ""),
+          f"- **Gate {'met' if gt['met'] else 'not met'}** (an unresolved named regression holds the gate open)",
           "- Clopper-Pearson limits assume independent draws from each group's sampling distribution; they are not a claim about real chains or whole requests.",
           ""]
     if sc["errors"]:
@@ -339,6 +411,7 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     sc = score([Path(d) for d in a.dirs])
     out = Path(a.out or a.dirs[0])
+    out.mkdir(parents=True, exist_ok=True)
     (out / "scorecard.json").write_text(json.dumps(sc, indent=2, default=str))
     (out / "scorecard.md").write_text(markdown(sc))
     print((out / "scorecard.md").read_text())

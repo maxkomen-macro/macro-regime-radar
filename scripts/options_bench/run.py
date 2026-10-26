@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 import scipy
 
-from . import cases, crosscheck, engine, reference
+from . import cases, crosscheck, engine, reference, score
 
 BENCH_DIR = Path(__file__).resolve().parent
 REPO = BENCH_DIR.parent.parent
@@ -37,9 +37,16 @@ DIV_BUMP = 0.10                        # the dividend-sensitivity scenario: ever
 CONVENTION_START = date(2026, 10, 26)  # a Monday session: day 0 of every convention-study case
 
 
+def calendar_last_day() -> date:
+    return date(max(_session().HOLIDAYS), 12, 31)
+
+
 def business_closes(days: int, start: date = CONVENTION_START) -> list[int]:
-    """Day indices 0..days-1 whose date is an NYSE session (src/market_data/session.py tables; a year the
-    tables do not list counts every weekday as a session, which the manifest records)."""
+    """Day indices 0..days-1 whose date is an NYSE session, from src/market_data/session.py's holiday tables.
+    Refuses a horizon past the tables' last year: there every weekday would count as a session, holidays
+    included (Codex OB-05)."""
+    if start + timedelta(days=days) > calendar_last_day():
+        raise ValueError(f"the NYSE holiday tables end {calendar_last_day()}: no business-day schedule past it")
     return [d for d in range(days) if _session().is_trading_day(start + timedelta(days=d))]
 
 
@@ -89,7 +96,9 @@ def work(job: tuple) -> dict:
                 cb = dataclasses.replace(c, divs=tuple((d, a * f) for d, a in c.divs))
                 rb = reference.reference(cb)
                 rec["divsens"][side] = {"ref": _pack(rb["value"]), "engine": engine.run(opts["engine_root"], cb)}
-        if opts["convention"]:
+        if opts["convention"] and CONVENTION_START + timedelta(days=c.days) > calendar_last_day():
+            rec["convention"] = {"skipped": f"expiry after {calendar_last_day()}, where the holiday tables end"}
+        elif opts["convention"]:
             berm = reference.reference(c, exercise_days=business_closes(c.days))
             rec["convention"] = {"schedule": "NYSE closes from 2026-10-26, and expiry",
                                  "value": _pack(berm["value"]), "delta": _pack(berm["delta"])}
@@ -129,7 +138,7 @@ def manifest(args, shard: str, n_cases: int) -> dict:
                                       "GCI safety factor 1.25 on monotone three-level studies, order capped at 2",
                                       "uncertainty is an estimate from observed refinement, not a proved bound"]},
         "domain": cases.DOMAIN,
-        "convention_calendar": "src/market_data/session.py holiday tables; years beyond them count weekdays",
+        "convention_calendar": "src/market_data/session.py holiday tables; cases expiring after their last year skip the study",
         "versions": {"python": sys.version.split()[0], "numpy": np.__version__, "scipy": scipy.__version__,
                      "quantlib": crosscheck.quantlib_version()},
         "platform": {"machine": platform.machine(), "system": platform.platform(), "cpus": os.cpu_count()},
@@ -182,10 +191,14 @@ def main(argv=None) -> int:
     man = manifest(args, args.shard, len(mine))
     man_path = out / f"manifest-{tag}.json"
     prior = json.loads(man_path.read_text()) if man_path.exists() else None
-    if prior and (prior["bench_files_sha256"] != man["bench_files_sha256"] or prior["engine"]["files_sha256"] != man["engine"]["files_sha256"]
-                  or prior["seed"] != man["seed"] or prior["per_group"] != man["per_group"]):
-        raise SystemExit("this run directory was started with other code or inputs: use a new --out")
-    man["resumed_from"] = prior["started_utc"] if prior else None
+    if prior:
+        # every field that can change a result must match (Codex OB-04); the first session's record is kept
+        bad = [k for k in score.RUN_KEYS + ("shard", "cases_in_shard") if prior.get(k) != man.get(k)]
+        if bad:
+            raise SystemExit(f"this run directory was started with other code or inputs ({', '.join(bad)}): use a new --out")
+        prior.setdefault("sessions", []).append({"resumed_utc": man["started_utc"], "command": man["command"],
+                                                 "already_done": len(done)})
+        man = prior
     man_path.write_text(json.dumps(man, indent=2))
     todo = []
     for k, c in enumerate(mine):
@@ -209,7 +222,7 @@ def main(argv=None) -> int:
             if k % 25 == 0 or k == len(todo) - 1:
                 print(f"{k + 1}/{len(todo)} {time.time() - t0:.0f}s", flush=True)
     man["finished_utc"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    man["wall_seconds_this_session"] = round(time.time() - t0, 1)
+    man.setdefault("wall_seconds_by_session", []).append(round(time.time() - t0, 1))
     man_path.write_text(json.dumps(man, indent=2))
     return 0
 

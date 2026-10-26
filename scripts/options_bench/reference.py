@@ -35,6 +35,11 @@ DELTA_TOL = 2.5e-3                 # the stated delta accuracy
 REF_FRACTION = 0.1                 # a reference must be at least ten times finer than what it judges
 GCI_FS3, GCI_FS_WIDE = 1.25, 3.0
 ORDER_CAP, ORDER_MIN = 2.0, 0.5
+ORDER_MAX = 3.0   # an observed order above this is read as pre-asymptotic, not as fast convergence
+# With early exercise the time error is at best first order in practice (the free boundary, and each cum close
+# where the exercise value jumps: B8 converges at about 0.7 from 12 to 96 steps a day, while its three-level
+# study at 3, 6, 12 read 1.4), so the time correction never assumes more than order 1 for an American value.
+ORDER_CAP_TIME_AMERICAN = 1.0
 M_MIN, M_MAX = 1000, 6000
 STEPS_MID = 1500                   # steps over the life at the middle time level, at least
 
@@ -43,7 +48,7 @@ def tolerance(value: float, spot: float) -> float:
     return max(TOL_SPOT * spot, TOL_VALUE * abs(value))
 
 
-def gci(coarse: float, mid: float, fine: float, floor: float) -> dict:
+def gci(coarse: float, mid: float, fine: float, floor: float, cap: float = ORDER_CAP) -> dict:
     """Three levels refined by 2: the correction to `fine`, its uncertainty, the observed order and a kind."""
     e21, e32 = fine - mid, mid - coarse
     if abs(e21) <= floor and abs(e32) <= floor:
@@ -56,13 +61,17 @@ def gci(coarse: float, mid: float, fine: float, floor: float) -> dict:
     if ratio <= 1.0:
         return {"corr": 0.0, "u": GCI_FS_WIDE * max(abs(e21), abs(e32)), "order": None, "kind": "not-converging"}
     order = math.log(ratio) / math.log(2.0)
-    used = min(order, ORDER_CAP)
+    if order > ORDER_MAX:
+        # far above the scheme's order (2): the levels are not in the asymptotic range (a node crossing a kink,
+        # say), so neither the order nor the correction is trusted (B9a's space study read 5.1, Codex OB-02)
+        return {"corr": 0.0, "u": GCI_FS_WIDE * abs(e21), "order": order, "kind": "high-order"}
+    used = min(order, cap)
     corr = e21 / (2.0 ** used - 1.0)
     kind = "low-order" if order < ORDER_MIN else "monotone"
     return {"corr": corr, "u": GCI_FS3 * abs(corr), "order": order, "kind": kind}
 
 
-BAD_KINDS = {"not-converging", "low-order"}
+BAD_KINDS = {"not-converging", "low-order", "high-order"}
 NEGLIGIBLE = 0.1   # of the reference limit: a flagged study whose own estimate is below this does not count
 
 
@@ -85,11 +94,13 @@ WIDTH_FACTOR = 1.5
 PENALTY_LOW = 1e7
 
 
-def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels: list[int], w: float) -> dict:
+def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels: list[int], w: float,
+            american: bool = True) -> dict:
     out = {}
     pt, ms = t_levels[-3:], s_levels[-3:]
     for k, name, floor in ((0, "value", 1e-12 * c.spot), (1, "delta", 1e-12)):
-        t = gci(*(runs[(m0, x, w, fd.PENALTY)][k] for x in pt), floor)
+        t = gci(*(runs[(m0, x, w, fd.PENALTY)][k] for x in pt), floor,
+                cap=ORDER_CAP_TIME_AMERICAN if american else ORDER_CAP)
         sp = gci(*(runs[(x, p0, w, fd.PENALTY)][k] for x in ms), floor)
         base = runs[(m0, pt[-1], w, fd.PENALTY)][k]
         # the space correction is for the base grid m0: the change from m0 to the finest grid, plus the GCI
@@ -143,7 +154,7 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
         run(x, p0)
     run(3 * m0 // 4, p0, WIDTH_FACTOR * w)
     run(m0 // 4, p0, w, PENALTY_LOW)
-    out = _assess(c, runs, m0, p0, t_levels, s_levels, w)
+    out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
     steps = {"time": 0, "space": 0}
     while escalate:
         worst = max(("value", "delta"), key=lambda n: out[n]["u"] / out[n]["limit"])
@@ -165,7 +176,7 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
             s_levels.append(nxt)
             run(nxt, p0)
         steps[d] += 1
-        out = _assess(c, runs, m0, p0, t_levels, s_levels, w)
+        out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
     if solver_misses[0]:  # a penalty step stopped at its iteration cap: no quantity of this case is trusted
         for name in ("value", "delta"):
             r = out[name]
