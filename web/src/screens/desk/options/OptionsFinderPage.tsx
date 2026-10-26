@@ -22,6 +22,7 @@ import { DESK_ACCENTS } from "../kit/palette";
 import { useWidth } from "../kit/LineChart";
 import { MINUS, NOT_SERVED, dayLong, dayShort, grouped, isFiniteNumber, num, pctPlain, priceText, signed } from "../kit/format";
 import { OPTIONS_FINDER_LISTED } from "./flag";
+import { carriedNote } from "./entry";
 import { FRAMING, LENSES, MARKET_IMPLIED, NOT_DEPLOYED, OCC_URL, PRICER_WORDS, SCREEN_WORDS, TIMING_WORDS, kindWord, viewWord } from "./finder-copy";
 import "./options.css";
 
@@ -756,6 +757,11 @@ export default function OptionsFinderPage({ page }: { page: DeskPage }) {
       <PageTitle page={page} badge={badge} />
       <p className="of-framing">{FRAMING}</p>
       <ThesisForm search={search} onRun={run} />
+      {carriedNote(search) ? (
+        <p className="of-note" data-testid="of-carried">
+          {carriedNote(search)}
+        </p>
+      ) : null}
       <div role="status" aria-live="polite" className="of-status" data-testid="of-status">
         {state === "idle" ? <p className="dk-await">Name a stock or ETF, the price you expect, the date and the budget, then price the chain.</p> : null}
         {state === "loading" ? <p className="dk-await">Pricing every contract in the window against the last close… a full scan can take up to a minute.</p> : null}

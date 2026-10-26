@@ -4,6 +4,8 @@
  * per-tab placeholders. Section ids double as scroll anchors (#id).
  */
 
+import { OPTIONS_FINDER_LISTED, OPTIONS_FINDER_SLUG } from "../desk/options/flag";
+
 export interface TabDef {
   slug: string;
   label: string;
@@ -104,6 +106,13 @@ export interface PaletteEntry {
   sectionId?: string;
   label: string;
   hint: string;
+  /** A destination outside /app (the Desk's Options Finder): the palette goes here instead. */
+  path?: string;
+}
+
+/** The Options Finder's entry, once it is listed (screens/desk/options/flag.ts). */
+export function finderPaletteEntries(listed: boolean): PaletteEntry[] {
+  return listed ? [{ kind: "tab", tabSlug: "desk", sectionId: OPTIONS_FINDER_SLUG, label: "Options Finder", hint: "Desk · Trade", path: `/desk/${OPTIONS_FINDER_SLUG}` }] : [];
 }
 
 /** A palette entry that runs a shell command instead of navigating
@@ -136,4 +145,5 @@ export const PALETTE_ENTRIES: PaletteEntry[] = [
     })),
   ),
   { kind: "tab", tabSlug: METHODOLOGY_SLUG, label: "Methodology", hint: "Reference" },
+  ...finderPaletteEntries(OPTIONS_FINDER_LISTED),
 ];

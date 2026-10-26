@@ -29,6 +29,7 @@
  */
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { LensFinderLink } from "../desk/options/lens-link";
 import { Card, Segmented, StatTile } from "../../components";
 import {
   useFreshness,
@@ -706,6 +707,7 @@ export function OptionsLens({ symbol }: { symbol: string }) {
           </>
         )}
       </Disclosure>
+      <LensFinderLink symbol={symbol} style={{ display: "inline-block", marginTop: 6, fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--link)" }} />
     </div>
   );
 }

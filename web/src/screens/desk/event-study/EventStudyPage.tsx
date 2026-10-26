@@ -28,6 +28,7 @@ import { WINDOWS, apiParams, askFromSearch, presetHorizon, loadSaved, questionFr
 import { saveServed } from "../kit/download";
 import { DroppedNote, Unserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
+import { StudyFinderLink } from "../options/entry";
 import "./study.css";
 
 /** The provenance line under the grid (§4): "Engine as of <as_of> · <method> <draws> · entry <rule> · cooldown <n | none> ·
@@ -271,6 +272,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         </p>
       ) : null}
       {study ? <p className="es-provenance">{provenanceLine(study, label)}</p> : null}
+      {study ? <StudyFinderLink study={study} /> : null}
       {study && adv ? <EngineDetail id={advId} study={study} ask={ask} /> : null}
     </div>
   );

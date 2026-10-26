@@ -91,7 +91,7 @@ export default function CommandPalette({
     // it focuses wins over the restore.
     onClose();
     if (e.kind === "action") e.run();
-    else navigate(`/app/${e.tabSlug}${e.sectionId ? `#${e.sectionId}` : ""}`);
+    else navigate(e.path ?? `/app/${e.tabSlug}${e.sectionId ? `#${e.sectionId}` : ""}`);
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
