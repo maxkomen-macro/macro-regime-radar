@@ -63,6 +63,7 @@ def gci(coarse: float, mid: float, fine: float, floor: float) -> dict:
 
 
 BAD_KINDS = {"not-converging", "low-order"}
+NEGLIGIBLE = 0.1   # of the reference limit: a flagged study whose own estimate is below this does not count
 
 
 def grid(c: Case) -> tuple[int, int, float]:
@@ -102,7 +103,10 @@ def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels
     v["tol"] = tolerance(v["ref"], c.spot)
     for name, limit in (("value", REF_FRACTION * v["tol"]), ("delta", REF_FRACTION * DELTA_TOL)):
         r = out[name]
-        why = [f"{name} {r[d]['kind']} in {d}" for d in ("time", "space") if r[d]["kind"] in BAD_KINDS]
+        # a study that is not in its asymptotic range leaves the quantity unresolved, unless even its widened
+        # estimate is negligible (rounding-level changes have no meaningful order)
+        why = [f"{name} {r[d]['kind']} in {d}" for d in ("time", "space")
+               if r[d]["kind"] in BAD_KINDS and r[d]["u"] > NEGLIGIBLE * limit]
         if r["u"] > limit:
             why.append(f"{name} uncertainty above {REF_FRACTION:g} of its tolerance")
         r["limit"] = limit
