@@ -710,3 +710,28 @@ def test_the_lens_chain_and_expiry_list_read_the_same_before_and_after_a_finder_
 def test_the_live_route_count_is_fifteen_and_the_web_mirror_agrees():
     assert env.LIVE_ROUTES == 15 and env.ENVELOPED_ROUTES[env.LIVE_ROUTES - 1] == "/options/finder"
     assert "/options/finder" in dc.ROUTES and env.route_of("/options/finder") == "/options/finder"
+
+
+# ── share classes (Codex S-1) ───────────────────────────────────────────────
+
+def test_the_occ_root_keeps_a_share_class():
+    assert desk_options.occ_root("BRK.B") == "BRKB" and desk_options.occ_root("AAPL") == "AAPL"
+    assert of.standard_symbol("BRKB261218C00500000", desk_options.occ_root("BRK.B"), date(2026, 12, 18), "call", 500.0)
+
+
+def test_a_share_class_listing_keeps_its_standard_contracts_and_asks_finnhub_nothing(world):
+    """BRK.B: EODHD's underlying is BRK-B and the OCC root BRKB; dropping the class would screen every
+    standard contract out as nonstandard, and Finnhub's spelling of the class is not verified."""
+    brk = [fk.provider_row({**r, "contract": "BRKB" + r["contract"][len("SYN"):]}, root="BRK-B") for r in SYN_ROWS]
+    world.fake.chains["BRK-B"] = brk
+    world.fake.closes["BRK-B"] = closes()
+    world.fake.dividends["BRK-B"] = syn.DIV_ROWS
+    world.serve()
+    syn_d = world.ok(**UP)
+    d = world.ok(**{**UP, "symbol": "BRK.B"})
+    assert d["symbol"] == "BRK.B"
+    assert d["universe"]["dropped"].get("nonstandard", 0) == 0
+    assert d["universe"]["passed"] == syn_d["universe"]["passed"] > 0 and all(d["picks"].values())
+    assert d["coverage"][0] == "Earnings dates are not checked for share-class listings such as BRK.B."
+    assert "Finnhub earnings calendar" not in d["sources"]
+    assert [p for p, q, _ in world.fh.calls if q.get("symbol") not in (None, "SYN")] == []

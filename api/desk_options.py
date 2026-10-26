@@ -383,7 +383,7 @@ def finder(params: list[tuple[str, str]]) -> dict:
     assert session is not None and spot is not None
     latest = date.fromisoformat(market.last_session())
     m_probe = of.Market(session, spot, item["curve"], {}, through, latest, sessions_between(session, latest),
-                        occ_root(inst.canonical))
+                        occ_root(inst.canonical), inst.canonical)
     _run_engine(lambda: of.validate(t, m_probe))
 
     # 2b. the finder-2 inputs
@@ -406,7 +406,7 @@ def finder(params: list[tuple[str, str]]) -> dict:
     coverage["macro_through"] = item.get("macro_through")
     closes = closes_from(session, min(through, max(t.by, last_expiry, event_last)))
     m = of.Market(session, spot, item["curve"], closes, through, latest, sessions_between(session, latest),
-                  occ_root(inst.canonical))
+                  occ_root(inst.canonical), inst.canonical)
 
     if not _lock.acquire(timeout=LOCK_TIMEOUT_S):
         raise env.Refused(503, "busy", "Another options scan is being priced; retry in a moment.")
@@ -446,8 +446,14 @@ def finder(params: list[tuple[str, str]]) -> dict:
 
 
 def occ_root(canonical: str) -> str:
-    """The OCC root for a US listing: the ticker without its suffix, "." and "-" removed (decision 13)."""
-    return canonical.split(".")[0].replace(".", "").replace("-", "")
+    """The OCC root for a US listing (decision 13): the canonical ticker, which carries no exchange suffix, with
+    its share-class separator removed, so BRK.B's standard contracts read BRKB261218C00500000 (Codex S-1)."""
+    return canonical.replace(".", "").replace("-", "")
+
+
+def share_class(canonical: str) -> bool:
+    """A US share-class listing (BRK.B): its spelling on Finnhub's earnings calendar is not verified here."""
+    return "." in canonical
 
 
 def _dividends(symbol: str, through: date) -> dict:
@@ -494,8 +500,11 @@ def _earnings(symbol: str, session: date, item: dict) -> tuple[list[dict], dict,
     from api.providers.errors import MissingToken, ProviderError
     from src.events.earnings import parse_item
 
-    sym = occ_root(symbol)
+    sym = symbol
     notes: list[str] = []
+    if share_class(sym):
+        # No request: an unverified spelling could read as "no earnings date found" (Codex S-1).
+        return [], {"earnings": "not_checked", "earnings_through": None}, None, notes
     try:
         got = ff.earnings(sym, session)
     except ProviderError as exc:

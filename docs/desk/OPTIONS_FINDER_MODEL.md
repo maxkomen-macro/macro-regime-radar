@@ -153,7 +153,8 @@ everything on synthetic chains and comparing).
 
 ## Events
 
-- Earnings (Finnhub's calendar, fetched for the symbol, or stored rows when that fails), macro releases (the
+- Earnings (Finnhub's calendar, fetched for the symbol, or stored rows when that fails; not checked for a
+  share-class listing such as BRK.B, whose spelling there is not verified), macro releases (the
   stored calendar, with release instants), and dividends (at their cum close) are placed against the session,
   the date and each expiry. A release time that is not known is "may be on either side", never guessed.
 - A modelled row with earnings before the date is flagged: the volatility held flat usually fails after a

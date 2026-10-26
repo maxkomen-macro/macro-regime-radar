@@ -433,6 +433,7 @@ class Market:
     latest_session: date
     sessions_behind: int
     occ_root: str
+    symbol: str = ""  # the listing as the page names it (BRK.B); the OCC root when empty
 
 
 def build_curve(rows: Mapping[str, Sequence[tuple[str, float]]], session: date) -> tuple[om.Curve, list[dict], list[str]]:
@@ -977,6 +978,8 @@ def coverage_words(cov: Mapping[str, Any], symbol: str, dividends_ok: bool, foun
             out.append(f"Earnings dates are from Finnhub's calendar through {_day(through)}.")
         else:
             out.append(f"No earnings date found for {symbol} in Finnhub's calendar through {_day(through)}.")
+    elif status == "not_checked":
+        out.append(f"Earnings dates are not checked for share-class listings such as {symbol}.")
     else:
         out.append("Earnings dates could not be read.")
     macro = _date(cov.get("macro_through"))
@@ -1677,7 +1680,7 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         "dividends": [{"ex_date": d.ex_date.isoformat(), "cum_session": d.cum_session.isoformat(), "amount": d.amount,
                        "period": d.period, "label": "projected, not declared" if d.projected else "declared"} for d in sched],
         "events": event_list(evs, session, t.by, m.closes),
-        "coverage": coverage_words(coverage or {}, m.occ_root, div_ok, found_earnings),
+        "coverage": coverage_words(coverage or {}, m.symbol or m.occ_root, div_ok, found_earnings),
         "earnings_moves": earnings_moves(evs, session, max((q.exp for q in survivors), default=t.by), m.closes,
                                          carries, event_expiries),
         "stale": stale,

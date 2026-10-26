@@ -496,6 +496,8 @@ def test_coverage_words_for_every_earnings_status():
     assert w({"earnings": "not_found", "earnings_through": "2027-11-27"}, "SYN", True, False)[0] == \
         "No earnings date found for SYN in Finnhub's calendar through Nov 27, 2027."
     assert w({"earnings": "unavailable"}, "SYN", True, False)[0] == "Earnings dates could not be read."
+    assert w({"earnings": "not_checked"}, "BRK.B", True, False)[0] == \
+        "Earnings dates are not checked for share-class listings such as BRK.B."
     assert "Dividend data unavailable." in w({}, "SYN", False, False)
 
 
