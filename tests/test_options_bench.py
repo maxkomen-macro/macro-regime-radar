@@ -305,6 +305,10 @@ def test_a_diagnostic_crash_keeps_the_price_outcome_and_holds_the_gate():
     assert out["price"] == "fail" and out["error"]
     s = score._summary([out])
     assert s["price_failures"] == 1 and s["errors"] == 1
+    rec["divsens"] = {"up": {"ref": rec["ref"]["value"], "engine": rec["engine"]}}   # crashed between bumps (OB-18)
+    rec["convention"] = {"value": rec["ref"]["value"]}
+    half = score.classify(rec)
+    assert half["price"] == "fail" and half["diagnostics"] == "incomplete" and "divsens" not in half
     bare = {"case": rec["case"], "error": "boom"}   # nothing computed
     assert score.classify(bare)["price"] == "error"
     full = {g: _group(score.PER_GROUP_TARGET) | {"errors": 0} for g in cases.IN_DOMAIN_GROUPS}

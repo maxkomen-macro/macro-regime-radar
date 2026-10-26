@@ -94,6 +94,11 @@ def classify(rec: dict) -> dict:
             err = abs(eng["delta"] - rd["ref"])
             out["delta_err"] = err
             out["delta"] = judge(err, rd["u"], reference.DELTA_TOL)
+    if "error" in rec:
+        # the diagnostics after the crash point may be missing or half written (one dividend bump of two,
+        # say), so none of them is read; the crash holds the gate open (Codex OB-18)
+        out["diagnostics"] = "incomplete"
+        return out
     lat = rec.get("lattice")
     if lat and lat.get("value") is not None:
         diff = abs(lat["value"] - rv["ref"])
