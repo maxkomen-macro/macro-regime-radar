@@ -1,0 +1,291 @@
+/* The Options Finder (Desk → Trade). Colors are the Desk tokens only (desk-palette.test.ts). */
+.of {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.of-framing {
+  margin: -6px 0 0;
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+.of-badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.of-preview {
+  padding: 2px 8px;
+  border: 1px solid var(--dk-amber);
+  border-radius: 999px;
+  color: var(--dk-amber);
+  font-family: var(--dk-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.of-card .dk-card-head {
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+/* ── The form ── */
+.of-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.of-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 14px;
+  align-items: end;
+}
+.of-adv {
+  align-items: start;
+}
+.of-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.of-field label {
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+.of-hint {
+  font-size: 11.5px;
+  color: var(--dk-t4);
+}
+.of-input {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--dk-box);
+  border-radius: 6px;
+  background: var(--dk-card-2);
+  color: var(--dk-t1);
+  font-family: var(--dk-mono);
+  font-size: 13px;
+  min-width: 0;
+}
+.of-actions {
+  display: flex;
+  align-items: end;
+}
+.dk .of-adv-toggle {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* ── States and notes ── */
+.of-status:empty {
+  display: none;
+}
+.of-refusal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--dk-box);
+  border-radius: 8px;
+  background: var(--dk-card);
+  color: var(--dk-t2);
+  font-size: 14px;
+}
+.of-refusal p {
+  margin: 0;
+}
+.of-note {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--dk-t3);
+}
+.of-warn {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--dk-amber);
+}
+.of-summary p {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--dk-t2);
+}
+.of-dropped,
+.of-method {
+  font-size: 13px;
+  color: var(--dk-t3);
+}
+.of-dropped summary,
+.of-method summary {
+  cursor: pointer;
+  color: var(--dk-blue);
+}
+.of-dropped ul,
+.of-method ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.of-method {
+  padding: 0 2px;
+}
+
+/* ── The lens cards ── */
+.of-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 13px;
+}
+.of-pick-name {
+  margin: 0;
+  font-family: var(--dk-mono);
+  font-size: 16px;
+  color: var(--dk-t1);
+}
+.of-pick-sub {
+  margin: 4px 0 10px;
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+.of-kvs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.of-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--dk-t2);
+}
+.of-num {
+  font-family: var(--dk-mono);
+  color: var(--dk-t1);
+  white-space: nowrap;
+}
+.of [data-tone="up"] {
+  color: var(--dk-green);
+}
+.of [data-tone="down"] {
+  color: var(--dk-red);
+}
+.of-flags {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--dk-amber);
+}
+
+/* ── The chart ── */
+.of-chart {
+  width: 100%;
+  overflow: hidden;
+}
+.of-chart svg {
+  display: block;
+}
+.of-mark {
+  stroke: var(--dk-t4);
+  stroke-dasharray: 2 4;
+}
+.of-marks,
+.of-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+.of-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
+
+/* ── Events ── */
+.of-events,
+.of-coverage {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--dk-t2);
+}
+.of-coverage {
+  margin-top: 8px;
+  color: var(--dk-t3);
+}
+.of-ev-date {
+  font-family: var(--dk-mono);
+  color: var(--dk-t1);
+}
+
+/* ── The table ── */
+.of-table-wrap {
+  overflow-x: auto;
+}
+.of-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.of-table th,
+.of-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--dk-row);
+  text-align: left;
+  white-space: nowrap;
+  color: var(--dk-t2);
+}
+.of-table thead th {
+  font-weight: 500;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+.of-table [data-num] {
+  text-align: right;
+  font-family: var(--dk-mono);
+}
+.of-table tbody th {
+  font-family: var(--dk-mono);
+  font-weight: 400;
+  color: var(--dk-t1);
+}
+.of-table td[data-tone="up"] {
+  color: var(--dk-green);
+}
+.of-table td[data-tone="down"] {
+  color: var(--dk-red);
+}
+.of-sort {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.of-flag-dot {
+  color: var(--dk-amber);
+}
+
+.of-footer {
+  padding-top: 10px;
+  border-top: 1px solid var(--dk-border);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dk-t3);
+}

@@ -37,6 +37,7 @@ const PositionMonitorPage = lazy(() => import("./positions/PositionMonitorPage")
 const PipelinePage = lazy(() => import("./pipeline/PipelinePage"));
 const BuildNotesPage = lazy(() => import("./notes/BuildNotesPage"));
 const BasketHedgePage = lazy(() => import("./basket/BasketHedgePage"));
+const OptionsFinderPage = lazy(() => import("./options/OptionsFinderPage"));
 const ClientView = lazy(() => import("./client/ClientView"));
 
 /** §1.1, §11 (S-32): the Client view's footer says only when the answer was staged, never the generation, and is not printed. */
@@ -107,6 +108,7 @@ export default function DeskShell() {
   else if (page.slug === "position-monitor") body = <PositionMonitorPage page={page} />;
   else if (page.slug === "data-pipeline") body = <PipelinePage page={page} />;
   else if (page.slug === "build-notes") body = <BuildNotesPage page={page} />;
+  else if (page.slug === "options-finder") body = <OptionsFinderPage page={page} />;
   else body = <BasketHedgePage page={page} />;
 
   return (
