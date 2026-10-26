@@ -160,6 +160,8 @@ export function whyUnreadable(v: unknown): string | null {
   if (!w || typeof w !== "object" || !filled(w.id) || !filled(w.label)) return "no “wrong if” level";
   const subject = whySubject(r.subject);
   if (subject) return subject;
+  // The Finder prices long contracts only; a short option's loss is not its premium (Codex S-3).
+  if ((r.subject as Subject).kind === "option" && r.direction !== "long") return "an option held short (the Options Finder carries long contracts only)";
   if (w.id === "signal_reverses" && (r.subject as Subject).kind !== "study") return "“the signal reverses” without the study it comes from";
   if (!isTs(r.entry_ts)) return "no entry time";
   if (!isCalendarDate(r.entry_date)) return "no entry date";

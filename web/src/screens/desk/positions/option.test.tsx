@@ -90,6 +90,12 @@ describe("the option subject, pure", () => {
     expect(whyUnreadable(record({ subject: { ...SUBJECT, entry: { ...SUBJECT.entry, cost: -1 } } }))).toBe("an option subject without its entry");
   });
 
+  it("refuses an option held short, saved or imported: its loss is not its premium (Codex S-3)", () => {
+    expect(whyUnreadable(record({ direction: "short" }))).toBe("an option held short (the Options Finder carries long contracts only)");
+    const r = importPositions({ positions: [], unreadable: [] }, JSON.stringify({ kind: "mrr.desk.positions", version: 1, positions: [record({ direction: "short" })] }));
+    expect(r?.added ?? 0).toBe(0);
+  });
+
   it("old exports still import, and an option position round-trips through Export / Import", () => {
     const old = importPositions({ positions: [], unreadable: [] }, JSON.stringify({ kind: "mrr.desk.positions", version: 1, positions: RECORDS }));
     expect(old?.added).toBe(RECORDS.filter((r) => whyUnreadable(r) === null).length);
@@ -147,6 +153,14 @@ describe("Save as position, from the Finder to the monitor", () => {
     fireEvent.click(screen.getByTestId("pm-save"));
     await waitFor(() => expect(stored()).toHaveLength(1));
     expect(stored()[0]).toMatchObject({ instrument: "MSFT", subject: { kind: "instrument", id: "MSFT" } });
+  });
+
+  it("a carried option is held long: Short is not offered while it is attached (Codex S-3)", async () => {
+    await finderToForm();
+    const short = within(screen.getByLabelText("Direction")).getByRole("option", { name: "Short" }) as HTMLOptionElement;
+    expect(short.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "MSFT" } });
+    expect((within(screen.getByLabelText("Direction")).getByRole("option", { name: "Short" }) as HTMLOptionElement).disabled).toBe(false);
   });
 
   it("a saved option leaves the address, so a second save from the form is not the same contract (Codex S-2)", async () => {

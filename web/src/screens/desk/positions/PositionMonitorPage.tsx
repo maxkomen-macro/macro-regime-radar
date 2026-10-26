@@ -427,9 +427,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   // Options Finder step 7: "Save as position" carries one contract (`?option=`), read only when it is whole.
   const optionAsked = optionFromSearch(search.get("option"));
   const optionCarried = optionAsked && !carriedAsk && !basketId ? optionAsked : null;
-  // The contract stays attached only while the instrument still names it (Codex S-2): a row never names one
-  // instrument while its details describe another.
-  const optionAttached = optionCarried && draft.instrument.trim() === optionInstrument(optionCarried) ? optionCarried : null;
+  // The contract stays attached only while the instrument still names it (Codex S-2), held long (S-3): a row
+  // never names one instrument while its details describe another.
+  const optionAttached = optionCarried && draft.instrument.trim() === optionInstrument(optionCarried) && draft.direction === "long" ? optionCarried : null;
   // §14.4: the form opens from "+ New position" (`?new=1`) or when something is carried in.
   const formOpen = search.get("new") === "1" || !!carriedAsk || !!basketId || !!(instrumentAsked && instrumentAsked.trim()) || !!optionAsked;
   const closeForm = () =>
@@ -674,7 +674,10 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
               <div className="dk-select">
                 <select id={`${uid}-dir`} value={draft.direction} onChange={(e) => set("direction", e.target.value === "short" ? "short" : "long")}>
                   <option value="long">Long</option>
-                  <option value="short">Short</option>
+                  {/* A carried option is held long: the Finder prices long contracts only (Codex S-3). */}
+                  <option value="short" disabled={!!optionAttached}>
+                    Short
+                  </option>
                 </select>
               </div>
             </div>
