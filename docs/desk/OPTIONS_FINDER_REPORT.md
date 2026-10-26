@@ -70,7 +70,7 @@ Every change to shared code is additive and inert while the Finder is unlisted:
   which passes when run alone. A second timing test (the profile's two calls in parallel) failed in two of the
   branch's full runs and in one of two extra full runs of the base, by about 10 ms; it passes alone. The five fewer skips are tests
   that need a built `web/dist` and the web dependencies, absent from the base's checkout. The Finder's own tests:
-  route 84, numerical library 140, engine 56, on synthetic chains, plus the contract and route-list tests.
+  route 85, numerical library 140, engine 57, on synthetic chains, plus the contract and route-list tests.
 - Web: vitest 156 files, 1,992 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
   `desk.spec.ts`, `desk-usability.spec.ts` and `desk-mobile.spec.ts` 98 of 98, the Finder added to the palette and
   language audits.
@@ -93,6 +93,8 @@ that copy (the summary sentence, the puts sentence and the loading line).
 Its third round found one: for a report before the open on an expiry day, the route never read that day's expiry,
 so the implied earnings move came from the next pair of expiries; the route now reads it, and the engine keeps it
 only when the release time puts the report before that close.
+Its fourth round found one more: with two reports ahead, the second report's implied move also carried the first
+report's jump; a report now gets no move of its own when another one not yet priced falls before its second expiry.
 
 ## Capacity
 
