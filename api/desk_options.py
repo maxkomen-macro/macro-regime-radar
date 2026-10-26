@@ -553,7 +553,8 @@ def _macro_events(rows: list[dict]) -> list[dict]:
 def _event_rows(symbol: str, session: date, spot: float, earnings: list[dict], last_expiry: date,
                 through: date) -> tuple[list[dict], date, int]:
     """Near-the-money rows of both types at the two nearest listed expiries after each upcoming report (at most
-    two reports; design F3 §2b), for the implied earnings move. (rows, the last expiry read, requests)."""
+    two reports; design F3 §2b), for the implied earnings move, plus an expiry on the report's own day, which the
+    engine counts only when the report is before its close. (rows, the last expiry read, requests)."""
     from api.providers import market
     from api.providers.errors import ProviderError
 
@@ -568,7 +569,12 @@ def _event_rows(symbol: str, session: date, spot: float, earnings: list[dict], l
     all_reports = sorted({date.fromisoformat(e["date"]) for e in earnings})
     pairs = []
     for day in reports[:EVENT_EXPIRIES_MAX]:
-        after = [d for d in listed if d > day][:2]
+        # An expiry on the report's day counts when the report is before that close (a bmo report), which the
+        # engine decides from the release time, so it is read too: the day's expiry and the two after it (Codex S-7).
+        after = [d for d in listed if d >= day]
+        after = after[:3] if after and after[0] == day else after[:2]
+        # another report before after[1] spoils every pair the engine could take; one later spoils only some, and
+        # the engine checks its own pair
         if len(after) < 2 or any(o != day and day < o <= after[1] for o in all_reports):
             continue
         pairs.append(tuple(after))

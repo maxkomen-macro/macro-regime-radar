@@ -735,3 +735,18 @@ def test_a_share_class_listing_keeps_its_standard_contracts_and_asks_finnhub_not
     assert d["coverage"][0] == "Earnings dates are not checked for share-class listings such as BRK.B."
     assert "Finnhub earnings calendar" not in d["sources"]
     assert [p for p, q, _ in world.fh.calls if q.get("symbol") not in (None, "SYN")] == []
+
+
+# ── a report on an expiry's own day (Codex S-7) ─────────────────────────────
+
+@pytest.mark.parametrize("hour, pair", [
+    ("bmo", ["2026-12-18", "2027-01-15"]),   # before that close: the day's own expiry already holds the report
+    ("amc", ["2027-01-15", "2027-02-19"]),   # after it: the next two
+    ("", ["2027-01-15", "2027-02-19"]),      # time unknown: only expiries certainly after it
+])
+def test_a_report_on_an_expiry_day_takes_the_pair_its_release_time_allows(world, hour, pair):
+    world.fh.items = {"SYN": [{"symbol": "SYN", "date": "2026-12-18", "hour": hour, "quarter": 3, "year": 2026}]}
+    d = world.serve().ok(**UP)
+    (move,) = d["earnings_moves"]
+    assert move["date"] == "2026-12-18" and move["expiries"] == pair
+    assert move["reason"] != "Two listed expiries after the report are not in the quotes."
