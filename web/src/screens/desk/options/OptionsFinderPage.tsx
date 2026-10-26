@@ -90,6 +90,27 @@ export function premium(x: number | null | undefined): string {
 }
 const frac = (x: number | null | undefined, digits = 1) => (isFiniteNumber(x) ? pctPlain(x, digits) : NOT_SERVED);
 
+/** The served early-exercise flag (amendment decision 1, design F2 §4), in words; null when it is "no" (Codex S-5). */
+export function earlyExerciseWords(ee: OptionRow["early_exercise"] | null | undefined): string | null {
+  if (!ee || ee.flag === "no") return null;
+  const amount = typeof ee.premium === "number" ? `$${premium(ee.premium)}` : String(ee.premium);
+  if (ee.flag === "yes") return `Early exercise adds ${amount} a share over the European value; the American value is used.`;
+  return `Early exercise adds ${amount} a share over the European value; whether that is above a cent is within the pricer's tolerance.`;
+}
+
+/** Expiries whose projected dividends disagree with the market's forward by more than a cent a share (design F2 §3.6). */
+export function dividendChecks(d: OptionsFinderResponse): string[] {
+  const projected = (exp: string) => (d.dividends ?? []).some((x) => x.label === "projected, not declared" && x.cum_session < exp);
+  return (d.carry ?? [])
+    .filter((c) => isFiniteNumber(c.difference) && Math.abs(c.difference) > 0.01 && isFiniteNumber(c.pv_market) && isFiniteNumber(c.pv_schedule))
+    .map(
+      (c) =>
+        `Dividends before ${dayLong(c.exp)}: the market's forward (put-call parity) implies $${premium(c.pv_market)} a share in present value, the dividend schedule from EODHD ` +
+        `$${premium(c.pv_schedule)}${projected(c.exp) ? ", including projected dividends" : ""}, $${premium(Math.abs(c.difference as number))} ${(c.difference as number) > 0 ? "less" : "more"}. ` +
+        `The market's forward is what was priced.`,
+    );
+}
+
 /** "Dec 18" when the expiry falls in the thesis date's year, else "Mar 19, 2027". */
 function expiryText(exp: string, by: string | undefined): string {
   return by && exp.slice(0, 4) === by.slice(0, 4) ? dayShort(exp) : dayLong(exp);
@@ -256,12 +277,17 @@ function Summary({ d }: { d: OptionsFinderResponse }) {
         {isFiniteNumber(i?.implied_move_pct) ? ` (${signed(i.implied_move_pct, 1)}% from the close)` : ""}, with {money(i?.budget)} to spend.
       </p>
       <p data-testid="of-summary">
-        {u?.passed ?? NOT_SERVED} of {u?.seen ?? NOT_SERVED} {kinds} passed the screens. Priced from the {dayShort(m?.chain_session)} close ({d.symbol} {price(m?.underlying_close)}), costed at the{" "}
+        {u?.passed ?? NOT_SERVED} of {u?.seen ?? NOT_SERVED} {kinds} were priced. Priced from the {dayShort(m?.chain_session)} close ({d.symbol} {price(m?.underlying_close)}), costed at the{" "}
         {i?.fill === "mid" ? "mid" : "ask"}
         {isFiniteNumber(i?.commission) && i.commission > 0 ? `, plus ${money(i.commission)} a contract in commission` : ""}.
       </p>
       <Dropped d={d} />
       {u?.ranked_out_words ? <p className="of-note">{u.ranked_out_words}</p> : null}
+      {dividendChecks(d).map((c) => (
+        <p key={c} className="of-note" data-testid="of-dividend-check">
+          {c}
+        </p>
+      ))}
       {d.scan?.truncated ? (
         <p className="of-note" data-testid="of-truncated">
           The provider's list for this window was longer than the Finder reads; it was read completely through {dayLong(d.scan.complete_through)}, and expiries after that were not compared.
@@ -365,6 +391,11 @@ function PickCard({ lens, row, d, reason }: { lens: (typeof LENSES)[number]; row
               * Modelled on your date: {onDateWords(row)}, the contract's volatility held at {frac(row.model_inputs.sigma)}
               {isFiniteNumber(row.model_inputs.rate_on_date) ? `, rate ${frac(row.model_inputs.rate_on_date, 2)}` : ""}. <Sensitivity label="With volatility 10 points lower" p={row.iv_minus_10} />
               <Sensitivity label="10 points higher" p={row.iv_plus_10} />
+            </p>
+          ) : null}
+          {earlyExerciseWords(row.early_exercise) ? (
+            <p className="of-note" data-testid={`of-early-${lens.id}`}>
+              {earlyExerciseWords(row.early_exercise)}
             </p>
           ) : null}
           {row.flags.length ? (
@@ -584,7 +615,7 @@ function RowsTable({ d }: { d: OptionsFinderResponse }) {
   const by = d.inputs?.by;
   const click = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "exp" ? "asc" : "desc" }));
   return (
-    <Card className="of-card" as="section" title={`Every contract that passed (${rows.length})`} sub="ordered by the payoff if right; any column sorts">
+    <Card className="of-card" as="section" title={`Every priced contract (${rows.length})`} sub="ordered by the payoff if right; any column sorts">
       <div className="of-table-wrap">
         <table className="of-table" data-testid="of-table">
           <thead>
@@ -611,6 +642,12 @@ function RowsTable({ d }: { d: OptionsFinderResponse }) {
                     <span className="of-flag-dot" title={r.flags.join(" ")}>
                       {" "}
                       ⚑<span className="dk-sr"> {r.flags.join(" ")}</span>
+                    </span>
+                  ) : null}
+                  {r.early_exercise?.flag === "yes" ? (
+                    <span className="of-early" data-testid="of-early-row">
+                      {" "}
+                      · early exercise {typeof r.early_exercise.premium === "number" ? `$${premium(r.early_exercise.premium)}` : r.early_exercise.premium}
                     </span>
                   ) : null}
                 </th>
@@ -783,7 +820,7 @@ export default function OptionsFinderPage({ page }: { page: DeskPage }) {
       ) : null}
       <div role="status" aria-live="polite" className="of-status" data-testid="of-status">
         {state === "idle" ? <p className="dk-await">Name a stock or ETF, the price you expect, the date and the budget, then price the chain.</p> : null}
-        {state === "loading" ? <p className="dk-await">Pricing every contract in the window against the last close… a full scan can take up to a minute.</p> : null}
+        {state === "loading" ? <p className="dk-await">Screening and pricing the contracts in the window against the last close… a full scan can take up to a minute.</p> : null}
         {["not-deployed", "not-entitled", "awaiting", "refused", "failed"].includes(state) ? (
           <div className="of-refusal" data-testid="of-refusal">
             <p>{words}</p>

@@ -283,6 +283,10 @@
 .of-flag-dot {
   color: var(--dk-amber);
 }
+.of-early {
+  font-size: 12px;
+  color: var(--dk-t3);
+}
 
 .of-footer {
   padding-top: 10px;

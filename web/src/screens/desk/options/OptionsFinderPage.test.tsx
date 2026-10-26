@@ -13,7 +13,7 @@ import { deskError, stubDesk } from "../../../test/desk";
 import finder from "../../../fixtures/desk/options-finder.json";
 import { DESK_PAGES, deskGroups, deskPageBySlug } from "../desk-sections";
 import { OPTIONS_FINDER_LISTED } from "./flag";
-import { failureOf, money, paramsOf, sortRows } from "./OptionsFinderPage";
+import { dividendChecks, earlyExerciseWords, failureOf, money, paramsOf, sortRows } from "./OptionsFinderPage";
 import { DeskApiError } from "../data/api";
 import type { OptionRow } from "../data/types";
 
@@ -164,7 +164,7 @@ describe("Options Finder: the thesis in the address", () => {
     await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/options-finder?symbol=SYN&direction=down&target=85&by=2027-01-15&budget=2500&scan_months=3"));
     await stateOf("answered");
     expect(calls).toContain("GET /api/desk/options/finder?symbol=SYN&view=down&target=85&by=2027-01-15&budget=2500&scan_months=3");
-    expect(screen.getByTestId("of-summary")).toHaveTextContent(/of \d+ puts passed the screens/);
+    expect(screen.getByTestId("of-summary")).toHaveTextContent(/of \d+ puts were priced/);
   });
 });
 
@@ -173,7 +173,7 @@ describe("Options Finder: the answer", () => {
     renderTab(UP_URL);
     await stateOf("answered");
     const u = UP.universe as { seen: number; passed: number };
-    expect(screen.getByTestId("of-summary")).toHaveTextContent(`${u.passed} of ${u.seen} calls passed the screens. Priced from the Oct 23 close (SYN $100.00), costed at the ask, plus $0.65 a contract in commission.`);
+    expect(screen.getByTestId("of-summary")).toHaveTextContent(`${u.passed} of ${u.seen} calls were priced. Priced from the Oct 23 close (SYN $100.00), costed at the ask, plus $0.65 a contract in commission.`);
     expect(screen.getByTestId("of-thesis")).toHaveTextContent("Your view: SYN rises to $120.00 by Dec 18, 2026 (+20.0% from the close), with $5,000.00 to spend.");
     expect(screen.getByTestId("of-dropped")).toHaveTextContent("42 were too wide");
     const picks = UP.picks as Record<string, string>;
@@ -194,6 +194,50 @@ describe("Options Finder: the answer", () => {
     // The quotes are a session's close: the badge names it, and the page never calls them live.
     expect(screen.getByText("Close · Oct 23")).toBeInTheDocument();
     expect(page().textContent ?? "").not.toMatch(/\blive\b/i);
+  });
+
+  it("counts the priced contracts as priced and names the rest that passed the screens unpriced (Codex S-6)", async () => {
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const u = UP.universe as { passed: number; ranked_out: number; ranked_out_words: string };
+    expect(u.ranked_out).toBeGreaterThan(0);
+    expect(screen.getByTestId("of-summary")).not.toHaveTextContent("passed the screens.");
+    expect(screen.getByText(u.ranked_out_words)).toBeInTheDocument();
+    expect(screen.getByText(`Every priced contract (${u.passed})`)).toBeInTheDocument();
+    expect(screen.queryByText(/Every contract that passed/)).toBeNull();
+  });
+
+  it("shows the served early-exercise flag on the cards and in the table (Codex S-5)", async () => {
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const rows = UP.rows as OptionRow[];
+    const byC = new Map(rows.map((r) => [r.contract, r]));
+    const picks = UP.picks as Record<string, string>;
+    const yes = byC.get(picks.forgiving) as OptionRow;
+    expect(yes.early_exercise.flag).toBe("yes");
+    expect(screen.getByTestId("of-early-forgiving")).toHaveTextContent(earlyExerciseWords(yes.early_exercise) as string);
+    expect(earlyExerciseWords(yes.early_exercise)).toMatch(/^Early exercise adds \$0\.\d+ a share over the European value; the American value is used\.$/);
+    const within_ = byC.get(picks.payoff) as OptionRow;
+    expect(within_.early_exercise.flag).toBe("within the pricer's tolerance of a cent");
+    expect(screen.getByTestId("of-early-payoff")).toHaveTextContent("whether that is above a cent is within the pricer's tolerance");
+    expect(earlyExerciseWords({ premium: 0.001, flag: "no" })).toBeNull();
+    fireEvent.click(screen.getByTestId("of-all"));
+    const yesRows = rows.filter((r) => r.early_exercise.flag === "yes");
+    expect(screen.getAllByTestId("of-early-row")).toHaveLength(yesRows.length);
+    expect(screen.getByTestId("of-table").querySelector(`tr[data-contract="${yes.contract}"]`)).toHaveTextContent("early exercise $");
+  });
+
+  it("shows the dividend cross-check where the schedule and the market's forward differ by more than a cent (Codex S-4)", async () => {
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const carry = UP.carry as { exp: string; difference: number | null }[];
+    const off = carry.filter((c) => c.difference !== null && Math.abs(c.difference) > 0.01);
+    expect(off.length).toBeGreaterThan(0);
+    const notes = screen.getAllByTestId("of-dividend-check");
+    expect(notes).toHaveLength(off.length);
+    expect(notes[0]).toHaveTextContent(/^Dividends before Dec 18, 2026: the market's forward \(put-call parity\) implies \$0\.\d+ a share in present value, the dividend schedule from EODHD \$0\.\d+, including projected dividends, \$0\.\d+ less\. The market's forward is what was priced\.$/);
+    const one = { ...UP, carry: [{ ...carry[0], difference: 0.01 }] } as unknown as Parameters<typeof dividendChecks>[0];
+    expect(dividendChecks(one)).toEqual([]);
   });
 
   it("labels a value on the date that is not intrinsic as modelled, with its volatility held and the ten-point sensitivity", async () => {
@@ -257,7 +301,7 @@ describe("Options Finder: the states", () => {
     stubDesk({ [ROUTE]: () => new Promise(() => {}) });
     renderTab(UP_URL);
     await stateOf("loading");
-    expect(screen.getByTestId("of-status")).toHaveTextContent("Pricing every contract in the window");
+    expect(screen.getByTestId("of-status")).toHaveTextContent("Screening and pricing the contracts in the window");
   });
 
   it("empty: says why nothing passed, with every screen's count", async () => {
