@@ -83,7 +83,13 @@ Every design (F1, the engine, the route) passed an independent Codex review befo
 a Codex review of the whole branch. Its first round found two defects, both fixed with tests that fail on the old
 code: a share-class listing such as BRK.B lost its share class in the contract root, so every standard contract was
 screened out (its earnings dates are now not checked, rather than read under an unverified spelling); and in the
-Position Monitor, changing the instrument after "Save as position" kept the carried contract attached.
+Position Monitor, changing the instrument after "Save as position" kept the carried contract attached. Its second
+round, over the whole branch, found four more, also fixed with tests: the Position Monitor accepted a carried call
+saved as short (whose loss is not its premium; option positions are now long only); the dividend cross-check and
+the early-exercise flag were served but not shown (both now show, as the approved decisions say); and the summary
+counted the priced rows as "passed the screens" while contracts the value bounds kept out of every top 20 had
+passed too (the summary and the table now say priced). Three of the page's own test expectations changed with
+that copy (the summary sentence, the puts sentence and the loading line).
 
 ## Capacity
 
