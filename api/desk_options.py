@@ -414,8 +414,11 @@ def finder(params: list[tuple[str, str]]) -> dict:
     if not _lock.acquire(timeout=LOCK_TIMEOUT_S):
         raise env.Refused(503, "busy", "Another options scan is being priced; retry in a moment.")
     try:
+        # every report obtained from the session on, for the move check and the coverage sentence (design S-10)
+        known = [e for e in earn_rows if date.fromisoformat(e["date"]) >= session]
         ans = _run_engine(lambda: of.run(rows, t, m, other_rows=other_rows, event_rows=event_rows, dividends=dividends,
-                                         events=events, coverage=coverage, truncated=win["truncated"], notes=route_notes))
+                                         events=events, known_earnings=known, coverage=coverage,
+                                         truncated=win["truncated"], notes=route_notes))
     finally:
         _lock.release()
 
@@ -503,6 +506,13 @@ def _earnings(symbol: str, session: date, item: dict) -> tuple[list[dict], dict,
     from api.providers.errors import MissingToken, ProviderError
     from src.events.earnings import parse_item
 
+    def no_date(v: Any) -> bool:
+        try:
+            date.fromisoformat(str(v or "")[:10])
+        except ValueError:
+            return True
+        return False
+
     sym = symbol
     notes: list[str] = []
     if share_class(sym):
@@ -513,27 +523,32 @@ def _earnings(symbol: str, session: date, item: dict) -> tuple[list[dict], dict,
     except ProviderError as exc:
         if isinstance(exc, MissingToken):
             notes.append(ff.NOT_CONFIGURED)
-        stored = []
+        stored, unreadable = [], 0
         for e in item.get("earnings") or []:
             if e.get("symbol") != sym:
                 continue
             placed = _stored_time(e.get("at"))
             if placed is None:
+                unreadable += 1  # this symbol's report, not placed: discovery is incomplete (design S-10 step 5)
                 continue
             stored.append({"kind": "earnings", "name": e.get("name") or f"{sym} earnings", "date": placed[0],
                            "time": placed[1], "at": None, "source": "finnhub_earnings (stored)"})
         if stored:
-            return stored, {"earnings": "stored", "earnings_through": None}, "Finnhub earnings calendar (stored rows)", notes
-        return [], {"earnings": "unavailable", "earnings_through": None}, None, notes
-    out = []
+            return (stored, {"earnings": "stored", "earnings_through": None, "unreadable": unreadable},
+                    "Finnhub earnings calendar (stored rows)", notes)
+        return [], {"earnings": "unavailable", "earnings_through": None, "unreadable": unreadable}, None, notes
+    out, unreadable = [], 0
     for it in got["items"]:
         rep = parse_item(it, sym, got["start"], got["end"])
         if rep is None:
+            # this symbol's item with no readable date (another symbol, or a date outside the horizon, is not one)
+            if isinstance(it, dict) and str(it.get("symbol") or "").strip().upper() == sym and no_date(it.get("date")):
+                unreadable += 1
             continue
         hour = str(it.get("hour") or "").strip().lower()
         out.append({"kind": "earnings", "name": rep.event_name, "date": rep.day.isoformat(),
                     "time": hour if hour in FINNHUB_TIMES else "unknown", "at": None, "source": "Finnhub earnings calendar"})
-    cov = {"earnings": "fetched" if out else "not_found", "earnings_through": got["end"].isoformat()}
+    cov = {"earnings": "fetched" if out else "not_found", "earnings_through": got["end"].isoformat(), "unreadable": unreadable}
     return out, cov, "Finnhub earnings calendar", notes
 
 

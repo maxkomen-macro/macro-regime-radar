@@ -543,6 +543,84 @@ def test_a_second_report_shares_its_expiries_variance_with_the_first_so_it_gets_
     assert second["move_sd_pct"] is None and second["reason"] == "Another earnings date falls before the second expiry."
 
 
+# ── earnings discovery beyond the window (Codex S-10, S-11; design S-10) ─────
+
+def _earn(day: str, time: str = "amc") -> dict:
+    return {"kind": "earnings", "name": f"SYN earnings {day}", "date": day, "time": time, "at": None, "source": "test"}
+
+
+def test_a_report_after_the_last_scanned_expiry_still_rules_out_a_move_it_shares_a_pair_with():
+    """S-10: Nov 20 (after the close) is in the window; Dec 22 is past its last expiry but before Jan 15, the
+    second expiry of Nov 20's pair, so the pair prices both reports and Nov 20 gets no move of its own."""
+    window, _ = of.normalize_events([_earn("2026-11-20")])
+    e0, e1, e2 = date(2026, 11, 20), date(2026, 12, 18), date(2027, 1, 15)
+    carries = {e: of.Carry(100.0, 0.0, "market", 3, v) for e, v in ((e0, 0.55), (e1, 0.50), (e2, 0.45))}
+    alone, ids, bad = of.earnings_reports(window, [], syn.SESSION, syn.CLOSES)
+    (m,) = of.earnings_moves(alone, syn.SESSION, e1, syn.CLOSES, carries, [e0, e1, e2], eligible=ids)
+    assert m["reason"] is None and m["move_sd_pct"] > 0 and m["expiries"] == [e1.isoformat(), e2.isoformat()]
+    reports, ids, bad = of.earnings_reports(window, [_earn("2026-11-20"), _earn("2026-12-22")], syn.SESSION, syn.CLOSES)
+    assert bad == 0 and [r.day for r in reports] == [e0, date(2026, 12, 22)]
+    (m,) = of.earnings_moves(reports, syn.SESSION, e1, syn.CLOSES, carries, [e0, e1, e2], eligible=ids)
+    assert m["move_sd_pct"] is None and m["reason"] == "Another earnings date falls before the second expiry."
+
+
+def test_one_report_per_day_its_conflicting_times_merged_to_unknown():
+    """DR-52: a BMO and an AMC row for Nov 20 are one report of unknown time: one entry, on the pair certainly after."""
+    window, _ = of.normalize_events([_earn("2026-11-20", "bmo"), _earn("2026-11-20", "amc")])
+    e0, e1, e2 = date(2026, 11, 20), date(2026, 12, 18), date(2027, 1, 15)
+    carries = {e: of.Carry(100.0, 0.0, "market", 3, v) for e, v in ((e0, 0.55), (e1, 0.50), (e2, 0.45))}
+    reports, ids, _ = of.earnings_reports(window, [], syn.SESSION, syn.CLOSES)
+    assert len(reports) == 1 and reports[0].time == "unknown" and reports[0].id == window[0].id
+    (m,) = of.earnings_moves(reports, syn.SESSION, e2, syn.CLOSES, carries, [e0, e1, e2], eligible=ids)
+    assert m["expiries"] == [e1.isoformat(), e2.isoformat()]
+
+
+def test_a_session_day_report_points_at_the_event_the_list_shows():
+    """DR-60: on the session day, BMO is in the session's prices (not listed) and AMC is listed; the merged
+    report (unknown time) carries AMC's id, and with no listed event a day carries no move."""
+    day = syn.SESSION.isoformat()
+    window, _ = of.normalize_events([_earn(day, "bmo"), _earn(day, "amc")])
+    listed = {e["id"] for e in of.event_list(window, syn.SESSION, BY, syn.CLOSES)}
+    reports, ids, _ = of.earnings_reports(window, [], syn.SESSION, syn.CLOSES)
+    assert ids == listed and len(listed) == 1 and reports[0].id in listed
+    only_bmo, _ = of.normalize_events([_earn(day, "bmo")])
+    reports, ids, _ = of.earnings_reports(only_bmo, [], syn.SESSION, syn.CLOSES)
+    assert ids == set() and of.earnings_moves(reports, syn.SESSION, BY, syn.CLOSES, {}, [], eligible=ids) == []
+
+
+def test_an_unusable_earnings_row_suppresses_every_move_and_any_absence_claim():
+    """DR-54, DR-56, DR-57, DR-59: a row that cannot be read could be a report inside any pair."""
+    window, _ = of.normalize_events([_earn("2026-11-20")])
+    reports, ids, bad = of.earnings_reports(window, [{"kind": "earnings", "date": None, "time": "amc"}], syn.SESSION, syn.CLOSES)
+    assert bad == 1
+    (m,) = of.earnings_moves(reports, syn.SESSION, BY, syn.CLOSES, {}, [], eligible=ids, incomplete=True)
+    assert m["move_sd_pct"] is None and m["reason"] == of.INCOMPLETE_MOVE
+    w = of.coverage_words({"earnings": "not_found", "earnings_through": "2027-11-27"}, "SYN", True, False, True)
+    assert w[0] == "Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out."
+    found = of.coverage_words({"earnings": "fetched", "earnings_through": "2027-11-27"}, "SYN", True, True, True)
+    assert found[0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027."
+    a = of.run([], _thesis(), syn.market(), events=[_earn("2026-11-30"), {"kind": "earnings", "name": "x", "date": "no", "time": "amc"}],
+               coverage={"earnings": "fetched", "earnings_through": "2027-11-27"})
+    assert "1 earnings rows were unusable and were ignored." in a["method"]["notes"]
+    assert a["earnings_moves"] and all(mv["move_sd_pct"] is None and mv["reason"] == of.INCOMPLETE_MOVE for mv in a["earnings_moves"])
+    b = of.run([], _thesis(), syn.market(), events=[_earn("2026-11-30")],
+               coverage={"earnings": "fetched", "earnings_through": "2027-11-27", "unreadable": 2})
+    assert "2 earnings rows were unusable and were ignored." in b["method"]["notes"]
+    assert [mv["reason"] for mv in b["earnings_moves"]] == [of.INCOMPLETE_MOVE]
+
+
+def test_found_means_a_report_dated_on_or_after_the_session_whatever_its_time():
+    """S-11 and DR-58: reports past the window, or before the open on the session day, were found."""
+    rows: list[dict] = []
+    cov = {"earnings": "fetched", "earnings_through": "2027-11-27"}
+    for known in ([_earn("2027-06-30")], [_earn(syn.SESSION.isoformat(), "bmo")]):
+        a = of.run(rows, _thesis(), syn.market(), known_earnings=known, coverage=cov)
+        assert a["coverage"][0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027.", known
+        assert not [e for e in a["events"] if e["kind"] == "earnings"]  # the event list keeps to the window
+    a = of.run(rows, _thesis(), syn.market(), coverage={**cov, "earnings": "not_found"})
+    assert a["coverage"][0] == "No earnings date found for SYN in Finnhub's calendar through Nov 27, 2027."
+
+
 def test_unusable_event_rows_are_counted():
     a = of.run([], _thesis(), syn.market(), dividends={"status": "ok", "rows": []},
                events=[{"kind": "earnings", "name": "x", "date": "not a date", "time": "bmo"}])

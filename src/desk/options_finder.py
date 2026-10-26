@@ -850,6 +850,37 @@ def dividend_events(sched: Sequence[Dividend]) -> list[Event]:
             for i, d in enumerate(sched)]
 
 
+def earnings_reports(evs: Sequence[Event], known_rows: Iterable[Mapping[str, Any]], session: date,
+                     closes) -> tuple[list[Event], set[str], int]:
+    """One report per calendar day from the window's earnings events and every known earnings row (design S-10,
+    steps 2 and 5): (reports by day, the ids that may carry a move, known rows with no valid date). A day's time
+    is the one its rows agree on, else unknown; its id is the first window event on that day the event list
+    displays, and only such ids may carry a move."""
+    rows: dict[date, list[tuple[str, Event | None]]] = {}
+    for ev in evs:
+        if ev.kind == "earnings":
+            rows.setdefault(ev.day, []).append((ev.time, ev))
+    bad = 0
+    for r in known_rows:
+        d = _date(r.get("date")) if isinstance(r, Mapping) else None
+        if d is None:
+            bad += 1
+            continue
+        tm = r.get("time")
+        rows.setdefault(d, []).append((tm if tm in ("bmo", "amc", "dmh") else "unknown", None))
+    out, eligible = [], set()
+    for d in sorted(rows):
+        times = {tm for tm, _ in rows[d]}
+        tm = times.pop() if len(times) == 1 else "unknown"
+        shown = [ev for _, ev in rows[d] if ev is not None and position(ev, session, closes) != "before"]
+        if shown:
+            out.append(replace(shown[0], time=tm, at=None if tm != "exact" else shown[0].at))
+            eligible.add(shown[0].id)
+        else:
+            out.append(Event(f"earnings-{d.isoformat()}-known", "earnings", "Earnings", d, tm, None, "known"))
+    return out, eligible, bad
+
+
 def close_of(d: date, closes: Mapping[date, datetime]) -> datetime:
     got = closes.get(d)
     return got if got is not None else datetime.combine(d, time(16), NY).astimezone(timezone.utc)
@@ -930,14 +961,23 @@ def event_list(evs: Sequence[Event], session: date, by: date, closes) -> list[di
     return out
 
 
+INCOMPLETE_MOVE = "Some earnings rows could not be read, so another report before the second expiry cannot be ruled out."
+
+
 def earnings_moves(evs: Sequence[Event], session: date, last_expiry: date, closes, carries: Mapping[date, Carry],
-                   expiries: Sequence[date]) -> list[dict]:
-    """Decision 10: the move priced for each upcoming report (at most 2), from the two nearest expiries after it."""
+                   expiries: Sequence[date], *, eligible: set[str] | None = None, incomplete: bool = False) -> list[dict]:
+    """Decision 10: the move priced for each upcoming report (at most 2), from the two nearest expiries after it.
+    `evs` holds one report per day (earnings_reports); only `eligible` ids carry a move, and none does while
+    discovery is `incomplete` (design S-10)."""
     out = []
-    earnings = [ev for ev in evs if ev.kind == "earnings" and between(ev, session, last_expiry, closes) is not None]
+    earnings = [ev for ev in evs if ev.kind == "earnings" and between(ev, session, last_expiry, closes) is not None
+                and (eligible is None or ev.id in eligible)]
     for ev in earnings[:2]:
         item = {"event_id": ev.id, "date": ev.day.isoformat(), "move_sd_pct": None, "expiries": None, "reason": None}
         out.append(item)
+        if incomplete:
+            item["reason"] = INCOMPLETE_MOVE
+            continue
         if position(ev, session, closes) == "uncertain":
             item["reason"] = "The report's time against the session close is not known."
             continue
@@ -970,11 +1010,15 @@ def earnings_moves(evs: Sequence[Event], session: date, last_expiry: date, close
     return out
 
 
-def coverage_words(cov: Mapping[str, Any], symbol: str, dividends_ok: bool, found_earnings: bool) -> list[str]:
+def coverage_words(cov: Mapping[str, Any], symbol: str, dividends_ok: bool, found_earnings: bool,
+                   unreadable: bool = False) -> list[str]:
     out = []
     status = cov.get("earnings")
     through = _date(cov.get("earnings_through"))
-    if status == "stored" and through is None:
+    if status in ("fetched", "not_found") and through is not None and unreadable and not found_earnings:
+        # no absence claim while a row could not be read (design S-10 step 5)
+        out.append("Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out.")
+    elif status == "stored" and through is None:
         out.append("Finnhub's calendar could not be read now: the earnings dates listed are stored ones, and when "
                    "they were last checked is not recorded.")
     elif status in ("stored", "fetched", "not_found") and through is not None:
@@ -1455,6 +1499,7 @@ def _schedule_check(sched: Sequence[Dividend], s0: float, session: date, last: d
 def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         other_rows: Iterable[Mapping[str, Any]] = (), event_rows: Iterable[Mapping[str, Any]] = (),
         dividends: Mapping[str, Any] | None = None, events: Iterable[Mapping[str, Any]] = (),
+        known_earnings: Iterable[Mapping[str, Any]] = (),
         coverage: Mapping[str, Any] | None = None, truncated: bool = False, notes: Iterable[str] = (),
         work_limit: int = WORK_LIMIT) -> dict:
     t, m = thesis, market
@@ -1557,6 +1602,14 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
     evs, ev_ignored = normalize_events(inputs["events"])
     if ev_ignored:
         run_notes.append(f"{ev_ignored} event rows were not usable and were ignored.")
+    # earnings discovery (design S-10): one report per day over the window and every known row; any unusable
+    # earnings row, here or in the route, leaves it incomplete
+    reports, move_ids, bad_known = earnings_reports(evs, known_earnings, session, m.closes)
+    bad_window = (sum(1 for r in inputs["events"] if isinstance(r, Mapping) and r.get("kind") == "earnings")
+                  - sum(1 for ev in evs if ev.kind == "earnings"))
+    unusable = bad_known + bad_window + max(0, int(_num((coverage or {}).get("unreadable")) or 0))
+    if unusable:
+        run_notes.append(f"{unusable} earnings rows were unusable and were ignored.")
     evs = sorted(evs + dividend_events(sched), key=lambda ev: (ev.day, ev.id))
 
     # carry per expiry (no up-front estimate: the counter refuses at the charge that would pass the budget, DR-44)
@@ -1661,7 +1714,7 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
                           "pv_market": pv_mkt,
                           "pv_schedule": f["pv_schedule"], "difference": (pv_mkt - f["pv_schedule"]) if pv_mkt is not None else None,
                           "pairs": c.pairs, "source": c.source, "words": CARRY_WORDS[c.source], "atm_vol": c.atm_vol})
-    found_earnings = any(ev.kind == "earnings" for ev in evs)
+    found_earnings = any(r.day >= session for r in reports)
     answer = {
         "inputs": {"view": t.view, "type": t.kind, "target": t.target, "by": t.by.isoformat(),
                    "budget": budget_cents(t.budget) / 100.0, "min_oi": t.min_oi, "max_spread": t.max_spread,
@@ -1684,9 +1737,9 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         "dividends": [{"ex_date": d.ex_date.isoformat(), "cum_session": d.cum_session.isoformat(), "amount": d.amount,
                        "period": d.period, "label": "projected, not declared" if d.projected else "declared"} for d in sched],
         "events": event_list(evs, session, t.by, m.closes),
-        "coverage": coverage_words(coverage or {}, m.symbol or m.occ_root, div_ok, found_earnings),
-        "earnings_moves": earnings_moves(evs, session, max((q.exp for q in survivors), default=t.by), m.closes,
-                                         carries, event_expiries),
+        "coverage": coverage_words(coverage or {}, m.symbol or m.occ_root, div_ok, found_earnings, unusable > 0),
+        "earnings_moves": earnings_moves(reports, session, max((q.exp for q in survivors), default=t.by), m.closes,
+                                         carries, event_expiries, eligible=move_ids, incomplete=unusable > 0),
         "stale": stale,
         "work": {"used": work.used, "limit": work.limit},
         "method": {

@@ -766,3 +766,42 @@ def test_two_reports_give_the_first_its_move_and_the_second_none_of_its_own(worl
     assert second["date"] == "2027-01-27" and second["move_sd_pct"] is None
     assert second["reason"] == "Another earnings date falls before the second expiry."
     assert first["reason"] is None and first["move_sd_pct"] > 0
+
+
+# ── earnings beyond the scanned window (Codex S-10, S-11; design S-10) ──────
+
+def test_a_report_past_the_last_scanned_expiry_rules_out_a_move_whose_pair_it_shares(world):
+    """S-10: a one-month scan from Nov 20 ends at Dec 18; the Nov 20 report (after the close, an expiry day) takes
+    Dec 18 / Jan 15, and the Dec 22 report falls in that pair although it is past the scan, so Nov 20 gets no move
+    of its own."""
+    world.fh.items = {"SYN": [{"symbol": "SYN", "date": d, "hour": "amc", "quarter": q, "year": 2026}
+                              for d, q in (("2026-11-20", 3), ("2026-12-22", 4))]}
+    d = world.serve().ok(**{**UP, "by": "2026-11-20", "scan_months": "1"})
+    assert max(r["exp"] for r in d["rows"]) == "2026-12-18"
+    assert [e["date"] for e in d["events"] if e["kind"] == "earnings"] == ["2026-11-20"]  # the list keeps to the scan
+    (move,) = d["earnings_moves"]
+    assert move["date"] == "2026-11-20" and move["move_sd_pct"] is None
+    assert move["reason"] == "Another earnings date falls before the second expiry."
+
+
+def test_a_report_only_past_the_scan_is_found_not_called_absent(world):
+    """S-11: Finnhub found a report after the scan's last expiry; the coverage names the calendar, not an absence."""
+    world.fh.items = {"SYN": [{"symbol": "SYN", "date": "2027-06-30", "hour": "amc", "quarter": 2, "year": 2027}]}
+    d = world.serve().ok(**{**UP, "scan_months": "1"})
+    assert d["coverage"][0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027."
+    assert d["earnings_moves"] == [] and not [e for e in d["events"] if e["kind"] == "earnings"]
+
+
+def test_an_unreadable_finnhub_row_for_the_symbol_suppresses_the_move(world):
+    """DR-56, DR-57: the route counts this symbol's item with no readable date; no move is served while it might
+    be a report inside a pair, and the run says so."""
+    world.fh.items = {"SYN": [*EARNINGS["SYN"], {"symbol": "SYN", "date": "soon", "hour": "amc", "quarter": 4, "year": 2026}]}
+    d = world.serve().ok(**UP)
+    (move,) = d["earnings_moves"]
+    assert move["date"] == "2026-11-30" and move["move_sd_pct"] is None and move["reason"] == of.INCOMPLETE_MOVE
+    assert "1 earnings rows were unusable and were ignored." in d["method"]["notes"]
+    assert d["coverage"][0] == "Earnings dates are from Finnhub's calendar through Nov 27, 2027."
+    world.fh.items = {"SYN": [{"symbol": "SYN", "date": None, "hour": "amc"}]}
+    market.clear_caches()
+    d = world.ok(**UP)
+    assert d["coverage"][0] == "Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out."
