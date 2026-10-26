@@ -75,8 +75,12 @@ def classify(rec: dict) -> dict:
             out["price_u_tol"] = rv["u"] / tol
             out["price"] = judge(err, rv["u"], tol)
             if eng.get("bound") is not None:
-                # the route's claim: American − European is at most the bound (the served value is European)
-                out["bound_covered"] = rv["ref"] - eng["value"] <= eng["bound"] + rv["u"]
+                # the route's claim: American − European is at most the bound (the served value is European).
+                # Covered only when the premium's upper end is inside the bound; an interval across it is
+                # indeterminate, never covered (Codex OB-14)
+                premium = rv["ref"] - eng["value"]
+                out["bound"] = ("covered" if premium + rv["u"] <= eng["bound"] else
+                                "violated" if premium - rv["u"] > eng["bound"] else "indeterminate")
         if eng.get("delta") is None:
             out["delta"] = "withheld"
             out["delta_note"] = eng.get("delta_note")
@@ -144,8 +148,9 @@ def _q(xs, p):
     return float(np.quantile(xs, p)) if xs else None
 
 
-def _summary(rows: list[dict]) -> dict:
-    s: dict = {"cases": len(rows)}
+def _summary(rows: list[dict], sampled: bool = True) -> dict:
+    """sampled=False (the named regressions): deterministic cases, so no sampling confidence limits (OB-15)."""
+    s: dict = {"cases": len(rows), "sampled": sampled}
     s["engine"] = dict(Counter((r.get("engine_status") or "error") + (f" ({r['model']})" if r.get("model") else "") for r in rows))
     s["reference_value"] = dict(Counter("reliable" if r.get("ref_value_status") == "reliable" else "unresolved" for r in rows if "ref_value_status" in r))
     s["reference_value_reasons"] = dict(Counter(r["ref_value_status"] for r in rows if r.get("ref_value_status", "reliable") != "reliable"))
@@ -155,7 +160,7 @@ def _summary(rows: list[dict]) -> dict:
     fails = sum(r["price"] == "fail" for r in rows)
     s["accepted_scored"] = len(acc)
     s["price_failures"] = fails
-    s["clopper_pearson_95"] = clopper_pearson(fails, len(acc))
+    s["clopper_pearson_95"] = clopper_pearson(fails, len(acc)) if sampled else None
     errs = [r["price_err_tol"] for r in rows if "price_err_tol" in r]
     s["price_err_tol"] = {"p50": _q(errs, 0.5), "p99": _q(errs, 0.99), "max": max(errs) if errs else None}
     worst = sorted((r for r in rows if "price_err_tol" in r), key=lambda r: -r["price_err_tol"])[:3]
@@ -164,7 +169,7 @@ def _summary(rows: list[dict]) -> dict:
     s["delta_err"] = {"p50": _q(derr, 0.5), "p99": _q(derr, 0.99), "max": max(derr) if derr else None}
     dacc = [r for r in rows if r["delta"] in ("pass", "fail")]
     s["delta_failures"] = sum(r["delta"] == "fail" for r in rows)
-    s["delta_clopper_pearson_95"] = clopper_pearson(s["delta_failures"], len(dacc))
+    s["delta_clopper_pearson_95"] = clopper_pearson(s["delta_failures"], len(dacc)) if sampled else None
     s["delta_withheld_notes"] = dict(Counter(r.get("delta_note") for r in rows if r["delta"] == "withheld"))
     units = [r["units"] for r in rows if r.get("units") is not None]
     s["work_units"] = {"p50": _q(units, 0.5), "p95": _q(units, 0.95), "max": max(units) if units else None}
@@ -176,8 +181,7 @@ def _summary(rows: list[dict]) -> dict:
     qlr = [r["quantlib_diff_tol"] for r in rows if "quantlib_diff_tol" in r]
     qdf = [r for r in rows if r.get("quantlib_method") == "qdfp-high-precision" and r.get("ref_value_status") == "reliable"]
     cov = [r["quantlib_diff_tol"] / r["ref_u_tol"] for r in qdf if r.get("ref_u_tol")]
-    bc = [r["bound_covered"] for r in rows if "bound_covered" in r]
-    s["bound_route"] = {"checked": len(bc), "not_covered": sum(not x for x in bc)}
+    s["bound_route"] = {"checked": sum("bound" in r for r in rows)} | dict(Counter(r["bound"] for r in rows if "bound" in r))
     s["quantlib_coverage"] = {"compared": len(cov), "outside_u": sum(x > 1 for x in cov),
                               "ratio_p50": _q(cov, 0.5), "ratio_p99": _q(cov, 0.99), "ratio_max": max(cov) if cov else None}
     s["quantlib_check"] = {"compared": len(qlr), "over_half_tol": sum(x > 0.5 for x in qlr),
@@ -300,7 +304,7 @@ def score(dirs: list[Path]) -> dict:
     by = defaultdict(list)
     for r in rows:
         by[r["group"]].append(r)
-    groups = {g: _summary(by[g]) for g in [*cases.GROUPS, "named"] if g in by}
+    groups = {g: _summary(by[g], sampled=g != "named") for g in [*cases.GROUPS, "named"] if g in by}
     in_dom = [r for r in rows if r["group"] in cases.RANDOM_IN_DOMAIN_GROUPS]
     overall = _summary(in_dom) if in_dom else None
     named = []
@@ -371,7 +375,7 @@ def markdown(sc: dict) -> str:
         p, d = s["price"], s["delta"]
         L.append(f"| {g} | {s['cases']} | {served} | {refused} | {s['reference_value'].get('unresolved', 0)} | "
                  f"{p.get('pass', 0)} / {p.get('fail', 0)} / {p.get('indeterminate', 0)} / {p.get('unscored', 0)} | "
-                 f"{_f(s['price_err_tol']['max'])} | {_f(s['price_err_tol']['p99'])} | {_f(s['clopper_pearson_95'][2], 4)} | "
+                 f"{_f(s['price_err_tol']['max'])} | {_f(s['price_err_tol']['p99'])} | {_f(s['clopper_pearson_95'][2], 4) if s['clopper_pearson_95'] else 'n/a (not sampled)'} | "
                  f"{d.get('pass', 0)} / {d.get('fail', 0)} / {d.get('withheld', 0)} / {d.get('unscored', 0)} | {_f(s['delta_err']['max'], 5)} | "
                  f"{_f((s['work_units']['p50'] or 0) / 1e6, 1)} / {_f((s['work_units']['max'] or 0) / 1e6, 1)} |")
     L += ["", "## Engine routes and refusals", ""]
@@ -393,7 +397,8 @@ def markdown(sc: dict) -> str:
           + "; ".join(f"{g} {s['quantlib_coverage']['compared']} compared, {s['quantlib_coverage']['outside_u']} outside the stated uncertainty (|QL − R|/u p99 {_f(s['quantlib_coverage']['ratio_p99'], 2)}, max {_f(s['quantlib_coverage']['ratio_max'], 2)})"
                       for g, s in sc["groups"].items() if s["quantlib_coverage"]["compared"]),
           "- Early-exercise bound (bound-European route, served value European): "
-          + "; ".join(f"{g} {s['bound_route']['checked']} checked, {s['bound_route']['not_covered']} where the reference premium exceeds the bound"
+          + "; ".join(f"{g} {s['bound_route']['checked']} checked: {s['bound_route'].get('covered', 0)} covered, "
+                      f"{s['bound_route'].get('violated', 0)} violated, {s['bound_route'].get('indeterminate', 0)} indeterminate"
                       for g, s in sc["groups"].items() if s["bound_route"]["checked"]) + ".",
           f"- Exempt group, American reference against Black-76: {c['exempt_american_within_u']} of {c['exempt_american_cases']} inside the stated uncertainty.",
           ""]

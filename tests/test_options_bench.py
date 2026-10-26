@@ -289,10 +289,19 @@ def test_a_skipped_convention_study_is_counted_not_crashed():
 def test_the_early_exercise_bound_is_checked_against_the_reference_premium():
     rec = _rec(value=10.0, ref=10.0004, u=1e-5)
     rec["engine"]["bound"] = 5e-4
-    assert score.classify(rec)["bound_covered"]
+    assert score.classify(rec)["bound"] == "covered"
     rec["engine"]["bound"] = 1e-4                   # premium 4e-4 exceeds bound + u
-    assert not score.classify(rec)["bound_covered"]
-    assert "bound_covered" not in score.classify(_rec())
+    assert score.classify(rec)["bound"] == "violated"
+    rec = _rec(value=10.0, ref=10.0004, u=1e-4)     # premium in [3e-4, 5e-4] across the bound (OB-14)
+    rec["engine"]["bound"] = 3.5e-4
+    assert score.classify(rec)["bound"] == "indeterminate"
+    assert "bound" not in score.classify(_rec())
+
+
+def test_named_regressions_carry_no_sampling_limits():
+    rows = [score.classify(_rec())]
+    assert score._summary(rows, sampled=False)["clopper_pearson_95"] is None
+    assert score._summary(rows)["clopper_pearson_95"] is not None
 
 
 def test_clopper_pearson_zero_failures():
