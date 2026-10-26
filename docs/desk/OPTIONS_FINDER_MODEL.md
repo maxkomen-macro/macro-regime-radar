@@ -112,8 +112,14 @@ yield q, a volatility σ and the dividends owed.
 escrowed finite-difference engine, and this lattice at 8,000 or more steps): on random and edge sets inside
 the domain, the worst value error is 0.74 of the tolerance and every served delta is within 2.31e-3 of its
 reference. Near the exercise boundary (two sets of 2,080 contexts built on it), no value or delta inside the
-domain failed. A large dividend in the first days, closely spaced payments and residual yields beyond ±10%
-are where the convergence test was shown to be fooled; they are outside the domain and refused.
+domain failed. These figures are those design-review sets'. A large dividend in the first days (beyond the
+3%-in-10-days rule), closely spaced payments and residual yields beyond ±10% are where the convergence test was
+shown to be fooled for the value; they are outside the domain and refused. The validation bench
+(`scripts/options_bench/`, an independent Crank-Nicolson reference) later found, inside the domain, two
+long-dated contexts with a smaller dividend on day 0 or day 1 whose served price passed but whose lattice delta
+missed the stated accuracy (by 3.03e-3 and 2.73e-3): both lattices shared the step-1 slope's error. Prices and
+deltas are validated separately: such a price stays served, and no lattice delta is served while a dividend
+falls on days 0 to 4 (below).
 
 ## Implied volatility and Greeks
 
@@ -124,8 +130,10 @@ are where the convergence test was shown to be fooled; they are outside the doma
   the lattice, ±1 when the root exercises, else the extrapolated step-1 delta. A context whose value the bound
   let stand still takes the lattice's delta (the bound limits the price's error, not its slope). The delta is
   withheld, with a note, within five tolerances of the exercise value (where the two sides' slopes differ by
-  more than the stated accuracy), or when the lattice did not converge or the context is outside the domain.
-  Stated accuracy: 2.5e-3 (observed, not a bound).
+  more than the stated accuracy), when a dividend falls on days 0 to 4 of the context (the step-1 slope can then
+  miss the stated accuracy while both lattices agree on it; the closed-form delta of a European or exempt
+  context is kept), or when the lattice did not converge or the context is outside the domain. The page shows
+  the note in the Delta cell. Stated accuracy: 2.5e-3 (observed, not a bound).
 - **Theta**: the value one calendar day later minus the value now, within the sum of the two values'
   tolerances.
 

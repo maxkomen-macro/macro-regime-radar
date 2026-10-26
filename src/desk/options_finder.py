@@ -632,6 +632,7 @@ class Valued:
 
 DELTA_NOTE_ZONE = f"within {om.DELTA_ZONE:g} pricer tolerances of the exercise value, where the delta is not validated"
 DELTA_NOTE_LATTICE = "the pricer did not reach its delta tolerance"
+DELTA_NOTE_DIVIDEND = f"a dividend falls within {om.DELTA_DIV_DAYS} days, where the lattice delta is not validated"
 
 
 class Pricer:
@@ -680,23 +681,27 @@ class Pricer:
         if lattice:
             values, deltas, ok = om.american(lattice, self.work.charge)
             for c, v, d, good in zip(lattice, values, deltas, ok):
-                self.memo[c] = (Valued(float(v), om.european(c), MODEL_AMERICAN, None if math.isnan(d) else float(d),
-                                       delta_note=DELTA_NOTE_ZONE if math.isnan(d) else None)
+                note = DELTA_NOTE_DIVIDEND if om.early_dividend(c) else DELTA_NOTE_ZONE if math.isnan(d) else None
+                self.memo[c] = (Valued(float(v), om.european(c), MODEL_AMERICAN, None if note else float(d),
+                                       delta_note=note)
                                 if good else om.NOT_CONVERGED)
         return [self.memo[c] for c in cs]
 
     def deltas(self, cs: Sequence[om.Context]) -> dict[om.Context, tuple[float | None, str | None]]:
         """The lattice delta of contexts whose value the early-exercise bound let stand (DR-51: the bound
         limits the price's error, not its derivative's), batched and charged; (None, why) when the lattice is
-        outside its domain, does not converge, or the context is in the delta zone."""
+        outside its domain, a dividend falls in the first DELTA_DIV_DAYS days (D-1: no lattice is run), the
+        lattice does not converge, or the context is in the delta zone."""
         need = [c for c in dict.fromkeys(cs) if c not in self.delta_memo]
         run = []
         for c in need:
             why = om.in_domain(c)
-            if why is None:
-                run.append(c)
-            else:
+            if why is not None:
                 self.delta_memo[c] = (None, f"the delta needs the lattice, and {why}")
+            elif om.early_dividend(c):
+                self.delta_memo[c] = (None, DELTA_NOTE_DIVIDEND)
+            else:
+                run.append(c)
         if run:
             _, ds, ok = om.american(run, self.work.charge)
             for c, d, good in zip(run, ds, ok):

@@ -660,7 +660,18 @@ function RowsTable({ d }: { d: OptionsFinderResponse }) {
                 </td>
                 <td data-num="">{isFiniteNumber(r.oi) ? grouped(r.oi) : NOT_SERVED}</td>
                 <td data-num="">{frac(r.iv)}</td>
-                <td data-num="">{isFiniteNumber(r.delta) ? num(r.delta, 2) : NOT_SERVED}</td>
+                <td data-num="">
+                  {isFiniteNumber(r.delta) ? (
+                    num(r.delta, 2)
+                  ) : r.delta_note ? (
+                    <span data-testid="of-delta-note" title={r.delta_note}>
+                      {NOT_SERVED}
+                      <span className="dk-sr"> {r.delta_note}</span>
+                    </span>
+                  ) : (
+                    NOT_SERVED
+                  )}
+                </td>
                 <td data-num="">{money(r.cost)}</td>
                 <td data-num="">{price(r.modelled ? r.breakeven_on_date : r.breakeven_expiry)}</td>
                 {(["target", "half", "flat"] as const).map((k) => (

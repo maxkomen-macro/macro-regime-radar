@@ -386,6 +386,55 @@ def test_near_the_exercise_boundary_the_value_is_served_and_the_delta_is_withhel
     assert abs(v.value - 13.0) <= om.tolerance(13.0, 100.0)
 
 
+# D-1: the validation bench's two in-domain contexts whose step-1 delta missed DELTA_TOL with a dividend on day 1
+# and day 0 (its Crank-Nicolson reference: 0.874942 ± 0.000192 and -0.873013 ± 0.000168)
+BENCH_1019 = om.Context(True, 100.0, 66.853406, 595, 0.04440388, 0.02592525, 0.29291682, ((1, 2.3827),))
+BENCH_1447 = om.Context(False, 100.0, 100.421352, 604, 0.0773374, -0.01221098, 0.06224871, ((0, 1.4135),))
+
+
+@pytest.mark.parametrize("c", [BENCH_1019, BENCH_1447], ids=["call-day-1", "put-day-0"])
+def test_a_dividend_in_the_next_five_days_withholds_the_lattice_delta_and_keeps_the_price(c):
+    v = of.Pricer(of.Work(10**12)).one(c)
+    values, _, ok = om.american([c])
+    assert ok[0] and v.model == of.MODEL_AMERICAN and v.value == float(values[0])
+    assert v.delta is None and v.delta_note == of.DELTA_NOTE_DIVIDEND
+
+
+@pytest.mark.parametrize("day, withheld", [(0, True), (4, True), (5, False), (9, False)])
+def test_the_dividend_rule_reads_the_first_five_days_only(day, withheld):
+    c = om.Context(True, 100.0, 66.853406, 595, 0.04440388, 0.02592525, 0.29291682, ((day, 2.3827),))
+    assert om.early_dividend(c) is withheld
+    v = of.Pricer(of.Work(10**12)).one(c)
+    assert (v.delta is None, v.delta_note) == ((True, of.DELTA_NOTE_DIVIDEND) if withheld else (False, None))
+    assert not om.early_dividend(om.Context(True, 100.0, 66.853406, 595, 0.04440388, 0.02592525, 0.29291682))
+
+
+def test_a_bound_stands_value_with_a_dividend_in_five_days_runs_no_lattice_for_its_delta():
+    early = om.Context(False, 100.0, 90.0, 40, 0.002, 0.0, 0.3, ((2, 0.4),))
+    late = om.Context(False, 100.0, 90.0, 40, 0.002, 0.0, 0.3, ((5, 0.4),))
+    for c in (early, late):
+        v = of.Pricer(of.Work(10**12)).one(c)
+        assert v.model == of.MODEL_EUROPEAN and v.bound is not None
+    w = of.Work(10**12)
+    assert of.Pricer(w).deltas([early])[early] == (None, of.DELTA_NOTE_DIVIDEND) and w.used == 0
+    d, why = of.Pricer(of.Work(10**12)).deltas([late])[late]
+    assert why is None and d == pytest.approx(-0.1418, abs=1e-3)
+
+
+def test_outside_the_domain_the_domain_note_comes_before_the_dividend_note():
+    c = om.Context(True, 100.0, 105.0, 60, 0.04, 0.0, 0.3, ((2, 0.5), (70, 0.5)))
+    assert om.early_dividend(c) and om.in_domain(c) is not None
+    d, why = of.Pricer(of.Work(10**12)).deltas([c])[c]
+    assert d is None and why.startswith("the delta needs the lattice, and ")
+
+
+def test_an_exempt_context_keeps_its_closed_form_delta_with_a_dividend_in_five_days():
+    c = om.Context(True, 100.0, 110.0, 60, 0.04, 0.0, 0.3, ((3, 0.5),))
+    assert om.exempt(c) and om.early_dividend(c)
+    v = of.Pricer(of.Work(10**12)).one(c)
+    assert v.delta == om.european_delta(c) and v.delta_note is None
+
+
 def test_an_exempt_context_is_its_european_value_exactly():
     c = om.Context(True, 100.0, 105.0, 60, 0.04, 0.0, 0.3)
     assert om.exempt(c)

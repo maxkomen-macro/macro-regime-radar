@@ -230,6 +230,32 @@ describe("Options Finder: the answer", () => {
     expect(screen.getByTestId("of-no-events")).toHaveTextContent(words);
   });
 
+  it("says why a delta is not served, in the cell, for every reason the route gives (design D-1)", async () => {
+    const notes = [
+      "a dividend falls within 5 days, where the lattice delta is not validated",
+      "within 5 pricer tolerances of the exercise value, where the delta is not validated",
+      "the pricer did not reach its delta tolerance",
+      "the delta needs the lattice, and a dividend outside the contract's life",
+      null,
+    ];
+    const rows = (UP.rows as OptionRow[]).map((r, i) => (i < notes.length ? { ...r, delta: null, delta_note: notes[i] } : r));
+    stubDesk({ [ROUTE]: () => ({ ...UP, rows }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    fireEvent.click(screen.getByTestId("of-all"));
+    const table = screen.getByTestId("of-table");
+    notes.forEach((note, i) => {
+      const tr = table.querySelector(`tr[data-contract="${rows[i].contract}"]`) as HTMLElement;
+      const cell = within(tr).queryByTestId("of-delta-note");
+      if (note === null) {
+        expect(cell).toBeNull();
+      } else {
+        expect(cell).toHaveAttribute("title", note);
+        expect(cell).toHaveTextContent(note);
+      }
+    });
+  });
+
   it("shows the served early-exercise flag on the cards and in the table (Codex S-5)", async () => {
     renderTab(UP_URL);
     await stateOf("answered");

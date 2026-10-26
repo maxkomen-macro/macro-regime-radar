@@ -475,8 +475,16 @@ REFINE_VALUE = 0.5             # a pair is accepted when |V(2M) − V(M)| ≤ RE
 REFINE_DELTA = 1.25e-3         # ... and |δ(2M) − δ(M)| ≤ REFINE_DELTA: half of DELTA_TOL, as REFINE_VALUE is half of tol
 DELTA_TOL = 2.5e-3             # the stated accuracy of a served delta (validated, not a bound; DR-47)
 DELTA_ZONE = 5.0               # no delta is served within DELTA_ZONE·tol of the exercise value (DR-50)
+DELTA_DIV_DAYS = 5             # no lattice delta is served with a dividend on days 0 to DELTA_DIV_DAYS − 1 (D-1)
 REFINE_UNITS_MAX = 40_000_000  # the largest single-context lattice a refinement may add
 NOT_CONVERGED = "the pricer did not reach its tolerance"
+
+
+def early_dividend(c: Context) -> bool:
+    """A dividend on day 0 to DELTA_DIV_DAYS − 1 of the context (D-1): there the step-1 delta can miss DELTA_TOL
+    while both lattices agree on it (the validation bench, two in-domain contexts at 3.03e-3 and 2.73e-3), so the
+    pricer serves the value and withholds the lattice delta."""
+    return any(d < DELTA_DIV_DAYS for d, _ in c.divs)
 
 
 def _units(steps: int) -> int:

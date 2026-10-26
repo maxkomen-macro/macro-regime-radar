@@ -115,6 +115,12 @@ failed; it is documented under Tests as not reproduced at the base and not runni
 round the owner chose to drop the Finder's on-demand Finnhub read (Departures, "Earnings dates are the stored rows
 only"); that change went through its own design review (three passes) and is in the two A-3 commits, the first of
 which holds only the deleted client and the reverted deploy template line and is meant to be read with the second.
+Its eighth round, on the whole branch, found nothing. The validation bench being built alongside (its own branch)
+then found two in-domain contexts whose served delta missed the stated accuracy, both with a dividend on day 0 or
+1 of a long-dated contract near its exercise boundary; prices were unaffected. After its own design review (two
+passes), no lattice delta is served while a dividend falls in the next five days: the price stays, and the
+Delta cell shows why (as it now does for every withheld delta). A delta-only lattice run is skipped there, so a
+scan near the work ceiling can use less work than before.
 
 ## Capacity
 
