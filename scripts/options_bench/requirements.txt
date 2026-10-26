@@ -1,0 +1,5 @@
+# The options bench (test tooling only; never installed in the API image).
+# numpy and scipy match requirements-api.lock; QuantLib is optional (a third-method check) and test-only.
+numpy==2.5.1
+scipy==1.18.0
+QuantLib==1.44
