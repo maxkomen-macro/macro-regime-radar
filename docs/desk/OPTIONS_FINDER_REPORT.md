@@ -65,11 +65,14 @@ Every change to shared code is additive and inert while the Finder is unlisted:
 
 ## Tests
 
-- Python: the full suite at the branch's head, 2,448 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
+- Python: the full suite at the branch's head, 2,456 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
   and 1 failed at the base. The failure is the baseline's `test_no_secret_in_logs` (a uvicorn startup-log race),
   which passes alone. A second timing test, the profile's two calls in parallel, misses its bound by about 10 ms in
-  some full runs (three of the branch's seven, one of the base's three) and passes alone. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent from the
-  base's checkout. The Finder's own tests: route 89, numerical library 140, engine 57, on synthetic chains, plus the contract and route-list tests.
+  some full runs (three of the branch's first seven, one of the base's three) and passes alone. One full run also
+  failed the worker's commit-race test (`test_the_worker_never_publishes_a_copy_taken_across_a_commit`, a 30-second
+  wait); it passed in the next full run and in 22 isolated runs at the head and the base under load, and has not
+  been seen to fail at the base. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent from the
+  base's checkout. The Finder's own tests: route 92, numerical library 140, engine 62, on synthetic chains, plus the contract and route-list tests.
 - Web: vitest 156 files, 1,992 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
   `desk.spec.ts`, `desk-usability.spec.ts` and `desk-mobile.spec.ts` 98 of 98, the Finder added to the palette and
   language audits.
@@ -96,6 +99,12 @@ Its fourth round found one more: with two reports ahead, the second report's imp
 report's jump; a report now gets no move of its own when another one not yet priced falls before its second expiry.
 Its fifth round found one: a whole-number parameter such as "²" or a 4,301-digit string reached the envelope as a
 server error instead of the typed refusal; those parameters now take one to nine ASCII digits.
+Its sixth round found two, in the earnings move and coverage: the move check read only the reports inside the
+scanned window, so a report just past the last scanned expiry did not rule out a move whose expiry pair it shared,
+and the coverage sentence could say no earnings date was found while Finnhub had returned one past the window. The
+check now reads every reported date, one report per day (conflicting times on a day count as unknown); any
+earnings row that could not be read suppresses every move estimate and any claim that none was found. Prices and
+picks are unchanged. This fix went through its own design review first (five passes).
 
 ## Capacity
 
