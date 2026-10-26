@@ -385,7 +385,7 @@ def markdown(sc: dict) -> str:
               f"- Reference: {m0['reference']['method']}; reliable when its uncertainty is at most {m0['reference']['ref_fraction']} of the tolerance. Uncertainty is an estimate, not a proved bound.",
               ""]
     L += ["## Price and delta by group", "",
-          "| Group | Cases | Served | Refused | Ref unresolved | Price pass / fail / indet. / unscored | Worst err (tol) | p99 err (tol) | 95% upper fail rate (indet. counted as fail) | Delta pass / fail / withheld / unscored | Worst delta err | Work p50 / max (M units) |",
+          "| Group | Cases | Served | Refused | Ref unresolved | Price pass / fail / indet. / unscored | Worst err (tol) | p99 err (tol) | 95% upper fail rate (indet. counted as fail) | Delta pass / fail / indet. / withheld / unscored | Worst delta err | Work p50 / max (M units) |",
           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for g, s in [*sc["groups"].items(), *([("**random in-domain total**", sc["overall_in_domain"])] if sc["overall_in_domain"] else [])]:
         served = sum(v for k, v in s["engine"].items() if k.startswith("served"))
@@ -394,7 +394,7 @@ def markdown(sc: dict) -> str:
         L.append(f"| {g} | {s['cases']} | {served} | {refused} | {s['reference_value'].get('unresolved', 0)} | "
                  f"{p.get('pass', 0)} / {p.get('fail', 0)} / {p.get('indeterminate', 0)} / {p.get('unscored', 0)} | "
                  f"{_f(s['price_err_tol']['max'])} | {_f(s['price_err_tol']['p99'])} | {_f(s['clopper_pearson_95_conservative'][2], 4) if s['clopper_pearson_95_conservative'] else 'n/a (not sampled)'} | "
-                 f"{d.get('pass', 0)} / {d.get('fail', 0)} / {d.get('withheld', 0)} / {d.get('unscored', 0)} | {_f(s['delta_err']['max'], 5)} | "
+                 f"{d.get('pass', 0)} / {d.get('fail', 0)} / {d.get('indeterminate', 0)} / {d.get('withheld', 0)} / {d.get('unscored', 0)} | {_f(s['delta_err']['max'], 5)} | "
                  f"{_f((s['work_units']['p50'] or 0) / 1e6, 1)} / {_f((s['work_units']['max'] or 0) / 1e6, 1)} |")
     L += ["", "## Engine routes and refusals", ""]
     for g, s in sc["groups"].items():

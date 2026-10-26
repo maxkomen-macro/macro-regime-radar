@@ -326,6 +326,20 @@ def test_indeterminate_outcomes_widen_the_conservative_limit():
     assert s["clopper_pearson_95"][2] < 0.005 < 0.5 < s["clopper_pearson_95_conservative"][2]
 
 
+def test_the_scorecard_table_shows_every_outcome(tmp_path):
+    """OB-19: an indeterminate delta appears in the rendered counts, not only in the JSON."""
+    man = {k: "x" for k in score.RUN_KEYS} | {"seed": 1, "per_group": {"G1-nodiv": 1}, "named": False, "shard": "0/1"}
+    rec = _rec(delta=-0.4975, d_u=1e-4)
+    rec["case"] = {"id": "G1-nodiv/0", "group": "G1-nodiv", "kind": "random"}
+    (tmp_path / "manifest-0of1.json").write_text(json.dumps(man))
+    (tmp_path / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    sc = score.score([tmp_path])
+    assert sc["groups"]["G1-nodiv"]["delta"] == {"indeterminate": 1}
+    sc["manifests"] = []                            # the header needs a real run's manifest; the table does not
+    row = next(x for x in score.markdown(sc).splitlines() if x.startswith("| G1-nodiv "))
+    assert "| 0 / 0 / 1 / 0 / 0 |" in row
+
+
 def test_named_regressions_carry_no_sampling_limits():
     rows = [score.classify(_rec())]
     assert score._summary(rows, sampled=False)["clopper_pearson_95"] is None
