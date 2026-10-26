@@ -12,7 +12,9 @@
  */
 
 import { useEffect, useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useDeskView } from "../desk-view";
+import { optionHref, optionSubject } from "../positions/option";
 import { useOptionsFinder, type DeskApiError } from "../data/api";
 import type { OptionRow, OptionsFinderParams, OptionsFinderResponse, ScenarioPnl } from "../data/types";
 import type { DeskPage } from "../desk-sections";
@@ -299,6 +301,18 @@ function Sensitivity({ label, p }: { label: string; p: ScenarioPnl | null }) {
   );
 }
 
+/** "Save as position →": the Position Monitor's form with this contract carried in (positions/option.ts). */
+function SaveLink({ row, d }: { row: OptionRow; d: OptionsFinderResponse }) {
+  const { pathTo } = useDeskView();
+  const s = optionSubject(row, d);
+  if (!s) return null;
+  return (
+    <Link className="dk-link of-save" to={optionHref(pathTo("position-monitor"), s)} aria-label={`Save ${row.n} × ${row.contract} as a position`}>
+      Save as position →
+    </Link>
+  );
+}
+
 function PickCard({ lens, row, d, reason }: { lens: (typeof LENSES)[number]; row: OptionRow | undefined; d: OptionsFinderResponse; reason: string | null | undefined }) {
   const i = d.inputs;
   const by = i?.by;
@@ -360,6 +374,7 @@ function PickCard({ lens, row, d, reason }: { lens: (typeof LENSES)[number]; row
               ))}
             </ul>
           ) : null}
+          <SaveLink row={row} d={d} />
         </div>
       )}
     </Card>
@@ -526,6 +541,7 @@ const COLUMNS: { key: SortKey | null; label: string; num?: boolean }[] = [
   { key: "target", label: "At target", num: true },
   { key: "half", label: "Halfway", num: true },
   { key: "flat", label: "Unchanged", num: true },
+  { key: null, label: "Position" },
 ];
 
 function sortValue(r: OptionRow, k: SortKey): number | string | null {
@@ -612,6 +628,9 @@ function RowsTable({ d }: { d: OptionsFinderResponse }) {
                     {r.modelled ? "*" : ""}
                   </td>
                 ))}
+                <td>
+                  <SaveLink row={r} d={d} />
+                </td>
               </tr>
             ))}
           </tbody>

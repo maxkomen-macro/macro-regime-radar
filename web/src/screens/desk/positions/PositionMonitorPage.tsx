@@ -40,6 +40,7 @@ import { falsifiesLine, sizeLine, viewOf, type PositionView } from "./monitor";
 import { nyDate } from "./sessions";
 import { closed90d, exportPositions, importPositions, isOpen, newPositionId, whyUnreadable, withClose, type CloseType, type PositionRecord, type PositionStore, type Subject } from "./store";
 import { saveWords, useLevels, usePositionStore } from "./usePositionStore";
+import { optionFromSearch, optionInstrument, optionLine } from "./option";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
 import "./positions.css";
 import { DroppedNote, FailedScope, LoadingLine, droppedWords, type QueryLike } from "../kit/ui";
@@ -132,6 +133,7 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
   const [closing, setClosing] = useState(false);
   const p = v.record;
   const study = p.subject.kind === "study" ? p.subject.question : null;
+  const option = p.subject.kind === "option" ? p.subject : null;
   return (
     <div className="pm-exp">
       <div className="pm-exp-2">
@@ -145,6 +147,12 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
           <p>{sizeLine(v)}</p>
         </div>
       </div>
+      {option ? (
+        <>
+          <p className="dk-stat-label">Option</p>
+          <p data-testid="pm-option">{optionLine(option)}</p>
+        </>
+      ) : null}
       <p className="dk-stat-label">Variant view</p>
       <p>{p.variant}</p>
       <p className="dk-stat-label">Pre-mortem</p>
@@ -416,13 +424,16 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
 
   // desk/usability §14.2: Technicals' "Open as position" names the instrument (`?instrument=`); it fills an empty field.
   const instrumentAsked = search.get("instrument");
+  // Options Finder step 7: "Save as position" carries one contract (`?option=`), read only when it is whole.
+  const optionAsked = optionFromSearch(search.get("option"));
+  const optionCarried = optionAsked && !carriedAsk && !basketId ? optionAsked : null;
   // §14.4: the form opens from "+ New position" (`?new=1`) or when something is carried in.
-  const formOpen = search.get("new") === "1" || !!carriedAsk || !!basketId || !!(instrumentAsked && instrumentAsked.trim());
+  const formOpen = search.get("new") === "1" || !!carriedAsk || !!basketId || !!(instrumentAsked && instrumentAsked.trim()) || !!optionAsked;
   const closeForm = () =>
     setSearch(
       (prev) => {
         const q = new URLSearchParams(prev);
-        for (const k of ["new", "from", "horizon", "basket", "instrument", "shock", "window", "move", "while", "target"]) q.delete(k);
+        for (const k of ["new", "from", "horizon", "basket", "instrument", "shock", "window", "move", "while", "target", "option"]) q.delete(k);
         return q;
       },
       { replace: false },
@@ -432,6 +443,13 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     setDraft((d) => (d.instrument ? d : { ...d, instrument: instrumentAsked.trim() }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instrumentAsked]);
+
+  useEffect(() => {
+    if (!optionCarried) return;
+    // Holding the contract is long the contract, whichever way the stock is expected to go.
+    setDraft((d) => (d.instrument ? d : { ...d, instrument: optionInstrument(optionCarried), direction: "long" }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [optionCarried?.contract]);
 
   useEffect(() => {
     if (!sent || carriedAsk) return;
@@ -490,6 +508,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     if (carried && canonical) return { kind: "study", question: canonical };
     // A position records a basket's weights as numbers (§9); a saved basket keeps its exact digits (Codex R-20).
     if (sent && !carriedAsk && sent.legs?.length) return { kind: "basket", legs: sent.legs.map((l) => ({ symbol: l.symbol, weight: Number(l.weight) })), benchmark: null };
+    if (optionCarried) return optionCarried;
     return { kind: "instrument", id: seriesOf(draft.instrument) ?? draft.instrument.trim() };
   };
 
@@ -572,7 +591,11 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
         ? `The basket sent from Basket & Hedge (${basketId}) is not saved in this browser; the gate is the same for every position.`
         : carriedFailed
           ? `The study carried in from Event Study (${from ?? "the question in the address"}) is awaiting refresh; the gate is the same for every position.`
-          : instrumentAsked && instrumentAsked.trim()
+          : optionCarried
+            ? `Saved from the Options Finder · ${optionLine(optionCarried)} Monitored by hand; the gate is the same for every position.`
+            : search.get("option") && !optionAsked
+              ? "The option in the address could not be read, so it is not carried in; the gate is the same for every position."
+              : instrumentAsked && instrumentAsked.trim()
             ? `Opened from Technicals · ${instrumentAsked.trim()} · the gate is the same for every position.`
             : "Any study can be carried in from Event Study; the gate is the same for every position.";
 

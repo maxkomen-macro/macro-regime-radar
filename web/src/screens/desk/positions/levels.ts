@@ -107,7 +107,7 @@ export type Plan =
  * its 50-day or a 2s10s bp level, and the subject is not a basket (§9: a basket is an unserved subject). */
 export function planFor(levelId: string | null, instrument: string, levels: Levels, subject: Subject["kind"] = "instrument"): Plan {
   const rule = levelId ? AUTOMATIC_LEVELS[levelId] : undefined;
-  if (!rule || subject === "basket" || seriesOf(instrument) !== rule.series) return { kind: "manual" };
+  if (!rule || subject === "basket" || subject === "option" || seriesOf(instrument) !== rule.series) return { kind: "manual" };
   const served = servedFor(levels, rule.series);
   let threshold: number | null = null;
   if (served && rule.series === "spx") threshold = levels.spx?.ma50 ?? null;
