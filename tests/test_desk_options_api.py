@@ -196,6 +196,10 @@ def test_the_engine_row_adapter_is_the_lens_chains_mapping_plus_the_stamps(serve
     ({"view": "sideways"}, "is not up or down"),
     ({"fill": "bid"}, "is not ask or mid"),
     ({"min_oi": "1.5"}, "not a whole number"),
+    ({"min_oi": "²"}, "not a whole number"),             # Codex S-9: isdigit() passes it, int() does not
+    ({"scan_months": "٣"}, "not a whole number"),         # a non-ASCII digit
+    ({"min_oi": "9" * 4301}, "not a whole number"),       # int() refuses a string this long
+    ({"scan_months": "1" * 5000}, "not a whole number"),
     ({"min_oi": "2000000"}, "minimum open interest"),
     ({"max_spread": "0"}, "widest spread"),
     ({"scan_months": "13"}, "scan window"),

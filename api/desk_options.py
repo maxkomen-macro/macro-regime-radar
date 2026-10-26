@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import math
+import re
 import threading
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Mapping
@@ -62,8 +63,10 @@ def _number(q: Mapping[str, str], name: str, words: str) -> float:
 
 
 def _whole(q: Mapping[str, str], name: str, words: str) -> int:
+    # ASCII digits, at most 9 of them: str.isdigit() passes "²", which int() refuses, and int() refuses a
+    # 4,301-digit string; either raised past the typed refusal (Codex S-9). Every bound here is below 10**9.
     text = q[name].strip()
-    if not text.isdigit():
+    if not re.fullmatch(r"[0-9]{1,9}", text):
         raise env.Unsupported(f"The {words} is not a whole number.")
     return int(text)
 
