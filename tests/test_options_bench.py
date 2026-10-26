@@ -127,7 +127,8 @@ def test_low_volatility_high_carry_reference_is_never_trusted_wrongly():
     """OB-10: S=K=100, a year, rho 10%, q 2%, sigma 0.1%: the forward drifts eleven standard deviations, which
     the old grid did not cover (0.697 ± 0.35 against Black-76's 7.536)."""
     c = _case(is_call=True, strike=100.0, days=365, rho=0.10, q=0.02, sigma=0.001)
-    assert reference.grid(c)[3] and "convection-dominated" in reference.grid(c)[3]
+    m, _, w = reference.grid(c)
+    assert reference.peclet(c, m // 4, w) > reference.PECLET_MONOTONE
     r = reference.reference(c, escalate=False)
     assert r["value"]["status"].startswith("unresolved") and "convection-dominated" in r["value"]["status"]
     assert abs(r["value"]["ref"] - _bs(c)[0]) <= max(r["value"]["u"], 1e-6)
@@ -135,6 +136,15 @@ def test_low_volatility_high_carry_reference_is_never_trusted_wrongly():
     rp = reference.reference(put)
     truth = 0.0917968   # FD at 15,872 intervals (0.09179673) and QuantLib QdFp (0.09179769)
     assert abs(rp["value"]["ref"] - truth) <= rp["value"]["u"]
+
+
+def test_a_diffusion_dominated_case_is_not_vetoed_for_grid_size():
+    """OB-11: G0-exempt/20 of the default seed asks for more than M_MAX intervals for accuracy, not for
+    monotonicity; its reference is good to 1e-8 and must stay reliable."""
+    c = cases.case(20261026, "G0-exempt", 20)
+    r = reference.reference(c)
+    assert r["value"]["status"] == "reliable", r["value"]["status"]
+    assert abs(r["value"]["ref"] - _bs(c)[0]) <= r["value"]["u"]
 
 
 # ── scoring ──────────────────────────────────────────────────────────────────
@@ -245,6 +255,15 @@ def test_a_skipped_convention_study_is_counted_not_crashed():
     rec["convention"] = {"value": {"ref": 10.001, "u": 1e-5, "status": "reliable"}}
     out = score.classify(rec)
     assert math.isclose(out["convention_shift_tol"], 0.001 / reference.tolerance(10.0, 100.0))
+
+
+def test_the_early_exercise_bound_is_checked_against_the_reference_premium():
+    rec = _rec(value=10.0, ref=10.0004, u=1e-5)
+    rec["engine"]["bound"] = 5e-4
+    assert score.classify(rec)["bound_covered"]
+    rec["engine"]["bound"] = 1e-4                   # premium 4e-4 exceeds bound + u
+    assert not score.classify(rec)["bound_covered"]
+    assert "bound_covered" not in score.classify(_rec())
 
 
 def test_clopper_pearson_zero_failures():

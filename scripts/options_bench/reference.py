@@ -83,13 +83,12 @@ NEGLIGIBLE = 0.1   # of the reference limit: a flagged study whose own estimate 
 PECLET_MAX = 0.5   # |drift|·dx/σ² on the finest grid, so the coarsest space level (4·dx) keeps a cell Péclet of 2
 
 
-def grid(c: Case) -> tuple[int, int, float, str | None]:
-    """(M, p, half-width, note): M intervals on the finest grid, p steps a day at the middle time level.
+def grid(c: Case) -> tuple[int, int, float]:
+    """(M, p, half-width): M intervals on the finest grid, p steps a day at the middle time level.
 
     The grid is centred at ln X0 and X drifts at rho − q − σ²/2 in log terms, so the half-width covers that
-    displacement plus seven standard deviations, and the strike plus five (Codex OB-10). Central differences
-    need a cell Péclet number of at most 2 to stay monotone; a low-volatility, high-carry case that would need
-    more than M_MAX intervals for that gets a note, and its reference is unresolved, never trusted."""
+    displacement plus seven standard deviations, and the strike plus five (Codex OB-10). dx also aims for a
+    cell Péclet number of PECLET_MAX; whether the levels actually used are monotone is judged in _assess."""
     tau = c.days / 365.0
     sd = c.sigma * math.sqrt(tau)
     x0 = c.spot - c.pv()
@@ -98,12 +97,19 @@ def grid(c: Case) -> tuple[int, int, float, str | None]:
     dx = min(0.004, sd / 30.0)
     if drift:
         dx = min(dx, PECLET_MAX * c.sigma * c.sigma / abs(drift))
-    need = 2.0 * width / dx
-    note = None if need <= M_MAX else f"convection-dominated: {need:.0f} space intervals needed, cap {M_MAX}"
-    m = int(min(M_MAX, max(M_MIN, need)))
+    m = int(min(M_MAX, max(M_MIN, 2.0 * width / dx)))
     m -= m % 16  # m/4, m/2, 3m/4 and 9m/8 stay even, so the centre is a node on every grid
     p = 2 * max(1, math.ceil(STEPS_MID / (2 * c.days)))
-    return m, p, width, note
+    return m, p, width
+
+
+PECLET_MONOTONE = 2.0  # central differences are monotone (an M-matrix) up to this cell Péclet number
+
+
+def peclet(c: Case, m: int, width: float) -> float:
+    """|drift|·dx/σ² on a grid of m intervals over ±width: convection against diffusion, per cell."""
+    drift = c.rho - c.q - 0.5 * c.sigma * c.sigma
+    return abs(drift) * (2.0 * width / m) / (c.sigma * c.sigma)
 
 
 CELL_CAP = 4e8      # grid nodes times time steps, summed over a case's runs, before escalation stops
@@ -114,7 +120,7 @@ PENALTY_LOW = 1e7
 
 
 def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels: list[int], w: float,
-            american: bool = True, note: str | None = None) -> dict:
+            american: bool = True) -> dict:
     out = {}
     pt, ms = t_levels[-3:], s_levels[-3:]
     for k, name, floor in ((0, "value", 1e-12 * c.spot), (1, "delta", 1e-12)):
@@ -146,8 +152,11 @@ def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels
         w1, w2 = r["width_steps"]
         if w2 > WIDTH_SETTLED * w1 and w2 > NEGLIGIBLE * limit:
             why.append(f"{name} boundary not settled")
-        if note:
-            why.append(note)
+        # the veto is about monotonicity of the levels the study uses, not about the accuracy grid() aimed
+        # for: a diffusion-dominated case is never vetoed, and refinement can clear it (Codex OB-11)
+        pe = peclet(c, ms[0], w)
+        if pe > PECLET_MONOTONE:
+            why.append(f"convection-dominated: cell Péclet {pe:.3g} on the coarsest space level ({ms[0]} intervals)")
         if r["u"] > limit:
             why.append(f"{name} uncertainty above {REF_FRACTION:g} of its tolerance")
         r["limit"] = limit
@@ -160,7 +169,7 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
     """The case's reference value and delta with their uncertainty, escalating the time or space refinement
     (one level at a time, whichever dominates the worse quantity) while a quantity is unresolved."""
     t0 = time.time()
-    m0, p0, w, note = grid(c)
+    m0, p0, w = grid(c)
     ex = None if exercise_days is None else sorted(set(exercise_days))
     runs: dict = {}
     cells = 0.0
@@ -185,14 +194,16 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
     run(3 * m0 // 4, p0, WIDTH_FACTOR * w)
     run(9 * m0 // 8, p0, WIDTH_FACTOR ** 2 * w)
     run(m0 // 4, p0, w, PENALTY_LOW)
-    out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american, note)
+    out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
     steps = {"time": 0, "space": 0}
     while escalate:
         worst = max(("value", "delta"), key=lambda n: out[n]["u"] / out[n]["limit"])
         r = out[worst]
         if r["status"] == "reliable" and out["value" if worst == "delta" else "delta"]["status"] == "reliable":
             break
-        dims = sorted((d for d in ("time", "space") if steps[d] < ESCALATE_MAX), key=lambda d: -r[d]["u"])
+        convective = "convection-dominated" in r["status"]   # only finer space levels can clear it
+        dims = sorted((d for d in ("time", "space") if steps[d] < ESCALATE_MAX),
+                      key=lambda d: (not (convective and d == "space"), -r[d]["u"]))
         if not dims or r["u_width"] + r["u_penalty"] > r["limit"]:
             break
         d = dims[0]
@@ -207,13 +218,13 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
             s_levels.append(nxt)
             run(nxt, p0)
         steps[d] += 1
-        out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american, note)
+        out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
     if solver_misses[0]:  # a penalty step stopped at its iteration cap: no quantity of this case is trusted
         for name in ("value", "delta"):
             r = out[name]
             r["status"] = ("unresolved: " if r["status"] == "reliable" else r["status"] + "; ") + \
                 f"penalty iteration cap hit on {solver_misses[0]} steps"
-    out["grid"] = {"m": m0, "p": p0, "width": w, "note": note, "time_levels": t_levels, "space_levels": s_levels,
+    out["grid"] = {"m": m0, "p": p0, "width": w, "peclet_coarsest": peclet(c, s_levels[-3], w), "time_levels": t_levels, "space_levels": s_levels,
                    "escalations": steps, "cells": cells, "penalty_cap_steps": solver_misses[0]}
     out["secs"] = time.time() - t0
     return out
