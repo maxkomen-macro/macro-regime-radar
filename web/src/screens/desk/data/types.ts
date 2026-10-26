@@ -1124,3 +1124,168 @@ export interface BasketHedgeResponse extends Envelope {
   top: string | null;
   stress?: StressRow[];
 }
+
+// ── /options/finder (the Options Finder; api/desk_options.py, engine method finder-2) ──
+
+export type OptionView = "up" | "down";
+export type OptionKind = "call" | "put";
+export type OptionFill = "ask" | "mid";
+export type OptionLens = "payoff" | "forgiving" | "time";
+export type OptionModel = "black76-escrowed" | "american-bbsr-escrowed" | "intrinsic";
+export type CarrySource = "market" | "dividends only" | "none" | "outside domain";
+
+/** The request, as the page writes it into its address (every value as typed; the server judges them). */
+export interface OptionsFinderParams {
+  symbol: string;
+  view: OptionView;
+  target: string;
+  by: string;
+  budget: string;
+  min_oi?: string;
+  max_spread?: string;
+  fill?: OptionFill;
+  scan_months?: string;
+  commission?: string;
+  [key: string]: string | undefined;
+}
+
+/** Dollars on your date if the stock is at your target, halfway there, and unchanged at the session close. */
+export interface ScenarioPnl {
+  target: number | null;
+  half: number | null;
+  flat: number | null;
+}
+
+export interface OptionRow {
+  contract: string;
+  type: OptionKind;
+  exp: string;
+  strike: number;
+  /** Days the contract lives past your date (0: it expires on it). */
+  days_past_date: number;
+  bid: number;
+  ask: number;
+  mid: number;
+  /** The price per share the cost is built on: the ask, or the mid when the visitor chose it. */
+  fill: number;
+  commission: number | null;
+  quote_ts: string | null;
+  oi: number | null;
+  /** The volatility solved from the mid by the Finder's own pricer. */
+  iv: number;
+  delta: number | null;
+  delta_note: string | null;
+  theta_dollars_day: number | null;
+  spread_pct: number | null;
+  n: number;
+  cost: number;
+  unused: number | null;
+  max_loss: number;
+  breakeven_expiry: number | null;
+  breakeven_on_date: number | null;
+  breakeven_on_date_note: string | null;
+  pnl: ScenarioPnl;
+  /** True when the contract lives past your date, so its value on the date is modelled, not intrinsic. */
+  modelled: boolean;
+  iv_minus_10: ScenarioPnl | null;
+  iv_plus_10: ScenarioPnl | null;
+  /** Market-implied (risk-neutral) chance of finishing past the breakeven at expiry; not a forecast. */
+  rn_prob_breakeven: number | null;
+  model: { session: OptionModel; on_date: OptionModel | Partial<Record<keyof ScenarioPnl, OptionModel>> };
+  model_inputs: { rate_session: number | null; rate_on_date: number | null; q: number | null; pv_dividends: number | null; forward: number | null; sigma: number | null; t_years: number | null };
+  european_value: number | null;
+  /** `premium` is a number, or the words "below $x" when a proved bound stood in for the lattice. */
+  early_exercise: { premium: number | string; flag: "yes" | "no" | "within the pricer's tolerance of a cent" };
+  event_ids: { before_date: string[]; before_expiry: string[]; uncertain: string[] };
+  flags: string[];
+  carry_source: CarrySource;
+  /** The provider's own figures, shown beside ours for comparison only. */
+  provider: { iv: number | null; delta: number | null; theta: number | null };
+}
+
+export interface OptionEvent {
+  id: string;
+  kind: "earnings" | "macro" | "dividend";
+  name: string;
+  date: string;
+  timing: "bmo" | "amc" | "dmh" | "unknown" | "exact" | "cum_close";
+  at: string | null;
+  source: string;
+  placement: string;
+  amount?: number | null;
+  label?: "projected, not declared" | "declared";
+}
+
+export interface OptionCarry {
+  exp: string;
+  forward: number | null;
+  q: number | null;
+  pv_market: number | null;
+  pv_schedule: number | null;
+  difference: number | null;
+  pairs: number | null;
+  source: CarrySource;
+  words: string;
+  atm_vol: number | null;
+}
+
+export interface OptionsFinderResponse extends Envelope {
+  symbol?: string;
+  inputs?: {
+    view: OptionView;
+    type: OptionKind;
+    target: number | null;
+    by: string;
+    budget: number | null;
+    min_oi: number | null;
+    max_spread: number | null;
+    fill: OptionFill;
+    scan_months: number | null;
+    commission: number | null;
+    implied_move_pct: number | null;
+    half_price: number | null;
+  };
+  universe?: {
+    window: { type: OptionKind; exp_from: string; exp_to: string; strike_from: number | null; strike_to: number | null };
+    seen: number | null;
+    passed: number | null;
+    /** Contracts each screen removed, by screen. */
+    dropped: Record<string, number | null>;
+    ranked_out: number | null;
+    ranked_out_words: string | null;
+    truncated: boolean;
+  };
+  picks?: Partial<Record<OptionLens, string | null>>;
+  lens_reasons?: { time?: string | null };
+  empty?: string | null;
+  /** Ordered by the payoff lens; the page re-sorts by a lens or a column. */
+  rows?: OptionRow[];
+  curve?: { prices: number[]; marks: { close: number | null; half: number | null; target: number | null }; pnl: Record<string, (number | null)[]> };
+  rates?: { points: { series: string; date: string; yield_pct: number | null; zero_rate: number | null }[]; rule: string };
+  carry?: OptionCarry[];
+  dividends?: { ex_date: string; cum_session: string; amount: number | null; period: string | null; label: "projected, not declared" | "declared" }[];
+  events?: OptionEvent[];
+  coverage?: string[];
+  earnings_moves?: { event_id: string; date: string; move_sd_pct: number | null; expiries: string[] | null; reason: string | null }[];
+  /** Served when the quotes are one session behind the newest completed session. */
+  stale?: string | null;
+  work?: { used: number | null; limit: number | null };
+  method?: { version: string; tolerances: Record<string, unknown>; lattice: { n_min: number | null; k_min: number | null }; notes: string[] };
+  scan?: {
+    truncated: boolean;
+    complete_through: string | null;
+    requested_through: string;
+    requests: number | null;
+    queried: { type: OptionKind; exp_from: string; exp_to: string; strike_from: number | null; strike_to: number | null };
+  };
+  /** What the answer was priced from: the quotes' session, their newest stamp, the session close and the curve. */
+  market_as_of?: {
+    chain_session: string | null;
+    latest_quote: string | null;
+    underlying_close: number | null;
+    underlying_close_date: string;
+    curve: { series: string; date: string; value: number | null }[];
+  };
+  provider?: string;
+  sources?: string[];
+}

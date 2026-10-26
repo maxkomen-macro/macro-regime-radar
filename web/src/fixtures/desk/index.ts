@@ -25,6 +25,7 @@ import technicals from "./technicals.json" with { type: "json" };
 import basketPrice from "./basket-price.json" with { type: "json" };
 import basketHedge from "./basket-hedge.json" with { type: "json" };
 import basketShares from "./basket-shares.json" with { type: "json" };
+import optionsFinder from "./options-finder.json" with { type: "json" };
 import technicalsGLD from "./technicals-GLD.json" with { type: "json" };
 import technicalsNVDA from "./technicals-NVDA.json" with { type: "json" };
 import studyGold60 from "./studies/gold-w60-z2.0-up-none-spx.json" with { type: "json" };
@@ -142,6 +143,20 @@ export function basketKey(u: URL): string {
   return `${u.searchParams.get("legs") ?? ""}|${u.searchParams.get("method") ?? "hold"}|${u.searchParams.get("notional") ?? "1000000"}${cap}`;
 }
 
+/** A query's parameters in name order, so a request matches its fixture whatever order the page writes them in. */
+export function sortedQuery(q: URLSearchParams): string {
+  return [...q.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([k, v]) => `${k}=${v}`)
+    .join("&");
+}
+
+/** The Options Finder's answers (scripts/options_finder_fixture.py: the real route on an invented chain, not market
+ * data), by the request's parameters. Any other view has no fixture: never a made-up price. */
+export const OPTIONS_FINDER_ANSWERS: Readonly<Record<string, unknown>> = Object.fromEntries(
+  Object.entries((optionsFinder as { answers: Record<string, unknown> }).answers).map(([k, v]) => [sortedQuery(new URLSearchParams(k)), v]),
+);
+
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
 const STUDY_Q = (study as { question: Record<string, string | number> }).question;
 /** The five slots besides the horizon, which selects the answer rather than the study (§12.2). */
@@ -232,6 +247,10 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   if (method.toUpperCase() === "GET" && path in BASKET_ANSWERS) {
     const answer = BASKET_ANSWERS[path][basketKey(u)];
     return answer ? json(200, answer) : json(404, { error: "no fixture for this basket" });
+  }
+  if (method.toUpperCase() === "GET" && path === "/options/finder") {
+    const answer = OPTIONS_FINDER_ANSWERS[sortedQuery(u.searchParams)];
+    return answer ? json(200, answer) : json(404, { error: "no_fixture", message: "The fixtures carry no answer for this view; the API prices it on request." });
   }
   if (method.toUpperCase() === "GET" && path in DEFERRED) return json(200, awaitingEnvelope({ reason: DEFERRED[path], until: null }, FIXTURE_META));
   if (method.toUpperCase() === "GET" && (path === "/study" || path === "/study/events")) {
