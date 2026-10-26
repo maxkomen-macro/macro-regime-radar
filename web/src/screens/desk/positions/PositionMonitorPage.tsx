@@ -427,6 +427,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   // Options Finder step 7: "Save as position" carries one contract (`?option=`), read only when it is whole.
   const optionAsked = optionFromSearch(search.get("option"));
   const optionCarried = optionAsked && !carriedAsk && !basketId ? optionAsked : null;
+  // The contract stays attached only while the instrument still names it (Codex S-2): a row never names one
+  // instrument while its details describe another.
+  const optionAttached = optionCarried && draft.instrument.trim() === optionInstrument(optionCarried) ? optionCarried : null;
   // §14.4: the form opens from "+ New position" (`?new=1`) or when something is carried in.
   const formOpen = search.get("new") === "1" || !!carriedAsk || !!basketId || !!(instrumentAsked && instrumentAsked.trim()) || !!optionAsked;
   const closeForm = () =>
@@ -508,7 +511,7 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     if (carried && canonical) return { kind: "study", question: canonical };
     // A position records a basket's weights as numbers (§9); a saved basket keeps its exact digits (Codex R-20).
     if (sent && !carriedAsk && sent.legs?.length) return { kind: "basket", legs: sent.legs.map((l) => ({ symbol: l.symbol, weight: Number(l.weight) })), benchmark: null };
-    if (optionCarried) return optionCarried;
+    if (optionAttached) return optionAttached;
     return { kind: "instrument", id: seriesOf(draft.instrument) ?? draft.instrument.trim() };
   };
 
@@ -561,6 +564,16 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     const failed = saveWords(r);
     if (failed || !saved) return finish(failed ?? "Nothing was saved.", "refused");
     setDraft({ ...EMPTY });
+    // A saved contract leaves the address, so the next position saved from this form is not the same option.
+    if (subj.kind === "option")
+      setSearch(
+        (prev) => {
+          const q = new URLSearchParams(prev);
+          q.delete("option");
+          return q;
+        },
+        { replace: true },
+      );
     finish(auto ? "Saved in this browser. The position is on the monitor, its room read from the served level." : "Saved in this browser. The position is on the monitor, monitored by hand.", "saved");
   };
 
@@ -591,8 +604,10 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
         ? `The basket sent from Basket & Hedge (${basketId}) is not saved in this browser; the gate is the same for every position.`
         : carriedFailed
           ? `The study carried in from Event Study (${from ?? "the question in the address"}) is awaiting refresh; the gate is the same for every position.`
-          : optionCarried
+          : optionCarried && (optionAttached || !draft.instrument.trim())
             ? `Saved from the Options Finder · ${optionLine(optionCarried)} Monitored by hand; the gate is the same for every position.`
+            : optionCarried
+              ? "The instrument no longer names the option carried from the Options Finder, so the option is not attached; the gate is the same for every position."
             : search.get("option") && !optionAsked
               ? "The option in the address could not be read, so it is not carried in; the gate is the same for every position."
               : instrumentAsked && instrumentAsked.trim()

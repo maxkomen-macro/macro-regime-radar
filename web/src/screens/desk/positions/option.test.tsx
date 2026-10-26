@@ -127,6 +127,43 @@ describe("Save as position, from the Finder to the monitor", () => {
     expect(row).toHaveAttribute("data-monitoring", "manual");
   });
 
+  const finderToForm = async () => {
+    renderAt("/desk/options-finder?symbol=SYN&direction=up&target=120&by=2026-12-18&budget=5000&commission=0.65");
+    const card = await screen.findByTestId("of-pick-payoff", undefined, { timeout: 4000 });
+    fireEvent.click(within(card).getByRole("link", { name: new RegExp(`Save ${ROW.n} × ${ROW.contract} as a position`) }));
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue("SYN Dec 18, 2026 $112.50 call"));
+  };
+  const fillGate = () => {
+    fireEvent.change(screen.getByLabelText(/Variant view/), { target: { value: "The market thinks a, I think b, because c." } });
+    fireEvent.change(screen.getByLabelText(/Pre-mortem/), { target: { value: "It lost money because d." } });
+    fireEvent.change(screen.getByLabelText("Or type your own level"), { target: { value: "SYN below 100" } });
+  };
+
+  it("an instrument changed after the handoff detaches the option, and says so (Codex S-2)", async () => {
+    await finderToForm();
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "MSFT" } });
+    expect(screen.getByText(/no longer names the option carried from the Options Finder/)).toBeInTheDocument();
+    fillGate();
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ instrument: "MSFT", subject: { kind: "instrument", id: "MSFT" } });
+  });
+
+  it("a saved option leaves the address, so a second save from the form is not the same contract (Codex S-2)", async () => {
+    await finderToForm();
+    fillGate();
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0].subject).toEqual(SUBJECT);
+    await waitFor(() => expect(screen.getByLabelText("Instrument")).toHaveValue(""));
+    expect(screen.queryByText(/^Saved from the Options Finder · /)).toBeNull();
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "SYN Dec 18, 2026 $112.50 call" } });
+    fillGate();
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(2));
+    expect(stored()[1].subject).toMatchObject({ kind: "instrument" });
+  });
+
   it("an option position opens to what it holds and watches", async () => {
     localStorage.setItem(POSITIONS_KEY, JSON.stringify([record()]));
     renderAt("/desk/position-monitor?open=p-opt");
