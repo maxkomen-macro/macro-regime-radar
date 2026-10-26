@@ -51,8 +51,12 @@ def classify(rec: dict) -> dict:
     """One record's outcomes. Pure: the tests drive it with hand-made records."""
     out: dict = {"id": rec["case"]["id"], "group": rec["case"]["group"], "kind": rec["case"]["kind"]}
     if "error" in rec:
-        out.update(price="error", delta="error", error=rec["error"])
-        return out
+        out["error"] = rec["error"]
+        if "engine" not in rec or "ref" not in rec:  # the price itself was never computed
+            out.update(price="error", delta="error")
+            return out
+        # a later diagnostic crashed: the price and delta outcomes still stand, the crash is kept beside them
+        # and holds the gate open (Codex OB-16)
     eng, rv, rd = rec["engine"], rec["ref"]["value"], rec["ref"]["delta"]
     out["engine_status"] = eng["status"]
     out["model"] = eng.get("model")
@@ -161,6 +165,10 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
     s["accepted_scored"] = len(acc)
     s["price_failures"] = fails
     s["clopper_pearson_95"] = clopper_pearson(fails, len(acc)) if sampled else None
+    # conservative: every indeterminate outcome counted as a failure (Codex OB-17)
+    indet = sum(r["price"] == "indeterminate" for r in rows)
+    s["clopper_pearson_95_conservative"] = clopper_pearson(fails + indet, len(acc) + indet) if sampled else None
+    s["errors"] = sum("error" in r for r in rows)
     errs = [r["price_err_tol"] for r in rows if "price_err_tol" in r]
     s["price_err_tol"] = {"p50": _q(errs, 0.5), "p99": _q(errs, 0.99), "max": max(errs) if errs else None}
     worst = sorted((r for r in rows if "price_err_tol" in r), key=lambda r: -r["price_err_tol"])[:3]
@@ -170,6 +178,9 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
     dacc = [r for r in rows if r["delta"] in ("pass", "fail")]
     s["delta_failures"] = sum(r["delta"] == "fail" for r in rows)
     s["delta_clopper_pearson_95"] = clopper_pearson(s["delta_failures"], len(dacc)) if sampled else None
+    dind = sum(r["delta"] == "indeterminate" for r in rows)
+    s["delta_clopper_pearson_95_conservative"] = (clopper_pearson(s["delta_failures"] + dind, len(dacc) + dind)
+                                                  if sampled else None)
     s["delta_withheld_notes"] = dict(Counter(r.get("delta_note") for r in rows if r["delta"] == "withheld"))
     units = [r["units"] for r in rows if r.get("units") is not None]
     s["work_units"] = {"p50": _q(units, 0.5), "p95": _q(units, 0.95), "max": max(units) if units else None}
@@ -272,6 +283,7 @@ def gate_result(groups: dict, overall: dict | None, named: list[dict], complete:
             "per_group_met": per_group,
             "overall_met": bool(overall and overall["accepted_scored"] >= OVERALL_TARGET),
             "zero_failures": price_fail == 0 and bool(in_dom),
+            "crashes": sum(s.get("errors", 0) for s in groups.values()),
             "divsens": {"target_scored": DIVSENS_TARGET, "outcome": dict(div),
                         "met": div.get("fail", 0) == 0 and div.get("pass", 0) + div.get("fail", 0) >= DIVSENS_TARGET},
             "named_missing": sorted({c.id for c in cases.NAMED} - {n["id"] for n in named}),
@@ -281,6 +293,7 @@ def gate_result(groups: dict, overall: dict | None, named: list[dict], complete:
             "named_unresolved": [n["id"] for n in named if n["regression"] == "unresolved"]}
     # An unresolved named regression is not certified, so it holds the gate open as a failure would.
     gate["met"] = (complete and all(per_group.values()) and gate["overall_met"] and gate["zero_failures"]
+                   and gate["crashes"] == 0
                    and gate["divsens"]["met"] and gate["named_all_pass"] and not gate["named_missing"])
     return gate
 
@@ -338,7 +351,7 @@ def score(dirs: list[Path]) -> dict:
            "exempt_american_within_u": sum(r.get("exempt_american_err_over_u", 2) <= 1 for r in rows)}
     gate = gate_result(groups, overall, named, run_status["complete"])
     return {"manifests": manifests, "run": run_status, "groups": groups, "overall_in_domain": overall, "named": named,
-            "controls": ctl, "gate": gate, "errors": [r for r in rows if r["price"] == "error"]}
+            "controls": ctl, "gate": gate, "errors": [r for r in rows if "error" in r]}
 
 
 def _f(x, nd=3):
@@ -367,7 +380,7 @@ def markdown(sc: dict) -> str:
               f"- Reference: {m0['reference']['method']}; reliable when its uncertainty is at most {m0['reference']['ref_fraction']} of the tolerance. Uncertainty is an estimate, not a proved bound.",
               ""]
     L += ["## Price and delta by group", "",
-          "| Group | Cases | Served | Refused | Ref unresolved | Price pass / fail / indet. / unscored | Worst err (tol) | p99 err (tol) | 95% upper fail rate | Delta pass / fail / withheld / unscored | Worst delta err | Work p50 / max (M units) |",
+          "| Group | Cases | Served | Refused | Ref unresolved | Price pass / fail / indet. / unscored | Worst err (tol) | p99 err (tol) | 95% upper fail rate (indet. counted as fail) | Delta pass / fail / withheld / unscored | Worst delta err | Work p50 / max (M units) |",
           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for g, s in [*sc["groups"].items(), *([("**random in-domain total**", sc["overall_in_domain"])] if sc["overall_in_domain"] else [])]:
         served = sum(v for k, v in s["engine"].items() if k.startswith("served"))
@@ -375,7 +388,7 @@ def markdown(sc: dict) -> str:
         p, d = s["price"], s["delta"]
         L.append(f"| {g} | {s['cases']} | {served} | {refused} | {s['reference_value'].get('unresolved', 0)} | "
                  f"{p.get('pass', 0)} / {p.get('fail', 0)} / {p.get('indeterminate', 0)} / {p.get('unscored', 0)} | "
-                 f"{_f(s['price_err_tol']['max'])} | {_f(s['price_err_tol']['p99'])} | {_f(s['clopper_pearson_95'][2], 4) if s['clopper_pearson_95'] else 'n/a (not sampled)'} | "
+                 f"{_f(s['price_err_tol']['max'])} | {_f(s['price_err_tol']['p99'])} | {_f(s['clopper_pearson_95_conservative'][2], 4) if s['clopper_pearson_95_conservative'] else 'n/a (not sampled)'} | "
                  f"{d.get('pass', 0)} / {d.get('fail', 0)} / {d.get('withheld', 0)} / {d.get('unscored', 0)} | {_f(s['delta_err']['max'], 5)} | "
                  f"{_f((s['work_units']['p50'] or 0) / 1e6, 1)} / {_f((s['work_units']['max'] or 0) / 1e6, 1)} |")
     L += ["", "## Engine routes and refusals", ""]
@@ -438,7 +451,8 @@ def markdown(sc: dict) -> str:
           + (f" (missing: {', '.join(gt['named_missing'])})" if gt["named_missing"] else ""),
           f"- Run complete: {'yes' if gt['complete'] else 'no'} ({sc['run']['received']} of {sc['run']['expected']} cases)",
           f"- **Gate {'met' if gt['met'] else 'not met'}** (an unresolved named regression holds the gate open)",
-          "- Clopper-Pearson limits assume independent draws from each group's sampling distribution; they are not a claim about real chains or whole requests.",
+          f"- Crashes (any group, including diagnostics after a price was scored): {gt['crashes']}; any crash holds the gate open.",
+          "- Clopper-Pearson limits assume independent draws from each group's sampling distribution, and are conditional on the reference resolving (unscored cases are counted, not in the rate). The table's limit counts every indeterminate outcome as a failure. They are not a claim about real chains or whole requests.",
           ""]
     if sc["errors"]:
         L += ["## Crashes", ""] + [f"- {e['id']}: {e['error']}" for e in sc["errors"]]

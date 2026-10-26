@@ -298,6 +298,30 @@ def test_the_early_exercise_bound_is_checked_against_the_reference_premium():
     assert "bound" not in score.classify(_rec())
 
 
+def test_a_diagnostic_crash_keeps_the_price_outcome_and_holds_the_gate():
+    rec = _rec(value=10.02)                         # a price failure, then a later diagnostic raised (OB-16)
+    rec["error"] = "RuntimeError: lattice check"
+    out = score.classify(rec)
+    assert out["price"] == "fail" and out["error"]
+    s = score._summary([out])
+    assert s["price_failures"] == 1 and s["errors"] == 1
+    bare = {"case": rec["case"], "error": "boom"}   # nothing computed
+    assert score.classify(bare)["price"] == "error"
+    full = {g: _group(score.PER_GROUP_TARGET) | {"errors": 0} for g in cases.IN_DOMAIN_GROUPS}
+    full["G2-dividends"] = _group(score.PER_GROUP_TARGET, div={"pass": score.DIVSENS_TARGET}) | {"errors": 0}
+    ok = [{"id": c.id, "regression": "pass"} for c in cases.NAMED]
+    overall = {"accepted_scored": score.OVERALL_TARGET}
+    assert score.gate_result(full, overall, ok, complete=True)["met"]
+    full["X1-outside"] = {"errors": 1}
+    assert not score.gate_result(full, overall, ok, complete=True)["met"]
+
+
+def test_indeterminate_outcomes_widen_the_conservative_limit():
+    rows = [{"price": "pass", "delta": "pass"}] * 1000 + [{"price": "indeterminate", "delta": "pass"}] * 1000
+    s = score._summary([dict(r, id="x", group="g", kind="random") for r in rows])
+    assert s["clopper_pearson_95"][2] < 0.005 < 0.5 < s["clopper_pearson_95_conservative"][2]
+
+
 def test_named_regressions_carry_no_sampling_limits():
     rows = [score.classify(_rec())]
     assert score._summary(rows, sampled=False)["clopper_pearson_95"] is None
