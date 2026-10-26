@@ -90,6 +90,9 @@ the early-exercise flag were served but not shown (both now show, as the approve
 counted the priced rows as "passed the screens" while contracts the value bounds kept out of every top 20 had
 passed too (the summary and the table now say priced). Three of the page's own test expectations changed with
 that copy (the summary sentence, the puts sentence and the loading line).
+Its third round found one: for a report before the open on an expiry day, the route never read that day's expiry,
+so the implied earnings move came from the next pair of expiries; the route now reads it, and the engine keeps it
+only when the release time puts the report before that close.
 
 ## Capacity
 
