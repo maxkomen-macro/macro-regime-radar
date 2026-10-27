@@ -61,10 +61,10 @@ Every change to shared code is additive and inert while the Finder is unlisted:
 
 ## Tests
 
-- Python: the full suite at the branch's head, 2,468 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
+- Python: the full suite at the branch's head, 2,469 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
   and 1 failed at the base. The failure is the baseline's `test_no_secret_in_logs` (a uvicorn startup-log race),
   which passes alone. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent
-  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 76, on synthetic chains,
+  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 77, on synthetic chains,
   plus the contract and route-list tests.
 - Timing tests, kept apart from this branch's own results. Two tests with a wall-clock bound failed in some full
   runs and passed alone. The profile's two-calls-in-parallel test misses its bound by about 10 ms under load; it
