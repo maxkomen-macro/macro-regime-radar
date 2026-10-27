@@ -576,7 +576,7 @@ const COLUMNS: { key: SortKey | null; label: string; num?: boolean }[] = [
 ];
 
 function sortValue(r: OptionRow, k: SortKey): number | string | null {
-  if (k === "exp") return `${r.exp} ${String(r.strike).padStart(12, "0")}`;
+  if (k === "exp") return `${r.exp} ${r.strike.toFixed(4).padStart(16, "0")}`; // strike as a number (Codex S-16)
   if (k === "strike") return r.strike;
   if (k === "oi") return r.oi;
   if (k === "iv") return r.iv;

@@ -343,6 +343,17 @@ describe("Options Finder: the answer", () => {
     expect(sortRows(withNull, "oi", "asc")[1].oi).toBeNull();
     expect(sortRows(rows, "served", "desc").map((r) => r.contract)).toEqual(rows.map((r) => r.contract));
   });
+
+  it("sorts the Contract column by expiry, then by strike as a number (Codex S-16)", () => {
+    const r0 = (UP.rows as OptionRow[])[0];
+    const strikes = [112.5, 100, 107.5, 105, 102.5, 110];
+    const rows = [
+      ...strikes.map((k) => ({ ...r0, contract: `B${k}`, exp: "2027-01-15", strike: k })),
+      { ...r0, contract: "A", exp: "2026-12-18", strike: 120 },
+    ] as OptionRow[];
+    expect(sortRows(rows, "exp", "asc").map((r) => r.contract)).toEqual(["A", "B100", "B102.5", "B105", "B107.5", "B110", "B112.5"]);
+    expect(sortRows(rows, "exp", "desc").map((r) => r.contract)).toEqual(["B112.5", "B110", "B107.5", "B105", "B102.5", "B100", "A"]);
+  });
 });
 
 describe("Options Finder: the states", () => {
