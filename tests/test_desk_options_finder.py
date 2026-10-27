@@ -234,6 +234,19 @@ def test_without_pairs_the_carry_falls_back_to_dividends_then_none():
     assert "Dividend data unavailable." in b["coverage"]
 
 
+def test_a_declared_dividend_past_every_scanned_expiry_is_not_listed_as_an_event_before_expiry():
+    """Codex S-17: declared dividends have no upper date in the schedule, so the events list bounds them by the
+    scan's last expiry, as the route bounds earnings and macro releases."""
+    rows = [_one(110.0, BY, bid=1.50, ask=1.55)]
+    near = {"ex_date": "2026-11-20", "cum_session": "2026-11-19", "amount": 0.52, "period": "Quarterly", "declared_on": None}
+    far = {"ex_date": "2027-02-19", "cum_session": "2027-02-18", "amount": 0.52, "period": "Quarterly", "declared_on": None}
+    a = of.run(rows, _thesis(), syn.market(), dividends={"status": "ok", "rows": [near, far]})
+    days = [e["date"] for e in a["events"] if e["kind"] == "dividend"]
+    assert days == ["2026-11-19"]
+    assert all(date.fromisoformat(e["date"]) <= BY for e in a["events"])
+    assert "2027-02-18" in {d["cum_session"] for d in a["dividends"]}   # still in the schedule the answer serves
+
+
 def test_projected_dividends_are_labelled_and_declared_ones_are_not(up):
     labels = {d["label"] for d in up["dividends"]}
     assert labels == {"projected, not declared"}

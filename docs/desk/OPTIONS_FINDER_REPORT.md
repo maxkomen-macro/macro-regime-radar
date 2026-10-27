@@ -124,7 +124,9 @@ scan near the work ceiling can use less work than before. The bench then reran t
 five days and on a tenth of the rest: no served delta failed, and every price and status was unchanged.
 Its ninth round found two smaller defects, fixed with tests: a saved option's line in the Position Monitor
 rounded a half-cent fill ($0.875 read $0.88; it now reads as the Finder shows it), and the table's Contract
-column sorted strikes as text (105 before 102.5; now as numbers).
+column sorted strikes as text (105 before 102.5; now as numbers). Its tenth round, which the owner allowed, found one: a
+declared dividend after the scan's last expiry was listed under "Events before expiry" (the events list now ends
+at the scan's last expiry, as earnings and macro releases already did; pricing never used it).
 
 ## Capacity
 
