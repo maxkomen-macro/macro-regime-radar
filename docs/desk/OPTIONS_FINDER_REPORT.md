@@ -75,7 +75,7 @@ Every change to shared code is additive and inert while the Finder is unlisted:
   It is also not shown to be this branch's: its worker runs only the Desk pipeline item, and the branch changes
   none of the worker, the bootstrap, the pipeline or the database-path code it runs; it passed 16 of 16 isolated
   runs (head and base, under CPU load), its whole file 6 of 6, and 3 of 3 after the Finder's test files.
-- Web: vitest 156 files, 1,996 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
+- Web: vitest 156 files, 1,998 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
   `desk.spec.ts`, `desk-usability.spec.ts` and `desk-mobile.spec.ts` 98 of 98, the Finder added to the palette and
   language audits.
 - Fixtures are synthetic: an invented $100 stock (SYN) whose quotes the engine's own lattice priced
@@ -120,7 +120,11 @@ then found two in-domain contexts whose served delta missed the stated accuracy,
 1 of a long-dated contract near its exercise boundary; prices were unaffected. After its own design review (two
 passes), no lattice delta is served while a dividend falls in the next five days: the price stays, and the
 Delta cell shows why (as it now does for every withheld delta). A delta-only lattice run is skipped there, so a
-scan near the work ceiling can use less work than before.
+scan near the work ceiling can use less work than before. The bench then reran the engine on its 1,840 cases with a dividend in the first
+five days and on a tenth of the rest: no served delta failed, and every price and status was unchanged.
+Its ninth round found two smaller defects, fixed with tests: a saved option's line in the Position Monitor
+rounded a half-cent fill ($0.875 read $0.88; it now reads as the Finder shows it), and the table's Contract
+column sorted strikes as text (105 before 102.5; now as numbers).
 
 ## Capacity
 
