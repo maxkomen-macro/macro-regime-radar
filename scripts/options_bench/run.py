@@ -12,6 +12,7 @@ the command, seed, sizes, package versions, platform, and the engine's and the b
 from __future__ import annotations
 
 import argparse
+import contextlib
 import dataclasses
 import hashlib
 import importlib.util
@@ -192,6 +193,8 @@ def main(argv=None) -> int:
         if truncated:  # killed mid-write: drop the partial line so that case runs again
             print(f"warning: {res_path.name} ends in a partial record; dropping it and re-running that case",
                   flush=True)
+        text = res_path.read_text()
+        if truncated or (text and not text.endswith("\n")):  # also a whole record that lost its newline
             res_path.write_text("".join(json.dumps(r) + "\n" for r in recs))
         done = {r["case"]["id"] for r in recs}
     # through JSON, as the saved manifest went, so tuples and lists compare equal on resume
@@ -221,9 +224,14 @@ def main(argv=None) -> int:
         todo.append((c.to_json(), opts))
     t0 = time.time()
     print(f"{len(mine)} cases in shard {args.shard}, {len(done)} already done, {len(todo)} to run", flush=True)
-    ctx = mp.get_context("fork")
-    with ctx.Pool(args.workers) as pool, res_path.open("a") as f:
-        for k, rec in enumerate(pool.imap_unordered(work, todo, chunksize=1)):
+    with contextlib.ExitStack() as stack:
+        if args.workers > 1:
+            pool = stack.enter_context(mp.get_context("fork").Pool(args.workers))
+            results = pool.imap_unordered(work, todo, chunksize=1)
+        else:  # one worker runs in this process: no fork from a process that may hold threads
+            results = map(work, todo)
+        f = stack.enter_context(res_path.open("a"))
+        for k, rec in enumerate(results):
             f.write(json.dumps(rec) + "\n")
             f.flush()
             if k % 25 == 0 or k == len(todo) - 1:

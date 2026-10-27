@@ -446,6 +446,9 @@ def test_resuming_after_a_partial_last_record_rewrites_the_file(tmp_path):
     p.write_text('{"case": {"id": "G1-n')
     assert run.main(common) == 0
     assert score.read_results(p) == ([], False)
+    p.write_text(json.dumps(_rec()))                     # a whole record that lost only its newline
+    assert run.main(common) == 0
+    assert p.read_text() == json.dumps(_rec()) + "\n"
 
 
 @pytest.mark.skipif(crosscheck.ql is None, reason="QuantLib is test-only and not installed")
