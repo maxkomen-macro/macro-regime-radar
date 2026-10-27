@@ -1746,8 +1746,8 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
                           "pairs": c.pairs, "source": c.source, "words": CARRY_WORDS[c.source], "atm_vol": c.atm_vol})
     found_earnings = any(r.day >= session for r in reports)
     last_scanned = max((q.exp for q in survivors), default=t.by)
-    # the events list ends at the scan's last expiry, the bound the route puts on earnings and macro releases;
-    # declared dividends have no upper date in the schedule (Codex S-17)
+    # the events list ends at the close of the scan's last expiry: the route bounds earnings and macro releases by
+    # its date only, and declared dividends have no upper date in the schedule (Codex S-17, S-18)
     scan_last = max((d for d in (_date(r.get("exp_date")) for r in inputs["rows"] if isinstance(r, Mapping)) if d), default=t.by)
     if cov.get("earnings") == "not_checked":
         earnings_status = "not_checked"
@@ -1776,7 +1776,8 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         "carry": carry_out,
         "dividends": [{"ex_date": d.ex_date.isoformat(), "cum_session": d.cum_session.isoformat(), "amount": d.amount,
                        "period": d.period, "label": "projected, not declared" if d.projected else "declared"} for d in sched],
-        "events": event_list([ev for ev in evs if ev.kind != "dividend" or ev.day <= scan_last], session, t.by, m.closes),
+        "events": event_list([ev for ev in evs if position(ev, scan_last, m.closes) != "after"], session, t.by,
+                             m.closes),  # events after the last expiry's close are not before expiry (Codex S-17, S-18)
         "coverage": coverage_words(coverage or {}, m.symbol or m.occ_root, div_ok, found_earnings, unusable > 0),
         "earnings_status": earnings_status,
         "earnings_moves": earnings_moves(reports, session, last_scanned, m.closes, carries, event_expiries,

@@ -247,6 +247,31 @@ def test_a_declared_dividend_past_every_scanned_expiry_is_not_listed_as_an_event
     assert "2027-02-18" in {d["cum_session"] for d in a["dividends"]}   # still in the schedule the answer serves
 
 
+def test_a_dividend_whose_cum_close_is_the_last_expiry_is_paid_after_it_and_not_listed():
+    """Codex S-18: a dividend is paid after its last cum-dividend close, so one whose cum session is the scan's last
+    expiry falls after that expiry (as `owed` and `position` already read it) and is not an event before expiry."""
+    rows = [_one(110.0, BY, bid=1.50, ask=1.55)]
+    day_before = BY - timedelta(days=1)
+    on = {"ex_date": (BY + timedelta(days=3)).isoformat(), "cum_session": BY.isoformat(), "amount": 0.52,
+          "period": "Quarterly", "declared_on": None}
+    before = {"ex_date": BY.isoformat(), "cum_session": day_before.isoformat(), "amount": 0.52, "period": "Quarterly",
+              "declared_on": None}
+    for div, listed in ((on, False), (before, True)):
+        a = of.run(rows, _thesis(), syn.market(), dividends={"status": "ok", "rows": [div]})
+        days = [e["date"] for e in a["events"] if e["kind"] == "dividend"]
+        assert days == ([div["cum_session"]] if listed else []), (div, days)
+
+
+def test_a_release_after_the_last_expiry_close_on_its_day_is_not_listed():
+    """Codex S-18's sibling: the route bounds earnings and macro releases by date, so a report after the close on the
+    last expiry's own day reached the list; one before that close, or of unknown timing, stays."""
+    rows = [_one(110.0, BY, bid=1.50, ask=1.55)]
+    at = lambda tm: {"kind": "earnings", "name": f"SYN {tm}", "date": BY.isoformat(), "time": tm, "at": None,
+                     "source": "test"}
+    a = of.run(rows, _thesis(), syn.market(), events=[at("amc"), at("bmo"), at("unknown")])
+    assert sorted(e["timing"] for e in a["events"] if e["kind"] == "earnings") == ["bmo", "unknown"]
+
+
 def test_projected_dividends_are_labelled_and_declared_ones_are_not(up):
     labels = {d["label"] for d in up["dividends"]}
     assert labels == {"projected, not declared"}
