@@ -316,11 +316,29 @@ def gate_open(gt: dict) -> list[str]:
     return why
 
 
+def read_results(path: Path) -> tuple[list[dict], bool]:
+    """A results file's records, and whether its last line was cut short. A run killed mid-write can leave a
+    partial final line: that case is treated as not yet run (resume re-runs it, the scorer counts it missing).
+    An unreadable line anywhere else is damage, not an interruption, and raises."""
+    lines = [x for x in path.read_text().splitlines() if x.strip()]
+    recs = []
+    for k, x in enumerate(lines):
+        try:
+            recs.append(json.loads(x))
+        except json.JSONDecodeError:
+            if k == len(lines) - 1:
+                return recs, True
+            raise ValueError(f"{path.name} line {k + 1} is not a result record") from None
+    return recs, False
+
+
 def score(dirs: list[Path]) -> dict:
-    recs, manifests = [], []
+    recs, manifests, cut = [], [], []
     for d in dirs:
         for p in sorted(d.glob("results-*.jsonl")):
-            recs += [json.loads(x) for x in p.read_text().splitlines() if x.strip()]
+            got, truncated = read_results(p)
+            recs += got
+            cut += [p.name] if truncated else []
         manifests += [json.loads(p.read_text()) for p in sorted(d.glob("manifest-*.json"))]
     check_compatible(manifests)
     seen: dict = {}
@@ -331,6 +349,7 @@ def score(dirs: list[Path]) -> dict:
         seen[cid] = r
     uniq = list(seen.values())
     run_status = completeness(manifests, set(seen))
+    run_status["truncated_files"] = cut
     rows = [classify(r) for r in uniq]
     by = defaultdict(list)
     for r in rows:
@@ -389,6 +408,7 @@ def markdown(sc: dict) -> str:
     if not rs["complete"]:
         L += [f"**Partial run: {rs['received']} of {rs['expected']} cases"
               + (f"; shards not received: {', '.join(rs['missing_shards'])}" if rs["missing_shards"] else "")
+              + (f"; partial last record dropped from {', '.join(rs['truncated_files'])}" if rs.get("truncated_files") else "")
               + ". Nothing below certifies the engine.**", ""]
     if m0:
         L += [f"- Engine: `{m0['engine']['files_sha256'].get('src/desk/options_math.py', '')[:12]}` (options_math.py sha256), "

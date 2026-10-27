@@ -188,9 +188,12 @@ def main(argv=None) -> int:
     res_path = out / f"results-{tag}.jsonl"
     done = set()
     if res_path.exists():
-        for line in res_path.read_text().splitlines():
-            if line.strip():
-                done.add(json.loads(line)["case"]["id"])
+        recs, truncated = score.read_results(res_path)
+        if truncated:  # killed mid-write: drop the partial line so that case runs again
+            print(f"warning: {res_path.name} ends in a partial record; dropping it and re-running that case",
+                  flush=True)
+            res_path.write_text("".join(json.dumps(r) + "\n" for r in recs))
+        done = {r["case"]["id"] for r in recs}
     # through JSON, as the saved manifest went, so tuples and lists compare equal on resume
     man = json.loads(json.dumps(manifest(args, args.shard, len(mine))))
     man_path = out / f"manifest-{tag}.json"

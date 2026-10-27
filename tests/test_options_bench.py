@@ -413,6 +413,41 @@ def test_resuming_a_run_with_other_inputs_is_refused(tmp_path):
         run.main(common)
 
 
+@needs_engine
+def test_loading_the_engine_leaves_the_repo_src_package_in_place():
+    import importlib
+    import sys
+    from scripts.options_bench import engine
+    importlib.import_module("src.utils")                   # the repo's own package, imported first
+    engine._LOADED.pop(ENGINE, None)
+    engine.load(ENGINE)
+    assert Path(sys.modules["src"].__file__).resolve().is_relative_to(REPO)
+    later = importlib.import_module("src.utils.format")    # a module first imported after the engine
+    assert Path(later.__file__).resolve().is_relative_to(REPO)
+
+
+def test_a_partial_last_record_is_dropped_and_other_damage_raises(tmp_path):
+    p = tmp_path / "results-0of1.jsonl"
+    p.write_text(json.dumps(_rec()) + "\n" + '{"case": {"id": "G1-n')     # killed mid-write
+    recs, cut = score.read_results(p)
+    assert cut and [r["case"]["id"] for r in recs] == [_rec()["case"]["id"]]
+    p.write_text('{"case": \n' + json.dumps(_rec()) + "\n")               # damage before the last line
+    with pytest.raises(ValueError, match="line 1"):
+        score.read_results(p)
+    p.write_text(json.dumps(_rec()) + "\n")
+    assert score.read_results(p) == ([_rec()], False)
+
+
+@needs_engine
+def test_resuming_after_a_partial_last_record_rewrites_the_file(tmp_path):
+    common = ["--engine-root", ENGINE, "--out", str(tmp_path), "--per-group", "0", "--no-named", "--workers", "1"]
+    assert run.main(common) == 0
+    p = tmp_path / "results-0of1.jsonl"
+    p.write_text('{"case": {"id": "G1-n')
+    assert run.main(common) == 0
+    assert score.read_results(p) == ([], False)
+
+
 @pytest.mark.skipif(crosscheck.ql is None, reason="QuantLib is test-only and not installed")
 def test_reference_agrees_with_quantlib_on_an_american_put():
     c = _case(strike=110.0, rho=0.06, q=0.0, days=120, sigma=0.25)

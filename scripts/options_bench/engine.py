@@ -34,16 +34,20 @@ def load(root: str):
     om_path = Path(root) / "src" / "desk" / "options_math.py"
     if not om_path.exists():
         raise FileNotFoundError(f"no engine at {root}: src/desk/options_math.py is missing (pass --engine-root)")
-    for name in [k for k in sys.modules if k == "src" or k.startswith("src.")]:
-        mod = sys.modules[name]
-        if not str(getattr(mod, "__file__", "") or "").startswith(root):
-            del sys.modules[name]
+    # the engine's `src` and the caller's own `src` (the repository's, in a test run) share a name: set the
+    # caller's aside while the engine imports, then put it back, so later imports of src.* in the same process
+    # still find the repository (the engine modules keep their own references; they import at module level)
+    is_src = lambda k: k == "src" or k.startswith("src.")
+    saved = {k: sys.modules.pop(k) for k in [k for k in sys.modules if is_src(k)]}
     sys.path.insert(0, root)
     try:
         om = importlib.import_module("src.desk.options_math")
         of = importlib.import_module("src.desk.options_finder")
     finally:
         sys.path.remove(root)
+        for k in [k for k in sys.modules if is_src(k)]:
+            del sys.modules[k]
+        sys.modules.update(saved)
     _LOADED[root] = (om, of)
     return om, of
 
