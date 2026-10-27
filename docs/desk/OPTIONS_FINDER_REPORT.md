@@ -61,10 +61,10 @@ Every change to shared code is additive and inert while the Finder is unlisted:
 
 ## Tests
 
-- Python: the full suite at the branch's head, 2,469 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
+- Python: the full suite at the branch's head, 2,471 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
   and 1 failed at the base. The failure is the baseline's `test_no_secret_in_logs` (a uvicorn startup-log race),
   which passes alone. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent
-  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 77, on synthetic chains,
+  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 79, on synthetic chains,
   plus the contract and route-list tests.
 - Timing tests, kept apart from this branch's own results. Two tests with a wall-clock bound failed in some full
   runs and passed alone. The profile's two-calls-in-parallel test misses its bound by about 10 ms under load; it
@@ -125,8 +125,10 @@ five days and on a tenth of the rest: no served delta failed, and every price an
 Its ninth round found two smaller defects, fixed with tests: a saved option's line in the Position Monitor
 rounded a half-cent fill ($0.875 read $0.88; it now reads as the Finder shows it), and the table's Contract
 column sorted strikes as text (105 before 102.5; now as numbers). Its tenth round, which the owner allowed, found one: a
-declared dividend after the scan's last expiry was listed under "Events before expiry" (the events list now ends
-at the scan's last expiry, as earnings and macro releases already did; pricing never used it).
+declared dividend after the scan's last expiry was listed under "Events before expiry" (pricing never used it). Its
+eleventh round found the same boundary on the expiry's own day: a dividend whose last cum-dividend close is that
+expiry, or a report after that day's close, was still listed. The events list now ends at the last expiry's close,
+read with each event's timing, the same rule the pricing already used.
 
 ## Capacity
 
