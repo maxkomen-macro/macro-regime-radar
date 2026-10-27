@@ -61,21 +61,21 @@ Every change to shared code is additive and inert while the Finder is unlisted:
 
 ## Tests
 
-- Python: the full suite at the branch's head, 2,459 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
+- Python: the full suite at the branch's head, 2,468 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
   and 1 failed at the base. The failure is the baseline's `test_no_secret_in_logs` (a uvicorn startup-log race),
   which passes alone. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent
-  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 67, on synthetic chains,
+  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 76, on synthetic chains,
   plus the contract and route-list tests.
 - Timing tests, kept apart from this branch's own results. Two tests with a wall-clock bound failed in some full
   runs and passed alone. The profile's two-calls-in-parallel test misses its bound by about 10 ms under load; it
   fails on the base too (one of the base's three full runs in round 2, one of three more in round 7), so it is a
   property of `main`, not of this branch. The worker's commit-race test
   (`test_desk_v2_pipeline::test_the_worker_never_publishes_a_copy_taken_across_a_commit`, a 30-second wait) failed
-  once in nine full runs at the branch's head and in none of six at the base, so it is not shown to fail on `main`.
+  once in ten full runs at the branch's head and in none of six at the base, so it is not shown to fail on `main`.
   It is also not shown to be this branch's: its worker runs only the Desk pipeline item, and the branch changes
   none of the worker, the bootstrap, the pipeline or the database-path code it runs; it passed 16 of 16 isolated
   runs (head and base, under CPU load), its whole file 6 of 6, and 3 of 3 after the Finder's test files.
-- Web: vitest 156 files, 1,995 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
+- Web: vitest 156 files, 1,996 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
   `desk.spec.ts`, `desk-usability.spec.ts` and `desk-mobile.spec.ts` 98 of 98, the Finder added to the palette and
   language audits.
 - Fixtures are synthetic: an invented $100 stock (SYN) whose quotes the engine's own lattice priced
