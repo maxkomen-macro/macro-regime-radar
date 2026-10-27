@@ -23,6 +23,7 @@ import { Card, StampBadge } from "../kit/ui";
 import { DESK_ACCENTS } from "../kit/palette";
 import { useWidth } from "../kit/LineChart";
 import { MINUS, NOT_SERVED, dayLong, dayShort, grouped, isFiniteNumber, num, pctPlain, priceText, signed } from "../kit/format";
+import { premium } from "./premium";
 import { OPTIONS_FINDER_LISTED } from "./flag";
 import { carriedNote } from "./entry";
 import { FRAMING, LENSES, MARKET_IMPLIED, NOT_DEPLOYED, OCC_URL, PRICER_WORDS, SCREEN_WORDS, TIMING_WORDS, kindWord, viewWord } from "./finder-copy";
@@ -82,12 +83,7 @@ export function money(x: number | null | undefined, withSign = false): string {
 
 const price = (x: number | null | undefined) => (isFiniteNumber(x) ? `$${priceText(x)}` : NOT_SERVED);
 
-/** An option's price per share: cents, or the decimals the served price carries, up to four ($0.90, $0.875). */
-export function premium(x: number | null | undefined): string {
-  if (!isFiniteNumber(x)) return NOT_SERVED;
-  const d = [2, 3, 4].find((k) => Number(x.toFixed(k)) === x) ?? 4;
-  return grouped(x, d);
-}
+export { premium };
 const frac = (x: number | null | undefined, digits = 1) => (isFiniteNumber(x) ? pctPlain(x, digits) : NOT_SERVED);
 
 /** The served early-exercise flag (amendment decision 1, design F2 §4), in words; null when it is "no" (Codex S-5). */

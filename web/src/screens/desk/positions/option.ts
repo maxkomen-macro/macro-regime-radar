@@ -9,6 +9,7 @@
 
 import type { OptionRow, OptionsFinderResponse } from "../data/types";
 import { dayLong, dayShort, grouped, isFiniteNumber, priceText } from "../kit/format";
+import { premium } from "../options/premium";
 import { isCalendarDate } from "./sessions";
 
 export interface OptionEntry {
@@ -100,7 +101,7 @@ export function optionInstrument(s: OptionSubject): string {
 export function optionLine(s: OptionSubject): string {
   const be = s.thesis.breakeven === null ? "" : `; warning line: the breakeven at expiry, $${priceText(s.thesis.breakeven)}`;
   return (
-    `${s.entry.n} × ${optionInstrument(s)} at $${grouped(s.entry.fill, 2)} a share on the ${dayShort(s.entry.session)} close, $${grouped(s.entry.cost, 2)} in all (the maximum loss). ` +
+    `${s.entry.n} × ${optionInstrument(s)} at $${premium(s.entry.fill)} a share on the ${dayShort(s.entry.session)} close, $${grouped(s.entry.cost, 2)} in all (the maximum loss). ` +
     `Level to watch: ${s.thesis.symbol} ${s.thesis.view === "up" ? "at or above" : "at or below"} $${priceText(s.thesis.target)} by ${dayLong(s.thesis.by)}${be}.`
   );
 }

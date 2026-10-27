@@ -70,6 +70,12 @@ describe("the option subject, pure", () => {
     );
   });
 
+  it("spells a half-cent fill as the Finder does, not rounded to the cent (Codex S-15)", () => {
+    const half: OptionSubject = { ...SUBJECT, entry: { ...SUBJECT.entry, n: 10, fill: 0.875, cost: 875 } };
+    expect(optionLine(half)).toContain("10 × SYN Dec 18, 2026 $112.50 call at $0.875 a share on the Oct 23 close, $875.00 in all");
+    expect(optionLine(SUBJECT)).toContain(" at $0.90 a share ");
+  });
+
   it("reads an address's option only when it is whole", () => {
     const href = optionHref("/desk/position-monitor?view=client", SUBJECT);
     const q = new URLSearchParams(href.split("?")[1]);
