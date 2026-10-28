@@ -32,6 +32,7 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
 import type { BasketParams } from "../basket/weights";
+import { finderRows } from "./finder-rows";
 import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OptionsFinderParams, OptionsFinderResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 // `import.meta.env` is Vite's; the e2e specs load this module in Node through the kit (kit/ui reads DeskApiError
@@ -332,7 +333,7 @@ export function useOptionsFinder(params: OptionsFinderParams | null) {
   return current(
     useQuery<OptionsFinderResponse, DeskApiError>({
       queryKey: ["desk-v2", "/options/finder", params],
-      queryFn: ({ signal: s }) => deskGet<OptionsFinderResponse>("/options/finder", params ?? undefined, { signal: s, timeoutMs: FINDER_TIMEOUT_MS }),
+      queryFn: ({ signal: s }) => deskGet<OptionsFinderResponse>("/options/finder", params ?? undefined, { signal: s, timeoutMs: FINDER_TIMEOUT_MS }).then(finderRows),
       staleTime: 5 * 60_000,
       retry,
       enabled: !!params,

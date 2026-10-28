@@ -376,12 +376,14 @@ const optionRow = o({
   iv_plus_10: { ...scenario, nul: true },
   rn_prob_breakeven: "n",
   // `on_date` is one model's name, or one per scenario; `premium` a number or the bound's words: read by the page.
-  model: o({ session: e(["black76-escrowed", "american-bbsr-escrowed", "intrinsic"]), on_date: "*" }),
-  model_inputs: o({ rate_session: "n", rate_on_date: "n", q: "n", pv_dividends: "n", forward: "n", sigma: "n", t_years: "n" }),
+  // The page reads both blocks and the flags on every card and row, so a row without them is not read (independent
+  // review, finding 3); `on_date`'s two shapes are checked in finder-rows.ts.
+  model: o({ session: e(["black76-escrowed", "american-bbsr-escrowed", "intrinsic"], { req: true }), on_date: "*" }, { req: true }),
+  model_inputs: o({ rate_session: "n", rate_on_date: "n", q: "n", pv_dividends: "n", forward: "n", sigma: "n", t_years: "n" }, { req: true }),
   european_value: "n",
   early_exercise: o({ premium: "*", flag: e(["yes", "no", "within the pricer's tolerance of a cent"]) }),
   event_ids: o({ before_date: l("s!"), before_expiry: l("s!"), uncertain: l("s!") }),
-  flags: l("s!"),
+  flags: l("s!", { req: true }),
   carry_source: e(CARRY_SOURCES),
   provider: o({ iv: "n", delta: "n", theta: "n" }),
 });
@@ -879,7 +881,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     lens_reasons: o({ time: "s?" }),
     empty: "s?",
     rows: l(optionRow),
-    curve: o({ prices: l("n!", { strict: true }), marks: o({ close: "n", half: "n", target: "n" }), pnl: m(l("n", { strict: true })) }),
+    curve: o({ prices: l("n!", { strict: true, req: true }), marks: o({ close: "n", half: "n", target: "n" }, { req: true }), pnl: m(l("n", { strict: true }), { req: true }) }),
     rates: o({ points: l(o({ series: "s!", date: "s!", yield_pct: "n", zero_rate: "n" })), rule: "s" }),
     carry: l(o({ exp: "s!", forward: "n", q: "n", pv_market: "n", pv_schedule: "n", difference: "n", pairs: "n", source: e(CARRY_SOURCES, { req: true }), words: "s", atm_vol: "n" })),
     dividends: l(o({ ex_date: "s!", cum_session: "s!", amount: "n", period: "s?", label: e(["projected, not declared", "declared"]) })),

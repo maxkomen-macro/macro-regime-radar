@@ -16,6 +16,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useDeskView } from "../desk-view";
 import { optionHref, optionSubject } from "../positions/option";
 import { useOptionsFinder, type DeskApiError } from "../data/api";
+import { droppedOf } from "../data/schema";
 import type { OptionRow, OptionsFinderParams, OptionsFinderResponse, ScenarioPnl } from "../data/types";
 import type { DeskPage } from "../desk-sections";
 import { PageTitle } from "../DeskTopBar";
@@ -341,7 +342,11 @@ function PickCard({ lens, row, d, reason }: { lens: (typeof LENSES)[number]; row
   const star = !!row?.modelled;
   return (
     <Card className="of-card of-pick" as="article" title={lens.title} sub={lens.question}>
-      {!row ? (
+      {!row && d.picks?.[lens.id] ? (
+        <p className="of-note" data-testid={`of-pick-${lens.id}-unreadable`}>
+          The contract this lens sorts first could not be read, so it is not shown.
+        </p>
+      ) : !row ? (
         <p className="of-note" data-testid={`of-pick-${lens.id}-none`}>
           {reason ?? "No contract that passed the screens sorts first here."}
         </p>
@@ -415,7 +420,7 @@ const PICK_COLORS = [DESK_ACCENTS.blue, DESK_ACCENTS.green, DESK_ACCENTS.amber];
 function PayoffChart({ d, rowsBy }: { d: OptionsFinderResponse; rowsBy: Map<string, OptionRow> }) {
   const [ref, w] = useWidth<HTMLDivElement>(720);
   const curve = d.curve;
-  const contracts = [...new Set(LENSES.map((l) => d.picks?.[l.id]).filter((c): c is string => !!c && !!curve?.pnl[c]))];
+  const contracts = [...new Set(LENSES.map((l) => d.picks?.[l.id]).filter((c): c is string => !!c && rowsBy.has(c) && !!curve?.pnl[c]))];
   if (!curve || !curve.prices.length || !contracts.length) return null;
   const H = 260;
   const pad = { l: 78, r: 16, t: 16, b: 40 };
@@ -515,9 +520,15 @@ function PayoffChart({ d, rowsBy }: { d: OptionsFinderResponse; rowsBy: Map<stri
 function Events({ d }: { d: OptionsFinderResponse }) {
   const events = d.events ?? [];
   const moves = d.earnings_moves ?? [];
-  if (!events.length && !(d.coverage ?? []).length) return null;
+  const lostEvents = droppedOf(d, "events");
+  if (!events.length && !(d.coverage ?? []).length && !lostEvents) return null;
   return (
     <Card className="of-card" as="section" title="Events before expiry" sub="what the flat-volatility values do not price">
+      {lostEvents ? (
+        <p className="of-warn" data-testid="of-events-unreadable">
+          {lostEvents === 1 ? "1 event in the answer could not be read and is not listed." : `${grouped(lostEvents)} events in the answer could not be read and are not listed.`}
+        </p>
+      ) : null}
       {events.length ? (
         <ul className="of-events" data-testid="of-events">
           {events.map((e) => (
@@ -752,12 +763,18 @@ function Footer({ d }: { d?: OptionsFinderResponse }) {
 function Answer({ d }: { d: OptionsFinderResponse }) {
   const rows = d.rows ?? [];
   const rowsBy = useMemo(() => new Map(rows.map((r) => [r.contract, r])), [rows]);
+  const lost = droppedOf(d, "rows");
   if (d.empty || !rows.length) {
     return (
       <>
         <Summary d={d} />
         <Card className="of-card" as="section" title="Nothing to compare">
-          <p data-testid="of-empty">{d.empty ?? "No contract passed the screens."}</p>
+          <p data-testid="of-empty">
+            {d.empty ??
+              (lost
+                ? `None of the ${grouped(lost)} contracts in the answer could be read, so none is shown. This is not a screening result.`
+                : "No contract passed the screens.")}
+          </p>
         </Card>
         <Events d={d} />
       </>
@@ -766,6 +783,12 @@ function Answer({ d }: { d: OptionsFinderResponse }) {
   return (
     <>
       <Summary d={d} />
+      {lost ? (
+        <p className="of-warn" data-testid="of-unreadable">
+          {grouped(lost)} of the answer's {grouped(lost + rows.length)} contracts could not be read and {lost === 1 ? "is" : "are"} not shown; the picks, the chart and the table
+          use the rest.
+        </p>
+      ) : null}
       <div className="of-picks">
         {LENSES.map((l) => (
           <PickCard key={l.id} lens={l} row={d.picks?.[l.id] ? rowsBy.get(d.picks[l.id] as string) : undefined} d={d} reason={l.id === "time" ? d.lens_reasons?.time : null} />

@@ -418,3 +418,80 @@ describe("Options Finder: the states", () => {
     expect(failureOf(new DeskApiError(200, "Awaiting refresh", { error: "awaiting" }, { reason: "Awaiting refresh", until: null })).state).toBe("awaiting");
   });
 });
+
+// ── what the response boundary lets through is what the page can render (independent review, finding 3) ──
+
+describe("Options Finder: the response boundary and the page agree", () => {
+  type Row = Record<string, unknown> & { contract: string };
+  const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+  const ROWS = UP.rows as unknown as Row[];
+  // A modelled row, made the time lens's pick, so its card reads the model, its inputs and its flags.
+  const MODELLED = (ROWS as unknown as OptionRow[]).find((r) => r.modelled && r.iv_minus_10 && typeof r.model.on_date !== "string") as OptionRow;
+  function answerWith(edit: (rows: Row[]) => void, picks: Record<string, string | null> = { ...(UP.picks as Record<string, string>), time: MODELLED.contract }) {
+    const a = clone(UP) as Record<string, unknown> & { rows: Row[] };
+    edit(a.rows);
+    a.picks = picks;
+    return a;
+  }
+  const one = (contract: string, f: (r: Row) => void) => (rows: Row[]) => f(rows.find((r) => r.contract === contract) as Row);
+
+  it("a valid control: the modelled pick's card reads its model, inputs and flags, and nothing is called unreadable", async () => {
+    stubDesk({ [ROUTE]: () => answerWith(() => {}) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(within(screen.getByTestId("of-pick-time")).getByTestId("of-modelled-time")).toHaveTextContent("Modelled on your date");
+    expect(screen.queryByTestId("of-unreadable")).toBeNull();
+  });
+
+  const BROKEN: [string, (r: Row) => void][] = [
+    ["no flags", (r) => delete r.flags],
+    ["flags not a list", (r) => (r.flags = "earnings dates unknown")],
+    ["no model", (r) => delete r.model],
+    ["a model the page does not know", (r) => ((r.model as Record<string, unknown>).session = "monte-carlo")],
+    ["no model on the date", (r) => ((r.model as Record<string, unknown>).on_date = null)],
+    ["a scenario model the page does not know", (r) => ((r.model as Record<string, unknown>).on_date = { target: "monte-carlo" })],
+    ["a scenario the page does not know", (r) => ((r.model as Record<string, unknown>).on_date = { tomorrow: "intrinsic" })],
+    ["no model inputs", (r) => delete r.model_inputs],
+    ["model inputs not an object", (r) => (r.model_inputs = [0.3])],
+  ];
+  it.each(BROKEN)("a pick's row with %s is not read: the card says so, the rest renders, and the count is shown", async (_, f) => {
+    stubDesk({ [ROUTE]: () => answerWith(one(MODELLED.contract, f)) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.getByTestId("of-pick-time-unreadable")).toHaveTextContent("The contract this lens sorts first could not be read");
+    expect(screen.getByTestId("of-pick-payoff")).toBeInTheDocument();
+    expect(screen.getByTestId("of-unreadable")).toHaveTextContent(`1 of the answer's ${ROWS.length} contracts could not be read and is not shown`);
+    fireEvent.click(screen.getByTestId("of-all"));
+    expect(within(screen.getByTestId("of-table")).getAllByRole("row")).toHaveLength(ROWS.length);
+    expect(screen.getByTestId("of-table").querySelector(`tr[data-contract="${MODELLED.contract}"]`)).toBeNull();
+  });
+
+  it("some unreadable rows: the picks stand, the table holds the rest, and the page counts the rows it could not read", async () => {
+    const picks = Object.values(UP.picks as Record<string, string>);
+    const others = ROWS.filter((r) => !picks.includes(r.contract) && r.contract !== MODELLED.contract).slice(0, 2);
+    stubDesk({ [ROUTE]: () => answerWith((rows) => others.forEach((o) => delete (rows.find((r) => r.contract === o.contract) as Row).flags)) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    for (const lens of ["payoff", "forgiving", "time"]) expect(screen.getByTestId(`of-pick-${lens}`)).toBeInTheDocument();
+    expect(screen.getByTestId("of-unreadable")).toHaveTextContent(`2 of the answer's ${ROWS.length} contracts could not be read and are not shown`);
+  });
+
+  it("every row unreadable: the page says the answer could not be read, never that no contract passed the screens", async () => {
+    stubDesk({ [ROUTE]: () => answerWith((rows) => rows.forEach((r) => delete r.model_inputs)) });
+    renderTab(UP_URL);
+    await stateOf("empty");
+    const empty = screen.getByTestId("of-empty");
+    expect(empty).toHaveTextContent(`None of the ${ROWS.length} contracts in the answer could be read`);
+    expect(empty.textContent ?? "").not.toMatch(/passed the screens/);
+    expect(screen.queryByTestId("of-table")).toBeNull();
+  });
+
+  it("an unreadable event is counted, so the list never reads as complete", async () => {
+    const a = answerWith(() => {});
+    (a.events as Record<string, unknown>[])[0].kind = "rumour";
+    stubDesk({ [ROUTE]: () => a });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.getByTestId("of-events-unreadable")).toHaveTextContent("1 event in the answer could not be read and is not listed.");
+  });
+});
