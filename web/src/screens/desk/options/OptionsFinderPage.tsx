@@ -760,7 +760,7 @@ function Footer({ d }: { d?: OptionsFinderResponse }) {
   );
 }
 
-function Answer({ d }: { d: OptionsFinderResponse }) {
+export function Answer({ d }: { d: OptionsFinderResponse }) {
   const rows = d.rows ?? [];
   const rowsBy = useMemo(() => new Map(rows.map((r) => [r.contract, r])), [rows]);
   const lost = droppedOf(d, "rows");

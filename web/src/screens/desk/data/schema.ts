@@ -381,7 +381,9 @@ const optionRow = o({
   model: o({ session: e(["black76-escrowed", "american-bbsr-escrowed", "intrinsic"], { req: true }), on_date: "*" }, { req: true }),
   model_inputs: o({ rate_session: "n", rate_on_date: "n", q: "n", pv_dividends: "n", forward: "n", sigma: "n", t_years: "n" }, { req: true }),
   european_value: "n",
-  early_exercise: o({ premium: "*", flag: e(["yes", "no", "within the pricer's tolerance of a cent"]) }),
+  // The flag is a served disclosure, so a row without it is not read; `premium` (a number, or the bound's words) is
+  // checked in finder-rows.ts (Codex S-20).
+  early_exercise: o({ premium: "*", flag: e(["yes", "no", "within the pricer's tolerance of a cent"], { req: true }) }, { req: true }),
   event_ids: o({ before_date: l("s!"), before_expiry: l("s!"), uncertain: l("s!") }),
   flags: l("s!", { req: true }),
   carry_source: e(CARRY_SOURCES),
@@ -882,7 +884,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     empty: "s?",
     rows: l(optionRow),
     curve: o({ prices: l("n!", { strict: true, req: true }), marks: o({ close: "n", half: "n", target: "n" }, { req: true }), pnl: m(l("n", { strict: true }), { req: true }) }),
-    rates: o({ points: l(o({ series: "s!", date: "s!", yield_pct: "n", zero_rate: "n" })), rule: "s" }),
+    rates: o({ points: l(o({ series: "s!", date: "s!", yield_pct: "n", zero_rate: "n" }), { req: true }), rule: "s" }),
     carry: l(o({ exp: "s!", forward: "n", q: "n", pv_market: "n", pv_schedule: "n", difference: "n", pairs: "n", source: e(CARRY_SOURCES, { req: true }), words: "s", atm_vol: "n" })),
     dividends: l(o({ ex_date: "s!", cum_session: "s!", amount: "n", period: "s?", label: e(["projected, not declared", "declared"]) })),
     events: l(

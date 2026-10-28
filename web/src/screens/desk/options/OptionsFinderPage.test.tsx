@@ -453,6 +453,8 @@ describe("Options Finder: the response boundary and the page agree", () => {
     ["a scenario the page does not know", (r) => ((r.model as Record<string, unknown>).on_date = { tomorrow: "intrinsic" })],
     ["no model inputs", (r) => delete r.model_inputs],
     ["model inputs not an object", (r) => (r.model_inputs = [0.3])],
+    ["an early-exercise amount that is an object (Codex S-20)", (r) => (r.early_exercise = { flag: "yes", premium: { bad: 1 } })],
+    ["no early-exercise flag (Codex S-20)", (r) => delete r.early_exercise],
   ];
   it.each(BROKEN)("a pick's row with %s is not read: the card says so, the rest renders, and the count is shown", async (_, f) => {
     stubDesk({ [ROUTE]: () => answerWith(one(MODELLED.contract, f)) });
@@ -484,6 +486,16 @@ describe("Options Finder: the response boundary and the page agree", () => {
     expect(empty).toHaveTextContent(`None of the ${ROWS.length} contracts in the answer could be read`);
     expect(empty.textContent ?? "").not.toMatch(/passed the screens/);
     expect(screen.queryByTestId("of-table")).toBeNull();
+  });
+
+  it("a rates block without its points is not read: the method says nothing of the curve's points, and the page renders (Codex S-20)", async () => {
+    const a = answerWith(() => {});
+    delete (a.rates as Record<string, unknown>).points;
+    stubDesk({ [ROUTE]: () => a });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.getByTestId("of-footer")).toBeInTheDocument();
+    expect(page().textContent ?? "").not.toContain((UP.rates as { rule: string }).rule);
   });
 
   it("an unreadable event is counted, so the list never reads as complete", async () => {
