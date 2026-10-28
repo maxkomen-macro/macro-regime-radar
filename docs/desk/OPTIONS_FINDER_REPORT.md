@@ -63,9 +63,12 @@ Every change to shared code is additive and inert while the Finder is unlisted:
 
 - Python: the full suite at `3af74d5` (later commits change only web files), 2,471 passed, 75 skipped, 1 failed,
   against 2,125 passed, 80 skipped and 1 failed at the base. The failure is the baseline's `test_no_secret_in_logs` (a uvicorn startup-log race),
-  which passes alone. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent
-  from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 79, on synthetic chains,
-  plus the contract and route-list tests.
+  which passes alone. The five fewer skips depend on the checkout, not the branch: `test_web_fresh_report.py`'s
+  three tests need the web dependencies, and `test_api.py`'s `test_spa_fallback_serves_index_for_client_routes` and
+  `test_static_asset_served_with_correct_content_type` need a built `web/dist`. The base's checkout had neither; with
+  both, all five pass at the base too. Test by test, no base test is missing and 341 are added (route 90, numerical
+  library 140, engine 79, providers 28, the Desk contract 4), so 2,125 + 341 + 5 = 2,471 passed and 80 - 5 = 75
+  skipped. The Finder's tests run on synthetic chains.
 - Timing tests, kept apart from this branch's own results. Two tests with a wall-clock bound failed in some full
   runs and passed alone. The profile's two-calls-in-parallel test misses its bound by about 10 ms under load; it
   fails on the base too (one of the base's three full runs in round 2, one of three more in round 7), so it is a
@@ -75,7 +78,9 @@ Every change to shared code is additive and inert while the Finder is unlisted:
   It is also not shown to be this branch's: its worker runs only the Desk pipeline item, and the branch changes
   none of the worker, the bootstrap, the pipeline or the database-path code it runs; it passed 16 of 16 isolated
   runs (head and base, under CPU load), its whole file 6 of 6, and 3 of 3 after the Finder's test files.
-- Web: vitest 157 files, 2,016 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
+- Web: vitest 157 files, 2,016 tests, all passing; typecheck and build clean. Against the base's 1,946, no test is
+  missing and 70 are added: the Finder's page 42, its boundary test 2, its data layer 3, entry links 8, the Position
+  Monitor's option subject 12, and the Options lens's session label 3. Playwright: the Finder's spec 4 of 4;
   `desk.spec.ts`, `desk-usability.spec.ts` and `desk-mobile.spec.ts` 98 of 98, the Finder added to the palette and
   language audits.
 - Fixtures are synthetic: an invented $100 stock (SYN) whose quotes the engine's own lattice priced
@@ -139,7 +144,9 @@ screens". And the pruning was described as proved: its value bounds are, but the
 error rests on the lattice's observed accuracy, which the code, the served sentence and the model document now
 say. The fourteenth round confirmed the second fix and found two siblings of the first (an early-exercise amount
 and a rates block of the wrong shape still reached the page); both are now checked, and a test removes or
-corrupts every field of both synthetic answers, passes each through the response checks and renders it.
+corrupts every field of both synthetic answers, passes each through the response checks and renders it. The
+fifteenth round found no product defect and asked again for the test counts to be matched to the base test by
+test; "Tests" above now does that, naming the five tests whose skips differ.
 
 ## Capacity
 
