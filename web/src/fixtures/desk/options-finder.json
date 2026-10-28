@@ -43,7 +43,7 @@
      "unpriceable": 0
     },
     "ranked_out": 32,
-    "ranked_out_words": "32 contracts passed the screens but were not priced: bounds on their value show none can reach the top 20 of any lens.",
+    "ranked_out_words": "32 contracts passed the screens but were not priced: bounds on their value show none can reach the top 20 of any lens, allowing the pricer twice its stated tolerance for numerical error (an observed accuracy, not a proved one).",
     "truncated": false
    },
    "picks": {
@@ -11712,7 +11712,7 @@
      "unpriceable": 0
     },
     "ranked_out": 21,
-    "ranked_out_words": "21 contracts passed the screens but were not priced: bounds on their value show none can reach the top 20 of any lens.",
+    "ranked_out_words": "21 contracts passed the screens but were not priced: bounds on their value show none can reach the top 20 of any lens, allowing the pricer twice its stated tolerance for numerical error (an observed accuracy, not a proved one).",
     "truncated": false
    },
    "picks": {

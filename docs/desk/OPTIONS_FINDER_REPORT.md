@@ -172,6 +172,6 @@ decision; the adaptive-pricing proposal is the place to settle it.
 |---|---|
 | Display rights (EODHD plan, OPRA) | Unlisted until the owner confirms. The same question covers the live Options lens. |
 | Marketplace quota | Per-session chain cache, the provider ceiling, one scan at a time, typed refusals (`busy`, `rate_limited`). |
-| Wide chains | The work budget refuses with a reason, never a partial ranking; top-20 pruning by proved value bounds. |
+| Wide chains | The work budget refuses with a reason, never a partial ranking; top-20 pruning by value bounds: the bounds are proved, and their allowance for the lattice's error (twice its tolerance) is validated, not proved. |
 | Modelled values | Labelled modelled, with the volatility held and the ±10-point sensitivity on every modelled contract. |
 | Events | Earnings, macro releases and dividends before the date are listed and flagged on each contract; earnings dates beyond the stored ones are "unknown", never "none", and no implied earnings move is served until the cache records coverage; other company events are named as not tracked. |

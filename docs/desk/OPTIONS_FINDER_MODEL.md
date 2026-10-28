@@ -25,7 +25,7 @@ Every number served is one of three kinds, and this document says which:
 - **Estimated, with an observed accuracy**: lattice values and deltas. Their accuracy is checked by a
   convergence test and measured against independent references (QuantLib, and the lattice at a much finer
   resolution) on synthetic stress sets. It is a validated figure, not a proof, and this document never
-  calls it one.
+  calls it one. The pruning of contracts that cannot rank rests on it too ("Pricing only what can rank").
 
 Nothing is "live": the quotes are the provider's end-of-day snapshot of a named session.
 
@@ -155,9 +155,17 @@ falls on days 0 to 4 (below).
 
 The lenses serve the top 20 of each. Bounds on each contract's volatility (from closed forms and the
 early-exercise bound) give bounds on its P&L, with an allowance of twice the tolerance for the lattice's
-error. Contracts whose upper bound cannot reach a lens's 20th exact value are not priced, and are counted as
-`ranked_out`. Each lens's top 20 is then exactly the top 20 of pricing everything (tested by pricing
-everything on synthetic chains and comparing).
+error. Contracts whose upper bound cannot reach a lens's 20th priced value are not priced, and are counted as
+`ranked_out`.
+
+What is proved and what is not. The analytical facts are proved: the European value is a lower bound on the
+American one, the European value plus the early-exercise bound an upper one, and value rises with volatility.
+The allowance is a premise: that every lattice value the run would serve (the volatility solved from the mid,
+and each value on the date) is within twice the tolerance of the true American value. It is validated, not
+proved: the worst value error observed inside the domain is 0.74 of the tolerance (the design-review sets
+above), and the validation bench's in-domain prices all passed. Given that premise, each lens's top 20 is the top 20 of
+pricing everything; the tests check this by pricing everything on synthetic chains and comparing. The page's
+sentence on the contracts not priced says the allowance is an observed accuracy, not a proved one.
 
 ## Events
 
@@ -199,7 +207,7 @@ capped before any processing.
   an earnings report, which is flagged.
 - Projected dividends are projections. Events the data does not track (FDA decisions, product launches,
   lawsuits, index changes, mergers) are not in the model.
-- Lattice accuracy is observed, not proved (above). Rates use the par yield as the zero rate at 2 and 5 years.
+- Lattice accuracy is observed, not proved (above), and so is the premise the pruning's guarantee rests on. Rates use the par yield as the zero rate at 2 and 5 years.
 - Probabilities are risk-neutral: what the market prices, not what will happen.
 
 ## Tests

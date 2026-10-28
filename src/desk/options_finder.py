@@ -1359,18 +1359,25 @@ def curve_pnl(rc: RowCtx, q: Quote, row: dict, grid: Sequence[float]) -> list[fl
     return [None if isinstance(g, str) else _usd(_pnl(Decimal(g.value), row["n"], rc.comm_c, row["_cost_c"])) for g in got]
 
 
-# ── proven ranges, so only contracts that can reach a lens's top LENS_TOP are priced ──
+# ── bounded ranges, so only contracts that can reach a lens's top LENS_TOP are priced ──
 
 LENS_TOP = 20
-# Pruning's allowance for the lattice's error: twice the stated tolerance (DR-47). The validated worst error on the
-# domain is 0.70 tol, so a row is pruned only when it would lose even with an error well past anything observed.
+# Pruning's allowance for the lattice's error: twice the stated tolerance (DR-47). The ranges below rest on two kinds
+# of fact. The analytical ones are proved: the European value is a lower bound on the American, European value plus
+# the early-exercise bound an upper one, and value is non-decreasing in sigma. The numerical one is a premise,
+# validated and not proved: every lattice value the run would serve (the inversion of the mid, and each value on the
+# date) is within PRUNE_ALLOWANCE·tol of the true American value. The worst value error observed on the domain is
+# 0.74 tol, so a row is pruned only when it would lose even with an error well past anything observed; the pruned
+# top 20s equal full pricing given that premise, and the tests compare them with full pricing (independent review,
+# finding 4).
 PRUNE_ALLOWANCE = 2.0
 METRICS = {"payoff": "target", "forgiving": "half", "time": "flat"}
 
 
 @dataclass
 class Ranged:
-    """A sized row's proven P&L range on the date at each scenario price (lo, hi), before any lattice."""
+    """A sized row's P&L range on the date at each scenario price (lo, hi), before any lattice: proved bounds, widened
+    by PRUNE_ALLOWANCE·tol for the lattice's error (the validated premise above)."""
     z: Sized
     pnl: dict[str, tuple[Decimal, Decimal]]
 
@@ -1419,7 +1426,8 @@ def sigma_range(rc: RowCtx, c0: om.Context, mid: float) -> tuple[float, float] |
 
 
 def ranges(rc: RowCtx, z: Sized, lo: float, hi: float) -> Ranged | str:
-    """The row's proven P&L range at each scenario price, or the screen it certainly fails."""
+    """The row's P&L range at each scenario price (bounds widened for the lattice's error, as Ranged says), or the
+    screen it certainly fails."""
     t, q = rc.t, z.q
     is_call = q.kind == "call"
     k_d = _dec(q.strike)
@@ -1443,7 +1451,7 @@ def ranges(rc: RowCtx, z: Sized, lo: float, hi: float) -> Ranged | str:
 
 
 def rank_bound(rows: Sequence[dict], lens: str) -> Decimal | None:
-    """The LENS_TOP-th best exact metric among priced rows for a lens (None when fewer are priced)."""
+    """The LENS_TOP-th best priced metric among priced rows for a lens (None when fewer are priced)."""
     metric = METRICS[lens]
     vals = sorted((r["_pnl"][metric] for r in rows
                    if lens != "time" or r["_pnl"]["target"] >= Decimal(r["_cost_c"]) / 100), reverse=True)
@@ -1679,7 +1687,7 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         else:
             ranged[z.q.contract] = got
     # price in rounds: first each lens's LENS_TOP best lower bounds, then every unpriced row whose upper bound
-    # reaches the LENS_TOP-th best exact value, until none does (rev 5)
+    # reaches the LENS_TOP-th best priced value, until none does (rev 5)
     passed: list[dict] = []
     quote_of: dict[str, Quote] = {}
     done: set[str] = set()
@@ -1763,7 +1771,9 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         "universe": {"window": {k: v for k, v in win.items() if not k.startswith("_")}, "seen": seen,
                      "passed": len(passed), "dropped": dropped, "ranked_out": ranked_out,
                      "ranked_out_words": (f"{ranked_out} contracts passed the screens but were not priced: bounds on "
-                                          f"their value show none can reach the top {LENS_TOP} of any lens.")
+                                          f"their value show none can reach the top {LENS_TOP} of any lens, allowing "
+                                          f"the pricer twice its stated tolerance for numerical error (an observed "
+                                          f"accuracy, not a proved one).")
                                          if ranked_out else None,
                      "truncated": bool(truncated)},
         "picks": picks,

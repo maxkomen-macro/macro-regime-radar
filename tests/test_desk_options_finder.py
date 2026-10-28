@@ -531,6 +531,10 @@ def test_pruned_top_20s_equal_full_pricing(case, monkeypatch):
         assert top(pruned["rows"], lens) == top(full["rows"], lens), lens
     for r in pruned["rows"]:
         assert r["pnl"] == by_c[r["contract"]]["pnl"]
+    words = pruned["universe"]["ranked_out_words"]
+    if pruned["universe"]["ranked_out"]:
+        # the served sentence names the premise the pruning rests on (independent review, finding 4)
+        assert "twice its stated tolerance" in words and "not a proved one" in words, words
 
 
 # ── lenses, curve, empty answers (section 10) ────────────────────────────────
