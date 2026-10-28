@@ -253,7 +253,7 @@ def _group(n, fails=0, div=None, **kw):
     g = {"accepted_scored": n, "price_failures": fails, "price_indeterminate": 0,
          "delta_accepted_scored": score.DELTA_PER_GROUP_TARGET, "delta_failures": 0, "delta_indeterminate": 0,
          "delta_availability": {"served": n, "shown": n, "withheld": 0, "share_shown": 1.0},
-         "bound_route": {"checked": 0}, "bound_checked": 0, "divsens": {"outcome": div or {}},
+         "bound_route": {"checked": 1, "covered": 1}, "bound_checked": 1, "divsens": {"outcome": div or {}},
          "lattice_check": {"disputed": 0}, "quantlib_coverage": {"outside_u": 0}, "errors": 0}
     return g | kw
 
@@ -305,6 +305,7 @@ MUTATIONS = [
     ("too few scored deltas", lambda f: _set(f, "G2-dividends", delta_accepted_scored=score.DELTA_PER_GROUP_TARGET - 1), "delta", "insufficient", "not met", "G2-dividends below 300 scored deltas"),
     ("bound violated", lambda f: _set(f, "G1-nodiv", bound_route={"checked": 5, "covered": 4, "violated": 1}), "bound", "fail", "failed", "1 bound violations"),
     ("bound indeterminate", lambda f: _set(f, "G4-negrate", bound_route={"checked": 5, "covered": 4, "indeterminate": 1}), "bound", "unresolved", "unresolved", "1 bound outcomes indeterminate"),
+    ("bound never covered", lambda f: {g: x | {"bound_route": {"checked": 3, "unscored": 3}} for g, x in f.items()}, "bound", "insufficient", "not met", "no bound covered by a reference"),
     ("dividend scenario fails out of domain", lambda f: f | {"X1-outside": _group(10, div={"fail": 1})}, "divsens", "fail", "failed", "1 dividend-scenario failures"),
     ("dividend scenario indeterminate", lambda f: _set(f, "G2-dividends", divsens={"outcome": {"pass": score.DIVSENS_TARGET, "indeterminate": 1}}), "divsens", "unresolved", "unresolved", "1 dividend-scenario outcomes indeterminate"),
     ("too few dividend scenarios", lambda f: _set(f, "G2-dividends", divsens={"outcome": {"pass": score.DIVSENS_TARGET - 1}}), "divsens", "insufficient", "not met", "fewer than 300 scored dividend scenarios"),
@@ -331,7 +332,9 @@ def test_a_control_outside_its_uncertainty_fails_the_reference(bad, words):
     got = score.gate_result(full, tot, ok, True, CONTROLS | bad)
     assert got["components"]["controls"]["verdict"] == "fail" and got["verdict"] == "failed" and words in score.gate_open(got)
     none = score.gate_result(full, tot, ok, True, {})
-    assert none["components"]["controls"]["verdict"] == "insufficient" and "no reference controls run" in score.gate_open(none)
+    assert none["components"]["controls"]["verdict"] == "insufficient" and "no European controls run" in score.gate_open(none)
+    no_exempt = score.gate_result(full, tot, ok, True, CONTROLS | {"exempt_american_cases": 0, "exempt_american_within_u": 0})
+    assert no_exempt["components"]["controls"]["verdict"] == "insufficient" and "no exempt controls run" in score.gate_open(no_exempt)
 
 
 def test_fail_outranks_unresolved_and_withheld_deltas_are_not_failures():
@@ -344,13 +347,18 @@ def test_fail_outranks_unresolved_and_withheld_deltas_are_not_failures():
 
 
 def test_failing_records_reach_the_verdict_through_classify_and_summary():
-    """End to end from records: a violated bound or a failing displayed delta in otherwise passing groups."""
+    """End to end from records: a violated bound, a failing displayed delta, an indeterminate price or delta."""
+    covered = _rec(value=10.0, ref=10.0004, u=1e-5)
+    covered["engine"]["bound"] = 5e-4
+
     def groups(bad=None):
         out = {}
         for g in cases.IN_DOMAIN_GROUPS:
             rows = [score.classify(_rec())] * score.PER_GROUP_TARGET
             if g == "G1-nodiv" and bad:
                 rows = rows[1:] + [score.classify(bad)]
+            if g == "G4-negrate":                       # one covered bound: the bound needs evidence to pass
+                rows = rows[1:] + [score.classify(covered)]
             out[g] = score._summary([r | {"group": g} for r in rows])
         div = [dict(r, divsens="pass") for r in [score.classify(_rec())] * score.DIVSENS_TARGET]
         out["G2-dividends"]["divsens"] = score._summary(div)["divsens"]
@@ -367,6 +375,43 @@ def test_failing_records_reach_the_verdict_through_classify_and_summary():
     got = score.gate_result(groups(delta), tot, ok, True, CONTROLS)
     assert got["components"]["delta"]["verdict"] == "fail" and got["components"]["price"]["verdict"] == "pass"
     assert got["verdict"] == "failed"
+    tol = reference.tolerance(10.0, 100.0)
+    price = _rec(value=10.0 + tol, u=tol / 20)          # err = tol, inside ± u: indeterminate
+    got = score.gate_result(groups(price), tot, ok, True, CONTROLS)
+    assert got["components"]["price"]["verdict"] == "unresolved" and got["verdict"] == "unresolved"
+    d_ind = _rec(delta=-0.5 + 2.5e-3, d_u=1e-4)         # delta error at its tolerance, inside ± u
+    got = score.gate_result(groups(d_ind), tot, ok, True, CONTROLS)
+    assert got["components"]["delta"]["verdict"] == "unresolved" and got["verdict"] == "unresolved"
+
+
+def test_summary_counts_scored_and_withheld_deltas_and_unresolved_outranks_insufficient():
+    rows = [score.classify(_rec())] * 299 + [score.classify(_rec(delta=None))] * 50
+    s = score._summary([r | {"group": "G2-dividends"} for r in rows])
+    assert s["delta_accepted_scored"] == 299 and s["delta_indeterminate"] == 0
+    assert s["delta_availability"] == {"served": 349, "shown": 299, "withheld": 50, "share_shown": 299 / 349}
+    full, tot, ok = _passing()
+    got = score.gate_result(_set(full, "G2-dividends", delta_accepted_scored=s["delta_accepted_scored"]), tot, ok, True, CONTROLS)
+    assert got["components"]["delta"]["verdict"] == "insufficient" and got["verdict"] == "not met"
+    both = _set(_set(full, "G2-dividends", delta_accepted_scored=299), "G1-nodiv", price_indeterminate=1)
+    assert score.gate_result(both, tot, ok, True, CONTROLS)["verdict"] == "unresolved"
+
+
+def test_a_re_score_judges_named_cases_by_the_current_route(tmp_path):
+    """Review finding 2 on an older run: B8 recorded as "served" is judged by today's served:no-delta."""
+    b8 = next(c for c in cases.NAMED if c.id == "named/B8")
+    old = b8.to_json() | {"expect": "served"}
+    old.pop("expect_note")
+    man = {k: "x" for k in score.RUN_KEYS} | {"seed": 1, "per_group": {}, "named": True, "shard": "0/1"}
+    rec = _rec(delta=0.9) | {"case": old}
+    rec["ref"]["delta"]["ref"] = 0.9
+    (tmp_path / "manifest-0of1.json").write_text(json.dumps(man))
+    (tmp_path / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    n = score.score([tmp_path])["named"][0]
+    assert n["expect"] == "served:no-delta" and n["expect_recorded"] == "served" and n["regression"] == "FAIL"
+    rec["case"] = old | {"strike": old["strike"] + 1}
+    (tmp_path / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    with pytest.raises(ValueError, match="inputs differ"):
+        score.score([tmp_path])
 
 
 def test_a_partial_run_is_scored_but_marked_incomplete():
@@ -408,14 +453,15 @@ def test_the_early_exercise_bound_is_checked_against_the_reference_premium():
     assert "bound" not in score.classify(_rec())
 
 
-def test_a_bound_finer_than_the_reference_is_unscored_not_covered_but_a_violation_still_counts():
-    """The reference judges a bound only when it is ten times finer, as it judges prices against tol; the
-    first case is the baseline's G2-dividends/1083 (bound 6.9e-7, u 6.0e-7, premium 1.0e-7)."""
+def test_a_bound_finer_than_the_reference_is_unscored_when_straddled_and_confirmed_outcomes_count():
+    """An interval across the bound is indeterminate only when the reference is ten times finer than the
+    bound, as prices are judged against tol; the first case is the baseline's G2-dividends/1083 (bound 6.9e-7,
+    u 6.0e-7, premium 1.0e-7)."""
     assert score.bound_outcome(1.0e-7, 6.0e-7, 6.9e-7) == "unscored"
     assert score.bound_outcome(0.0, 3e-12, 1e-12) == "unscored"          # both at rounding level
-    assert score.bound_outcome(1.0e-7, 8e-8, 6.9e-7) == "unscored"       # covered by the interval, reference too coarse
-    assert score.bound_outcome(1.0e-7, 5e-8, 1e-6) == "covered"
-    assert score.bound_outcome(5e-3, 1e-3, 1e-6) == "violated"           # confirmed although the reference is coarse
+    assert score.bound_outcome(6.8e-7, 5e-8, 6.9e-7) == "indeterminate"  # a fine reference straddling the bound
+    assert score.bound_outcome(1.0e-7, 8e-8, 6.9e-7) == "covered"        # wholly inside, at any resolution
+    assert score.bound_outcome(5e-3, 1e-3, 1e-6) == "violated"           # wholly above, at any resolution
     rec = _rec(value=10.0, ref=10.0004, u=1e-5, ref_status="unresolved: x")
     rec["engine"]["bound"] = 1e-4
     assert score.classify(rec)["bound"] == "unscored"

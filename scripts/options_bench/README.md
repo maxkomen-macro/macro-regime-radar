@@ -30,9 +30,11 @@ route, the dividend scenario, the reference controls, the named regressions and 
 fail, unresolved (an indeterminate outcome, or a lattice dispute to investigate) or insufficient (too few
 scored cases, or an incomplete run). The overall verdict is met only when every component passes. A failure
 or an indeterminate outcome counts in any group; the sample targets count the in-domain groups. A withheld
-delta is reported as availability, not as an accuracy failure. A bound is judged only by a reference at
-least ten times finer than the bound, as a price is judged against its tolerance; a confirmed violation
-always fails.
+delta is reported as availability, not as an accuracy failure. A bound is judged against a resolved
+reference: an interval wholly above it is a violation and wholly inside it is covered; an interval across it
+is indeterminate only when the reference is at least ten times finer than the bound (as a price is judged
+against its tolerance), else unscored. Named regressions are judged against the current documented route,
+also when an older run is re-scored.
 
 ## Groups
 
