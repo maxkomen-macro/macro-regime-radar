@@ -61,7 +61,8 @@ Every change to shared code is additive and inert while the Finder is unlisted:
 
 ## Tests
 
-- Python: the full suite at the branch's head, 2,471 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
+- Python: the full suite at `4dd6e32` (before the independent review's two fixes, which change only web files and
+  served wording; the Finder's 309 Python tests were rerun on them), 2,471 passed, 75 skipped, 1 failed, against 2,125 passed, 80 skipped
   and 1 failed at the base. The failure is the baseline's `test_no_secret_in_logs` (a uvicorn startup-log race),
   which passes alone. The five fewer skips are tests that need a built `web/dist` and the web dependencies, absent
   from the base's checkout. The Finder's own tests: route 90, numerical library 140, engine 79, on synthetic chains,
@@ -75,7 +76,7 @@ Every change to shared code is additive and inert while the Finder is unlisted:
   It is also not shown to be this branch's: its worker runs only the Desk pipeline item, and the branch changes
   none of the worker, the bootstrap, the pipeline or the database-path code it runs; it passed 16 of 16 isolated
   runs (head and base, under CPU load), its whole file 6 of 6, and 3 of 3 after the Finder's test files.
-- Web: vitest 156 files, 1,998 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
+- Web: vitest 156 files, 2,011 tests, all passing; typecheck and build clean. Playwright: the Finder's spec 4 of 4;
   `desk.spec.ts`, `desk-usability.spec.ts` and `desk-mobile.spec.ts` 98 of 98, the Finder added to the palette and
   language audits.
 - Fixtures are synthetic: an invented $100 stock (SYN) whose quotes the engine's own lattice priced
@@ -128,7 +129,16 @@ column sorted strikes as text (105 before 102.5; now as numbers). Its tenth roun
 declared dividend after the scan's last expiry was listed under "Events before expiry" (pricing never used it). Its
 eleventh round found the same boundary on the expiry's own day: a dividend whose last cum-dividend close is that
 expiry, or a report after that day's close, was still listed. The events list now ends at the last expiry's close,
-read with each event's timing, the same rule the pricing already used.
+read with each event's timing, the same rule the pricing already used. The twelfth asked for the test counts to be
+reconciled against the base test by test, and the thirteenth, given that reconciliation, found nothing.
+
+An independent review after the thirteenth round raised two points on this branch, both fixed. A response row
+without its flags, model or model inputs passed the page's response checks and then made the page throw; the
+checks now require what the page reads (and the two shapes of the model on the date), the page counts the rows
+and events it could not read, and an answer with no readable row says so instead of "No contract passed the
+screens". And the pruning was described as proved: its value bounds are, but their allowance for the lattice's
+error rests on the lattice's observed accuracy, which the code, the served sentence and the model document now
+say.
 
 ## Capacity
 
