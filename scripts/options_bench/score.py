@@ -13,8 +13,10 @@ real option chains, or about whole Finder requests.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
+import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -47,6 +49,19 @@ def judge(err: float, u: float, tol: float) -> str:
     return "indeterminate"
 
 
+def bound_outcome(premium: float, u: float, bound: float) -> str:
+    """The bound-European route's claim: the early-exercise premium (American − European) is at most `bound`.
+    A confirmed violation (the premium's whole interval above the bound) always counts. Otherwise a reference
+    judges the claim only when its uncertainty is at most REF_FRACTION of the bound, the rule prices follow
+    against their tolerance: a coarser reference cannot tell a zero premium from one at the bound, so the case
+    is unscored, never covered (review finding 1)."""
+    if premium - u > bound:
+        return "violated"
+    if u > reference.REF_FRACTION * bound:
+        return "unscored"
+    return "covered" if premium + u <= bound else "indeterminate"
+
+
 def classify(rec: dict) -> dict:
     """One record's outcomes. Pure: the tests drive it with hand-made records."""
     out: dict = {"id": rec["case"]["id"], "group": rec["case"]["group"], "kind": rec["case"]["kind"]}
@@ -73,18 +88,17 @@ def classify(rec: dict) -> dict:
     else:
         if rv["status"] != "reliable":
             out["price"] = "unscored"
+            if eng.get("bound") is not None:
+                out["bound"] = "unscored"
         else:
             err = abs(eng["value"] - rv["ref"])
             out["price_err_tol"] = err / tol
             out["price_u_tol"] = rv["u"] / tol
             out["price"] = judge(err, rv["u"], tol)
             if eng.get("bound") is not None:
-                # the route's claim: American − European is at most the bound (the served value is European).
-                # Covered only when the premium's upper end is inside the bound; an interval across it is
-                # indeterminate, never covered (Codex OB-14)
-                premium = rv["ref"] - eng["value"]
-                out["bound"] = ("covered" if premium + rv["u"] <= eng["bound"] else
-                                "violated" if premium - rv["u"] > eng["bound"] else "indeterminate")
+                # the served value is European; covered only when the premium's whole interval is inside the
+                # bound, an interval across it is indeterminate (Codex OB-14)
+                out["bound"] = bound_outcome(rv["ref"] - eng["value"], rv["u"], eng["bound"])
         if eng.get("delta") is None:
             out["delta"] = "withheld"
             out["delta_note"] = eng.get("delta_note")
@@ -173,6 +187,7 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
     # conservative: every indeterminate outcome counted as a failure (Codex OB-17)
     indet = sum(r["price"] == "indeterminate" for r in rows)
     s["clopper_pearson_95_conservative"] = clopper_pearson(fails + indet, len(acc) + indet) if sampled else None
+    s["price_indeterminate"] = indet
     s["errors"] = sum("error" in r for r in rows)
     errs = [r["price_err_tol"] for r in rows if "price_err_tol" in r]
     s["price_err_tol"] = {"p50": _q(errs, 0.5), "p99": _q(errs, 0.99), "max": max(errs) if errs else None}
@@ -186,7 +201,14 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
     dind = sum(r["delta"] == "indeterminate" for r in rows)
     s["delta_clopper_pearson_95_conservative"] = (clopper_pearson(s["delta_failures"] + dind, len(dacc) + dind)
                                                   if sampled else None)
+    s["delta_accepted_scored"] = len(dacc)
+    s["delta_indeterminate"] = dind
     s["delta_withheld_notes"] = dict(Counter(r.get("delta_note") for r in rows if r["delta"] == "withheld"))
+    # availability is reported apart from accuracy: withholding an unvalidated delta is correct behaviour
+    served = [r for r in rows if r.get("engine_status") == "served"]
+    shown = sum(r["delta"] != "withheld" for r in served)
+    s["delta_availability"] = {"served": len(served), "shown": shown, "withheld": len(served) - shown,
+                               "share_shown": shown / len(served) if served else None}
     units = [r["units"] for r in rows if r.get("units") is not None]
     s["work_units"] = {"p50": _q(units, 0.5), "p95": _q(units, 0.95), "max": max(units) if units else None}
     secs = [r["engine_secs"] for r in rows if r.get("engine_secs") is not None]
@@ -198,6 +220,7 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
     qdf = [r for r in rows if r.get("quantlib_method") == "qdfp-high-precision" and r.get("ref_value_status") == "reliable"]
     cov = [r["quantlib_diff_tol"] / r["ref_u_tol"] for r in qdf if r.get("ref_u_tol")]
     s["bound_route"] = {"checked": sum("bound" in r for r in rows)} | dict(Counter(r["bound"] for r in rows if "bound" in r))
+    s["bound_checked"] = s["bound_route"]["checked"]
     s["quantlib_coverage"] = {"compared": len(cov), "outside_u": sum(x > 1 for x in cov),
                               "ratio_p50": _q(cov, 0.5), "ratio_p99": _q(cov, 0.99), "ratio_max": max(cov) if cov else None}
     s["quantlib_check"] = {"compared": len(qlr), "over_half_tol": sum(x > 0.5 for x in qlr),
@@ -260,10 +283,14 @@ def completeness(manifests: list[dict], ids: set[str]) -> dict:
             "complete": not (expected - ids)}
 
 
-def named_verdict(exp: str, got: str | None, price: str | None, delta: str | None) -> str:
+def named_verdict(exp: str, got: str | None, price: str | None, delta: str | None,
+                  note: str | None = None, expect_note: str = "") -> str:
     """pass only when the route is the documented one and every numerical check that applies passed; a served
-    case whose reference is unresolved is "unresolved", never a pass (Codex OB-03)."""
+    case whose reference is unresolved is "unresolved", never a pass (Codex OB-03). A delta withheld for a
+    reason other than the documented one fails (review finding 2: B8's early-dividend withholding)."""
     if got != exp or price == "fail" or delta == "fail":
+        return "FAIL"
+    if expect_note and expect_note not in (note or ""):
         return "FAIL"
     if got == "served":
         return "pass" if price == "pass" and delta == "pass" else "unresolved"
@@ -272,47 +299,119 @@ def named_verdict(exp: str, got: str | None, price: str | None, delta: str | Non
     return "pass"
 
 
-DIVSENS_TARGET = 300   # scored dividend-scenario cases across the in-domain groups [Proposed]
+DIVSENS_TARGET = 300          # scored dividend-scenario cases across the in-domain groups [Proposed]
+DELTA_PER_GROUP_TARGET = 300  # area 4: scored displayed deltas per in-domain group (acceptance matrix)
+
+# What each verdict means. pass: the evidence the component requires is there and none of it fails.
+# fail: a confirmed failure. unresolved: no confirmed failure, but an indeterminate outcome (the reference's
+# interval straddles the threshold) or a disagreement still to investigate; it never counts as a pass.
+# insufficient: too few scored cases, or an incomplete run. The overall verdict is the worst of them.
+VERDICT_ORDER = ("fail", "unresolved", "insufficient", "pass")
+OVERALL = {"fail": "failed", "unresolved": "unresolved", "insufficient": "not met", "pass": "met"}
 
 
-def gate_result(groups: dict, overall: dict | None, named: list[dict], complete: bool) -> dict:
-    """Every required group appears, absent ones as unmet (Codex OB-06); the dividend scenario and the named
-    regressions are gates too (OB-07), and every named regression must be present (OB-08)."""
+def _verdict(fail: bool, unresolved: bool, short: bool) -> str:
+    return "fail" if fail else "unresolved" if unresolved else "insufficient" if short else "pass"
+
+
+def gate_result(groups: dict, overall: dict | None, named: list[dict], complete: bool,
+                controls: dict | None = None) -> dict:
+    """The acceptance verdict for this phase, one component per criterion that binds now (review finding 1).
+
+    Sample targets count the in-domain groups (decision 10; area 4 for delta; area 5 for the dividend
+    scenario), but a confirmed failure or an indeterminate outcome in any group, targeted, stress and named
+    included, decides its component: a wrong served number is wrong wherever it is drawn. Every required group
+    appears, absent ones as unmet (Codex OB-06); every named regression must be present (OB-08)."""
+    in_dom = {g: groups[g] for g in cases.IN_DOMAIN_GROUPS if g in groups}
+    every = list(groups.values())
+
+    def total(key: str) -> int:
+        return sum(x.get(key, 0) for x in every)
+
     per_group = {g: bool(g in groups and groups[g]["accepted_scored"] >= PER_GROUP_TARGET) for g in cases.IN_DOMAIN_GROUPS}
-    in_dom = [groups[g] for g in cases.IN_DOMAIN_GROUPS if g in groups]
-    price_fail = sum(s["price_failures"] for s in in_dom)
-    div = Counter()
-    for s in in_dom:
-        div.update(s["divsens"]["outcome"])
-    gate = {"per_group_target": PER_GROUP_TARGET, "overall_target": OVERALL_TARGET,
-            "per_group_met": per_group,
-            "overall_met": bool(overall and overall["accepted_scored"] >= OVERALL_TARGET),
-            "zero_failures": price_fail == 0 and bool(in_dom),
-            "crashes": sum(s.get("errors", 0) for s in groups.values()),
-            "divsens": {"target_scored": DIVSENS_TARGET, "outcome": dict(div),
-                        "met": div.get("fail", 0) == 0 and div.get("pass", 0) + div.get("fail", 0) >= DIVSENS_TARGET},
-            "named_missing": sorted({c.id for c in cases.NAMED} - {n["id"] for n in named}),
-            "named_all_pass": all(n["regression"] == "pass" for n in named),
-            "complete": complete,
-            "named_failures": [n["id"] for n in named if n["regression"] == "FAIL"],
-            "named_unresolved": [n["id"] for n in named if n["regression"] == "unresolved"]}
-    # An unresolved named regression is not certified, so it holds the gate open as a failure would.
-    gate["met"] = (complete and all(per_group.values()) and gate["overall_met"] and gate["zero_failures"]
-                   and gate["crashes"] == 0
-                   and gate["divsens"]["met"] and gate["named_all_pass"] and not gate["named_missing"])
-    return gate
+    overall_met = bool(overall and overall["accepted_scored"] >= OVERALL_TARGET)
+    price = {"per_group_target": PER_GROUP_TARGET, "overall_target": OVERALL_TARGET, "per_group_met": per_group,
+             "overall_met": overall_met, "accepted_scored": overall["accepted_scored"] if overall else 0,
+             "failures": total("price_failures"), "indeterminate": total("price_indeterminate")}
+    price["verdict"] = _verdict(price["failures"] > 0, price["indeterminate"] > 0,
+                                not (in_dom and all(per_group.values()) and overall_met))
+
+    d_group = {g: bool(g in groups and groups[g].get("delta_accepted_scored", 0) >= DELTA_PER_GROUP_TARGET)
+               for g in cases.IN_DOMAIN_GROUPS}
+    delta = {"per_group_target": DELTA_PER_GROUP_TARGET, "per_group_met": d_group,
+             "failures": total("delta_failures"), "indeterminate": total("delta_indeterminate"),
+             "availability": {g: x.get("delta_availability") for g, x in groups.items()}}
+    delta["verdict"] = _verdict(delta["failures"] > 0, delta["indeterminate"] > 0, not all(d_group.values()))
+
+    b = Counter()
+    for x in every:
+        b.update({k: v for k, v in x["bound_route"].items() if k != "checked"})
+    bound = {"checked": total("bound_checked"), "outcome": dict(b)}
+    bound["verdict"] = _verdict(b["violated"] > 0, b["indeterminate"] > 0, False)
+
+    div_in, div_all = Counter(), Counter()
+    for g, x in groups.items():
+        div_all.update(x["divsens"]["outcome"])
+        if g in in_dom:
+            div_in.update(x["divsens"]["outcome"])
+    divsens = {"target_scored": DIVSENS_TARGET, "outcome": dict(div_in), "outcome_all_groups": dict(div_all),
+               "scored": div_in["pass"] + div_in["fail"]}
+    divsens["verdict"] = _verdict(div_all["fail"] > 0, div_all["indeterminate"] > 0, divsens["scored"] < DIVSENS_TARGET)
+
+    c = controls or {}
+    n_eu = c.get("european_cases", 0)
+    outside = {"european_value": n_eu - c.get("european_within_u", 0),
+               "european_delta": n_eu - c.get("european_delta_within_u", 0),
+               "exempt_american": c.get("exempt_american_cases", 0) - c.get("exempt_american_within_u", 0)}
+    ctl = {"european_cases": n_eu, "exempt_american_cases": c.get("exempt_american_cases", 0), "outside_u": outside,
+           "lattice_disputed": sum(x["lattice_check"]["disputed"] for x in every),
+           # QuantLib's own error is not estimated, so its disagreements are listed for investigation, not gated
+           "quantlib_outside_u": sum(x["quantlib_coverage"]["outside_u"] for x in every)}
+    ctl["verdict"] = _verdict(sum(outside.values()) > 0, ctl["lattice_disputed"] > 0, n_eu == 0)
+
+    nm = {"missing": sorted({x.id for x in cases.NAMED} - {n["id"] for n in named}),
+          "failures": [n["id"] for n in named if n["regression"] == "FAIL"],
+          "unresolved": [n["id"] for n in named if n["regression"] == "unresolved"]}
+    nm["verdict"] = _verdict(bool(nm["failures"]), bool(nm["unresolved"]), bool(nm["missing"]))
+
+    run = {"complete": complete, "crashes": sum(x.get("errors", 0) for x in every)}
+    run["verdict"] = _verdict(run["crashes"] > 0, False, not complete)
+
+    comps = {"price": price, "delta": delta, "bound": bound, "divsens": divsens, "controls": ctl, "named": nm,
+             "run": run}
+    worst = min((x["verdict"] for x in comps.values()), key=VERDICT_ORDER.index)
+    return {"components": comps, "verdict": OVERALL[worst], "met": worst == "pass"}
+
+
+COMPONENT_NAMES = {"price": "Price accuracy (area 2, decision 10)", "delta": "Displayed delta (area 4)",
+                   "bound": "Early-exercise bound (bound-European route)", "divsens": "Dividend scenario (area 5)",
+                   "controls": "Reference controls (area 1)", "named": "Named regressions", "run": "Run integrity"}
 
 
 def gate_open(gt: dict) -> list[str]:
-    """What holds the gate open, in words, so the scorecard never names the wrong reason."""
-    why = [] if gt["complete"] else ["run incomplete"]
-    why += [f"{g} below {gt['per_group_target']}" for g, ok in gt["per_group_met"].items() if not ok]
-    why += [] if gt["overall_met"] else [f"fewer than {gt['overall_target']} overall"]
-    why += [] if gt["zero_failures"] else ["price failures"]
-    why += [] if not gt["crashes"] else [f"{gt['crashes']} crashes"]
-    why += [] if gt["divsens"]["met"] else ["dividend scenario"]
-    why += [f"named {x} {k}" for k, xs in (("failed", gt["named_failures"]), ("unresolved", gt["named_unresolved"]),
-                                           ("missing", gt["named_missing"])) for x in xs]
+    """What holds the verdict open, in words, so the scorecard never names the wrong reason."""
+    c = gt["components"]
+    p, d, b, v, k, n, r = (c[x] for x in ("price", "delta", "bound", "divsens", "controls", "named", "run"))
+    why = [] if r["complete"] else ["run incomplete"]
+    why += [f"{r['crashes']} crashes"] if r["crashes"] else []
+    why += [f"{p['failures']} price failures"] if p["failures"] else []
+    why += [f"{p['indeterminate']} price outcomes indeterminate"] if p["indeterminate"] else []
+    why += [f"{g} below {p['per_group_target']} scored prices" for g, ok in p["per_group_met"].items() if not ok]
+    why += [] if p["overall_met"] else [f"fewer than {p['overall_target']} scored prices overall"]
+    why += [f"{d['failures']} displayed-delta failures"] if d["failures"] else []
+    why += [f"{d['indeterminate']} delta outcomes indeterminate"] if d["indeterminate"] else []
+    why += [f"{g} below {d['per_group_target']} scored deltas" for g, ok in d["per_group_met"].items() if not ok]
+    why += [f"{b['outcome']['violated']} bound violations"] if b["outcome"].get("violated") else []
+    why += [f"{b['outcome']['indeterminate']} bound outcomes indeterminate"] if b["outcome"].get("indeterminate") else []
+    vo = v["outcome_all_groups"]
+    why += [f"{vo['fail']} dividend-scenario failures"] if vo.get("fail") else []
+    why += [f"{vo['indeterminate']} dividend-scenario outcomes indeterminate"] if vo.get("indeterminate") else []
+    why += [] if v["scored"] >= v["target_scored"] else [f"fewer than {v['target_scored']} scored dividend scenarios"]
+    why += [f"{x} {name} controls outside their uncertainty" for name, x in k["outside_u"].items() if x]
+    why += [f"{k['lattice_disputed']} lattice disputes to investigate"] if k["lattice_disputed"] else []
+    why += [] if k["european_cases"] else ["no reference controls run"]
+    why += [f"named {x} {kind}" for kind, xs in (("failed", n["failures"]), ("unresolved", n["unresolved"]),
+                                                ("missing", n["missing"])) for x in xs]
     return why
 
 
@@ -330,6 +429,19 @@ def read_results(path: Path) -> tuple[list[dict], bool]:
                 return recs, True
             raise ValueError(f"{path.name} line {k + 1} is not a result record") from None
     return recs, False
+
+
+def controls_summary(rows: list[dict]) -> dict:
+    """The reference's positive controls: European cases against Black-76 and exempt cases' American reference."""
+    controls = [r for r in rows if "control_eu_err_over_u" in r]
+    return {"european_cases": len(controls),
+            "european_reliable": sum(r["control_eu_reliable"] for r in controls),
+            "european_within_u": sum(r["control_eu_err_over_u"] <= 1 for r in controls),
+            "european_err_over_u_max": max((r["control_eu_err_over_u"] for r in controls), default=None),
+            "european_err_tol_max": max((r["control_eu_err_tol"] for r in controls), default=None),
+            "european_delta_within_u": sum(r["control_eu_delta_err_over_u"] <= 1 for r in controls),
+            "exempt_american_cases": sum("exempt_american_err_over_u" in r for r in rows),
+            "exempt_american_within_u": sum(r.get("exempt_american_err_over_u", 2) <= 1 for r in rows)}
 
 
 def score(dirs: list[Path]) -> dict:
@@ -370,25 +482,34 @@ def score(dirs: list[Path]) -> dict:
         else:
             got_short = got
         named.append({"id": r["id"], "note": rec["case"]["note"], "expect": exp, "got": got_short,
-                      "regression": named_verdict(exp, got_short, r.get("price"), r.get("delta")),
+                      "regression": named_verdict(exp, got_short, r.get("price"), r.get("delta"), eng.get("delta_note"),
+                                                  rec["case"].get("expect_note", "")),
+                      "delta_note": eng.get("delta_note"), "expect_note": rec["case"].get("expect_note", ""),
                       "engine_value": eng.get("value"), "engine_delta": eng.get("delta"),
                       "reason": eng.get("reason") or rec.get("error"),
                       "ref_value": rv.get("ref"), "ref_value_u": rv.get("u"), "ref_value_status": rv.get("status", "missing"),
                       "ref_delta": rd.get("ref"), "ref_delta_u": rd.get("u"), "ref_delta_status": rd.get("status", "missing"),
                       "price": r.get("price"), "delta": r.get("delta"),
                       "convention_shift_tol": r.get("convention_shift_tol")})
-    controls = [r for r in rows if "control_eu_err_over_u" in r]
-    ctl = {"european_cases": len(controls),
-           "european_reliable": sum(r["control_eu_reliable"] for r in controls),
-           "european_within_u": sum(r["control_eu_err_over_u"] <= 1 for r in controls),
-           "european_err_over_u_max": max((r["control_eu_err_over_u"] for r in controls), default=None),
-           "european_err_tol_max": max((r["control_eu_err_tol"] for r in controls), default=None),
-           "european_delta_within_u": sum(r["control_eu_delta_err_over_u"] <= 1 for r in controls),
-           "exempt_american_cases": sum("exempt_american_err_over_u" in r for r in rows),
-           "exempt_american_within_u": sum(r.get("exempt_american_err_over_u", 2) <= 1 for r in rows)}
-    gate = gate_result(groups, overall, named, run_status["complete"])
-    return {"manifests": manifests, "run": run_status, "groups": groups, "overall_in_domain": overall, "named": named,
-            "controls": ctl, "gate": gate, "errors": [r for r in rows if "error" in r]}
+    ctl = controls_summary(rows)
+    gate = gate_result(groups, overall, named, run_status["complete"], ctl)
+    return {"manifests": manifests, "scorer": scorer_version(), "run": run_status, "groups": groups,
+            "overall_in_domain": overall, "named": named, "controls": ctl, "gate": gate,
+            "errors": [r for r in rows if "error" in r]}
+
+
+def scorer_version() -> dict:
+    """The scoring code itself, so a re-scored run says which rules judged it (the run's own manifest records
+    the code that produced the results)."""
+    here = Path(__file__).resolve().parent
+    sha = {n: hashlib.sha256((here / n).read_bytes()).hexdigest() for n in ("score.py", "cases.py", "reference.py")}
+    git = lambda *a: subprocess.run(["git", "-C", str(here), *a], capture_output=True, text=True, timeout=10).stdout.strip()
+    try:
+        commit, dirty = git("rev-parse", "HEAD") or None, bool(git("status", "--porcelain", "--", "."))
+    except (OSError, subprocess.SubprocessError):
+        commit, dirty = None, None
+    return {"score_py_sha256": sha["score.py"], "cases_py_sha256": sha["cases.py"],
+            "reference_py_sha256": sha["reference.py"], "git_commit": commit, "git_dirty": dirty}
 
 
 def _f(x, nd=3):
@@ -480,17 +601,42 @@ def markdown(sc: dict) -> str:
         if cv["compared"] or cv["unresolved"] or cv["skipped"]:
             L.append(f"- {g}: {cv['compared']} compared ({cv['unresolved']} unresolved; {cv['skipped']} skipped, expiring past the holiday tables), |shift| p50 {_f(cv['abs_shift_tol_p50'], 3)}, p95 {_f(cv['abs_shift_tol_p95'], 3)}, max {_f(cv['abs_shift_tol_max'], 3)} tol; {cv['over_one_tol']} above 1 tol")
     gt = sc["gate"]
-    L += ["", "## Statistical gate (decision 10)", "",
-          f"- At least {gt['per_group_target']} accepted, scored contexts per in-domain group: " + ", ".join(f"{g} {'met' if v else 'not met'}" for g, v in gt["per_group_met"].items()),
-          f"- At least {gt['overall_target']} overall: {'met' if gt['overall_met'] else 'not met'}; zero observed price failures: {'yes' if gt['zero_failures'] else 'no'}",
-          f"- Dividend scenario: {gt['divsens']['outcome']}; at least {gt['divsens']['target_scored']} scored with zero failures: {'met' if gt['divsens']['met'] else 'not met'}",
-          f"- Named regressions all pass: {'yes' if gt['named_all_pass'] else 'no'}" + (f" (failures: {', '.join(gt['named_failures'])})" if gt["named_failures"] else "")
-          + (f" (unresolved: {', '.join(gt['named_unresolved'])})" if gt["named_unresolved"] else "")
-          + (f" (missing: {', '.join(gt['named_missing'])})" if gt["named_missing"] else ""),
-          f"- Run complete: {'yes' if gt['complete'] else 'no'} ({sc['run']['received']} of {sc['run']['expected']} cases)",
-          f"- **Gate {'met' if gt['met'] else 'not met'}**" + ("" if gt["met"] else " (open: " + ", ".join(gate_open(gt)) + ")"),
-          f"- Crashes (any group, including diagnostics after a price was scored): {gt['crashes']}; any crash holds the gate open.",
+    c = gt["components"]
+    p, d, b, v, k, n, r = (c[x] for x in ("price", "delta", "bound", "divsens", "controls", "named", "run"))
+    met = lambda ok: "met" if ok else "not met"
+    bo, vo = b["outcome"], v["outcome_all_groups"]
+    evidence = {
+        "price": f"{p['accepted_scored']} scored in the random in-domain groups (at least {p['per_group_target']} per in-domain group: "
+                 + ", ".join(f"{g} {met(x)}" for g, x in p["per_group_met"].items())
+                 + f"; at least {p['overall_target']} overall: {met(p['overall_met'])}); {p['failures']} failures and {p['indeterminate']} indeterminate in any group",
+        "delta": f"at least {d['per_group_target']} scored per in-domain group: " + ", ".join(f"{g} {met(x)}" for g, x in d["per_group_met"].items())
+                 + f"; {d['failures']} failures and {d['indeterminate']} indeterminate among deltas shown, any group",
+        "bound": f"{b['checked']} checked: {bo.get('covered', 0)} covered, {bo.get('violated', 0)} violated, {bo.get('indeterminate', 0)} indeterminate, "
+                 f"{bo.get('unscored', 0)} unscored (the reference is coarser than a tenth of the bound, or unresolved)",
+        "divsens": f"{v['scored']} scored in domain (at least {v['target_scored']}: {met(v['scored'] >= v['target_scored'])}); all groups: "
+                   + ", ".join(f"{x} {y}" for x, y in sorted(vo.items())),
+        "controls": f"{k['european_cases']} European controls and {k['exempt_american_cases']} exempt cases; outside their uncertainty: "
+                    + ", ".join(f"{x} {y}" for x, y in k["outside_u"].items())
+                    + f"; {k['lattice_disputed']} lattice disputes; {k['quantlib_outside_u']} QuantLib comparisons outside u (listed above for investigation, not gated)",
+        "named": f"{len(sc['named'])} of {len(sc['named']) + len(n['missing'])} present; failed: {', '.join(n['failures']) or 'none'}; "
+                 f"unresolved: {', '.join(n['unresolved']) or 'none'}" + (f"; missing: {', '.join(n['missing'])}" if n["missing"] else ""),
+        "run": f"{sc['run']['received']} of {sc['run']['expected']} cases; {r['crashes']} crashes (any crash, diagnostics included, fails the run)",
+    }
+    L += ["", "## Acceptance for this phase (Phase 0 baseline)", "",
+          f"**Verdict: {gt['verdict']}**" + ("" if gt["met"] else " (open: " + ", ".join(gate_open(gt)) + ")"), "",
+          "One component per criterion that binds now (the acceptance matrix's \"binds from\" column). The verdict is met only when "
+          "every component passes; one failed component fails it, and otherwise one unresolved component leaves it unresolved.", "",
+          "| Component | Verdict | Evidence |", "|---|---|---|"]
+    L += [f"| {COMPONENT_NAMES[x]} | {c[x]['verdict']} | {evidence[x]} |" for x in COMPONENT_NAMES]
+    L += ["",
+          "- An indeterminate outcome (the reference's interval straddles the threshold) is unresolved: it is never a pass, and one is enough to hold its component unresolved. "
+          "Unscored cases (the reference cannot judge them) are counted and shown, never used as evidence either way.",
+          "- Sample targets count the in-domain groups; a failure or an indeterminate outcome counts in any group, targeted, stress and named included.",
+          "- Displayed-delta availability (withholding an unvalidated delta is correct and is not an accuracy failure): "
+          + "; ".join(f"{g} shown for {a['shown']} of {a['served']} served prices" for g, a in d["availability"].items() if a and a["served"]) + ".",
           "- Clopper-Pearson limits assume independent draws from each group's sampling distribution, and are conditional on the reference resolving (unscored cases are counted, not in the rate). The table's limit counts every indeterminate outcome as a failure. They are not a claim about real chains or whole requests.",
+          f"- Scored by score.py `{sc['scorer']['score_py_sha256'][:12]}` (cases.py `{sc['scorer']['cases_py_sha256'][:12]}`), bench commit {sc['scorer']['git_commit']}"
+          + (" with uncommitted changes" if sc["scorer"]["git_dirty"] else "") + ".",
           ""]
     if sc["errors"]:
         L += ["## Crashes", ""] + [f"- {e['id']}: {e['error']}" for e in sc["errors"]]

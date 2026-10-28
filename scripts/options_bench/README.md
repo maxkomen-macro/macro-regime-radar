@@ -22,6 +22,18 @@ references on synthetic contexts and writes a reproducible scorecard.
   approximation), same inputs, reported apart from numerical error.
 - **Named regressions** DR-47, DR-48, DR-49, DR-50, B8, B9a and B9b, rerun on every engine revision.
 
+## Acceptance
+
+`score.py` gives one verdict per criterion that binds now: price accuracy (decision 10's sample targets),
+displayed delta (at least 300 scored per in-domain group), the early-exercise bound on the bound-European
+route, the dividend scenario, the reference controls, the named regressions and run integrity. Each is pass,
+fail, unresolved (an indeterminate outcome, or a lattice dispute to investigate) or insufficient (too few
+scored cases, or an incomplete run). The overall verdict is met only when every component passes. A failure
+or an indeterminate outcome counts in any group; the sample targets count the in-domain groups. A withheld
+delta is reported as availability, not as an accuracy failure. A bound is judged only by a reference at
+least ten times finer than the bound, as a price is judged against its tolerance; a confirmed violation
+always fails.
+
 ## Groups
 
 `cases.py` draws each case from `default_rng([seed, group, index])`, so a case is the same in any shard.

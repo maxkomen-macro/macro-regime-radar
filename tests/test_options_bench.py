@@ -234,31 +234,139 @@ def test_a_named_case_needs_a_resolved_reference_to_pass():
     assert score.named_verdict("refused:domain", "refused:domain", "refused", "refused") == "pass"
 
 
-def _group(n, fails=0, div=None):
-    return {"accepted_scored": n, "price_failures": fails, "divsens": {"outcome": div or {}}}
+def test_b8_expects_its_delta_withheld_for_the_early_dividend_and_its_price_checked():
+    """Review finding 2: since D-1 (PR #25) B8's lattice delta is withheld; the price is still judged."""
+    b8 = next(c for c in cases.NAMED if c.id == "named/B8")
+    assert b8.expect == "served:no-delta" and min(d for d, _ in b8.divs) < 5
+    note = "a dividend falls within 5 days, where the lattice delta is not validated"
+    v = lambda price="pass", got="served:no-delta", delta="withheld", n=note: \
+        score.named_verdict(b8.expect, got, price, delta, n, b8.expect_note)
+    assert v() == "pass"
+    assert v(price="fail") == "FAIL" and v(price="unscored") == "unresolved"   # the price check stays
+    assert v(got="served", delta="pass") == "FAIL"                             # a delta served again fails
+    assert v(n="within 5 pricer tolerances of the exercise value, where the delta is not validated") == "FAIL"
+    assert v(n=None) == "FAIL"
+
+
+def _group(n, fails=0, div=None, **kw):
+    """A group summary with only the fields the acceptance reads; everything passes unless overridden."""
+    g = {"accepted_scored": n, "price_failures": fails, "price_indeterminate": 0,
+         "delta_accepted_scored": score.DELTA_PER_GROUP_TARGET, "delta_failures": 0, "delta_indeterminate": 0,
+         "delta_availability": {"served": n, "shown": n, "withheld": 0, "share_shown": 1.0},
+         "bound_route": {"checked": 0}, "bound_checked": 0, "divsens": {"outcome": div or {}},
+         "lattice_check": {"disputed": 0}, "quantlib_coverage": {"outside_u": 0}, "errors": 0}
+    return g | kw
+
+
+CONTROLS = {"european_cases": 100, "european_within_u": 100, "european_delta_within_u": 100,
+            "exempt_american_cases": 10, "exempt_american_within_u": 10}
+
+
+def _passing():
+    full = {g: _group(score.PER_GROUP_TARGET) for g in cases.IN_DOMAIN_GROUPS}
+    full["G2-dividends"] = _group(score.PER_GROUP_TARGET, div={"pass": score.DIVSENS_TARGET})
+    return full, {"accepted_scored": score.OVERALL_TARGET}, [{"id": c.id, "regression": "pass"} for c in cases.NAMED]
 
 
 def test_the_gate_counts_missing_groups_dividends_and_named_cases():
-    full = {g: _group(score.PER_GROUP_TARGET) for g in cases.IN_DOMAIN_GROUPS}
-    full["G2-dividends"] = _group(score.PER_GROUP_TARGET, div={"pass": score.DIVSENS_TARGET})
-    overall = {"accepted_scored": score.OVERALL_TARGET}
-    ok = [{"id": c.id, "regression": "pass"} for c in cases.NAMED]
-    assert score.gate_result(full, overall, ok, complete=True)["met"]
-    assert not score.gate_result(full, overall, ok, complete=False)["met"]
+    full, overall, ok = _passing()
+    got = score.gate_result(full, overall, ok, True, CONTROLS)
+    assert got["met"] and got["verdict"] == "met" and score.gate_open(got) == []
+    assert not score.gate_result(full, overall, ok, False, CONTROLS)["met"]
     missing = {g: v for g, v in full.items() if g != "G6-long"}
-    gate = score.gate_result(missing, overall, ok, complete=True)
-    assert not gate["per_group_met"]["G6-long"] and not gate["met"]
+    gate = score.gate_result(missing, overall, ok, True, CONTROLS)
+    assert not gate["components"]["price"]["per_group_met"]["G6-long"] and gate["verdict"] == "not met"
     bad_div = dict(full, **{"G3-carry-itm": _group(score.PER_GROUP_TARGET, div={"fail": 1})})
-    assert not score.gate_result(bad_div, overall, ok, complete=True)["met"]
+    assert score.gate_result(bad_div, overall, ok, True, CONTROLS)["verdict"] == "failed"
     b8 = next(c.id for c in cases.NAMED if c.id.endswith("B8"))
     unresolved = [n if n["id"] != b8 else {"id": b8, "regression": "unresolved"} for n in ok]
-    gate = score.gate_result(full, overall, unresolved, complete=True)
-    assert not gate["met"] and gate["named_unresolved"] == [b8] and not gate["named_failures"]
-    one = score.gate_result(full, overall, ok[:1], complete=True)   # a shard holding one named case (OB-08)
-    assert not one["met"] and len(one["named_missing"]) == len(cases.NAMED) - 1
-    assert score.gate_open(score.gate_result(full, overall, ok, complete=False)) == ["run incomplete"]
+    gate = score.gate_result(full, overall, unresolved, True, CONTROLS)
+    nm = gate["components"]["named"]
+    assert gate["verdict"] == "unresolved" and nm["unresolved"] == [b8] and not nm["failures"]
+    one = score.gate_result(full, overall, ok[:1], True, CONTROLS)   # a shard holding one named case (OB-08)
+    assert not one["met"] and len(one["components"]["named"]["missing"]) == len(cases.NAMED) - 1
+    assert score.gate_open(score.gate_result(full, overall, ok, False, CONTROLS)) == ["run incomplete"]
     assert score.gate_open(gate) == [f"named {b8} unresolved"]
-    assert not score.gate_result(full, overall, [], complete=True)["met"]
+    assert not score.gate_result(full, overall, [], True, CONTROLS)["met"]
+
+
+def _set(groups, g, **kw):
+    return dict(groups, **{g: groups[g] | kw})
+
+
+# (what changes, the component it must decide, that component's verdict, the overall verdict, words in the reasons)
+MUTATIONS = [
+    ("price fail in a targeted group", lambda f: _set(f, "T1-near-boundary", price_failures=1), "price", "fail", "failed", "1 price failures"),
+    ("price fail out of domain", lambda f: f | {"X1-outside": _group(10, fails=1)}, "price", "fail", "failed", "1 price failures"),
+    ("price indeterminate", lambda f: _set(f, "G5-extreme-vol", price_indeterminate=1), "price", "unresolved", "unresolved", "1 price outcomes indeterminate"),
+    ("displayed delta fails", lambda f: _set(f, "G3-carry-itm", delta_failures=1), "delta", "fail", "failed", "1 displayed-delta failures"),
+    ("displayed delta fails, named", lambda f: f | {"named": _group(0, delta_failures=1)}, "delta", "fail", "failed", "1 displayed-delta failures"),
+    ("delta indeterminate", lambda f: _set(f, "T1-near-boundary", delta_indeterminate=1), "delta", "unresolved", "unresolved", "1 delta outcomes indeterminate"),
+    ("too few scored deltas", lambda f: _set(f, "G2-dividends", delta_accepted_scored=score.DELTA_PER_GROUP_TARGET - 1), "delta", "insufficient", "not met", "G2-dividends below 300 scored deltas"),
+    ("bound violated", lambda f: _set(f, "G1-nodiv", bound_route={"checked": 5, "covered": 4, "violated": 1}), "bound", "fail", "failed", "1 bound violations"),
+    ("bound indeterminate", lambda f: _set(f, "G4-negrate", bound_route={"checked": 5, "covered": 4, "indeterminate": 1}), "bound", "unresolved", "unresolved", "1 bound outcomes indeterminate"),
+    ("dividend scenario fails out of domain", lambda f: f | {"X1-outside": _group(10, div={"fail": 1})}, "divsens", "fail", "failed", "1 dividend-scenario failures"),
+    ("dividend scenario indeterminate", lambda f: _set(f, "G2-dividends", divsens={"outcome": {"pass": score.DIVSENS_TARGET, "indeterminate": 1}}), "divsens", "unresolved", "unresolved", "1 dividend-scenario outcomes indeterminate"),
+    ("too few dividend scenarios", lambda f: _set(f, "G2-dividends", divsens={"outcome": {"pass": score.DIVSENS_TARGET - 1}}), "divsens", "insufficient", "not met", "fewer than 300 scored dividend scenarios"),
+    ("lattice dispute", lambda f: _set(f, "G6-long", lattice_check={"disputed": 1}), "controls", "unresolved", "unresolved", "1 lattice disputes to investigate"),
+    ("crash", lambda f: f | {"X1-outside": _group(10, errors=1)}, "run", "fail", "failed", "1 crashes"),
+]
+
+
+@pytest.mark.parametrize("what, change, comp, verdict, overall, words", MUTATIONS, ids=[m[0] for m in MUTATIONS])
+def test_each_required_failure_or_unresolved_outcome_decides_its_component(what, change, comp, verdict, overall, words):
+    """Review finding 1: no failed or unresolved criterion leaves the verdict green."""
+    full, tot, ok = _passing()
+    got = score.gate_result(change(full), tot, ok, True, CONTROLS)
+    assert got["components"][comp]["verdict"] == verdict, what
+    assert all(v["verdict"] == "pass" for k, v in got["components"].items() if k != comp), what
+    assert got["verdict"] == overall and not got["met"] and words in score.gate_open(got), what
+
+
+@pytest.mark.parametrize("bad, words", [({"european_within_u": 99}, "1 european_value controls outside their uncertainty"),
+                                        ({"european_delta_within_u": 99}, "1 european_delta controls outside their uncertainty"),
+                                        ({"exempt_american_within_u": 9}, "1 exempt_american controls outside their uncertainty")])
+def test_a_control_outside_its_uncertainty_fails_the_reference(bad, words):
+    full, tot, ok = _passing()
+    got = score.gate_result(full, tot, ok, True, CONTROLS | bad)
+    assert got["components"]["controls"]["verdict"] == "fail" and got["verdict"] == "failed" and words in score.gate_open(got)
+    none = score.gate_result(full, tot, ok, True, {})
+    assert none["components"]["controls"]["verdict"] == "insufficient" and "no reference controls run" in score.gate_open(none)
+
+
+def test_fail_outranks_unresolved_and_withheld_deltas_are_not_failures():
+    full, tot, ok = _passing()
+    both = _set(_set(full, "G1-nodiv", price_failures=1), "G2-dividends", delta_indeterminate=1)
+    assert score.gate_result(both, tot, ok, True, CONTROLS)["verdict"] == "failed"
+    withheld = _set(full, "G2-dividends", delta_availability={"served": 1000, "shown": 400, "withheld": 600, "share_shown": 0.4})
+    got = score.gate_result(withheld, tot, ok, True, CONTROLS)
+    assert got["met"] and got["components"]["delta"]["availability"]["G2-dividends"]["withheld"] == 600
+
+
+def test_failing_records_reach_the_verdict_through_classify_and_summary():
+    """End to end from records: a violated bound or a failing displayed delta in otherwise passing groups."""
+    def groups(bad=None):
+        out = {}
+        for g in cases.IN_DOMAIN_GROUPS:
+            rows = [score.classify(_rec())] * score.PER_GROUP_TARGET
+            if g == "G1-nodiv" and bad:
+                rows = rows[1:] + [score.classify(bad)]
+            out[g] = score._summary([r | {"group": g} for r in rows])
+        div = [dict(r, divsens="pass") for r in [score.classify(_rec())] * score.DIVSENS_TARGET]
+        out["G2-dividends"]["divsens"] = score._summary(div)["divsens"]
+        return out
+    tot = {"accepted_scored": score.OVERALL_TARGET}
+    ok = [{"id": c.id, "regression": "pass"} for c in cases.NAMED]
+    assert score.gate_result(groups(), tot, ok, True, CONTROLS)["met"]
+    bound = _rec(value=10.0, ref=10.0004, u=1e-5)
+    bound["engine"]["bound"] = 1e-4                    # premium 4e-4: the price passes, the bound is violated
+    got = score.gate_result(groups(bound), tot, ok, True, CONTROLS)
+    assert score.classify(bound)["price"] == "pass" and got["components"]["bound"]["verdict"] == "fail"
+    assert got["verdict"] == "failed"
+    delta = _rec(delta=-0.5 + 3e-3)                    # price passes, the shown delta misses 2.5e-3
+    got = score.gate_result(groups(delta), tot, ok, True, CONTROLS)
+    assert got["components"]["delta"]["verdict"] == "fail" and got["components"]["price"]["verdict"] == "pass"
+    assert got["verdict"] == "failed"
 
 
 def test_a_partial_run_is_scored_but_marked_incomplete():
@@ -294,10 +402,23 @@ def test_the_early_exercise_bound_is_checked_against_the_reference_premium():
     assert score.classify(rec)["bound"] == "covered"
     rec["engine"]["bound"] = 1e-4                   # premium 4e-4 exceeds bound + u
     assert score.classify(rec)["bound"] == "violated"
-    rec = _rec(value=10.0, ref=10.0004, u=1e-4)     # premium in [3e-4, 5e-4] across the bound (OB-14)
-    rec["engine"]["bound"] = 3.5e-4
+    rec = _rec(value=10.0, ref=10.0004, u=1e-5)     # premium in [3.9e-4, 4.1e-4] across the bound (OB-14)
+    rec["engine"]["bound"] = 3.95e-4
     assert score.classify(rec)["bound"] == "indeterminate"
     assert "bound" not in score.classify(_rec())
+
+
+def test_a_bound_finer_than_the_reference_is_unscored_not_covered_but_a_violation_still_counts():
+    """The reference judges a bound only when it is ten times finer, as it judges prices against tol; the
+    first case is the baseline's G2-dividends/1083 (bound 6.9e-7, u 6.0e-7, premium 1.0e-7)."""
+    assert score.bound_outcome(1.0e-7, 6.0e-7, 6.9e-7) == "unscored"
+    assert score.bound_outcome(0.0, 3e-12, 1e-12) == "unscored"          # both at rounding level
+    assert score.bound_outcome(1.0e-7, 8e-8, 6.9e-7) == "unscored"       # covered by the interval, reference too coarse
+    assert score.bound_outcome(1.0e-7, 5e-8, 1e-6) == "covered"
+    assert score.bound_outcome(5e-3, 1e-3, 1e-6) == "violated"           # confirmed although the reference is coarse
+    rec = _rec(value=10.0, ref=10.0004, u=1e-5, ref_status="unresolved: x")
+    rec["engine"]["bound"] = 1e-4
+    assert score.classify(rec)["bound"] == "unscored"
 
 
 def test_a_diagnostic_crash_keeps_the_price_outcome_and_holds_the_gate():
@@ -313,13 +434,11 @@ def test_a_diagnostic_crash_keeps_the_price_outcome_and_holds_the_gate():
     assert half["price"] == "fail" and half["diagnostics"] == "incomplete" and "divsens" not in half
     bare = {"case": rec["case"], "error": "boom"}   # nothing computed
     assert score.classify(bare)["price"] == "error"
-    full = {g: _group(score.PER_GROUP_TARGET) | {"errors": 0} for g in cases.IN_DOMAIN_GROUPS}
-    full["G2-dividends"] = _group(score.PER_GROUP_TARGET, div={"pass": score.DIVSENS_TARGET}) | {"errors": 0}
-    ok = [{"id": c.id, "regression": "pass"} for c in cases.NAMED]
-    overall = {"accepted_scored": score.OVERALL_TARGET}
-    assert score.gate_result(full, overall, ok, complete=True)["met"]
-    full["X1-outside"] = {"errors": 1}
-    assert not score.gate_result(full, overall, ok, complete=True)["met"]
+    full, overall, ok = _passing()
+    assert score.gate_result(full, overall, ok, True, CONTROLS)["met"]
+    full["X1-outside"] = _group(0, errors=1)
+    got = score.gate_result(full, overall, ok, True, CONTROLS)
+    assert got["components"]["run"]["verdict"] == "fail" and not got["met"]
 
 
 def test_indeterminate_outcomes_widen_the_conservative_limit():
@@ -391,7 +510,8 @@ def test_named_regressions_route_as_documented():
         if c.expect == "refused:domain":
             assert got["status"] == "refused:domain", c.id
         elif c.expect == "served:no-delta":
-            assert got["status"] == "served" and got["delta"] is None, c.id
+            assert got["status"] == "served" and got["value"] is not None and got["delta"] is None, c.id
+            assert c.expect_note and c.expect_note in got["delta_note"], (c.id, got["delta_note"])
         else:
             assert got["status"] == "served" and got["delta"] is not None, c.id
 

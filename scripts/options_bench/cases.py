@@ -48,6 +48,7 @@ class Case:
     divs: tuple[tuple[int, float], ...] = field(default=())
     note: str = ""
     expect: str = ""          # named cases: the outcome the baseline is documented to give
+    expect_note: str = ""     # named cases served without a delta: words the engine's delta note must contain
 
     def pv(self) -> float:
         return sum(a * math.exp(-self.rho * d / YEAR_DAYS) for d, a in self.divs)
@@ -239,9 +240,9 @@ def case(seed: int, group: str, i: int) -> Case:
 
 # ── named regressions (exact inputs from the build thread's design record) ───
 
-def _named(name, is_call, k, days, rho, q, sigma, divs, note, expect) -> Case:
+def _named(name, is_call, k, days, rho, q, sigma, divs, note, expect, expect_note="") -> Case:
     return Case(id=f"named/{name}", group="named", kind="named", is_call=is_call, spot=SPOT, strike=k, days=days,
-                rho=rho, q=q, sigma=sigma, divs=tuple(divs), note=note, expect=expect)
+                rho=rho, q=q, sigma=sigma, divs=tuple(divs), note=note, expect=expect, expect_note=expect_note)
 
 
 NAMED = [
@@ -255,9 +256,12 @@ NAMED = [
     _named("DR-50", False, 109.78, 90, 0.11, -0.82, 0.32, [(4, 1.01)],
            "put, q -82%: 180, 360 and 720 steps share a false root exercise", "refused:domain"),
     _named("B8", True, 87.03281448090632, 341, 0.02436936153335026, 0.0, 0.12057305288130349, [(2, 2.5)],
-           "call, dividend on day 2: rev 8 served delta 0.90591 against 0.90908", "served"),
+           "call, dividend on day 2: rev 8 served delta 0.90591 against 0.90908; since D-1 (PR #25, ddb824e) the "
+           "lattice delta is withheld with a dividend in the first 5 days, the price still checked",
+           "served:no-delta", "a dividend falls within"),
     _named("B9a", False, 113.0, 60, 0.05, 0.0, 0.2, [],
-           "put $0.0004 above its exercise value: rev 11 served delta -1 against -0.99733", "served:no-delta"),
+           "put $0.0004 above its exercise value: rev 11 served delta -1 against -0.99733", "served:no-delta",
+           "of the exercise value"),
     _named("B9b", False, 105.0, 60, 0.05, -0.25, 0.2, [],
            "put, q -25%: rev 11 served delta -0.90067 against -0.90371", "refused:domain"),
 ]
