@@ -1,6 +1,7 @@
 """The earnings cache's read-only free-plan probe (src/events/earnings_cache.py --probe).
 
-Pinned here: the 18 seven-day windows over the 120-day horizon; the refusal to
+Pinned here: the 18 seven-day windows over the 120-day horizon, the 28-day
+window and the halves of the two fullest windows; the refusal to
 start during weekday US trading hours or without a key; the pace (6 s between
 calls) and the stop without a retry at the first failure; each check and the
 four outcomes (pass, sparse, ambiguous, fail); a cross-check with nothing to
@@ -94,8 +95,8 @@ class Resp:
 class Finnhub:
     """Answers each call from the master list, or with a status from `fail_at` (1-based call number)."""
 
-    def __init__(self, rows, fail_at=None, status=429, cut_whole_by=0, raw=None):
-        self.rows, self.fail_at, self.status, self.cut = rows, fail_at, status, cut_whole_by
+    def __init__(self, rows, fail_at=None, status=429, cut_whole_by=0, raw=None, cap=None):
+        self.rows, self.fail_at, self.status, self.cut, self.cap = rows, fail_at, status, cut_whole_by, cap
         self.raw = raw or {}
         self.calls = []
 
@@ -113,6 +114,8 @@ class Finnhub:
         items += [r for r in self.rows if not _iso(r)]  # malformed rows ride along in every reply
         if self.cut and (date.fromisoformat(hi) - date.fromisoformat(lo)).days >= 27:
             items = items[: -self.cut]
+        if self.cap is not None:
+            items = items[: self.cap]
         return Resp(200, {"earningsCalendar": items})
 
 
@@ -169,11 +172,15 @@ def test_pass_paces_every_call_and_leaves_the_database_untouched(mod, db):
     fake = Finnhub(master())
     report, sleeps = run(mod, db, fake)
     assert report.outcome == "pass", text(report)
-    assert len(fake.calls) == 19 and sleeps == [6.0] * 18
-    assert fake.calls[-1] == (TODAY.isoformat(), (TODAY + timedelta(days=27)).isoformat())
+    assert len(fake.calls) == 23 and sleeps == [6.0] * 22
+    assert fake.calls[18] == (TODAY.isoformat(), (TODAY + timedelta(days=27)).isoformat())
+    # the halves of the two fullest windows: days 7-13 (AAPL) and 35-41 (NVDA), split 3 + 4
+    assert fake.calls[19:] == [((TODAY + timedelta(days=a)).isoformat(), (TODAY + timedelta(days=b)).isoformat())
+                               for a, b in ((7, 9), (10, 13), (35, 37), (38, 41))]
     out = text(report)
-    for check in ("P1 access: PASS", "P2 shape: PASS", "P3 coverage: PASS", "P4 cross-check: PASS (2 of 2",
-                  "P5 truncation: PASS", "largest reply proven whole"):
+    for check in ("calls: 23 of 23", "P1 access: PASS", "P2 shape: PASS", "P3 coverage: PASS",
+                  "P4 cross-check: PASS (2 of 2", "P5 truncation: PASS (28-day reply 29 rows",
+                  "halves of the 8-row window (days 7-13): 3 + 5 rows, the same rows"):
         assert check in out
     assert "OUTCOME: PASS" in out
     assert hashlib.sha256(db.read_bytes()).hexdigest() == before
@@ -197,6 +204,14 @@ def test_a_missed_tape_date_is_ambiguous_and_names_the_ticker(mod, db):
     report, _ = run(mod, db, Finnhub(master(drop_tape="NVDA")))
     assert report.outcome == "ambiguous"
     assert "P4 cross-check: FAIL (1 of 2" in text(report) and "missed for NVDA" in text(report)
+    assert "NVDA: stored on day 40; the whole-market reply lists it nowhere in the horizon" in text(report)
+
+
+def test_a_missed_tape_date_says_where_the_reply_lists_the_ticker(mod, db):
+    moved = {"symbol": "NVDA", "date": (TODAY + timedelta(days=41)).isoformat(), "hour": "amc"}
+    report, _ = run(mod, db, Finnhub(master(drop_tape="NVDA", extra=[moved])))
+    assert report.outcome == "ambiguous"
+    assert "NVDA: stored on day 40; the whole-market reply lists it on day 41" in text(report)
 
 
 def test_nothing_to_compare_never_passes_the_cross_check(mod, tmp_path):
@@ -212,10 +227,34 @@ def test_nothing_to_compare_never_passes_the_cross_check(mod, tmp_path):
     assert "P4 cross-check: FAIL" in text(report) and "nothing to compare" in text(report)
 
 
-def test_a_cut_short_28_day_reply_fails_the_truncation_check(mod, db):
-    report, _ = run(mod, db, Finnhub(master(), cut_whole_by=3))
+def test_a_reply_cap_passes_when_smaller_replies_are_whole(mod, db):
+    report, _ = run(mod, db, Finnhub(master(), cap=20))
+    out = text(report)
+    assert report.outcome == "pass", out
+    assert "P5 truncation: PASS (28-day reply 20 rows, its four 7-day windows 29 distinct rows: a reply cap of 20 rows; " \
+           "the largest 7-day reply had 8 rows)" in out
+    assert "reply cap observed: 20 rows; a reply of that size is cut short" in out
+
+
+def test_a_7_day_reply_at_the_cap_fails_the_truncation_check(mod, db):
+    report, _ = run(mod, db, Finnhub(master(), cap=8))
     assert report.outcome == "ambiguous"
-    assert "P5 truncation: FAIL" in text(report) and "no reply size proven whole" in text(report)
+    assert "P5 truncation: FAIL" in text(report) and "the largest 7-day reply had 8 rows" in text(report)
+
+
+def test_halves_that_differ_fail_the_truncation_check(mod, db):
+    report, _ = run(mod, db, Finnhub(master(), cut_whole_by=3, raw={20: {"earningsCalendar": []}}))
+    assert report.outcome == "ambiguous"
+    out = text(report)
+    assert "P5 truncation: FAIL" in out and "0 + 5 rows, different rows" in out
+
+
+def test_a_28_day_reply_with_rows_of_its_own_fails_the_truncation_check(mod, db):
+    stray = {"symbol": "S900", "date": (TODAY + timedelta(days=3)).isoformat(), "hour": ""}
+    raw = {19: {"earningsCalendar": [r for r in master(extra=[stray]) if r["date"] <= (TODAY + timedelta(days=27)).isoformat()]}}
+    report, _ = run(mod, db, Finnhub(master(), raw=raw))
+    assert report.outcome == "ambiguous"
+    assert "P5 truncation: FAIL" in text(report) and "the sets differ" in text(report)
 
 
 def test_a_429_stops_at_once_without_a_retry(mod, db):

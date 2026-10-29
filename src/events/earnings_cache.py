@@ -8,10 +8,11 @@ hold. It writes nothing: no database row, no file.
     python -m src.events.earnings_cache --probe [--db PATH]
 
 Calls: 18 seven-day windows from today (New York) through day 119 (the last
-window is day 119 alone), plus one 28-day window over days 0-27 for the
-truncation check. 19 calls, one every 6 s (10 a minute), stopping at the first
-failure without a retry. It refuses to start on a weekday between 09:00 and
-17:00 New York time, when the dashboard's fundamentals use the same account.
+window is day 119 alone), one 28-day window over days 0-27, and the two halves
+of each of the two fullest 7-day windows, for the truncation check: 23 calls,
+one every 6 s (10 a minute), stopping at the first failure without a retry. It
+refuses to start on a weekday between 09:00 and 17:00 New York time, when the
+dashboard's fundamentals use the same account.
 
 Checks (pass thresholds fixed in the plan):
   P1 access       the first window answers HTTP 200 with an earningsCalendar list
@@ -19,8 +20,12 @@ Checks (pass thresholds fixed in the plan):
   P3 coverage     every window has rows; rows per window and names per 30-day band
   P4 cross-check  every stored future Finnhub date of the 12 tape names inside the
                   horizon (event_calendar, source finnhub_earnings) is in the reply
-                  on the same New York date
-  P5 truncation   the 28-day reply equals the union of its four 7-day windows
+                  on the same New York date; for a miss it says on which day
+                  offsets the whole-market reply lists that ticker, if any
+  P5 truncation   the 28-day reply equals the union of its four 7-day windows, or,
+                  when it holds fewer rows (a reply cap of that size), every 7-day
+                  reply is below that size and each of the two fullest 7-day
+                  windows equals the union of its two halves
   P6 depth        names with two listed reports, the last day with a row, the
                   share with a release time (reported only)
 
@@ -64,6 +69,8 @@ from src.events.earnings import (  # noqa: E402  (reuse, never modify)
     _when,
 )
 
+HEAVY_WINDOWS = 2  # the fullest 7-day windows re-asked as halves
+NOT_ASKED = "not asked"  # a second half skipped after its first half failed
 HORIZON_DAYS = 120  # days 0..119 (plan D2)
 WINDOW_DAYS = 7
 TRUNCATION_DAYS = 28
@@ -184,12 +191,14 @@ class Report:
 
 
 def judge(replies: list[Reply], trunc: Reply | None, stored: dict[str, set[date]], today: date,
-          planned: int) -> Report:
-    """The probe's verdict from its replies (pure: no call, no clock)."""
+          planned: int, halves: list[tuple[Reply, Reply, Reply]] = ()) -> Report:
+    """The probe's verdict from its replies (pure: no call, no clock). `halves` holds (whole, first half,
+    second half) for each re-asked 7-day window."""
     lines: list[str] = []
     done = [r for r in replies if r.failure is None]
-    stopped = next((r for r in replies + ([trunc] if trunc else []) if r.failure is not None), None)
-    calls = len(replies) + (1 if trunc else 0)
+    extra = ([trunc] if trunc else []) + [h for _, a, b in halves for h in (a, b) if h.failure != NOT_ASKED]
+    stopped = next((r for r in replies + extra if r.failure is not None), None)
+    calls = len(replies) + len(extra)
     lines.append(f"calls: {calls} of {planned}" + (f" (stopped: {stopped.failure})" if stopped else ""))
 
     # P1
@@ -199,8 +208,9 @@ def judge(replies: list[Reply], trunc: Reply | None, stored: dict[str, set[date]
                  + ("" if p1 else f" ({first.failure if first else 'no call made'})"))
 
     # P2
-    malformed = sum(r.malformed for r in done) + (trunc.malformed if trunc and trunc.failure is None else 0)
-    outside = sum(r.outside for r in done) + (trunc.outside if trunc and trunc.failure is None else 0)
+    answered = done + [r for r in extra if r.failure is None]
+    malformed = sum(r.malformed for r in answered)
+    outside = sum(r.outside for r in answered)
     p2 = p1 and malformed == 0 and outside == 0
     lines.append(f"P2 shape: {'PASS' if p2 else 'FAIL'} ({malformed} malformed, {outside} outside their dates)")
 
@@ -233,22 +243,44 @@ def judge(replies: list[Reply], trunc: Reply | None, stored: dict[str, set[date]
                  + (f"; missed for {', '.join(missed)}" if missed else "") + ")")
     if not stored:
         lines.append("   no stored tape-name dates in the horizon: the cross-check had nothing to compare")
+    for s, d in wanted:
+        if (s, d) in seen:
+            continue
+        listed = sorted({(day - today).days for r in done for sym, day, _ in r.rows if sym == s})
+        lines.append(f"   {s}: stored on day {(d - today).days}; the whole-market reply lists it "
+                     + (f"on day {', '.join(map(str, listed))}" if listed else "nowhere in the horizon"))
 
     # P5
+    biggest = max((len(r.rows) for r in done), default=0)
     if trunc is not None and trunc.failure is None and len(done) >= TRUNCATION_DAYS // WINDOW_DAYS:
         whole = {(s, d) for s, d, _ in trunc.rows}
         parts = {(s, d) for r in done[: TRUNCATION_DAYS // WINDOW_DAYS] for s, d, _ in r.rows}
-        p5 = whole == parts
-        lines.append(f"P5 truncation: {'PASS' if p5 else 'FAIL'} (28-day reply {len(trunc.rows)} rows, "
-                     f"its four 7-day windows {len(parts)} distinct rows)")
+        cap = len(trunc.rows) if whole < parts else None  # a strict subset: cut short, nothing changed
+        split_ok, detail = [], []
+        for w, a, b in halves:
+            if a.failure is None and b.failure is None:
+                both = {(s, d) for s, d, _ in a.rows} | {(s, d) for s, d, _ in b.rows}
+                split_ok.append(both == {(s, d) for s, d, _ in w.rows})
+                detail.append(f"   halves of the {len(w.rows)}-row window (days {w.window.offset(today)[0]}-"
+                             f"{w.window.offset(today)[1]}): {len(a.rows)} + {len(b.rows)} rows, "
+                             + ("the same rows" if split_ok[-1] else "different rows"))
+        halves_ok = all(split_ok) and len(split_ok) == len(halves)
+        if whole == parts:
+            p5, why = halves_ok, f"28-day reply {len(trunc.rows)} rows, its four 7-day windows {len(parts)} distinct rows"
+        elif cap is not None:
+            p5 = biggest < cap and len(split_ok) == HEAVY_WINDOWS and halves_ok
+            why = (f"28-day reply {len(trunc.rows)} rows, its four 7-day windows {len(parts)} distinct rows: "
+                   f"a reply cap of {cap} rows; the largest 7-day reply had {biggest} rows")
+        else:
+            p5, why = False, (f"28-day reply {len(trunc.rows)} rows, its four 7-day windows {len(parts)} distinct "
+                              "rows, and the sets differ")
+        lines.append(f"P5 truncation: {'PASS' if p5 else 'FAIL'} ({why})")
+        lines.extend(detail)
+        if cap is not None:
+            lines.append(f"   reply cap observed: {cap} rows; a reply of that size is cut short")
     else:
         p5 = False
         lines.append("P5 truncation: NOT RUN (the run stopped before it)")
-    if p5:
-        lines.append(f"   largest reply proven whole: {len(trunc.rows)} rows (the 28-day window)")
-    else:
-        lines.append(f"   no reply size proven whole; the largest reply had "
-                     f"{max((len(r.rows) for r in done), default=0)} rows")
 
     # P6 (reported only)
     reports: dict[str, set[date]] = defaultdict(set)
@@ -291,14 +323,29 @@ def probe(api_key: str, db_path: Path, *, now: datetime | None = None, get=None,
         replies.append(rep)
         if rep.failure is not None:
             break
+    halves: list[tuple[Reply, Reply, Reply]] = []
     if all(r.failure is None for r in replies) and len(replies) == len(plan):
         sleep(PACE_S)
         trunc = fetch(Window(today, today + timedelta(days=TRUNCATION_DAYS - 1)), api_key, get)
-    return judge(replies, trunc, stored, today, len(plan) + 1)
+        full = [r for r in replies if (r.window.end - r.window.start).days == WINDOW_DAYS - 1]
+        for w in sorted(full, key=lambda r: -len(r.rows))[:HEAVY_WINDOWS] if trunc.failure is None else []:
+            mid = w.window.start + timedelta(days=WINDOW_DAYS // 2)
+            pair = []
+            for half in (Window(w.window.start, mid - timedelta(days=1)), Window(mid, w.window.end)):
+                sleep(PACE_S)
+                pair.append(fetch(half, api_key, get))
+                if pair[-1].failure is not None:
+                    break
+            if len(pair) < 2:
+                pair.append(Reply(Window(mid, w.window.end), failure=NOT_ASKED))
+            halves.append((w, pair[0], pair[1]))
+            if any(h.failure is not None for h in pair):
+                break
+    return judge(replies, trunc, stored, today, len(plan) + 1 + 2 * HEAVY_WINDOWS, halves)
 
 
 def _announced(key: str, db: Path, now: datetime) -> Report:
-    print(f"[earnings-cache probe] calling Finnhub: {len(windows(now.astimezone(NY).date())) + 1} calls, about 2 minutes ...")
+    print(f"[earnings-cache probe] calling Finnhub: {len(windows(now.astimezone(NY).date())) + 1 + 2 * HEAVY_WINDOWS} calls, about 2.5 minutes ...")
     return probe(key, db, now=now)
 
 
