@@ -366,14 +366,18 @@ def _price(c: om.Context, cfg: Config, level_source) -> oe.Answer:
     sgn = 1.0 if c.is_call else -1.0
     x = sgn * (c.spot - c.strike)
     lo = max(eu, x)
-    t_lo = cfg.tau * om.tolerance(lo, c.spot)
+    tol_lo = om.tolerance(lo, c.spot)
+    t_lo = cfg.tau * tol_lo
+    f_lo = FLOOR * tol_lo
 
     def charge(pieces: int) -> None:
         nonlocal work
         work += om.UNITS_BOUND_BATCH + om.UNITS_BOUND_PIECE * pieces
 
     work += om.UNITS_CLOSED_FORM * len(c.divs)   # as of.Pricer.bound
-    b = om.premium_bound(c, charge, decide=2.0 * t_lo + max(0.0, x - eu))
+    # the analytic route needs h + f_lo <= t_lo, i.e. b <= 2·(t_lo − f_lo) + max(0, X − eu); below that target the
+    # route cannot be taken and the bound is refined as far as 2·f_lo for the interval test alone
+    b = om.premium_bound(c, charge, decide=2.0 * max(t_lo - f_lo, f_lo) + max(0.0, x - eu))
     hi = eu + b
     half = (hi - lo) / 2.0
     check(b, lo, hi, half)
@@ -385,10 +389,11 @@ def _price(c: om.Context, cfg: Config, level_source) -> oe.Answer:
     ms = multipliers(cfg.schedule, n0)
     audit.update(n0=n0, multipliers=list(ms))
     analytic = None
-    if not cfg.force_lattice and half <= t_lo:
+    if not cfg.force_lattice and half + f_lo <= t_lo:
         mid = lo + half    # not (lo + hi)/2, which can overflow where lo and hi do not (DR-02)
-        tol_lo = om.tolerance(lo, c.spot)
-        analytic = {"value": mid, "tol": tol_lo, "estimate": max(half, FLOOR * tol_lo)}
+        # the proved half-width plus the floor, never the half-width alone: where A sits at an end of [L, U] the
+        # midpoint's error is exactly h, which no reference of finite precision can show to be within h
+        analytic = {"value": mid, "tol": tol_lo, "estimate": half + f_lo}
         check(mid, analytic["estimate"])
         if not lo <= mid <= hi:
             raise NonFinite

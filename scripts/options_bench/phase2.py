@@ -83,9 +83,8 @@ def price_case(c: cases.Case, cfg: oa.Config, r0v: dict, r0d: dict, tighten: boo
     t2 = adaptive.run(c, cfg, cache)
     out: dict = {"tier2": t2}
     pj = dj = None
-    iv = (t2["L"], t2["U"]) if t2["route"] == oe.ROUTE_ANALYTIC else None
     if t2["value"] is not None and t2["estimate"] is not None:
-        pj = adaptive.judge(t2["value"], t2["estimate"], r0v, interval=iv)
+        pj = adaptive.judge(t2["value"], t2["estimate"], r0v)
     if t2["delta"] is not None and t2["delta_estimate"] is not None:
         dj = adaptive.judge(t2["delta"], t2["delta_estimate"], r0d)
     r1 = None
@@ -94,7 +93,7 @@ def price_case(c: cases.Case, cfg: oa.Config, r0v: dict, r0d: dict, tighten: boo
                               adaptive.R1_FRACTION * t2["delta_estimate"] if dj and dj.get("needs_r1") else None)
         out["r1"] = r1
         if pj and pj.get("needs_r1"):
-            pj = adaptive.judge(t2["value"], t2["estimate"], r0v, r1["value"], interval=iv)
+            pj = adaptive.judge(t2["value"], t2["estimate"], r0v, r1["value"])
         if dj and dj.get("needs_r1"):
             dj = adaptive.judge(t2["delta"], t2["delta_estimate"], r0d, r1["delta"])
     out["price_verdict"], out["delta_verdict"] = pj, dj

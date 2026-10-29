@@ -104,10 +104,9 @@ def work(rec: dict) -> dict:
         out["level_units"] = sum(lv.units for lv in cache.levels.values())
         # one R1 for the case, as fine as the finest straddling estimate needs
         vt = dt = None
-        iv = lambda t: (t["L"], t["U"]) if t["route"] == oe.ROUTE_ANALYTIC else None
         for t in runs.values():
             if t["value"] is not None and t["estimate"] is not None:
-                if adaptive.judge(t["value"], t["estimate"], r0v, interval=iv(t)).get("needs_r1"):
+                if adaptive.judge(t["value"], t["estimate"], r0v).get("needs_r1"):
                     vt = min(vt or math.inf, adaptive.R1_FRACTION * t["estimate"])
             if t["delta"] is not None and t["delta_estimate"] is not None:
                 if adaptive.judge(t["delta"], t["delta_estimate"], r0d).get("needs_r1"):
@@ -125,7 +124,7 @@ def work(rec: dict) -> dict:
                     pr["proved_exceedance"] = bool(t.get("proved_exceedance"))
                     pr["inconsistent"] = bool(t.get("interval_inconsistent"))
                     if t["value"] is not None and t["estimate"] is not None:
-                        pr["pv"] = _v(adaptive.judge(t["value"], t["estimate"], r0v, r1 and r1["value"], interval=iv(t)))
+                        pr["pv"] = _v(adaptive.judge(t["value"], t["estimate"], r0v, r1 and r1["value"]))
                     if t["value"] is not None:
                         pr["pacc"] = adaptive.judge_tol(t["value"], r0v["tol"], r0v, r1 and r1["value"])
                     ds = {}

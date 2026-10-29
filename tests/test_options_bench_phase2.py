@@ -88,20 +88,6 @@ def test_r1_that_misses_its_floor_target_still_judges_a_coarser_estimate():
     assert not adaptive.r1_reliable(r1b, 0.01)
 
 
-def test_analytic_lower_end_is_covered_by_the_theorem_not_by_the_reference():
-    # A equal to L (no early-exercise value): the midpoint's error is exactly h, which no reference can show
-    lo, hi = 1.0, 1.02
-    mid, h = lo + (hi - lo) / 2, (hi - lo) / 2
-    r0 = {"ref": 1.0, "u": 1e-4, "status": "reliable"}
-    j = adaptive.judge(mid, h, r0, interval=(lo, hi))
-    assert (j["verdict"], j["why"]) == (adaptive.COVERED, "lower end by theorem")
-    assert adaptive.judge(mid, h, r0)["verdict"] == adaptive.STRADDLE         # without the theorem: a straddle
-    # the upper end is the certified bound: a straddle there still needs R1
-    assert adaptive.judge(mid, h, dict(r0, ref=1.02), interval=(lo, hi))["verdict"] == adaptive.STRADDLE
-    # a reference below L by more than u contradicts the theorem: never covered
-    assert adaptive.judge(mid, h, dict(r0, ref=0.9997), interval=(lo, hi))["verdict"] == adaptive.CONFIRMED
-
-
 def test_accuracy_rows_score_conservatively():
     assert adaptive.judge_tol(10.004, 0.01, R0) == "pass"
     assert adaptive.judge_tol(10.02, 0.01, R0) == "fail"

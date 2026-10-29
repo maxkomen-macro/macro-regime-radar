@@ -120,32 +120,16 @@ def r1_reliable(r1: dict, es: float) -> bool:
     return all("uncertainty above its target" in w for w in why) and r1["u"] <= R1_FRACTION * es
 
 
-def _against(value: float, es: float, ref: float, u: float, interval: tuple | None) -> tuple[str, str | None]:
-    """One reference's verdict on one estimate. On the analytic route (`interval` = (L, U)) the estimate h is a
-    consequence of the proof: L <= A is a theorem and A <= U the certified bound, so A in [L, U] puts the
-    midpoint within h of A. Where A sits at the lower end (an American value equal to its European value, say)
-    the error is exactly h and no finite reference can show err + u <= h. There the upper side is what the
-    reference must show: a straddle with L − u <= ref <= value and ref + u <= U is covered, by the theorem
-    below and the reference above. Everything else is judged as on any route."""
-    v = verdict(abs(value - ref), u, es)
-    if v == STRADDLE and interval is not None:
-        lo, hi = interval
-        if lo - u <= ref <= value and ref + u <= hi:
-            return COVERED, "lower end by theorem"
-    return v, None
-
-
-def judge(value: float, es: float, r0: dict, r1: dict | None = None, interval: tuple | None = None) -> dict:
+def judge(value: float, es: float, r0: dict, r1: dict | None = None) -> dict:
     """The protocol verdict for one stated estimate es of `value`, against R0 and, for a straddle, R1.
-    r0 and r1 are reference packs ({"ref", "u", "status"}); r1 is None until the caller has computed it.
-    `interval` is the analytic route's (L, U), None elsewhere."""
+    r0 and r1 are reference packs ({"ref", "u", "status"}); r1 is None until the caller has computed it."""
     if r0 is None or r0.get("status") != "reliable":
         return {"verdict": NO_REF}
     err0 = abs(value - r0["ref"])
-    v0, why0 = _against(value, es, r0["ref"], r0["u"], interval)
+    v0 = verdict(err0, r0["u"], es)
     out = {"err": err0, "u": r0["u"], "ref": "R0", "needed": (err0 - r0["u"]) / es if es else None}
     if v0 != STRADDLE:
-        return out | {"verdict": v0} | ({"why": why0} if why0 else {})
+        return out | {"verdict": v0}
     if r1 is None:
         return out | {"verdict": STRADDLE, "needs_r1": True}
     out["r1"] = {"ref": r1["ref"], "u": r1["u"], "status": r1["status"]}
@@ -155,9 +139,9 @@ def judge(value: float, es: float, r0: dict, r1: dict | None = None, interval: t
         return out | {"verdict": UNSCORED, "why": "R1 not reliable"}
     err1 = abs(value - r1["ref"])
     out.update(err=err1, u=r1["u"], ref="R1")
-    v1, why1 = _against(value, es, r1["ref"], r1["u"], interval)
+    v1 = verdict(err1, r1["u"], es)
     if v1 != STRADDLE:
-        return out | {"verdict": v1} | ({"why": why1} if why1 else {})
+        return out | {"verdict": v1}
     if r1["u"] <= R1_FRACTION * es:
         return out | {"verdict": UNRESOLVED, "why": "precise straddle"}
     return out | {"verdict": UNSCORED, "why": "coarse straddle"}

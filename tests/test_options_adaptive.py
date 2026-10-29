@@ -41,7 +41,7 @@ def test_r1_returns_the_interval_midpoint_with_its_half_width():
     assert a.route == oe.ROUTE_ANALYTIC and a.price_status == oe.ANALYTIC
     assert a.value == lo + (hi - lo) / 2 and lo <= a.value <= hi
     assert a.value == pytest.approx(10.00000000005, abs=1e-12)
-    assert a.estimate == max(a.audit["h"], 0.1 * om.tolerance(lo, R1.spot)) == pytest.approx(1e-3)
+    assert a.estimate == a.audit["h"] + 0.1 * om.tolerance(lo, R1.spot) == pytest.approx(1e-3)
     # the delta is not certified by the price: it comes from its own lattice levels (deep exercise)
     assert a.delta_status == oe.SERVED and a.delta == -1.0 and a.audit["delta_rule"] == "deep exercise"
     assert a.audit["delta_units"] > 0
@@ -103,7 +103,7 @@ def test_huge_spot_keeps_the_analytic_price_when_only_delta_work_overflows():
     lo, hi = a.audit["L"], a.audit["U"]
     assert a.route == oe.ROUTE_ANALYTIC and a.price_status == oe.ANALYTIC
     assert math.isfinite(a.value) and lo <= a.value <= hi and a.value == lo + (hi - lo) / 2
-    assert a.estimate == max(a.audit["h"], 0.1 * om.tolerance(lo, c.spot))
+    assert a.estimate == a.audit["h"] + 0.1 * om.tolerance(lo, c.spot)
     assert a.delta_status in (oe.SERVED, oe.WITHHELD)
     assert a.delta_status == oe.SERVED or a.delta_reason in (oa.D_ZONE, oa.D_DECISION, oa.D_ABOVE, oa.ARITHMETIC)
 
@@ -121,6 +121,20 @@ def test_huge_spot_on_every_route_is_finite_or_named(c, route):
         assert v is None or math.isfinite(v)
     if a.priced and a.route == oe.ROUTE_LATTICE:
         assert a.audit["L"] <= a.value <= a.audit["U"]
+
+
+def test_the_analytic_estimate_adds_the_floor_so_an_interval_end_stays_checkable():
+    # G2-dividends/468 (seed 20261026): the American value sits at U to 1e-6, so the midpoint's error is h itself.
+    # Stated as h alone, no reference of finite precision could show it covered; h + 0.1·tol leaves room for u.
+    c = ctx(cases.case(SEED, "G2-dividends", 468))
+    a = oa.price(c)
+    lo, hi, h = a.audit["L"], a.audit["U"], a.audit["h"]
+    tol_lo = om.tolerance(lo, c.spot)
+    assert a.route == oe.ROUTE_ANALYTIC and a.estimate == h + 0.1 * tol_lo and h + 0.1 * tol_lo <= tol_lo
+    ref, u = 27.38862600000061, 7.599310625200624e-06   # the stored reference
+    assert abs(a.value - ref) + u <= a.estimate
+    # the route is taken only when the estimate meets the target, so at the smallest target it is never taken
+    assert oa.price(c, oa.Config(tau=0.1)).route == oe.ROUTE_LATTICE
 
 
 def test_named_regressions_keep_their_delta_withholding():
