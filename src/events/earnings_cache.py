@@ -1,9 +1,18 @@
-"""src/events/earnings_cache.py — the Options Finder's earnings cache (planned), probe only for now.
+"""src/events/earnings_cache.py — the Options Finder's earnings cache: the refresh step, its probe and its report.
 
-This first piece is the read-only probe the cache plan runs before anything is
-built: it asks Finnhub's earnings calendar for the whole market (no symbol) over
-the cache's 120-day horizon and says whether the plan's free-plan assumptions
-hold. It writes nothing: no database row, no file.
+The step (plan rev 2, D1-D5; capability report rev 2, R1-R5; design EC section 1) asks Finnhub's earnings
+calendar for the whole market (no symbol) in 7-day windows over 120 days, then the past 7 days, splitting any
+reply of 1,000 rows or more (a 1,500-row reply is never whole), checks the 12 tape names' stored dates against
+it, and merges what it saw into the encrypted vault of src/events/earnings_store.py. It writes nothing else.
+Every safeguard fails toward "skip": weekday US trading hours, a passing run less than 10 hours ago, a run that
+is not a scheduled first attempt of a full refresh, 40 calls a run and 80 a UTC day, 10 calls a minute (5 for
+24 hours after a 429), no retry, an absolute limit on each call and on the run. One summary line, counts only.
+
+    python -m src.events.earnings_cache [--db PATH]          the step (data/macro_radar.db by default)
+    python -m src.events.earnings_cache --report [--db PATH] counts per state (needs EARNINGS_CACHE_KEY)
+
+The read-only probe the plan ran first, unchanged: it says whether the free plan's assumptions hold and writes
+nothing, no database row and no file.
 
     python -m src.events.earnings_cache --probe [--db PATH]
 
@@ -42,6 +51,8 @@ misses, and no date, key or URL is ever printed.
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import os
 import sqlite3
 import sys
@@ -51,7 +62,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Mapping
 
 import requests
 
@@ -60,6 +71,7 @@ if str(ROOT) not in sys.path:  # `python src/events/earnings_cache.py` as well a
     sys.path.insert(0, str(ROOT))
 
 from src.events.earnings import (  # noqa: E402  (reuse, never modify)
+    DB_PATH,
     EARNINGS_SYMBOLS,
     FINNHUB_URL,
     NY,
@@ -68,6 +80,7 @@ from src.events.earnings import (  # noqa: E402  (reuse, never modify)
     _api_key,
     _when,
 )
+from src.events import earnings_store as store  # noqa: E402
 
 HEAVY_WINDOWS = 2  # the fullest 7-day windows re-asked as halves
 NOT_ASKED = "not asked"  # a second half skipped after its first half failed
@@ -139,6 +152,13 @@ def fetch(window: Window, api_key: str, get=None) -> Reply:
     if not isinstance(items, list):
         rep.failure = "unexpected reply"
         return rep
+    _parse(items, window, rep)
+    return rep
+
+
+def _parse(items: list, window: Window, rep: Reply, keep: list | None = None) -> None:
+    """Count malformed rows and rows outside the window; keep the rest (and, into `keep`, each row's fiscal
+    label and whether it carries actual figures)."""
     for item in items:
         sym = str(item.get("symbol") or "").strip().upper() if isinstance(item, dict) else ""
         try:
@@ -151,8 +171,23 @@ def fetch(window: Window, api_key: str, get=None) -> Reply:
         if not window.start <= day <= window.end:
             rep.outside += 1
             continue
-        rep.rows.append((sym, day, str(item.get("hour") or "").strip().lower()))
-    return rep
+        hour = str(item.get("hour") or "").strip().lower()
+        rep.rows.append((sym, day, hour))
+        if keep is not None:
+            keep.append({"s": sym, "d": day, "h": hour if hour in RELEASE_CODES else "unknown",
+                         "y": _plain(item.get("year")), "q": _plain(item.get("quarter")),
+                         "r": any(_finite(item.get(k)) for k in ("epsActual", "revenueActual"))})
+
+
+def _finite(v) -> bool:
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
+
+
+def _plain(v):
+    """A label field as stored: a finite number or a short string, else None (the label check is the store's)."""
+    if _finite(v):
+        return v
+    return v[:16] if isinstance(v, str) else None
 
 
 def stored_dates(db_path: Path, today: date, now: datetime) -> dict[str, set[date]]:
@@ -344,20 +379,415 @@ def probe(api_key: str, db_path: Path, *, now: datetime | None = None, get=None,
     return judge(replies, trunc, stored, today, len(plan) + 1 + 2 * HEAVY_WINDOWS, halves)
 
 
+# ── the cache run (design EC section 1: plan rev 2 D4, capability report R1, R3, R5) ──────────────────
+
+SPLIT_AT, CAP = 1000, 1500  # R1: a reply this large is split; one this large is never whole
+LOOKBACK_DAYS = 7  # R2: the past week, asked last, for the quarters seen reported
+RUN_CAP, DAY_CAP = 40, 80  # calls a run (splits included) and a UTC day (plan D4)
+SPACING = timedelta(hours=10)  # since the last passing run
+SLOW_PACE_S = 12.0  # 5 calls a minute for 24 hours after any 429
+SLOW_FOR = timedelta(hours=24)
+GAP_S = 60.0  # after the pipeline's other Finnhub steps
+DEADLINE = timedelta(minutes=8)  # no call starts later
+HARD_STOP = DEADLINE + timedelta(seconds=45)  # no call runs later; the step's timeout is 10 minutes
+CALL_S = 15.0  # one call's absolute limit
+MAX_BODY = 4 * 1024 * 1024  # bytes; a 1,500-row reply is about 0.2 MB
+CHUNK = 64 * 1024
+LATE = timedelta(hours=12)  # a scheduled run starting this long after its cron slot does not call
+KEEP_RUNS = timedelta(days=90)
+KEEP_OCC_DAYS = 400
+KEEP_DAYS_BEFORE = LOOKBACK_DAYS + 1
+TAG = "[earnings-cache]"
+# The two full-mode crons of refresh-data.yml as (hour, minute, ISO weekdays); tests/test_earnings_cache.py
+# pins them equal to scripts/workflow_mode.py's full entries.
+FULL_CRONS = {"17 11 * * *": (11, 17, frozenset(range(1, 8))), "23 0 * * 2-6": (0, 23, frozenset(range(2, 7)))}
+
+
+def fetch_until(window: Window, api_key: str, get, until: datetime,
+                clock: Callable[[], datetime]) -> tuple[list[dict], Reply]:
+    """One whole-market call under an absolute deadline (design EC 1.2): streamed, read in chunks, abandoned
+    once the clock passes `until` or the body passes MAX_BODY. Never raises; keeps no URL or exception text."""
+    get = get or requests.get
+    rep, kept = Reply(window), []
+    left = (until - clock()).total_seconds()
+    if left <= 0:
+        rep.failure = "time limit"
+        return kept, rep
+    try:
+        resp = get(FINNHUB_URL, params={"from": window.start.isoformat(), "to": window.end.isoformat(), "token": api_key},
+                   timeout=(left, left), stream=True)
+    except Exception as exc:  # the message names the URL, token included: keep the type only
+        rep.failure = type(exc).__name__
+        return kept, rep
+    try:
+        rep.status = resp.status_code
+        if resp.status_code != 200:
+            rep.failure = f"HTTP {resp.status_code}"
+            return kept, rep
+        body = bytearray()
+        try:
+            for chunk in resp.iter_content(CHUNK):
+                body += chunk
+                if len(body) > MAX_BODY:
+                    rep.failure = "reply too large"
+                    return kept, rep
+                if clock() >= until:
+                    rep.failure = "time limit"
+                    return kept, rep
+        except Exception as exc:  # noqa: BLE001 — a read timeout or a dropped connection: the type only
+            rep.failure = type(exc).__name__
+            return kept, rep
+        try:
+            payload = json.loads(bytes(body).decode("utf-8"))
+        except ValueError:
+            rep.failure = "unreadable reply"
+            return kept, rep
+        items = payload.get("earningsCalendar") if isinstance(payload, dict) else None
+        if not isinstance(items, list):
+            rep.failure = "unexpected reply"
+            return kept, rep
+        _parse(items, window, rep, kept)
+        return kept, rep
+    finally:
+        try:
+            resp.close()
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def scheduled_slot(cron: str, start: datetime) -> datetime | None:
+    """The newest firing of a full-mode cron at or before `start` (UTC), or None for any other cron."""
+    spec = FULL_CRONS.get(cron.strip())
+    if spec is None:
+        return None
+    hour, minute, days = spec
+    d = start.astimezone(timezone.utc).date()
+    for back in range(8):
+        day = d - timedelta(days=back)
+        slot = datetime(day.year, day.month, day.day, hour, minute, tzinfo=timezone.utc)
+        if slot <= start and day.isoweekday() in days:
+            return slot
+    return None
+
+
+def actions_gate(env: Mapping[str, str], start: datetime) -> str | None:
+    """In GitHub Actions, the reason a run must not call (design EC 1.1a), or None. Outside Actions, None."""
+    if env.get("GITHUB_ACTIONS") != "true":
+        return None
+    if env.get("GITHUB_EVENT_NAME") != "schedule" or env.get("GITHUB_RUN_ATTEMPT", "1") != "1":
+        return "not a scheduled full refresh"
+    try:
+        cron = str(json.loads(Path(env.get("GITHUB_EVENT_PATH", "")).read_text()).get("schedule") or "")
+    except (OSError, ValueError, AttributeError):
+        return "not a scheduled full refresh"
+    slot = scheduled_slot(cron, start)
+    if slot is None:
+        return "not a scheduled full refresh"
+    if start - slot >= LATE:
+        return "started too late"
+    return None
+
+
+class _Stop(Exception):
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+@dataclass
+class _Answer:
+    window: Window
+    rows: list[dict]  # {s, d, h, y, q, r}
+    split: bool = False
+
+
+@dataclass
+class _Run:
+    key: str
+    get: Callable | None
+    sleep: Callable[[float], None]
+    clock: Callable[[], datetime]
+    started: datetime
+    pace: float
+    charged: dict[str, int]  # calls the other runs charged to each UTC date
+    calls: int = 0
+    saw_429: bool = False
+    answers: list[_Answer] = field(default_factory=list)
+    splits: int = 0
+    split_ok: int = 0
+    split_bad: int = 0
+    malformed: int = 0
+    outside: int = 0
+
+    def call(self, w: Window) -> _Answer:
+        """Every check runs after the wait and just before the request (design EC 1.2)."""
+        if self.calls:
+            self.sleep(self.pace)
+        now = self.clock().astimezone(timezone.utc)
+        day = self.started.date().isoformat()
+        if self.calls >= RUN_CAP:
+            raise _Stop("call cap")
+        if now.date().isoformat() != day:
+            raise _Stop("UTC date changed")
+        if self.charged.get(day, 0) + self.calls >= DAY_CAP:
+            raise _Stop("daily call cap")
+        if in_trading_hours(now):
+            raise _Stop("US trading hours")
+        if now >= self.started + DEADLINE:
+            raise _Stop("time limit")
+        self.calls += 1
+        rows, rep = fetch_until(w, self.key, self.get, min(now + timedelta(seconds=CALL_S), self.started + HARD_STOP),
+                                self.clock)
+        if rep.failure is not None:
+            self.saw_429 = self.saw_429 or rep.status == 429
+            raise _Stop(rep.failure)
+        self.malformed += rep.malformed
+        self.outside += rep.outside
+        ans = _Answer(w, rows)
+        self.answers.append(ans)
+        return ans
+
+    def ask(self, w: Window) -> set[tuple[str, date]]:
+        """The (symbol, date) set under `w`: a reply of SPLIT_AT rows or more is asked again as its halves (R1)
+        and checked against them (R3). A stop part-way leaves every answer so far in place."""
+        ans = self.call(w)
+        whole = {(x["s"], x["d"]) for x in ans.rows}
+        span = (w.end - w.start).days + 1
+        if len(ans.rows) < SPLIT_AT or span == 1:
+            return whole
+        ans.split = True
+        self.splits += 1
+        first = Window(w.start, w.start + timedelta(days=span // 2 - 1))
+        union = self.ask(first)
+        union |= self.ask(Window(first.end + timedelta(days=1), w.end))
+        ok = union == whole if len(ans.rows) < CAP else whole <= union
+        self.split_ok += ok
+        self.split_bad += not ok
+        return union
+
+
+@dataclass
+class RunResult:
+    status: str  # passing | partial | inconsistent | failed | skipped
+    line: str  # the one public summary line: counts only
+    wrote: bool
+
+
+def _charged(vault: Mapping, exclude: str | None = None) -> dict[str, int]:
+    out: dict[str, int] = defaultdict(int)
+    for r in vault.get("runs") or []:
+        if r.get("id") != exclude:
+            for day, n in (r.get("calls_by_utc_date") or {}).items():
+                out[day] += int(n)
+    return dict(out)
+
+
+def _prune_runs(vault: dict, now: datetime) -> None:
+    vault["runs"] = [r for r in vault.get("runs") or [] if now - store.at(r["finished"]) <= KEEP_RUNS]
+
+
+def _record_skip(conn, vault: dict, secret: str, now: datetime, reason: str) -> RunResult:
+    vault["runs"].append({"id": store.iso(now), "started": store.iso(now), "finished": store.iso(now),
+                          "status": store.SKIPPED, "calls": 0, "calls_by_utc_date": {}, "saw_429": False,
+                          "reason": reason})
+    _prune_runs(vault, now)
+    store.write_vault(conn, vault, secret, now)
+    return RunResult(store.SKIPPED, f"{TAG} skipped: {reason}", True)
+
+
+def run_cache(db_path: Path, *, now: datetime | None = None, get=None, sleep: Callable[[float], None] = _time.sleep,
+              clock: Callable[[], datetime] | None = None, api_key: str | None = None,
+              cache_key: str | None = None, env: Mapping[str, str] | None = None) -> RunResult:
+    """One run of the step (design EC section 1). Never raises for Finnhub, the key or the vault: every end is
+    a RunResult with one summary line."""
+    clock = clock or (lambda: datetime.now(timezone.utc))
+    start = (now or clock()).astimezone(timezone.utc)
+    env = os.environ if env is None else env
+    key = _api_key() if api_key is None else api_key
+    if not key:
+        return RunResult(store.SKIPPED, f"{TAG} skipped: no Finnhub key", False)
+    secret = env.get(store.KEY_ENV, "").strip() if cache_key is None else cache_key
+    if not secret:
+        return RunResult(store.SKIPPED, f"{TAG} skipped: no cache key", False)
+    conn = sqlite3.connect(db_path)
+    try:
+        opened = store.open_vault(conn, secret)
+        if opened.status == "unreadable":
+            return RunResult(store.SKIPPED, f"{TAG} skipped: the vault does not open", False)
+        vault = opened.vault if opened.status == "ok" else store.empty_vault()
+        note = "" if opened.status == "ok" else f" (new vault: {opened.status})"
+        gate = actions_gate(env, start)
+        if gate:
+            return RunResult(store.SKIPPED, f"{TAG} skipped: {gate}", False)
+        if in_trading_hours(start):
+            return _record_skip(conn, vault, secret, start, "US trading hours")
+        passed = [store.at(r["finished"]) for r in vault["runs"] if r.get("status") == store.PASSING]
+        if passed and start - max(passed) < SPACING:
+            return _record_skip(conn, vault, secret, start, "a complete run finished less than 10 hours ago")
+        slow = any(r.get("saw_429") and start - store.at(r["finished"]) < SLOW_FOR for r in vault["runs"])
+        rid = store.iso(start)
+        # the reservation (design EC 1.1 step 7): a run killed mid-way still counts its whole allowance
+        vault["runs"].append({"id": rid, "started": rid, "finished": rid, "status": store.PARTIAL, "calls": RUN_CAP,
+                              "calls_by_utc_date": {start.date().isoformat(): RUN_CAP}, "saw_429": False,
+                              "reason": "interrupted"})
+        try:
+            store.write_vault(conn, vault, secret, start)
+        except sqlite3.Error:
+            return RunResult(store.SKIPPED, f"{TAG} skipped: the vault could not be written", False)
+        today = start.astimezone(NY).date()
+        plan = windows(today) + [Window(today - timedelta(days=LOOKBACK_DAYS), today - timedelta(days=1))]
+        r = _Run(key, get, sleep, clock, start, SLOW_PACE_S if slow else PACE_S, _charged(vault, exclude=rid))
+        stopped = None
+        sleep(GAP_S)
+        try:
+            for w in plan:
+                r.ask(w)
+        except _Stop as stop:
+            stopped = stop.reason
+        finished = clock().astimezone(timezone.utc)
+        status, counts = _merge(db_path, vault, r, today, start, finished, stopped)
+        rec = next(x for x in vault["runs"] if x["id"] == rid)
+        rec.update(finished=store.iso(finished), status=status, calls=r.calls,
+                   calls_by_utc_date={start.date().isoformat(): r.calls} if r.calls else {}, saw_429=r.saw_429,
+                   reason=stopped or "", counts=counts)
+        _prune_runs(vault, finished)
+        store.write_vault(conn, vault, secret, finished)
+        line = (f"{TAG} {status}{note}: " + ", ".join(f"{k} {v}" for k, v in counts.items())
+                + (f"; stopped: {stopped}" if stopped else ""))
+        return RunResult(status, line, True)
+    finally:
+        conn.close()
+
+
+def _covering(answers: list[_Answer], d: date) -> _Answer | None:
+    """The smallest answered window that contains `d` (design EC 1.4)."""
+    best = None
+    for a in answers:
+        if a.window.start <= d <= a.window.end and (best is None or a.window.end - a.window.start < best.window.end - best.window.start):
+            best = a
+    return best
+
+
+def _merge(db_path: Path, vault: dict, r: _Run, today: date, start: datetime, finished: datetime,
+           stopped: str | None) -> tuple[str, dict]:
+    covered: dict[date, tuple[_Answer, bool]] = {}
+    for a in r.answers:
+        d = a.window.start
+        while d <= a.window.end:
+            if d not in covered:
+                c = _covering(r.answers, d)
+                covered[d] = (c, not c.split and len(c.rows) < CAP)  # a split parent covers only an unanswered half
+            d += timedelta(days=1)
+    capped = sum(1 for c, _ in covered.values() if c.window.start == c.window.end and len(c.rows) >= CAP)
+    incomplete = sum(1 for _, ok in covered.values() if not ok)
+    stored = stored_dates(db_path, today, start)
+    wanted = [(s, d) for s, ds in sorted(stored.items()) for d in sorted(ds) if d in covered and covered[d][1]]
+    seen = {(x["s"], x["d"]) for c, _ in covered.values() for x in c.rows}
+    missed = sum(1 for p in wanted if p not in seen)
+    if not r.answers:
+        status = store.FAILED
+    elif r.malformed or r.outside or r.split_bad or missed or not wanted:
+        status = store.INCONSISTENT
+    elif stopped is not None or capped or incomplete:
+        status = store.PARTIAL
+    else:
+        status = store.PASSING
+    at = store.iso(finished)
+    days = vault.setdefault("days", {})
+    for d, (c, ok) in sorted(covered.items()):
+        rows = sorted([x["s"], x["h"], x["y"], x["q"], x["r"]] for x in c.rows if x["d"] == d)
+        entry = {"run": store.iso(start), "at": at, "status": status, "complete": ok, "rows": rows}
+        days[d.isoformat()] = ([entry] + list(days.get(d.isoformat()) or []))[: store.DAY_ENTRIES]
+    keep_from = (today - timedelta(days=KEEP_DAYS_BEFORE)).isoformat()
+    for k in [k for k in days if k < keep_from]:
+        del days[k]
+    occ = vault.setdefault("occ", {})
+    for a in r.answers:  # every answered reply, replaced parents included (R5: additions always count)
+        for x in a.rows:
+            k = f"{x['s']}|{x['d'].isoformat()}"
+            o = occ.get(k) or {"s": x["s"], "d": x["d"].isoformat(), "labels": [], "reported": [], "f": at}
+            o["h"], o["l"] = x["h"], at
+            lab = store.label(x["y"], x["q"])
+            if lab is not None and list(lab) not in o["labels"]:
+                o["labels"].append(list(lab))
+            # reported evidence is bound to the label it was seen with, from a passing run only (design EC 1.6)
+            if status == store.PASSING and x["r"] and lab is not None and x["d"] <= today and list(lab) not in o["reported"]:
+                o["reported"].append(list(lab))
+            occ[k] = o
+    cutoff = (today - timedelta(days=KEEP_OCC_DAYS)).isoformat()
+    for k in [k for k, o in occ.items() if o["d"] < cutoff]:
+        del occ[k]
+    counts = {"calls": r.calls, "replies": len(r.answers), "rows": sum(len(a.rows) for a in r.answers),
+              "windows split": r.splits, "split checks passed": r.split_ok, "split checks failed": r.split_bad,
+              "capped days": capped, "cross-check": f"{len(wanted) - missed} of {len(wanted)}"}
+    counts.update(reader_counts(vault, today, finished))
+    return status, counts
+
+
+def reader_counts(vault: Mapping, session: date, now: datetime) -> dict:
+    """Counts only: names with a valid label, names reconciled, possible events open (design EC 1.7)."""
+    labelled = reconciled = possible = 0
+    for raws in store.index(vault).values():
+        labelled += any(raw.get("labels") for raw in raws)
+        cov = store.coverage(vault, raws, session, now)
+        reconciled += cov.state == "reconciled"
+        possible += sum(1 for o in cov.events if o.possible)
+    return {"names labelled": labelled, "names reconciled": reconciled, "possible events": possible}
+
+
+def report(db_path: Path, secret: str, now: datetime) -> list[str]:
+    """`--report`: the vault's health as counts per state, for the owner's local check (needs the key)."""
+    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        opened = store.open_vault(conn, secret)
+    finally:
+        conn.close()
+    if opened.status != "ok":
+        return [f"{TAG} report: the vault is {opened.status}"]
+    vault = opened.vault
+    states: dict[str, int] = defaultdict(int)
+    session = now.astimezone(NY).date()
+    for raws in store.index(vault).values():
+        states[store.coverage(vault, raws, session, now).state] += 1
+    runs = vault.get("runs") or []
+    out = [f"{TAG} report: {len(runs)} runs kept; last 5: " + ", ".join(r.get("status", "?") for r in runs[-5:])]
+    d = store.stable_through(vault, session, now)
+    out.append(f"{TAG} report: stable days from today: {(d - session).days + 1 if d else 0}")
+    out.append(f"{TAG} report: names by state: " + ", ".join(f"{k} {v}" for k, v in sorted(states.items())))
+    return out
+
+
 def _announced(key: str, db: Path, now: datetime) -> Report:
     print(f"[earnings-cache probe] calling Finnhub: {len(windows(now.astimezone(NY).date())) + 1 + 2 * HEAVY_WINDOWS} calls, about 2.5 minutes ...")
     return probe(key, db, now=now)
 
 
 def main(argv: list[str] | None = None, *, now: datetime | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Options Finder earnings cache (probe only for now).")
+    ap = argparse.ArgumentParser(description="The Options Finder's earnings cache: one run of the refresh step by "
+                                             "default, or the read-only probe, or a local report.")
     ap.add_argument("--probe", action="store_true", help="run the read-only free-plan probe")
-    ap.add_argument("--db", help="database to read the stored tape-name dates from "
-                                 "(default: a temporary copy of the public data-latest database)")
+    ap.add_argument("--report", action="store_true", help="print the vault's counts per state (needs the cache key)")
+    ap.add_argument("--db", help="the database (the step: data/macro_radar.db; the probe: default a temporary copy "
+                                 "of the public data-latest database)")
     args = ap.parse_args(argv)
-    if not args.probe:
-        ap.error("nothing to do: pass --probe")
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if not args.probe:
+        db = Path(args.db) if args.db else DB_PATH
+        if args.report:
+            secret = os.environ.get(store.KEY_ENV, "").strip()
+            if not secret or not db.exists():
+                print(f"{TAG} report: needs {store.KEY_ENV} and an existing --db")
+                return 2
+            for line in report(db, secret, now):
+                print(line)
+            return 0
+        try:
+            res = run_cache(db, now=now)
+        except Exception as exc:  # never fail the refresh, never print a message that could carry the key
+            print(f"{TAG} failed: {type(exc).__name__}")
+            return 0
+        print(res.line)
+        return 0
     if in_trading_hours(now):
         print("[earnings-cache probe] not started: it is US trading hours in New York (weekdays 09:00-17:00), "
               "when the dashboard uses the same Finnhub account. Run it outside those hours.")
