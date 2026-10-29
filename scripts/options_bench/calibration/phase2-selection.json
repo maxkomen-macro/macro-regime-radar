@@ -1,0 +1,658 @@
+{
+  "cases": 12707,
+  "errors": [],
+  "truncated": false,
+  "combos": {
+    "envelope/doubling": {
+      "F": {
+        "2": {
+          "scored": 6919,
+          "failing": [
+            "T1-near-boundary/55"
+          ],
+          "needed_max": 2.3370965457707102,
+          "needed_cases": 522,
+          "pass": false
+        },
+        "2.5": {
+          "scored": 6914,
+          "failing": [],
+          "needed_max": 2.386677060161567,
+          "needed_cases": 605,
+          "pass": false
+        },
+        "3": {
+          "scored": 6912,
+          "failing": [],
+          "needed_max": 2.3370965457707102,
+          "needed_cases": 703,
+          "pass": true
+        },
+        "4": {
+          "scored": 6903,
+          "failing": [],
+          "needed_max": 2.3370965457707102,
+          "needed_cases": 903,
+          "pass": true
+        }
+      },
+      "F_d": {
+        "2": {
+          "scored": 7289,
+          "failing": [],
+          "needed_max": 0.6630778811630621,
+          "needed_cases": 188,
+          "pass": true
+        },
+        "2.5": {
+          "scored": 7289,
+          "failing": [],
+          "needed_max": 0.7845058966477715,
+          "needed_cases": 232,
+          "pass": true
+        },
+        "3": {
+          "scored": 7287,
+          "failing": [],
+          "needed_max": 0.7845058966477715,
+          "needed_cases": 277,
+          "pass": true
+        },
+        "4": {
+          "scored": 7286,
+          "failing": [],
+          "needed_max": 0.7845058966477715,
+          "needed_cases": 335,
+          "pass": true
+        }
+      },
+      "F_selected": 3.0,
+      "F_d_selected": 2.0,
+      "coverage": {
+        "G0-exempt": 1.0,
+        "G1-nodiv": 0.958,
+        "G2-dividends": 0.9513333333333334,
+        "G3-carry-itm": 0.9966666666666667,
+        "G4-negrate": 0.9406666666666667,
+        "G5-extreme-vol": 0.9933333333333333,
+        "G6-long": 0.5446666666666666,
+        "T1-near-boundary": 0.998
+      },
+      "worst_random_coverage": 0.5446666666666666,
+      "work_total": 76587626054
+    },
+    "envelope/multiples": {
+      "F": {
+        "2": {
+          "scored": 7700,
+          "failing": [
+            "G3-carry-itm/707",
+            "T1-near-boundary/1295"
+          ],
+          "needed_max": 2.208970941964081,
+          "needed_cases": 767,
+          "pass": false
+        },
+        "2.5": {
+          "scored": 7672,
+          "failing": [],
+          "needed_max": 2.208970941964081,
+          "needed_cases": 882,
+          "pass": false
+        },
+        "3": {
+          "scored": 7654,
+          "failing": [],
+          "needed_max": 2.208970941964081,
+          "needed_cases": 1023,
+          "pass": true
+        },
+        "4": {
+          "scored": 7617,
+          "failing": [],
+          "needed_max": 2.5540837745583147,
+          "needed_cases": 1297,
+          "pass": true
+        }
+      },
+      "F_d": {
+        "2": {
+          "scored": 8011,
+          "failing": [],
+          "needed_max": 1.3527676437404756,
+          "needed_cases": 261,
+          "pass": true
+        },
+        "2.5": {
+          "scored": 8010,
+          "failing": [],
+          "needed_max": 1.3527676437404756,
+          "needed_cases": 323,
+          "pass": true
+        },
+        "3": {
+          "scored": 8008,
+          "failing": [],
+          "needed_max": 1.3527676437404756,
+          "needed_cases": 360,
+          "pass": true
+        },
+        "4": {
+          "scored": 7999,
+          "failing": [],
+          "needed_max": 1.3527676437404756,
+          "needed_cases": 427,
+          "pass": true
+        }
+      },
+      "F_selected": 3.0,
+      "F_d_selected": 2.0,
+      "coverage": {
+        "G0-exempt": 1.0,
+        "G1-nodiv": 0.99,
+        "G2-dividends": 0.964,
+        "G3-carry-itm": 0.9926666666666667,
+        "G4-negrate": 0.9666666666666667,
+        "G5-extreme-vol": 0.9905555555555555,
+        "G6-long": 0.9913333333333333,
+        "T1-near-boundary": 0.9853333333333333
+      },
+      "worst_random_coverage": 0.964,
+      "work_total": 43013038520
+    },
+    "envelope/hybrid": {
+      "F": {
+        "2": {
+          "scored": 7666,
+          "failing": [
+            "T1-near-boundary/55"
+          ],
+          "needed_max": 2.3370965457707102,
+          "needed_cases": 608,
+          "pass": false
+        },
+        "2.5": {
+          "scored": 7661,
+          "failing": [],
+          "needed_max": 2.386677060161567,
+          "needed_cases": 711,
+          "pass": false
+        },
+        "3": {
+          "scored": 7659,
+          "failing": [],
+          "needed_max": 2.3370965457707102,
+          "needed_cases": 822,
+          "pass": true
+        },
+        "4": {
+          "scored": 7650,
+          "failing": [],
+          "needed_max": 2.3370965457707102,
+          "needed_cases": 1037,
+          "pass": true
+        }
+      },
+      "F_d": {
+        "2": {
+          "scored": 8007,
+          "failing": [],
+          "needed_max": 0.6630778811630621,
+          "needed_cases": 207,
+          "pass": true
+        },
+        "2.5": {
+          "scored": 8007,
+          "failing": [],
+          "needed_max": 0.7845058966477715,
+          "needed_cases": 257,
+          "pass": true
+        },
+        "3": {
+          "scored": 8005,
+          "failing": [],
+          "needed_max": 0.7845058966477715,
+          "needed_cases": 304,
+          "pass": true
+        },
+        "4": {
+          "scored": 8003,
+          "failing": [],
+          "needed_max": 0.7845058966477715,
+          "needed_cases": 366,
+          "pass": true
+        }
+      },
+      "F_selected": 3.0,
+      "F_d_selected": 2.0,
+      "coverage": {
+        "G0-exempt": 1.0,
+        "G1-nodiv": 0.9886666666666667,
+        "G2-dividends": 0.9913333333333333,
+        "G3-carry-itm": 0.9966666666666667,
+        "G4-negrate": 0.9406666666666667,
+        "G5-extreme-vol": 0.9933333333333333,
+        "G6-long": 0.9746666666666667,
+        "T1-near-boundary": 0.998
+      },
+      "worst_random_coverage": 0.9406666666666667,
+      "work_total": 83482987852
+    },
+    "fitted/doubling": {
+      "F": {
+        "2": {
+          "scored": 6962,
+          "failing": [
+            "G2-dividends/1481",
+            "G5-extreme-vol/157"
+          ],
+          "needed_max": 1.4506542714401536,
+          "needed_cases": 622,
+          "pass": false
+        },
+        "2.5": {
+          "scored": 6957,
+          "failing": [
+            "G2-dividends/1481"
+          ],
+          "needed_max": 2.173315520011187,
+          "needed_cases": 755,
+          "pass": false
+        },
+        "3": {
+          "scored": 6955,
+          "failing": [
+            "G2-dividends/1481"
+          ],
+          "needed_max": 1.4506542714401536,
+          "needed_cases": 894,
+          "pass": false
+        },
+        "4": {
+          "scored": 6946,
+          "failing": [
+            "G2-dividends/1481"
+          ],
+          "needed_max": 1.4506542714401536,
+          "needed_cases": 1158,
+          "pass": false
+        }
+      },
+      "F_d": {},
+      "F_selected": null,
+      "F_d_selected": null
+    },
+    "fitted/multiples": {
+      "F": {
+        "2": {
+          "scored": 7719,
+          "failing": [
+            "G3-carry-itm/707",
+            "G5-extreme-vol/47",
+            "T1-near-boundary/1295",
+            "T1-near-boundary/87",
+            "T1-near-boundary/98"
+          ],
+          "needed_max": 2.208970941964081,
+          "needed_cases": 1166,
+          "pass": false
+        },
+        "2.5": {
+          "scored": 7691,
+          "failing": [
+            "G5-extreme-vol/47",
+            "T1-near-boundary/87",
+            "T1-near-boundary/98"
+          ],
+          "needed_max": 2.208970941964081,
+          "needed_cases": 1406,
+          "pass": false
+        },
+        "3": {
+          "scored": 7672,
+          "failing": [
+            "G5-extreme-vol/47"
+          ],
+          "needed_max": 2.3263265357526666,
+          "needed_cases": 1603,
+          "pass": false
+        },
+        "4": {
+          "scored": 7632,
+          "failing": [
+            "G5-extreme-vol/47"
+          ],
+          "needed_max": 2.5540837745583147,
+          "needed_cases": 1929,
+          "pass": false
+        }
+      },
+      "F_d": {},
+      "F_selected": null,
+      "F_d_selected": null
+    },
+    "fitted/hybrid": {
+      "F": {
+        "2": {
+          "scored": 7710,
+          "failing": [
+            "G2-dividends/1481",
+            "G5-extreme-vol/157"
+          ],
+          "needed_max": 1.4506542714401536,
+          "needed_cases": 722,
+          "pass": false
+        },
+        "2.5": {
+          "scored": 7705,
+          "failing": [
+            "G2-dividends/1481"
+          ],
+          "needed_max": 2.173315520011187,
+          "needed_cases": 880,
+          "pass": false
+        },
+        "3": {
+          "scored": 7703,
+          "failing": [
+            "G2-dividends/1481"
+          ],
+          "needed_max": 1.4506542714401536,
+          "needed_cases": 1041,
+          "pass": false
+        },
+        "4": {
+          "scored": 7694,
+          "failing": [
+            "G2-dividends/1481"
+          ],
+          "needed_max": 1.4506542714401536,
+          "needed_cases": 1345,
+          "pass": false
+        }
+      },
+      "F_d": {},
+      "F_selected": null,
+      "F_d_selected": null
+    }
+  },
+  "selected": {
+    "key": "envelope/multiples/F3/Fd2",
+    "estimator": "envelope",
+    "schedule": "multiples",
+    "F": 3.0,
+    "F_d": 2.0,
+    "ranking": [
+      "envelope/multiples/F3/Fd2",
+      "envelope/hybrid/F3/Fd2",
+      "envelope/doubling/F3/Fd2"
+    ]
+  },
+  "rates": {
+    "G1-nodiv": {
+      "cases": 1500,
+      "r_p": 0.5353333333333333,
+      "r_e": 0.5353333333333333,
+      "r_d": 0.8846666666666667,
+      "price_scored": 803,
+      "estimator_scored": 803,
+      "delta_estimator_scored": 1327
+    },
+    "G2-dividends": {
+      "cases": 1500,
+      "r_p": 0.6873333333333334,
+      "r_e": 0.6873333333333334,
+      "r_d": 0.6793333333333333,
+      "price_scored": 1031,
+      "estimator_scored": 1031,
+      "delta_estimator_scored": 1019
+    },
+    "G3-carry-itm": {
+      "cases": 1500,
+      "r_p": 0.818,
+      "r_e": 0.818,
+      "r_d": 0.5973333333333334,
+      "price_scored": 1227,
+      "estimator_scored": 1227,
+      "delta_estimator_scored": 896
+    },
+    "G4-negrate": {
+      "cases": 1500,
+      "r_p": 0.6466666666666666,
+      "r_e": 0.6466666666666666,
+      "r_d": 0.772,
+      "price_scored": 970,
+      "estimator_scored": 970,
+      "delta_estimator_scored": 1158
+    },
+    "G5-extreme-vol": {
+      "cases": 1800,
+      "r_p": 0.5872222222222222,
+      "r_e": 0.5872222222222222,
+      "r_d": 0.7427777777777778,
+      "price_scored": 1057,
+      "estimator_scored": 1057,
+      "delta_estimator_scored": 1337
+    },
+    "G6-long": {
+      "cases": 1500,
+      "r_p": 0.9073333333333333,
+      "r_e": 0.9073333333333333,
+      "r_d": 0.8713333333333333,
+      "price_scored": 1361,
+      "estimator_scored": 1361,
+      "delta_estimator_scored": 1307
+    }
+  },
+  "refusals": {
+    "G0-exempt 1-180": {
+      "cases": 1068,
+      "with_refusal": 0,
+      "events": 0,
+      "below_L": 0,
+      "above_U": 0,
+      "dist_tol_max": null,
+      "final_refused": 0
+    },
+    "G0-exempt 181-730": {
+      "cases": 273,
+      "with_refusal": 0,
+      "events": 0,
+      "below_L": 0,
+      "above_U": 0,
+      "dist_tol_max": null,
+      "final_refused": 0
+    },
+    "G0-exempt 731-1118": {
+      "cases": 99,
+      "with_refusal": 0,
+      "events": 0,
+      "below_L": 0,
+      "above_U": 0,
+      "dist_tol_max": null,
+      "final_refused": 0
+    },
+    "G0-exempt 1119-1464": {
+      "cases": 60,
+      "with_refusal": 0,
+      "events": 0,
+      "below_L": 0,
+      "above_U": 0,
+      "dist_tol_max": null,
+      "final_refused": 0
+    },
+    "G1-nodiv 1-180": {
+      "cases": 1090,
+      "with_refusal": 46,
+      "events": 80,
+      "below_L": 80,
+      "above_U": 0,
+      "dist_tol_max": 0.009338938748104653,
+      "final_refused": 12
+    },
+    "G1-nodiv 181-730": {
+      "cases": 283,
+      "with_refusal": 20,
+      "events": 32,
+      "below_L": 32,
+      "above_U": 0,
+      "dist_tol_max": 0.007602383743687824,
+      "final_refused": 2
+    },
+    "G1-nodiv 731-1118": {
+      "cases": 77,
+      "with_refusal": 3,
+      "events": 6,
+      "below_L": 6,
+      "above_U": 0,
+      "dist_tol_max": 0.001026356911799356,
+      "final_refused": 1
+    },
+    "G1-nodiv 1119-1464": {
+      "cases": 50,
+      "with_refusal": 4,
+      "events": 4,
+      "below_L": 4,
+      "above_U": 0,
+      "dist_tol_max": 0.0019867880646245546,
+      "final_refused": 0
+    },
+    "G2-dividends 181-730": {
+      "cases": 321,
+      "with_refusal": 3,
+      "events": 5,
+      "below_L": 5,
+      "above_U": 0,
+      "dist_tol_max": 0.008287180924082019,
+      "final_refused": 1
+    },
+    "G2-dividends 1-180": {
+      "cases": 995,
+      "with_refusal": 14,
+      "events": 21,
+      "below_L": 21,
+      "above_U": 0,
+      "dist_tol_max": 0.009391830179961147,
+      "final_refused": 3
+    },
+    "G2-dividends 1119-1464": {
+      "cases": 66,
+      "with_refusal": 3,
+      "events": 3,
+      "below_L": 3,
+      "above_U": 0,
+      "dist_tol_max": 0.0018251659331447456,
+      "final_refused": 0
+    },
+    "G2-dividends 731-1118": {
+      "cases": 118,
+      "with_refusal": 2,
+      "events": 3,
+      "below_L": 3,
+      "above_U": 0,
+      "dist_tol_max": 0.0028425546210130623,
+      "final_refused": 0
+    },
+    "G3-carry-itm 181-730": {
+      "cases": 355,
+      "with_refusal": 3,
+      "events": 4,
+      "below_L": 4,
+      "above_U": 0,
+      "dist_tol_max": 0.0041171153412733474,
+      "final_refused": 0
+    },
+    "G3-carry-itm 1-180": {
+      "cases": 1145,
+      "with_refusal": 29,
+      "events": 51,
+      "below_L": 43,
+      "above_U": 8,
+      "dist_tol_max": 0.007356176036310558,
+      "final_refused": 7
+    },
+    "G4-negrate 1-180": {
+      "cases": 1009,
+      "with_refusal": 110,
+      "events": 199,
+      "below_L": 199,
+      "above_U": 0,
+      "dist_tol_max": 0.016184271537511563,
+      "final_refused": 32
+    },
+    "G4-negrate 181-730": {
+      "cases": 402,
+      "with_refusal": 90,
+      "events": 131,
+      "below_L": 131,
+      "above_U": 0,
+      "dist_tol_max": 0.015737186870090625,
+      "final_refused": 11
+    },
+    "G4-negrate 731-1118": {
+      "cases": 89,
+      "with_refusal": 21,
+      "events": 28,
+      "below_L": 28,
+      "above_U": 0,
+      "dist_tol_max": 0.004835024477212202,
+      "final_refused": 0
+    },
+    "G5-extreme-vol 1-180": {
+      "cases": 1531,
+      "with_refusal": 67,
+      "events": 98,
+      "below_L": 98,
+      "above_U": 0,
+      "dist_tol_max": 0.0358198136632201,
+      "final_refused": 8
+    },
+    "G5-extreme-vol 181-730": {
+      "cases": 269,
+      "with_refusal": 15,
+      "events": 27,
+      "below_L": 27,
+      "above_U": 0,
+      "dist_tol_max": 0.0006115569822495726,
+      "final_refused": 4
+    },
+    "G6-long 731-1118": {
+      "cases": 807,
+      "with_refusal": 45,
+      "events": 63,
+      "below_L": 63,
+      "above_U": 0,
+      "dist_tol_max": 0.008975691119803198,
+      "final_refused": 5
+    },
+    "G6-long 1119-1464": {
+      "cases": 693,
+      "with_refusal": 29,
+      "events": 39,
+      "below_L": 39,
+      "above_U": 0,
+      "dist_tol_max": 0.0035405590415748126,
+      "final_refused": 2
+    },
+    "T1-near-boundary 1-180": {
+      "cases": 1500,
+      "with_refusal": 0,
+      "events": 0,
+      "below_L": 0,
+      "above_U": 0,
+      "dist_tol_max": null,
+      "final_refused": 0
+    }
+  },
+  "sizes": {
+    "per_group": {
+      "G1-nodiv": 2500,
+      "G2-dividends": 2500,
+      "G3-carry-itm": 2500,
+      "G4-negrate": 2500,
+      "G5-extreme-vol": 2500,
+      "G6-long": 2500
+    },
+    "cannot_be_sized": {}
+  }
+}

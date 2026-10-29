@@ -1,0 +1,165 @@
+{
+  "phase": "options adaptive Phase 2, attempt 1",
+  "frozen_utc": "2026-10-29T19:50:47+00:00",
+  "config": {
+    "estimator": "envelope",
+    "schedule": "multiples",
+    "F": 3.0,
+    "F_d": 2.0,
+    "tau": 1.0,
+    "force_lattice": false
+  },
+  "engine_version": "adaptive-p2.0",
+  "constants": {
+    "K_MAX": 6,
+    "MIN_LEVELS": 4,
+    "FLOOR": 0.1,
+    "DELTA_FLOOR": 0.00025,
+    "P_RANGE": [
+      0.5,
+      3.0
+    ],
+    "P_BAND": 0.5,
+    "ZERO_CHANGE": 1e-13,
+    "DEEP": 1e-09,
+    "F_GRID": [
+      2.0,
+      2.5,
+      3.0,
+      4.0
+    ]
+  },
+  "tightening": {
+    "fraction": 0.1,
+    "escalate_max": 6,
+    "cell_cap": 2000000000.0,
+    "held_out_target": "0.1 of the stated estimate"
+  },
+  "held_out": {
+    "seed": 20261029,
+    "per_group": {
+      "G0-exempt": 300,
+      "G1-nodiv": 2500,
+      "G2-dividends": 2500,
+      "G3-carry-itm": 2500,
+      "G4-negrate": 2500,
+      "G5-extreme-vol": 2500,
+      "G6-long": 2500,
+      "T1-near-boundary": 1500,
+      "X1-outside": 400
+    },
+    "named": true,
+    "run_options": "run.py defaults (lattice check, QuantLib, controls every 10th, convention every 10th, IV every 5th, dividend scenario every 3rd case with dividends)",
+    "phase2_options": {
+      "repeat_every": 50
+    }
+  },
+  "sizing": {
+    "rule": "design P2-2 9.5 f",
+    "targets": {
+      "per_group": 1000,
+      "aggregate": 10000,
+      "delta_per_group": 300
+    },
+    "sd": 4.0,
+    "min": 2400,
+    "step": 100,
+    "max": 8000,
+    "rates": {
+      "G1-nodiv": {
+        "cases": 1500,
+        "r_p": 0.5353333333333333,
+        "r_e": 0.5353333333333333,
+        "r_d": 0.8846666666666667,
+        "price_scored": 803,
+        "estimator_scored": 803,
+        "delta_estimator_scored": 1327
+      },
+      "G2-dividends": {
+        "cases": 1500,
+        "r_p": 0.6873333333333334,
+        "r_e": 0.6873333333333334,
+        "r_d": 0.6793333333333333,
+        "price_scored": 1031,
+        "estimator_scored": 1031,
+        "delta_estimator_scored": 1019
+      },
+      "G3-carry-itm": {
+        "cases": 1500,
+        "r_p": 0.818,
+        "r_e": 0.818,
+        "r_d": 0.5973333333333334,
+        "price_scored": 1227,
+        "estimator_scored": 1227,
+        "delta_estimator_scored": 896
+      },
+      "G4-negrate": {
+        "cases": 1500,
+        "r_p": 0.6466666666666666,
+        "r_e": 0.6466666666666666,
+        "r_d": 0.772,
+        "price_scored": 970,
+        "estimator_scored": 970,
+        "delta_estimator_scored": 1158
+      },
+      "G5-extreme-vol": {
+        "cases": 1800,
+        "r_p": 0.5872222222222222,
+        "r_e": 0.5872222222222222,
+        "r_d": 0.7427777777777778,
+        "price_scored": 1057,
+        "estimator_scored": 1057,
+        "delta_estimator_scored": 1337
+      },
+      "G6-long": {
+        "cases": 1500,
+        "r_p": 0.9073333333333333,
+        "r_e": 0.9073333333333333,
+        "r_d": 0.8713333333333333,
+        "price_scored": 1361,
+        "estimator_scored": 1361,
+        "delta_estimator_scored": 1307
+      }
+    },
+    "cannot_be_sized": {}
+  },
+  "calibration": {
+    "seed": 20261026,
+    "manifest_sha256": "9f4cb14ad39b13b140f6a9866d566089ba30f9634b037981aa8c5a5d29a8991c",
+    "selection_report_sha256": "390323a36c06f319b900ea113d471e0134e9c4bbc62e3d345502c7d822d966e3",
+    "candidates_sha256": "afc42812fa3422ef896ef38891ea2a87ca18b94bed3070f2a14f488385ceae01",
+    "selected": {
+      "key": "envelope/multiples/F3/Fd2",
+      "estimator": "envelope",
+      "schedule": "multiples",
+      "F": 3.0,
+      "F_d": 2.0,
+      "ranking": [
+        "envelope/multiples/F3/Fd2",
+        "envelope/hybrid/F3/Fd2",
+        "envelope/doubling/F3/Fd2"
+      ]
+    }
+  },
+  "files_sha256": {
+    "src/desk/options_math.py": "72a56cc9ec57ca018b0756b2f7d362e69a76c583eda35ef558dca2f2656be37c",
+    "src/desk/options_finder.py": "ee6f9dcf37be9beaa17b99654fca978d5549d0d5bb88d7625da76b732a90c03e",
+    "src/desk/options_engine.py": "f9db0d169ce1dbf0a94c92f9bf503a71f10a1db4fec3758aa501b447a1930f62",
+    "src/desk/options_adaptive.py": "b5f33d7a7f049cc67fc5057d06076b9f7b7c28c6a5e63b6ff3ac71bd40455a77",
+    "src/market_data/session.py": "935f925f162d8a8eae93322f10d9c3de300fcd083cd3de5d8eadc0f7ed34470d",
+    "scripts/options_bench/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scripts/options_bench/adaptive.py": "f3eea6be9420e88164289e69d53e161158e560ba241896282808eda41dd3749c",
+    "scripts/options_bench/calibrate.py": "e53f96ef7828da05a46a0446787eaa0ebdbe04bc21ddd0ad9566f619382aa8a6",
+    "scripts/options_bench/cases.py": "fb42ab6007480f4c12e8b1fc020d35bcf35dd9abca09e2cb19bfd74b8544caf6",
+    "scripts/options_bench/crosscheck.py": "6c7e35d74e9326f7bc67ab74294d4b24451f2fc681e1612cfe413695661ea23c",
+    "scripts/options_bench/engine.py": "74d53aa31b973d39b8791a44ad43d2347b5750cbf4ecbe9265c1d7e2d1a77578",
+    "scripts/options_bench/fd.py": "ca58d0cdf840220a321228be0929a467e217cdff04660274c733c007559c69ff",
+    "scripts/options_bench/golden.py": "90badcb0d9dddd5b7cdb3017beb7c6caa8cda39f632983d4ac63a5d341214171",
+    "scripts/options_bench/phase2.py": "245e8f73788c6e6650ed075485559345dff1c0a54d131363939517974b96505c",
+    "scripts/options_bench/reference.py": "d3049f6de8783d7f8296ddc3b7eb74ba998b22087c942e739b4bd48888c7b2a6",
+    "scripts/options_bench/routine.py": "75c03b34d123bb6f7e08dad059d7d4765d4426ff9a6e165b07675bb32477f66e",
+    "scripts/options_bench/run.py": "5657d68c7b085b418a4b106019ab0297c518b33aed7bac4526b7aa2bae1072bd",
+    "scripts/options_bench/score.py": "43cb533b297dbcdaed2fad89b168eeb59088707fd34c0e0415bb68fa4e15948a",
+    "scripts/options_bench/score2.py": "27870dcc279f89341a5412307b5eff73d6b2eb0ac2946afed77f4b4dc8091914"
+  }
+}
