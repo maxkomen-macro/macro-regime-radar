@@ -224,6 +224,32 @@ def test_earnings_calendar_loads_after_the_calendar_reload_in_full_mode_only():
     assert third_party <= _requirement_modules(ROOT / "requirements.txt"), third_party
 
 
+def test_the_earnings_cache_step_runs_after_the_news_feed_in_full_mode_and_cannot_fail_the_refresh():
+    """Options Finder earnings cache (plan D1, 2026-10-29): one step after the
+    news feed and before the trim, WAL checkpoint and validation, in full mode
+    only, never failing the refresh (continue-on-error, a 10-minute bound), with
+    only the two keys it reads; full mode installs requirements.txt, which
+    covers its imports and the store's."""
+    steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
+    names = [s["name"] for s in steps]
+    step = steps[names.index("Refresh news feed") + 1]
+    assert step["name"] == "Load earnings cache (Options Finder)"
+    assert step["if"] == "steps.mode.outputs.mode == 'full'"
+    assert step["continue-on-error"] is True and step["timeout-minutes"] == 10
+    assert step["env"] == {"FINNHUB_API_KEY": "${{ secrets.FINNHUB_API_KEY }}",
+                           "EARNINGS_CACHE_KEY": "${{ secrets.EARNINGS_CACHE_KEY }}"}
+    assert step["run"].strip() == "python -m src.events.earnings_cache"
+    after = names.index("Load earnings cache (Options Finder)")
+    for later in ("Trim intraday data to last 30 days (prevent DB bloat)", "Checkpoint WAL into main DB file",
+                  "Validate the refreshed database"):
+        assert after < names.index(later), later
+    assert after > names.index("Load earnings calendar")  # the cross-check reads the dashboard's rows
+    assert sum("earnings_cache" in (s.get("run") or "") for s in steps) == 1
+    mods = _module_imports(ROOT / "src/events/earnings_cache.py") | _module_imports(ROOT / "src/events/earnings_store.py")
+    third_party = {m for m in mods if m not in STDLIB and m != "src"}
+    assert third_party <= _requirement_modules(ROOT / "requirements.txt"), third_party
+
+
 def test_intraday_validates_its_own_feeds():
     """B6 (2026-09-18): intraday runs validate with --mode intraday, which judges
     market_intraday and treats a stale daily close as a warning, so one missed

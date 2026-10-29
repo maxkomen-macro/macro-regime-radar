@@ -223,6 +223,19 @@ jobs:
           print(f'Stored {n} new headlines')
           "
 
+      # Options Finder earnings cache (plan D1): Finnhub's whole-market calendar
+      # into an encrypted vault table, with its own call caps and trading-hours
+      # guard. It prints one summary line of counts and exits 0 on every end, so
+      # it cannot fail the refresh; the timeout bounds it.
+      - name: Load earnings cache (Options Finder)
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+          EARNINGS_CACHE_KEY: ${{ secrets.EARNINGS_CACHE_KEY }}
+        run: python -m src.events.earnings_cache
+
       - name: Trim intraday data to last 30 days (prevent DB bloat)
         if: steps.mode.outputs.mode == 'full'
         run: |
