@@ -132,21 +132,30 @@ def interval_facts(rec: dict) -> dict:
                       "within_target": d["within_target"], "for": d["for"]} for d in o.get("disjoint") or []]
         refusals += [{"output": name, "dist_tol": d["dist"] / d["tol"], "side": d["side"], "why": d["why"]}
                      for d in o.get("refusals") or []]
-    return {"outside_outputs": outside, "disjoint": disjoint, "inconsistent_outputs": inconsistent,
-            "interval_refusals": refusals}
+    return {"interval_outputs": [name for name, _ in outs], "outside_outputs": outside, "disjoint": disjoint,
+            "inconsistent_outputs": inconsistent, "interval_refusals": refusals}
+
+
+def _undershoots_of(rows: list[dict], name: str) -> dict:
+    have = [r for r in rows if name in r.get("interval_outputs", [])]
+    ev = [x for r in have for x in r.get("interval_refusals", []) if x["output"] == name]
+    mags = [x["dist_tol"] for x in ev]
+    n = len(have)
+    with_ref = sum(any(x["output"] == name for x in r.get("interval_refusals", [])) for r in have)
+    out = {"cases": n, "with_refusal": with_ref, "share": with_ref / n if n else None, "events": len(ev),
+           "below_L": sum(x["side"] == "below L" for x in ev), "above_U": sum(x["side"] == "above U" for x in ev),
+           "dist_tol_p50": _q(mags, 0.5), "dist_tol_max": max(mags) if mags else None}
+    if name == "tier2":
+        out["final_refused"] = sum(r.get("reason") in (oa.OUTSIDE_INTERVAL, oa.CONTRADICTED) for r in have)
+    return out
 
 
 def undershoots(rows: list[dict]) -> dict:
-    """Interval refusals of the main answer: how often and by how much (in tol), by side. Not passes."""
-    ev = [x for r in rows for x in r.get("interval_refusals", []) if x["output"] == "tier2"]
-    mags = [x["dist_tol"] for x in ev]
-    n = len(rows)
-    with_ref = sum(any(x["output"] == "tier2" for x in r.get("interval_refusals", [])) for r in rows)
-    return {"cases": n, "with_refusal": with_ref, "share": with_ref / n if n else None, "events": len(ev),
-            "below_L": sum(x["side"] == "below L" for x in ev), "above_U": sum(x["side"] == "above U" for x in ev),
-            "final_refused": sum(r.get("reason") in (oa.OUTSIDE_INTERVAL, oa.CONTRADICTED) for r in rows),
-            "dist_tol_p50": _q(mags, 0.5), "dist_tol_max": max(mags) if mags else None,
-            "bench_only_events": sum(x["output"] != "tier2" for r in rows for x in r.get("interval_refusals", []))}
+    """Interval refusals, how often and by how much (in tol) and on which side, for each kind of Tier 2 output
+    apart: the main answer, each sweep target and each dividend scenario, each over the cases that have that
+    output (Codex S-8). Not passes."""
+    names = sorted({n for r in rows for n in r.get("interval_outputs", [])}, key=lambda n: (n != "tier2", n))
+    return {n: _undershoots_of(rows, n) for n in names}
 
 
 # ── groups ───────────────────────────────────────────────────────────────────
@@ -501,12 +510,15 @@ def markdown(sc: dict) -> str:
     L += ["", "## Interval refusals by group and maturity band (report only; refusals are not passes)", "",
           "Candidates outside the proved interval are refused, never served or clipped. Below L they are numerical "
           "undershoots; their cause has not been established as roundoff.", "",
-          "| Group, band | Cases | With a refusal | Share | Refusals | Below L | Above U | Finally refused | "
-          "Distance p50 (tol) | max (tol) |", "|---|---|---|---|---|---|---|---|---|---|"]
+          "Each output is counted over the cases that have it: the main answer, each sweep target, each dividend "
+          "scenario.", "",
+          "| Group, band | Output | Cases | With a refusal | Share | Refusals | Below L | Above U | Finally refused | "
+          "Distance p50 (tol) | max (tol) |", "|---|---|---|---|---|---|---|---|---|---|---|"]
     for name, x in sc["bands"].items():
-        u = x["undershoots"]
-        L.append(f"| {name} | {u['cases']} | {u['with_refusal']} | {_f(u['share'])} | {u['events']} | {u['below_L']} | "
-                 f"{u['above_U']} | {u['final_refused']} | {_f(u['dist_tol_p50'])} | {_f(u['dist_tol_max'])} |")
+        for out, u in x["undershoots"].items():
+            L.append(f"| {name} | {'main answer' if out == 'tier2' else out} | {u['cases']} | {u['with_refusal']} | "
+                     f"{_f(u['share'])} | {u['events']} | {u['below_L']} | {u['above_U']} | "
+                     f"{_f(u.get('final_refused'))} | {_f(u['dist_tol_p50'])} | {_f(u['dist_tol_max'])} |")
     L += ["", "## Targets below tol (report only)", "", "| Group | τ = 1 | 0.5 | 0.25 | 0.1 |", "|---|---|---|---|---|"]
     for name, x in sc["groups"].items():
         L.append(f"| {name} | " + " | ".join(_f(x["sweep"][t]["coverage"]) for t in ("1", "0.5", "0.25", "0.1")) + " |")

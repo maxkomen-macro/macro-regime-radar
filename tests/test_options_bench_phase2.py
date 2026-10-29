@@ -314,9 +314,31 @@ def test_a_disjoint_band_fails_and_a_refusal_is_reported_not_passed():
                                  "why": oa.OUTSIDE_INTERVAL}]
     s = score2.summary([score2.classify(ref)])
     assert s["interval"]["disjoint_bands"] == 0 and s["interval"]["served_outside"] == 0
-    u = s["undershoots"]
-    assert u["with_refusal"] == 1 and u["events"] == 1 and u["below_L"] == 1
+    u = s["undershoots"]["tier2"]
+    assert u["cases"] == 1 and u["with_refusal"] == 1 and u["events"] == 1 and u["below_L"] == 1
     assert u["dist_tol_max"] == pytest.approx(0.2)
+    assert s["undershoots"]["sweep 0.5"]["events"] == 0
+
+
+@pytest.mark.parametrize("where", ["sweep 0.25", "divsens up"])
+def test_bench_only_refusals_are_reported_with_their_own_frequency_and_magnitude(where):
+    out = _iv_record()
+    assert "divsens" in out
+    rec = json.loads(json.dumps(out))
+    o = rec["sweep"]["0.25"] if where.startswith("sweep") else rec["divsens"]["up"]["tier2"]
+    o["refusals"] = [{"k": 3, "V": 1.0, "Es": 0.01, "dist": 0.003, "tol": 0.01, "side": "above U",
+                      "why": oa.OUTSIDE_INTERVAL}]
+    rows = [score2.classify(rec), score2.classify(out)]
+    s = score2.summary(rows)
+    u = s["undershoots"][where]
+    assert u["cases"] == 2 and u["with_refusal"] == 1 and u["share"] == 0.5 and u["events"] == 1
+    assert u["above_U"] == 1 and u["dist_tol_max"] == pytest.approx(0.3)
+    assert s["undershoots"]["tier2"]["events"] == 0
+    md_rows = [l for l in score2.markdown({"gate": {"verdict": "x", "components": {}}, "attempt": 1, "seed": [1],
+                                            "held_out": False, "config": {}, "engine_version": "v", "freeze": "f",
+                                            "freeze_sha256": "0" * 64, "provenance": "p", "groups": {},
+                                            "bands": {"G2 0-30": s | {"label": "partial"}}}).splitlines() if f"| {where} |" in l]
+    assert md_rows and "| 1 | 0.5 | 1 |" in md_rows[0]
 
 
 def test_r1_regression_row():
