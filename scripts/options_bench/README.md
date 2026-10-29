@@ -59,3 +59,32 @@ or inputs. Each shard writes a manifest (command, seed, sizes, versions, platfor
 
 Tests: `python -m pytest tests/test_options_bench.py` (the engine tests skip unless the engine is in this
 checkout or `OPTIONS_BENCH_ENGINE_ROOT` points at one; the QuantLib test skips without QuantLib).
+
+## Phase 2: the Tier 2 controller (adaptive Phase 2, unserved)
+
+The Tier 2 convergence controller (`src/desk/options_adaptive.py`) is scored on top of a finished run of
+`run.py`, whose references R0 and baseline answers it reuses (they do not depend on Tier 2):
+
+```
+python -m scripts.options_bench.calibrate --refs RUN_DIR --out CAL_DIR            # every candidate, development seed
+python -m scripts.options_bench.calibrate --refs RUN_DIR --out CAL_DIR --select   # choose, size, write the freeze
+python -m scripts.options_bench.run --engine-root . --out HELD_OUT --seed SEED --per-group <the freeze's sizes>
+python -m scripts.options_bench.phase2 --refs HELD_OUT --freeze scripts/options_bench/calibration/phase2-freeze.json \
+    --out P2_DIR --held-out
+python -m scripts.options_bench.score2 P2_DIR
+python -m scripts.options_bench.routine --out DIR                                 # ~300 development cases, every push
+```
+
+- `adaptive.py`: the adapter, and the verdict protocol (covered, confirmed, straddle; one tightened reference R1
+  per straddling case, judged inconsistent, unreliable, covered or confirmed, precise straddle, coarse straddle
+  in that order).
+- `phase2.py`: Tier 2 under the frozen configuration, the Tier 1 identity check, R1, the dividend scenario, the
+  report-only targets 0.5, 0.25 and 0.1 tol, and repeated cases for determinism. It refuses to run when any
+  engine or bench file differs from the freeze, and with `--held-out` a reference run that is not the freeze's
+  seed and sizes.
+- `score2.py`: every exit-gate row, with five populations per group and maturity band, and the conditional,
+  resolved-all and all-accepted limits (only the conditional one binds).
+- The design and its statistics: design P2-2 (review-loop/options-adaptive/designs/ in the project files) and
+  docs/desk/OPTIONS_ADAPTIVE_PHASE2.md.
+
+Tests: `python -m pytest tests/test_options_engine.py tests/test_options_adaptive.py tests/test_options_bench_phase2.py`.
