@@ -168,6 +168,19 @@ def test_calibration_refuses_other_seeds_and_code_changed_since_pricing(tmp_path
     man = calibrate.check_manifest(out, refs)
     (out / "manifest.json").write_text(json.dumps(man))
     assert calibrate.check_manifest(out, refs) == man
+    # S-5: a reference record changed in place (same id, same manifest) is refused
+    edited = dict(rec, ref=dict(rec["ref"], value=dict(rec["ref"]["value"], ref=999.0)))
+    (refs / "results-0of1.jsonl").write_text(json.dumps(edited) + "\n")
+    with pytest.raises(SystemExit, match="other code or references"):
+        calibrate.check_manifest(out, refs)
+    (refs / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    assert calibrate.check_manifest(out, refs) == man
+    # S-6: candidates with no manifest are never adopted
+    orphan = tmp_path / "orphan"
+    orphan.mkdir()
+    (orphan / "candidates.jsonl").write_text(json.dumps({"case": rec["case"]}) + "\n")
+    with pytest.raises(SystemExit, match="no manifest"):
+        calibrate.check_manifest(orphan, refs)
     changed = dict(man["files_sha256"], **{"src/desk/options_adaptive.py": "0" * 64})
     monkeypatch.setattr(phase2, "file_hashes", lambda: changed)
     with pytest.raises(SystemExit, match="other code or references"):

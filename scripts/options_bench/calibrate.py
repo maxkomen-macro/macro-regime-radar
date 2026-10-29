@@ -163,7 +163,11 @@ def cal_manifest(refs: Path) -> dict:
     return {"refs": str(refs.resolve()), "seed": pop.get("seed"), "per_group": pop.get("per_group"),
             "named": pop.get("named"),
             "refs_complete": pop["complete"], "refs_why": pop.get("why"),
-            "refs_bench_files_sha256": mans[0].get("bench_files_sha256"), "files_sha256": phase2.file_hashes()}
+            "refs_bench_files_sha256": mans[0].get("bench_files_sha256"),
+            # the reference records themselves, not only their ids and manifests (Codex S-5)
+            "refs_files_sha256": {p.name: phase2.sha(p) for p in sorted(refs.glob("results-*.jsonl"))
+                                  + sorted(refs.glob("manifest-*.json"))},
+            "files_sha256": phase2.file_hashes()}
 
 
 def check_manifest(out: Path, refs: Path) -> dict:
@@ -174,6 +178,10 @@ def check_manifest(out: Path, refs: Path) -> dict:
         raise SystemExit(f"calibration needs the complete development run of seed {CAL_SEED}; got seed {now['seed']}, "
                          f"complete {now['refs_complete']} ({now['refs_why']})")
     path = out / "manifest.json"
+    cands = out / "candidates.jsonl"
+    if not path.exists() and cands.exists() and cands.stat().st_size:
+        # candidates with no record of the code that priced them are never adopted (Codex S-6)
+        raise SystemExit(f"{cands} has results but no manifest.json: use a new --out")
     if path.exists():
         prior = json.loads(path.read_text())
         diff = [k for k in now if prior.get(k) != now[k]]
