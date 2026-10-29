@@ -29,6 +29,7 @@
  */
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
+import { LensFinderLink } from "../desk/options/lens-link";
 import { Card, Segmented, StatTile } from "../../components";
 import {
   useFreshness,
@@ -580,10 +581,15 @@ export function OptionsLens({ symbol }: { symbol: string }) {
 
   const unentitled = exps.error instanceof ApiError && exps.error.kind === "unauthorized";
   // One stamp for the whole lens: the chain's own when loaded, else the
-  // expirations scan's (review P2-6).
+  // expirations scan's (review P2-6). Options Finder F1: the answer's
+  // `session` (the trading day the end-of-day marks describe) reads as that
+  // day's close; a scan's session never labels a loaded chain, and an answer
+  // without one reads exactly as before.
+  const stampSession = chain.data ? chain.data.session : exps.data?.session;
   const asOf = fmtProviderStamp(chain.data?.as_of ?? exps.data?.as_of);
+  const stamp = stampSession ? `${fmtDate(stampSession)} close` : `as of ${asOf}`;
   const status = exps.data
-    ? `end-of-day · ${providerName(exps.data.provider)} · as of ${asOf}`
+    ? `end-of-day · ${providerName(exps.data.provider)} · ${stamp}`
     : unentitled
       ? "unavailable on this server"
       : open && exps.isPending
@@ -631,7 +637,7 @@ export function OptionsLens({ symbol }: { symbol: string }) {
                 </select>
               </label>
               <Segmented label="Contract type" options={SIDE_OPTIONS} value={side} onChange={(id) => setSide(id as "call" | "put")} />
-              {exps.data?.truncated ? <span style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)" }}>first 1,000 contracts scanned for expirations</span> : null}
+              {exps.data?.truncated ? <span style={{ ...mono, fontSize: "var(--fs-micro)", color: "var(--text-muted)" }}>the expiry list may be incomplete (the provider&apos;s list was longer than this scan)</span> : null}
             </div>
             {chain.isPending ? (
               <Caption>Requesting {side}s for {exp} from EODHD…</Caption>
@@ -693,7 +699,7 @@ export function OptionsLens({ symbol }: { symbol: string }) {
                   </span>
                 </div>
                 <Caption>
-                  End-of-day marks from {providerName(chain.data.provider)} as of {asOf}; Greeks and implied
+                  End-of-day marks from {providerName(chain.data.provider)} {stampSession ? `for the ${stamp}` : stamp}; Greeks and implied
                   volatility are the provider&apos;s own, nothing is computed here, and nothing here is a trading recommendation.
                 </Caption>
               </>
@@ -701,6 +707,7 @@ export function OptionsLens({ symbol }: { symbol: string }) {
           </>
         )}
       </Disclosure>
+      <LensFinderLink symbol={symbol} style={{ display: "inline-block", marginTop: 6, fontFamily: "var(--font-ui)", fontSize: "var(--fs-caption)", color: "var(--link)" }} />
     </div>
   );
 }

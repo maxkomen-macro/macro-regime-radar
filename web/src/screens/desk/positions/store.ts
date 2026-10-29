@@ -12,6 +12,7 @@ import type { Question } from "../data/types";
 import { isQuestion } from "../event-study/question";
 import { isCalendarDate } from "./sessions";
 import { findFlags } from "./wording";
+import { whyOption, type OptionSubject } from "./option";
 
 export const POSITIONS_KEY = "mrr.desk.positions.v1";
 export const POSITION_HORIZONS: readonly number[] = [5, 10, 20, 60];
@@ -33,7 +34,9 @@ export interface Trigger {
 export type Subject =
   | { kind: "study"; question: Question }
   | { kind: "basket"; legs: { symbol: string; weight: number }[]; benchmark: string | null }
-  | { kind: "instrument"; id: string };
+  | { kind: "instrument"; id: string }
+  // Options Finder step 7: one contract the Finder priced, with its entry and the view it was found for.
+  | OptionSubject;
 
 export type CloseType = "falsified" | "expired" | "closed";
 
@@ -110,7 +113,8 @@ function whySubject(v: unknown): string | null {
     return legsOk && (s.benchmark === null || typeof s.benchmark === "string") ? null : "a basket subject without readable legs";
   }
   if (s.kind === "instrument") return filled(s.id) ? null : "an instrument subject without its id";
-  return "a subject that is not a study, a basket or an instrument";
+  if (s.kind === "option") return whyOption(s);
+  return "a subject that is not a study, a basket, an instrument or an option";
 }
 
 function whyTrigger(r: Record<string, unknown>, levelId: string): string | null {
@@ -120,6 +124,7 @@ function whyTrigger(r: Record<string, unknown>, levelId: string): string | null 
   if (!rule || rule.series !== t.series || rule.operator !== t.operator) return "an automatic position on a level the Desk does not monitor";
   // §9: automatic only when the subject's monitored quantity is the served series itself; a basket is not.
   if ((r.subject as Subject).kind === "basket") return "a basket monitored automatically";
+  if ((r.subject as Subject).kind === "option") return "an option monitored automatically";
   if (monitoredSeriesOf(String(r.instrument)) !== t.series) return "an automatic level on an instrument that is not its series";
   // A long is wrong below its level, a short above it.
   if ((r.direction === "long") !== (t.operator === "below")) return "a level on the wrong side for the direction";
@@ -155,6 +160,8 @@ export function whyUnreadable(v: unknown): string | null {
   if (!w || typeof w !== "object" || !filled(w.id) || !filled(w.label)) return "no “wrong if” level";
   const subject = whySubject(r.subject);
   if (subject) return subject;
+  // The Finder prices long contracts only; a short option's loss is not its premium (Codex S-3).
+  if ((r.subject as Subject).kind === "option" && r.direction !== "long") return "an option held short (the Options Finder carries long contracts only)";
   if (w.id === "signal_reverses" && (r.subject as Subject).kind !== "study") return "“the signal reverses” without the study it comes from";
   if (!isTs(r.entry_ts)) return "no entry time";
   if (!isCalendarDate(r.entry_date)) return "no entry date";

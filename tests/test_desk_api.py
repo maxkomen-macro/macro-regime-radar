@@ -633,6 +633,8 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/basket/{basket_id}"): ("/api/desk/basket/ai-infra", 200, None),
     # desk/cap-weight (§12.18): the stored share counts; awaiting (200) on a database the refresh has not reached
     ("GET", "/api/desk/basket/shares"): ("/api/desk/basket/shares", 200, None),
+    # the Options Finder (design F3): a view names a symbol, a target, a date and a budget; a bare GET names none: 422
+    ("GET", "/api/desk/options/finder"): ("/api/desk/options/finder", 422, None),
     ("GET", "/api/desk/hedge"): ("/api/desk/hedge?mode=protect", 200, None),
     # a catalog study by preset (asset_prices and regimes only: ready before the refresh), and the catalog
     ("GET", "/api/desk/study"): ("/api/desk/study?preset=golden-cross", 200, None),

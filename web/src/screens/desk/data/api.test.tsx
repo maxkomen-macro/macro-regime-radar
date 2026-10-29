@@ -22,6 +22,7 @@ import pipeline from "../../../fixtures/desk/pipeline.json";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import basketShares from "../../../fixtures/desk/basket-shares.json";
+import optionsFinder from "../../../fixtures/desk/options-finder.json";
 import instruments from "../../../fixtures/desk/instruments.json";
 import regime from "../../../fixtures/desk/regime.json";
 import sectors from "../../../fixtures/desk/sectors.json";
@@ -158,6 +159,8 @@ describe("the response boundary", () => {
       "/instruments": instruments,
       // §12.18 (desk/cap-weight): the stored share counts.
       "/basket/shares": basketShares,
+      // The Options Finder: the fixtures' first view (a synthetic chain).
+      "/options/finder": Object.values((optionsFinder as { answers: Record<string, Record<string, unknown>> }).answers)[0],
     };
     expect(Object.keys(fixtures).length).toBe(Object.keys(SCHEMAS).length);
     const required: Record<string, string[]> = { "/study": ["question"] };
@@ -233,7 +236,7 @@ describe("the response boundary", () => {
   });
 
   it("knows every endpoint the Desk asks, and none it does not", () => {
-    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/pipeline", "/basket/price", "/basket/hedge"]) expect(schemaFor(p), p).toBeDefined();
+    for (const p of ["/overview", "/ledger", "/technicals", "/vol", "/sectors", "/regime", "/macro", "/study", "/study/events", "/pipeline", "/basket/price", "/basket/hedge", "/options/finder"]) expect(schemaFor(p), p).toBeDefined();
     // §9, §10: no server position store, no basket kept on a server, no option hedge: nothing to read.
     for (const p of ["/positions", "/basket/local-1", "/hedge"]) expect(schemaFor(p), p).toBeUndefined();
   });
@@ -409,3 +412,49 @@ describe("the envelope (§12.0)", () => {
     expect(routeOf("/basket/ai-infra")).toBe("/basket");
   });
 });
+
+describe("the Options Finder (/options/finder)", () => {
+  const answers = (optionsFinder as { answers: Record<string, Record<string, unknown>> }).answers;
+
+  it("every fixture view passes its schema unchanged, on the wire and through the fixture server in any parameter order", () => {
+    for (const [query, payload] of Object.entries(answers)) {
+      const { as_of: _a, ...data } = payload;
+      void _a;
+      expect(readBody(data, "/options/finder"), query).toEqual(data);
+      const reversed = [...new URLSearchParams(query).entries()].reverse().map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+      const reply = deskFixture("GET", `/api/desk/options/finder?${reversed}`);
+      expect(reply?.status, query).toBe(200);
+      const read = readAnswer<Record<string, unknown>>(JSON.parse(reply!.body), "/options/finder");
+      expect(read.rows, query).toEqual(data.rows);
+      expect(read.as_of).toBe("2026-10-23");
+    }
+    expect(deskFixture("GET", "/api/desk/options/finder?symbol=SYN&view=up")?.status).toBe(404);
+  });
+
+  it("a row missing what it cannot be read without is dropped and counted; a bad statistic in a row becomes null", () => {
+    const fx = clone(Object.values(answers)[0]);
+    const rows = fx.rows as Record<string, unknown>[];
+    const n = rows.length;
+    delete rows[0].cost;
+    rows[1].strike = "100";
+    rows[2].delta = "0.5";
+    rows[3].pnl = { target: 1e999, half: 1, flat: -1 };
+    const out = readBody<{ rows: Record<string, unknown>[]; _dropped?: Record<string, number> }>(fx, "/options/finder");
+    expect(out.rows.length).toBe(n - 2);
+    expect(out._dropped?.rows).toBe(2);
+    expect(out.rows[0].delta).toBeNull();
+    expect((out.rows[1].pnl as Record<string, unknown>).target).toBeNull();
+  });
+
+  it("a Finder answer may take longer than a stored read: the hook's request carries the longer timeout", async () => {
+    let seen: AbortSignal | null | undefined;
+    globalThis.fetch = (async (_url: RequestInfo | URL, init?: RequestInit) => {
+      seen = init?.signal;
+      return new Response(JSON.stringify(readyEnvelope("/options/finder", Object.values(answers)[0], FIXTURE_META)), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    const got = await deskGet<Record<string, unknown>>("/options/finder", { symbol: "SYN" }, { timeoutMs: 90_000 });
+    expect(got.symbol).toBe("SYN");
+    expect(seen).toBeDefined();
+  });
+});
+

@@ -390,3 +390,45 @@ describe("fundamentalsCaption (launch-1 loop 2)", () => {
     expect(fundamentalsCaption({ fundamentals_provider: "finnhub", fundamentals_status: "ok" })).toMatch(/^Fundamentals via Finnhub/);
   });
 });
+
+/* ── Options Finder F1: the session the end-of-day marks describe ─────────── */
+
+describe("SingleName options lens session label", () => {
+  const contract = { contract: "AMZN261218C00230000", type: "call", strike: 230, exp_date: "2026-12-18", expiration_type: "monthly", dte: 54, bid: 5.1, ask: 5.3, last: 5.2, midpoint: 5.2, volume: 100, open_interest: 2000, implied_vol: 0.28, delta: 0.45, gamma: 0.02, theta: -0.05, vega: 0.3, rho: 0.1, moneyness: 0.98, tradetime: "2026-10-23", last_quote: "2026-10-24 04:00:01" };
+  const routes = (expsSession: string | null, chainSession: string | null, truncated = false) => ({
+    ...common,
+    "/api/market/profile/AMZN": () => profile,
+    "/api/market/candles/AMZN": (url: URL) => series(url.searchParams.get("range") ?? "6M"),
+    "/api/market/options/AMZN/expirations": () => ({ symbol: "AMZN", underlying: "AMZN", provider: "eodhd", as_of: "2026-10-24 04:00:01", session: expsSession, cadence: "end_of_day", fetched_at: "x", expirations: ["2026-12-18"], truncated }),
+    "/api/market/options/AMZN": (url: URL) => ({ symbol: "AMZN", underlying: "AMZN", provider: "eodhd", cadence: "end_of_day", as_of: "2026-10-24 04:00:01", session: chainSession, fetched_at: "x", expiration: url.searchParams.get("expiration"), type: url.searchParams.get("type"), strike_from: null, strike_to: null, page: 0, limit: 40, count: 1, total: null, has_more: false, contracts: [contract] }),
+  });
+  const openLens = async () => {
+    renderWithProviders(<SingleName symbol="AMZN" onClose={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("chart")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Options lens/ }));
+    await waitFor(() => expect(screen.getByRole("table")).toBeInTheDocument());
+  };
+
+  it("names the session's close from the chain answer", async () => {
+    stubFetch(routes("2026-10-23", "2026-10-23"));
+    await openLens();
+    expect(document.body.textContent).toMatch(/end-of-day · EODHD · Oct 23, 2026 close/);
+    expect(document.body.textContent).toMatch(/End-of-day marks from EODHD for the Oct 23, 2026 close;/);
+    expect(document.body.textContent).not.toMatch(/as of Oct 24/);
+  });
+
+  it("keeps the chain's own stamp when its session is null, even if the scan's is set", async () => {
+    stubFetch(routes("2026-10-23", null));
+    await openLens();
+    expect(document.body.textContent).toMatch(/end-of-day · EODHD · as of Oct 24, 00:00 ET/);
+    expect(document.body.textContent).toMatch(/End-of-day marks from EODHD as of Oct 24, 00:00 ET;/);
+    expect(document.body.textContent).not.toMatch(/close;/);
+  });
+
+  it("says a truncated expiry list may be incomplete", async () => {
+    stubFetch(routes(null, null, true));
+    await openLens();
+    expect(document.body.textContent).toMatch(/the expiry list may be incomplete \(the provider's list was longer than this scan\)/);
+    expect(document.body.textContent).not.toMatch(/first 1,000 contracts/);
+  });
+});

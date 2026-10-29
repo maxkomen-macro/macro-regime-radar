@@ -125,3 +125,9 @@ To rebuild them: `web/node_modules/.cache/desk-align/build_fixtures.py`
 (scratch, outside the repo) reads the engine run and the direct queries and
 writes the files above; the ETF values, `scripts/desk_etf_fixtures.py
 --audit <audit copy> --etf-db <refreshed copy> --store <scratch path>`.
+
+## Added by the Options Finder (2026-10-26)
+
+| Fixture | From | Stand-ins |
+|---|---|---|
+| `options-finder.json` (two views on one invented stock, SYN) | Everything: `GET /api/desk/options/finder` through the app and its envelope, on a worker over a store holding only the Treasury tenors and two macro releases, the clock frozen at 2026-10-24 14:00 UTC (the Oct 23 session), written by `scripts/options_finder_fixture.py` | The chain itself: an invented $100 stock with quarterly dividends whose quotes were priced by the Finder's own lattice (`tests/options_synth.py`), served by a fake EODHD and Finnhub (`tests/options_route_fake.py`). No provider quote is in the file: the repository is public, and real option quotes in it would be redistribution |

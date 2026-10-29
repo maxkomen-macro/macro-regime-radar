@@ -11,7 +11,13 @@
  *
  * Old frame-1/frame-2 slugs and the walkthrough's short paths are aliases:
  * a saved link still lands on the page that replaced it.
+ *
+ * The Options Finder sits under Trade, between Basket & Hedge and Position
+ * Monitor, once it is listed (options/flag.ts). Until then it is in no group:
+ * the sidebar leaves it out, and its slug still resolves (deskPageBySlug).
  */
+
+import { OPTIONS_FINDER_LISTED, OPTIONS_FINDER_SLUG } from "./options/flag";
 
 /** The one action a tab's header shows (desk/usability §14.6: one obvious primary action per page). "link" is a
  * page's own link, written in DeskTopBar; "new" opens the Position Monitor's form. */
@@ -39,53 +45,70 @@ export interface DeskGroup {
 
 export const DESK_HOME = "overview";
 
-export const DESK_GROUPS: DeskGroup[] = [
-  {
-    id: "market",
-    label: "Market",
-    pages: [
-      { slug: "overview", label: "Overview", blurb: "Where the market is, what fired, and what is closest to being wrong.", action: "walkthrough" },
-      { slug: "technicals", label: "Technicals", blurb: "Trend, momentum and risk for the S&P 500 or any US stock.", action: "act" },
-      { slug: "sectors", label: "Sectors", blurb: "Which sectors lead the S&P, and how broad the rally is.", action: "link" },
-      { slug: "macro", label: "Macro", title: "Macro & Correlations", blurb: "Rates, credit spreads, and whether bonds still hedge stocks.", action: "link" },
-      { slug: "regime", label: "Regime", blurb: "Where the economy sits, and which data prints would change it.", action: "link" },
-    ],
-  },
-  {
-    id: "research",
-    label: "Research",
-    pages: [
-      { slug: "event-study", label: "Event Study", blurb: "Ask what markets did after a defined shock, and get a scored answer.", action: "act" },
-      { slug: "signal-ledger", label: "Signal Ledger", blurb: "Every scored signal on one page; click a row to study it.", action: "link" },
-    ],
-  },
-  {
-    id: "trade",
-    label: "Trade",
-    pages: [
-      // §10: no Desk / Client toggle.
-      { slug: "basket-hedge", label: "Basket & Hedge", blurb: "Build a basket, see how it trades against the Nasdaq and S&P, and hedge it.", action: "send", toggle: false },
-      { slug: "position-monitor", label: "Position Monitor", title: "Position Monitor", blurb: "Your positions, and how far each is from being wrong.", action: "new", toggle: false },
-    ],
-  },
-  {
-    id: "about",
-    label: "About this build",
-    small: true,
-    pages: [
-      {
-        slug: "data-pipeline",
-        label: "Data Pipeline",
-        title: "Where every number comes from",
-        blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote; prototype cards are marked. The browser computes only from served numbers: a position's room, a basket's weights, and the VIX tile's gap against that quote.",
-        toggle: false,
-      },
-      { slug: "build-notes", label: "Build Notes", blurb: "What this Desk is, how it was checked, and what comes next.", action: "link" },
-    ],
-  },
-];
+/** The Options Finder's tab (Options Finder Build Plan step 5): its action, Price the chain, is in the page. */
+export const OPTIONS_FINDER_PAGE: DeskPage = {
+  slug: OPTIONS_FINDER_SLUG,
+  label: "Options Finder",
+  blurb: "What each listed contract would be worth if your view plays out.",
+  toggle: false,
+};
+
+/** The groups, with the Options Finder listed or not. */
+export function deskGroups(listed: boolean): DeskGroup[] {
+  return [
+    {
+      id: "market",
+      label: "Market",
+      pages: [
+        { slug: "overview", label: "Overview", blurb: "Where the market is, what fired, and what is closest to being wrong.", action: "walkthrough" },
+        { slug: "technicals", label: "Technicals", blurb: "Trend, momentum and risk for the S&P 500 or any US stock.", action: "act" },
+        { slug: "sectors", label: "Sectors", blurb: "Which sectors lead the S&P, and how broad the rally is.", action: "link" },
+        { slug: "macro", label: "Macro", title: "Macro & Correlations", blurb: "Rates, credit spreads, and whether bonds still hedge stocks.", action: "link" },
+        { slug: "regime", label: "Regime", blurb: "Where the economy sits, and which data prints would change it.", action: "link" },
+      ],
+    },
+    {
+      id: "research",
+      label: "Research",
+      pages: [
+        { slug: "event-study", label: "Event Study", blurb: "Ask what markets did after a defined shock, and get a scored answer.", action: "act" },
+        { slug: "signal-ledger", label: "Signal Ledger", blurb: "Every scored signal on one page; click a row to study it.", action: "link" },
+      ],
+    },
+    {
+      id: "trade",
+      label: "Trade",
+      pages: [
+        // §10: no Desk / Client toggle.
+        { slug: "basket-hedge", label: "Basket & Hedge", blurb: "Build a basket, see how it trades against the Nasdaq and S&P, and hedge it.", action: "send", toggle: false },
+        ...(listed ? [OPTIONS_FINDER_PAGE] : []),
+        { slug: "position-monitor", label: "Position Monitor", title: "Position Monitor", blurb: "Your positions, and how far each is from being wrong.", action: "new", toggle: false },
+      ],
+    },
+    {
+      id: "about",
+      label: "About this build",
+      small: true,
+      pages: [
+        {
+          slug: "data-pipeline",
+          label: "Data Pipeline",
+          title: "Where every number comes from",
+          blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote; prototype cards are marked. The browser computes only from served numbers: a position's room, a basket's weights, and the VIX tile's gap against that quote.",
+          toggle: false,
+        },
+        { slug: "build-notes", label: "Build Notes", blurb: "What this Desk is, how it was checked, and what comes next.", action: "link" },
+      ],
+    },
+  ];
+}
+
+export const DESK_GROUPS: DeskGroup[] = deskGroups(OPTIONS_FINDER_LISTED);
 
 export const DESK_PAGES: DeskPage[] = DESK_GROUPS.flatMap((g) => g.pages);
+
+/** Pages that open by their address but are in no group (unlisted is not private). */
+export const UNLISTED_PAGES: DeskPage[] = OPTIONS_FINDER_LISTED ? [] : [OPTIONS_FINDER_PAGE];
 
 /** Old slugs (frame-1, frame-2) and the walkthrough's short paths → the v2 tab. */
 export const DESK_ALIASES: Readonly<Record<string, string>> = {
@@ -106,7 +129,7 @@ export const DESK_ALIASES: Readonly<Record<string, string>> = {
 };
 
 export function deskPageBySlug(slug: string | undefined): DeskPage | undefined {
-  return DESK_PAGES.find((p) => p.slug === slug);
+  return DESK_PAGES.find((p) => p.slug === slug) ?? UNLISTED_PAGES.find((p) => p.slug === slug);
 }
 
 export function deskGroupOf(slug: string): DeskGroup | undefined {

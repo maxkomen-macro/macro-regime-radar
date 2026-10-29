@@ -179,6 +179,8 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
         ("/api/desk/instruments", ["GET"]),
         # desk/cap-weight (§12.18)
         ("/api/desk/basket/shares", ["GET"]),
+        # the Options Finder (design F3)
+        ("/api/desk/options/finder", ["GET"]),
     ])
     for path, _ in routes:
         route = env.route_of(re.sub(r"\{[^}]+\}", "x", path)[len(desk_v2.PREFIX):])

@@ -32,12 +32,15 @@ import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
 import type { BasketParams } from "../basket/weights";
-import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import { finderRows } from "./finder-rows";
+import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OptionsFinderParams, OptionsFinderResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 // `import.meta.env` is Vite's; the e2e specs load this module in Node through the kit (kit/ui reads DeskApiError
 // here since desk/usability §14.12), where it is undefined, so the read is guarded.
 const BASE: string = import.meta.env?.VITE_API_BASE ?? "";
 const TIMEOUT_MS = 15_000;
+/** The Options Finder prices a whole chain on request (its scan, then the lattice): it may take far longer than a stored read. */
+export const FINDER_TIMEOUT_MS = 90_000;
 /** §12.2: the moves that ask no window (a cross, an RSI crossing). */
 const NO_WINDOW: readonly string[] = ["cross_above", "cross_below", "rsi_above_70", "rsi_below_30"];
 
@@ -151,8 +154,8 @@ export function deskUrl(path: string, params?: Params): string {
 }
 
 /** The request's abort: the caller's (a query that is no longer wanted) and the timeout, whichever comes first. */
-function signal(outer?: AbortSignal): AbortSignal | undefined {
-  const timeout = typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(TIMEOUT_MS) : undefined;
+function signal(outer?: AbortSignal, ms: number = TIMEOUT_MS): AbortSignal | undefined {
+  const timeout = typeof AbortSignal !== "undefined" && "timeout" in AbortSignal ? AbortSignal.timeout(ms) : undefined;
   if (!outer) return timeout;
   if (!timeout) return outer;
   if (typeof AbortSignal.any === "function") return AbortSignal.any([outer, timeout]);
@@ -210,11 +213,11 @@ function sleep(ms: number, outer?: AbortSignal): Promise<void> {
 /** How many times a `computing` answer is asked again before the page says it did not come. */
 export const MAX_POLLS = 60;
 
-export async function deskGet<T>(path: string, params?: Params, opts: { signal?: AbortSignal } = {}): Promise<T> {
+export async function deskGet<T>(path: string, params?: Params, opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
   for (let polls = 0; ; polls++) {
     let res: Response;
     try {
-      res = await fetch(deskUrl(path, params), { headers: { Accept: "application/json" }, signal: signal(opts.signal) });
+      res = await fetch(deskUrl(path, params), { headers: { Accept: "application/json" }, signal: signal(opts.signal, opts.timeoutMs) });
     } catch (e) {
       if (opts.signal?.aborted) throw e;
       throw new DeskApiError(0, "The data service did not answer.");
@@ -316,6 +319,21 @@ export function useBasketHedge(params: BasketParams | null) {
     useQuery<BasketHedgeResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/hedge", params],
       queryFn: ({ signal: s }) => deskGet<BasketHedgeResponse>("/basket/hedge", params ?? undefined, { signal: s }),
+      staleTime: 5 * 60_000,
+      retry,
+      enabled: !!params,
+    }),
+  );
+}
+
+/** The Options Finder: one view against one end-of-day chain, priced on request; asked only for a complete view.
+ * Each answer is kept five minutes (the chain is the session's), and the longer timeout lets the scan and the
+ * lattice finish. */
+export function useOptionsFinder(params: OptionsFinderParams | null) {
+  return current(
+    useQuery<OptionsFinderResponse, DeskApiError>({
+      queryKey: ["desk-v2", "/options/finder", params],
+      queryFn: ({ signal: s }) => deskGet<OptionsFinderResponse>("/options/finder", params ?? undefined, { signal: s, timeoutMs: FINDER_TIMEOUT_MS }).then(finderRows),
       staleTime: 5 * 60_000,
       retry,
       enabled: !!params,

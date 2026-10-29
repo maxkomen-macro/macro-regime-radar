@@ -127,6 +127,14 @@ def desk_basket_shares(request: Request) -> Response:
     return _response(env.answer("/basket/shares", lambda: desk_basket.shares(list(request.query_params.multi_items()))))
 
 
+@router.get("/options/finder")
+def desk_options_finder(request: Request) -> Response:
+    """The Options Finder (design F3): a view against one end-of-day option chain, priced by method finder-2."""
+    from api import desk_options
+
+    return _response(env.answer("/options/finder", lambda: desk_options.finder(list(request.query_params.multi_items()))))
+
+
 @router.get("/basket/{basket_id}")
 def desk_basket(basket_id: str) -> Response:
     return _response(env.deferred("/basket"))

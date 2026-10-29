@@ -545,6 +545,7 @@ class OptionsExpirations(BaseModel):
     underlying: str
     provider: str
     as_of: str | None
+    session: str | None = None  # the New York session the end-of-day marks describe (Options Finder F1)
     cadence: str
     fetched_at: str
     expirations: list[str]
@@ -581,6 +582,7 @@ class OptionsChain(BaseModel):
     provider: str
     cadence: str
     as_of: str | None
+    session: str | None = None  # as on OptionsExpirations
     fetched_at: str
     expiration: str
     type: str | None

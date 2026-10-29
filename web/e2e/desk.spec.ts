@@ -33,7 +33,7 @@ function payloadOf(reply: { body: string }): Record<string, unknown> {
 }
 
 /** The v2 tabs built so far; each later tab adds itself here. */
-const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes", "basket-hedge"];
+const BUILT = ["overview", "technicals", "event-study", "regime", "macro", "sectors", "signal-ledger", "position-monitor", "data-pipeline", "build-notes", "basket-hedge", "options-finder"];
 
 /** The illustrative store (§9: positions live in the browser), set before the app loads on every navigation of this page. */
 async function seedPositions(page: Page, list: unknown[] = (positionSample as { positions: unknown[] }).positions): Promise<void> {

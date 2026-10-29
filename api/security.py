@@ -57,6 +57,7 @@ PROVIDER_PREFIX = "/api/market/"
 # so its routes share the provider calls' ceiling, never the stored-data one.
 DESK_BASKET_PATHS = {"/api/desk/basket/price", "/api/desk/basket/hedge"}
 DESK_TECHNICALS_PATH = "/api/desk/technicals"
+DESK_OPTIONS_PATH = "/api/desk/options/finder"  # the Options Finder reads EODHD options on request
 # Everything else under the API prefixes is a stored-data read: bounded by
 # the `db` ceiling so a burst sheds load as 429s instead of wedging the
 # worker pool (review P0-1).
@@ -408,8 +409,10 @@ class SecurityMiddleware:
             sem = self.expensive
         elif path in DESK_STUDY_PATHS:
             sem = self.db if self._preset_lookup(scope, path) else self.desk_study
-        elif path.startswith(PROVIDER_PREFIX) or path in DESK_BASKET_PATHS or (path == DESK_TECHNICALS_PATH and self._names_symbol(scope)):
+        elif (path.startswith(PROVIDER_PREFIX) or path in DESK_BASKET_PATHS or path == DESK_OPTIONS_PATH
+              or (path == DESK_TECHNICALS_PATH and self._names_symbol(scope))):
             # desk/books: a basket, and desk/usability item 2: Technicals for a stock, may ask EODHD, so they wait with the provider calls.
+            # The Options Finder (design F3 §7) reads its chain on request, so it waits with them too.
             sem = self.provider
         elif is_question:
             sem = self.assistant  # launch-1: a sync route needs its own ceiling

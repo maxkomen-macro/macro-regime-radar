@@ -471,6 +471,160 @@ def test_options_unentitled_and_unsupported(up):
         market.options_expirations("EURUSD")
 
 
+# ── options: the full expiry list and the session (Options Finder F1) ─────────
+
+OPT_PATH = "/api/mp/unicornbay/options/contracts"
+
+
+def _exp_row(exp, stamp="2026-10-24 04:00:00"):
+    return {"type": "options-contracts", "attributes": {"exp_date": exp, "bid_date": stamp, "ask_date": stamp, "tradetime": "2026-10-23"}}
+
+
+def _page(exps, more, stamp="2026-10-24 04:00:00"):
+    return (200, {"data": [_exp_row(e, stamp) for e in exps], "links": {"next": "https://eodhd.com/next" if more else None}})
+
+
+def _seek_client(up, monkeypatch, contracts, *, inclusive, page_limit=1000):
+    """A provider that answers exp_date_from like EODHD might: inclusive or exclusive, sorted by expiry,
+    page[limit] contracts per page, a next link while more match. `contracts` is a list of expiry dates."""
+    seen: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        frm = request.url.params["filter[exp_date_from]"]
+        limit = int(request.url.params["page[limit]"])
+        offset = int(request.url.params["page[offset]"])
+        match = sorted(e for e in contracts if (e >= frm if inclusive else e > frm))
+        page = match[offset : offset + limit]
+        more = offset + limit < len(match)
+        return httpx.Response(200, json={"data": [_exp_row(e) for e in page], "links": {"next": "https://eodhd.com/next" if more else None}}, request=request)
+
+    market.set_client_for_tests(eod.EodhdClient(TOKEN, timeout=1.0, max_retries=2, transport=httpx.MockTransport(handler)))
+    monkeypatch.setattr(market, "EXP_PAGE_LIMIT", page_limit)
+    return seen
+
+
+def test_expirations_three_pages_union_and_complete(up):
+    up.script[OPT_PATH] = [_page(["2030-11-06", "2030-11-13"], True), _page(["2030-11-13", "2030-11-20"], True), _page(["2030-12-18", "2031-12-17"], False)]
+    ex = market.options_expirations("AAPL")
+    assert ex["expirations"] == ["2030-11-06", "2030-11-13", "2030-11-20", "2030-12-18", "2031-12-17"]
+    assert ex["truncated"] is False and len(up.calls) == 3
+    # page 2 seeks from page 1's newest expiry, offset 0 (no offset carried between requests)
+    assert up.calls[1].url.params["filter[exp_date_from]"] == "2030-11-13" and up.calls[1].url.params["page[offset]"] == "0"
+    assert up.calls[2].url.params["filter[exp_date_from]"] == "2030-11-20"
+    assert ex["session"] == "2026-10-23" and ex["as_of"] == "2026-10-24 04:00:00"
+    # a second call within the hour is served from the cache
+    market.options_expirations("AAPL")
+    assert len(up.calls) == 3
+
+
+def test_expirations_ten_page_cap_reports_truncated(up, monkeypatch):
+    contracts = [f"{2030 + i // 12:04d}-{i % 12 + 1:02d}-15" for i in range(40)]
+    seen = _seek_client(up, monkeypatch, contracts, inclusive=False, page_limit=2)
+    ex = market.options_expirations("AAPL")
+    assert len(seen) == 10 and ex["truncated"] is True
+    assert ex["expirations"] == sorted(contracts)[:20]  # two new expiries a page, ten pages
+
+
+@pytest.mark.parametrize("inclusive", [True, False])
+def test_expirations_inclusive_or_exclusive_filter_gives_the_full_list(up, monkeypatch, inclusive):
+    # 3 contracts on most expiries, 5 on one: pages of 4 end mid-expiry
+    contracts = [e for e in ("2030-01-17", "2030-02-21", "2030-03-20", "2030-06-18", "2030-12-20") for _ in range(3)] + ["2031-01-16"] * 5
+    seen = _seek_client(up, monkeypatch, contracts, inclusive=inclusive, page_limit=4)
+    ex = market.options_expirations("AAPL")
+    assert ex["expirations"] == sorted(set(contracts)) and ex["truncated"] is False
+    assert all(r.url.params["page[offset]"] == "0" for r in seen) and len(seen) <= 10
+
+
+def test_expirations_no_progress_moves_the_anchor_a_day_and_remembers(up, monkeypatch):
+    # an inclusive provider with more contracts on one expiry than a page holds
+    contracts = ["2030-01-17"] * 5 + ["2030-01-18"] * 5 + ["2030-02-21"] * 2
+    seen = _seek_client(up, monkeypatch, contracts, inclusive=True, page_limit=4)
+    ex = market.options_expirations("AAPL")
+    assert ex["expirations"] == ["2030-01-17", "2030-01-18", "2030-02-21"] and ex["truncated"] is False
+    anchors = [r.url.params["filter[exp_date_from]"] for r in seen]
+    # page 1 reaches 2030-01-17 from today; page 2 makes no progress (inclusive) → D + 1 from then on;
+    # 2030-01-18 is then read only once more before the anchor moves past it
+    assert anchors[1:] == ["2030-01-17", "2030-01-18", "2030-01-19"]
+
+
+def test_expirations_short_page_with_next_continues_and_empty_page_with_next_stops(up):
+    up.script[OPT_PATH] = [_page(["2030-01-17"], True), _page(["2030-02-21"], True), _page([], True)]
+    ex = market.options_expirations("AAPL")
+    assert ex["expirations"] == ["2030-01-17", "2030-02-21"] and ex["truncated"] is True and len(up.calls) == 3
+
+
+def test_expirations_extreme_anchor_stops_truncated(up):
+    up.script[OPT_PATH] = [_page(["2030-01-17", "9999-12-31"], True)]
+    ex = market.options_expirations("AAPL")
+    assert ex["truncated"] is True and len(up.calls) == 1 and "9999-12-31" in ex["expirations"]
+
+
+def test_expirations_page_two_error_fails_uncached(up):
+    up.script[OPT_PATH] = [_page(["2030-01-17"], True), (500, "boom"), (500, "boom"), (500, "boom"), _page(["2030-01-17"], False)]
+    with pytest.raises(ProviderUnavailable):
+        market.options_expirations("AAPL")
+    n = len(up.calls)
+    ex = market.options_expirations("AAPL")  # nothing was cached: the next call asks again
+    assert len(up.calls) == n + 1 and ex["expirations"] == ["2030-01-17"]
+
+
+def test_expirations_one_page_old_fields_unchanged(up):
+    up.script[OPT_PATH] = [(200, {"meta": {"offset": 0, "limit": 1000}, "data": [_contract(230), _contract(235)], "links": {"next": None}})]
+    ex = market.options_expirations("AAPL")
+    assert len(up.calls) == 1
+    old = {k: v for k, v in ex.items() if k not in ("session", "fetched_at")}
+    assert old == {"symbol": "AAPL", "underlying": "AAPL", "provider": "eodhd", "as_of": "2026-09-04 16:00:00", "cadence": "end_of_day", "expirations": ["2026-10-16"], "truncated": False}
+    # an intraday 16:00 stamp (UTC 12:00 New York, open) names no session
+    assert ex["session"] is None
+
+
+def test_chain_carries_session_and_old_fields(up):
+    row = _contract(230)
+    row["attributes"].update(bid_date="2026-10-24 04:00:01", ask_date="2026-10-24 04:00:01")
+    up.script[OPT_PATH] = [(200, {"meta": {"total": 1}, "data": [row], "links": {"next": None}})]
+    ch = market.options_chain("AAPL", expiration="2026-10-16", type_=None, strike_from=None, strike_to=None, page=0, limit=50)
+    assert ch["session"] == "2026-10-23" and ch["as_of"] == "2026-10-24 04:00:01"
+    assert ch["contracts"][0]["last_quote"] == "2026-10-24 04:00:01" and ch["count"] == 1 and ch["has_more"] is False
+
+
+NOW = datetime(2026, 12, 1, 12, 0, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    "stamp, now, want",
+    [
+        ("2026-10-24 04:00:00", NOW, "2026-10-23"),  # Saturday overnight → Friday
+        ("2026-10-23 04:00", NOW, "2026-10-22"),  # Friday overnight → Thursday
+        ("2026-10-23T04:00:01", NOW, "2026-10-22"),  # "T" form
+        ("2026-10-23 15:00:00", NOW, None),  # intraday under both readings
+        ("2026-10-22 18:00:00", NOW, None),  # 14:00 New York: open
+        ("2026-09-08 04:00:00", NOW, "2026-09-04"),  # the Tuesday after Labor Day → the Friday before
+        ("2026-11-28 04:00:00", NOW, "2026-11-27"),  # after the Black Friday early close
+        ("2026-11-27 18:30:00", NOW, "2026-11-27"),  # 13:30 New York as UTC, 18:30 as New York: both past the 13:00 close
+        ("2026-10-24 04:00:00", datetime(2026, 10, 24, 5, 0, tzinfo=timezone.utc), "2026-10-23"),  # NY reading still ahead of now
+        ("2026-10-26 12:00:00", NOW, None),  # overnight as UTC, intraday as New York: the readings disagree
+        ("2099-01-01 04:00:00", NOW, None),  # future
+        ("2028-03-04 04:00:00", datetime(2029, 1, 1, tzinfo=timezone.utc), None),  # outside the holiday table
+        ("0001-01-01 04:00:00", NOW, None),
+        ("9999-12-31 04:00:00", NOW, None),
+        ("", NOW, None),
+        (None, NOW, None),
+        ("garbage", NOW, None),
+    ],
+)
+def test_eod_session_cases(stamp, now, want):
+    assert market.eod_session(stamp, now) == want
+
+
+def test_chain_session_skips_future_stamps_and_reads_the_newest():
+    rows = [{"bid_date": "2099-01-01 04:00:00", "ask_date": None}, {"bid_date": "2026-10-24 04:00:00", "ask_date": "2026-10-23 04:00:00"}, {"bid_date": "bad"}]
+    assert market.chain_session(rows, NOW) == "2026-10-23"
+    # an intraday newest stamp names no session, even with an overnight one behind it
+    assert market.chain_session([{"bid_date": "2026-10-23 04:00:00"}, {"ask_date": "2026-10-23 15:00:00"}], NOW) is None
+    assert market.chain_session([], NOW) is None and market.chain_session([{"bid_date": None}], NOW) is None
+
+
 # ── ticks ───────────────────────────────────────────────────────────────────
 
 

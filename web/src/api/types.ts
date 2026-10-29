@@ -804,6 +804,8 @@ export interface OptionsExpirations {
   underlying: string;
   provider: Provider;
   as_of: string | null;
+  /** The New York session the end-of-day marks describe (Options Finder F1); absent on an older API. */
+  session?: string | null;
   cadence: "end_of_day";
   fetched_at: string;
   expirations: string[];
@@ -840,6 +842,8 @@ export interface OptionsChain {
   provider: Provider;
   cadence: "end_of_day";
   as_of: string | null;
+  /** As on OptionsExpirations. */
+  session?: string | null;
   fetched_at: string;
   expiration: string;
   type: string | null;
