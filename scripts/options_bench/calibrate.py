@@ -153,9 +153,41 @@ def row(r: dict, est: str, sched: str, f: float, fd: float = 2.0) -> dict:
     return x["price"] | {k: v for k, v in d.items() if k != "units"} | {"units": d["units"]}
 
 
+CAL_SEED = 20261026   # development data: the stored run's seed
+
+
+def cal_manifest(refs: Path) -> dict:
+    """What a calibration result depends on: the reference run (seed, sizes, completeness, its bench) and the
+    SHA-256 of every engine and bench file. Resuming or selecting under anything else is refused (Codex S-3)."""
+    recs, mans = phase2.read_refs(refs)
+    pop = phase2.refs_population(recs, mans)
+    return {"refs": str(refs.resolve()), "seed": pop.get("seed"), "per_group": pop.get("per_group"),
+            "named": pop.get("named"),
+            "refs_complete": pop["complete"], "refs_why": pop.get("why"),
+            "refs_bench_files_sha256": mans[0].get("bench_files_sha256"), "files_sha256": phase2.file_hashes()}
+
+
+def check_manifest(out: Path, refs: Path) -> dict:
+    """The calibration directory's manifest, refusing a development run that is not seed 20261026 or complete,
+    and any change to the code or the references since the candidates were priced."""
+    now = cal_manifest(refs)
+    if now["seed"] != CAL_SEED or not now["refs_complete"]:
+        raise SystemExit(f"calibration needs the complete development run of seed {CAL_SEED}; got seed {now['seed']}, "
+                         f"complete {now['refs_complete']} ({now['refs_why']})")
+    path = out / "manifest.json"
+    if path.exists():
+        prior = json.loads(path.read_text())
+        diff = [k for k in now if prior.get(k) != now[k]]
+        if diff:
+            raise SystemExit(f"{out} was priced with other code or references ({', '.join(diff)}): use a new --out")
+    return now
+
+
 def price_all(refs: Path, out: Path, workers: int) -> None:
     recs, _ = phase2.read_refs(refs)
     out.mkdir(parents=True, exist_ok=True)
+    man = check_manifest(out, refs)
+    (out / "manifest.json").write_text(json.dumps(man, indent=2))
     path = out / "candidates.jsonl"
     done = set()
     if path.exists():
@@ -289,6 +321,12 @@ def coverage(recs: list[dict], sel: tuple) -> dict:
 
 def select(cal_dir: Path) -> dict:
     recs, truncated = score.read_results(cal_dir / "candidates.jsonl")
+    man = json.loads((cal_dir / "manifest.json").read_text())
+    want = {c.id for c in cases.suite(man["seed"], man["per_group"], named=man["named"])}
+    got = [r["case"]["id"] for r in recs]
+    if set(got) != want or len(got) != len(set(got)):
+        raise SystemExit(f"the candidate file is not the development run's population ({len(set(got))} of {len(want)} "
+                         f"cases, {len(got) - len(set(got))} duplicates): finish pricing first")
     errors = [r["case"]["id"] for r in recs if "error" in r]
     good = [r for r in recs if "error" not in r]
     in_dom = [r for r in good if r["case"]["group"] in cases.IN_DOMAIN_GROUPS]
@@ -363,7 +401,8 @@ def freeze_doc(report: dict, cal_dir: Path) -> dict:
                                                              "delta_per_group": TARGET_DELTA},
                    "sd": SIZE_SD, "min": SIZE_MIN, "step": SIZE_STEP, "max": SIZE_MAX, "rates": report["rates"],
                    "cannot_be_sized": sz["cannot_be_sized"]},
-        "calibration": {"seed": 20261026, "selection_report_sha256": phase2.sha(cal_dir / "selection.json"),
+        "calibration": {"seed": CAL_SEED, "manifest_sha256": phase2.sha(cal_dir / "manifest.json"),
+                        "selection_report_sha256": phase2.sha(cal_dir / "selection.json"),
                         "candidates_sha256": phase2.sha(cal_dir / "candidates.jsonl"), "selected": sel},
         "files_sha256": phase2.file_hashes(),
     }
@@ -381,6 +420,7 @@ def main(argv=None) -> int:
     if not args.select:
         price_all(Path(args.refs), out, args.workers)
         return 0
+    check_manifest(out, Path(args.refs))   # the same code and references as when the candidates were priced
     report = select(out)
     (out / "selection.json").write_text(json.dumps(report, indent=2))
     if report["selected"] is None:

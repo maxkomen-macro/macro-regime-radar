@@ -141,10 +141,51 @@ def test_runner_refuses_a_changed_file_and_a_reference_run_that_is_not_the_held_
     refs = tmp_path / "refs"
     refs.mkdir()
     (refs / "results-0of1.jsonl").write_text(json.dumps(stored("G1-nodiv/0")) + "\n")
-    (refs / "manifest-0of1.json").write_text(json.dumps({"seed": 20261026, "per_group": {}, "finished_utc": "x"}))
+    (refs / "manifest-0of1.json").write_text(json.dumps(manifest(20261026, {"G1-nodiv": 1})))
     p = freeze_now(tmp_path)
     with pytest.raises(SystemExit, match="held-out run"):
         phase2.main(["--refs", str(refs), "--freeze", str(p), "--out", str(tmp_path / "o"), "--held-out"])
+
+
+def manifest(seed, per_group, shard="0/1", finished=True):
+    full = {g: 0 for g in cases.GROUPS} | per_group
+    return {"seed": seed, "per_group": full, "named": False, "shard": shard} | ({"finished_utc": "x"} if finished else {})
+
+
+def test_the_reference_population_is_the_regenerated_case_list_not_the_records_received():
+    rec = stored("G1-nodiv/0")
+    pop = phase2.refs_population([rec], [manifest(20261026, {"G1-nodiv": 1})])
+    assert pop["complete"] and pop["expected_ids"] == ["G1-nodiv/0"]
+    # S-2: 2,400 cases frozen, one received, only shard 0/2 present
+    pop = phase2.refs_population([rec], [manifest(20261026, {"G1-nodiv": 2400}, shard="0/2")])
+    assert not pop["complete"] and pop["missing"] == 2399 and pop["missing_shards"] == ["1/2"]
+    pop = phase2.refs_population([rec, rec], [manifest(20261026, {"G1-nodiv": 1})])
+    assert not pop["complete"] and pop["duplicates"] == 1
+    assert not phase2.refs_population([rec], [manifest(20261026, {"G1-nodiv": 1}, finished=False)])["complete"]
+    fz = {"held_out": {"seed": 20261026, "per_group": manifest(1, {"G1-nodiv": 1})["per_group"], "named": False}}
+    assert phase2.held_out_mismatch(phase2.refs_population([rec], [manifest(20261026, {"G1-nodiv": 1})]), fz) is None
+    assert "incomplete" in phase2.held_out_mismatch(
+        phase2.refs_population([rec], [manifest(20261026, {"G1-nodiv": 2400}, shard="0/2")]), fz)
+
+
+def test_calibration_refuses_other_seeds_and_code_changed_since_pricing(tmp_path, monkeypatch):
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    rec = stored("G1-nodiv/0")
+    (refs / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    (refs / "manifest-0of1.json").write_text(json.dumps(manifest(7, {"G1-nodiv": 1})))
+    with pytest.raises(SystemExit, match="seed 20261026"):
+        calibrate.check_manifest(tmp_path / "cal", refs)
+    (refs / "manifest-0of1.json").write_text(json.dumps(manifest(20261026, {"G1-nodiv": 1})))
+    out = tmp_path / "cal"
+    out.mkdir()
+    man = calibrate.check_manifest(out, refs)
+    (out / "manifest.json").write_text(json.dumps(man))
+    assert calibrate.check_manifest(out, refs) == man
+    changed = dict(man["files_sha256"], **{"src/desk/options_adaptive.py": "0" * 64})
+    monkeypatch.setattr(phase2, "file_hashes", lambda: changed)
+    with pytest.raises(SystemExit, match="other code or references"):
+        calibrate.check_manifest(out, refs)
 
 
 def test_work_prices_tier2_checks_tier1_and_repeats_bit_for_bit():
