@@ -123,6 +123,12 @@ def work(rec: dict) -> dict:
                     pr["price_units"] = t.get("price_units")
                     pr["proved_exceedance"] = bool(t.get("proved_exceedance"))
                     pr["inconsistent"] = bool(t.get("interval_inconsistent"))
+                    # an estimate band wholly outside [L, U], or an accepted value outside it, fails the phase
+                    # (amendment A-1), so it fails a candidate too; refusals are kept for the report
+                    pr["disjoint_price"] = any(d["for"] == "price" for d in t.get("disjoint") or [])
+                    pr["outside"] = (t["value"] is not None and t.get("L") is not None
+                                     and not t["L"] <= t["value"] <= t["U"])
+                    pr["refusals"] = [[d["dist"] / d["tol"], d["side"]] for d in t.get("refusals") or []]
                     if t["value"] is not None and t["estimate"] is not None:
                         pr["pv"] = _v(adaptive.judge(t["value"], t["estimate"], r0v, r1 and r1["value"]))
                     if t["value"] is not None:
@@ -132,6 +138,7 @@ def work(rec: dict) -> dict:
                         td = runs[key(est, sched, f, fd)]
                         same &= all(td.get(x) == t.get(x) for x in ("route", "price_status", "value", "estimate", "E"))
                         dr = {x: td.get(x) for x in DELTA_KEEP}
+                        dr["disjoint_delta"] = any(d["for"] == "delta" for d in td.get("disjoint") or [])
                         if td["delta"] is not None and td["delta_estimate"] is not None:
                             dr["dv"] = _v(adaptive.judge(td["delta"], td["delta_estimate"], r0d, r1 and r1["delta"]))
                         if td["delta"] is not None:
@@ -228,7 +235,8 @@ def _price_check(rows: list[tuple[str, dict]], f: float) -> dict:
     """Exceedances and the needed factor for one candidate's accepted lattice prices (all in-domain groups)."""
     bad, needed, n = [], [], 0
     for cid, r in rows:
-        if r.get("proved_exceedance") or r.get("inconsistent"):   # found without a reference: a failure too
+        # found without a reference: a failure too
+        if r.get("proved_exceedance") or r.get("inconsistent") or r.get("disjoint_price") or r.get("outside"):
             bad.append(cid)
         if r["route"] != oe.ROUTE_LATTICE or r["price_status"] != oe.ESTIMATED or "pv" not in r:
             continue
@@ -247,6 +255,8 @@ def _price_check(rows: list[tuple[str, dict]], f: float) -> dict:
 def _delta_check(rows: list[tuple[str, dict]], fd: float) -> dict:
     bad, needed, n = [], [], 0
     for cid, r in rows:
+        if r.get("disjoint_delta"):   # a price band on a level run for the delta, wholly outside [L, U]
+            bad.append(cid)
         if r["delta_status"] != oe.SERVED or "dv" not in r:
             continue
         v = r["dv"]
@@ -317,6 +327,30 @@ def sizes(rates: dict) -> dict:
     return {"per_group": out, "cannot_be_sized": {}}
 
 
+def refusals(recs: list[dict], sel: tuple) -> dict:
+    """The selected candidate's interval refusals by group and maturity band (amendment A-1: frequency and
+    magnitude, reported, never passes). Below L they are numerical undershoots; the cause is not established."""
+    out: dict = {}
+    for r in recs:
+        g = r["case"]["group"]
+        if g not in cases.IN_DOMAIN_GROUPS:
+            continue
+        t = row(r, *sel)
+        k = f"{g} {band(r['case']['days'])}"
+        x = out.setdefault(k, {"cases": 0, "with_refusal": 0, "events": 0, "below_L": 0, "above_U": 0,
+                               "dist_tol_max": None, "final_refused": 0})
+        x["cases"] += 1
+        ev = t.get("refusals") or []
+        x["with_refusal"] += bool(ev)
+        x["events"] += len(ev)
+        x["below_L"] += sum(side == "below L" for _, side in ev)
+        x["above_U"] += sum(side == "above U" for _, side in ev)
+        if ev:
+            x["dist_tol_max"] = max(x["dist_tol_max"] or 0.0, max(d for d, _ in ev))
+        x["final_refused"] += t.get("reason") in (oa.OUTSIDE_INTERVAL, oa.CONTRADICTED)
+    return out
+
+
 def coverage(recs: list[dict], sel: tuple) -> dict:
     out = {}
     for g in cases.IN_DOMAIN_GROUPS:
@@ -379,6 +413,7 @@ def select(cal_dir: Path) -> dict:
     report["selected"] = {"key": k, "estimator": est, "schedule": sched, "F": f_sel, "F_d": fd_sel,
                           "ranking": [p[3] for p in passing]}
     report["rates"] = rates
+    report["refusals"] = refusals(good, (est, sched, f_sel, fd_sel))
     report["sizes"] = sizes(rates)
     return report
 

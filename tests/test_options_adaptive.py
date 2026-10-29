@@ -137,6 +137,40 @@ def test_the_analytic_estimate_adds_the_floor_so_an_interval_end_stays_checkable
     assert oa.price(c, oa.Config(tau=0.1)).route == oe.ROUTE_LATTICE
 
 
+def test_the_analytic_estimate_leaves_the_padding_at_both_interval_ends():
+    # A at L: R-1 (immediate exercise of a deep put, A = X = L). A at U: G2-dividends/468 (A within 1e-6 of U).
+    # Either way the midpoint is h from the true value, and the stated estimate exceeds that by the recorded
+    # padding 0.1·tol(L), which is what a reference with u below the padding needs to show coverage.
+    for c in (R1, ctx(cases.case(SEED, "G2-dividends", 468))):
+        a = oa.price(c)
+        lo, hi, h, pad = a.audit["L"], a.audit["U"], a.audit["h"], a.audit["padding"]
+        assert a.route == oe.ROUTE_ANALYTIC and pad == 0.1 * om.tolerance(lo, c.spot) and a.estimate == h + pad
+        for end in (lo, hi):
+            assert abs(a.value - end) <= h * (1 + 1e-12) and abs(a.value - end) + pad <= a.estimate * (1 + 1e-12)
+    a = oa.price(R1)
+    assert abs(a.value - 10.0) == pytest.approx(a.audit["h"], rel=1e-9)   # A at L to the bit: error is h
+
+
+def test_the_analytic_route_is_taken_exactly_when_h_plus_the_padding_meets_the_target():
+    # R-1 has h = 5e-11 and padding 0.1·tol: at tau = 0.1 the target equals the padding, so h + padding misses it
+    # by h and the route is the lattice; a target 1e-6 relatively larger admits it.
+    a = oa.price(R1, oa.Config(tau=0.1))
+    assert a.audit["h"] > 0 and a.audit["h"] + a.audit["padding"] > a.audit["analytic_target"]
+    assert a.route == oe.ROUTE_LATTICE
+    a = oa.price(R1, oa.Config(tau=0.1 * (1 + 1e-6)))
+    assert a.audit["h"] + a.audit["padding"] <= a.audit["analytic_target"] and a.route == oe.ROUTE_ANALYTIC
+    # and on every case of a sample, at every target, the route follows the full estimate and nothing else
+    for c in sample("G2-dividends", 30) + sample("T1-near-boundary", 30) + [R1]:
+        for tau in (0.1, 0.25, 0.5, 1.0):
+            a = oa.price(c, oa.Config(tau=tau))
+            if "h" not in a.audit:
+                continue
+            takes = a.audit["h"] + a.audit["padding"] <= a.audit["analytic_target"]
+            assert (a.route == oe.ROUTE_ANALYTIC) == takes, (c, tau)
+            if takes:
+                assert a.estimate == a.audit["h"] + a.audit["padding"] <= tau * om.tolerance(a.audit["L"], c.spot)
+
+
 def test_named_regressions_keep_their_delta_withholding():
     b8 = ctx(next(c for c in cases.NAMED if c.id == "named/B8"))
     a = oa.price(b8)
@@ -210,8 +244,22 @@ def test_a_value_outside_the_proved_interval_is_never_clipped_or_accepted():
     hs = [6.0, 6.004, 6.005, 6.00525]
     w = oa.walk(synthetic(hs, [-0.4] * 4), PUT, 0.0, 6.0056, 7.0, oa.Config())   # B = 6.0055 just below L
     assert w.price is None and w.price_reason == oa.OUTSIDE_INTERVAL and w.proved_exceedance is None
+    assert [r["why"] for r in w.refusals] == [oa.OUTSIDE_INTERVAL] and w.refusals[0]["side"] == "below L"
+    assert 0 < w.refusals[0]["dist"] <= w.refusals[0]["Es"] and not w.disjoint   # band still meets [L, U]
     w = oa.walk(synthetic(hs, [-0.4] * 4), PUT, 0.0, 6.2, 7.0, oa.Config())      # far below: a contradiction
     assert w.price is None and w.price_reason == oa.CONTRADICTED and w.proved_exceedance["dist"] > 0.1
+    assert [r["why"] for r in w.refusals] == [oa.CONTRADICTED]
+    assert len(w.disjoint) == 1 and w.disjoint[0]["within_target"] and w.disjoint[0]["for"] == "price"
+
+
+def test_a_band_wholly_outside_the_interval_is_recorded_at_any_level():
+    # level 4's estimate is above target (not a candidate), and its band still misses [L, U]: recorded, so the
+    # phase gate sees it, though nothing was accepted or refused there
+    hs = [6.0, 6.3, 6.35, 6.36]
+    w = oa.walk(synthetic(hs, [-0.4] * 4), PUT, 0.0, 7.5, 8.0, oa.Config())
+    t = w.trace[0]
+    assert t["Es"] > t["t"] and t["dist"] > t["Es"]
+    assert w.disjoint and not w.disjoint[0]["within_target"] and not w.refusals and w.price is None
 
 
 def test_delta_has_its_own_gate():
@@ -274,11 +322,12 @@ def test_exempt_contracts_forced_through_the_lattice_match_black76_within_their_
         if om.in_domain(c) is not None:
             continue
         a = oa.price(c, forced)
-        assert a.route == oe.ROUTE_LATTICE
-        if a.price_status == oe.ESTIMATED:
+        assert a.route == oe.ROUTE_LATTICE and a.price_status != oe.ESTIMATED and not a.priced
+        if a.price_status == oe.CONTROL:   # the interval test was not applied: never an accepted answer
             n += 1
             assert abs(a.value - om.european(c)) <= a.estimate, c
-            if a.delta_status == oe.SERVED:
+            assert a.delta_status != oe.SERVED
+            if a.delta_status == oe.CONTROL:
                 assert abs(a.delta - om.european_delta(c)) <= a.delta_estimate, c
     assert n >= 15
 

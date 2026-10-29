@@ -57,9 +57,9 @@ def record(a: oe.Answer) -> dict:
     out = {"engine": a.engine, "version": a.version, "route": a.route, "price_status": a.price_status,
            "value": a.value, "estimate": a.estimate, "delta_status": a.delta_status, "delta": a.delta,
            "delta_estimate": a.delta_estimate, "reason": a.reason, "delta_reason": a.delta_reason, "units": a.units}
-    for k in ("L", "U", "h", "european", "exercise", "bound", "n0", "multipliers", "stopped", "price_units",
-              "delta_units", "price_level", "estimator", "target", "exercise_resolved", "delta_rule", "delta_level",
-              "proved_exceedance", "interval_inconsistent"):
+    for k in ("L", "U", "h", "padding", "analytic_target", "european", "exercise", "bound", "n0", "multipliers",
+              "stopped", "price_units", "delta_units", "price_level", "estimator", "target", "exercise_resolved",
+              "delta_rule", "delta_level", "proved_exceedance", "interval_inconsistent", "refusals", "disjoint"):
         if k in au:
             out[k] = au[k]
     out["levels"] = [[l["m"], l["steps"], l["h"], l["delta"], l["units"]] for l in au.get("levels", [])]

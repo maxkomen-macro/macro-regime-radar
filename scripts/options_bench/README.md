@@ -84,6 +84,14 @@ python -m scripts.options_bench.routine --out DIR                               
   seed and sizes.
 - `score2.py`: every exit-gate row, with five populations per group and maturity band, and the conditional,
   resolved-all and all-accepted limits (only the conditional one binds).
+- The proved interval [L, U]: a lattice candidate outside it is refused, never served or clipped, and the
+  audit keeps every refusal. The interval row fails on any usable Tier 2 output outside its own [L, U] (the
+  main answer, each sweep target, each dividend scenario), any estimate band wholly outside it, or an
+  inconsistent interval; refusals alone do not fail it and are reported by group and maturity band. Below L
+  they are numerical undershoots; the cause has not been established.
+- The analytic route states h + 0.1·tol(L) (the half-width and the padding are recorded apart) and is taken
+  only when that meets the target. Midpoints are unchanged where the route is kept; cases the stricter
+  eligibility sends to the lattice can change in work, status and value.
 - The design and its statistics: design P2-2 (review-loop/options-adaptive/designs/ in the project files) and
   docs/desk/OPTIONS_ADAPTIVE_PHASE2.md.
 

@@ -61,8 +61,9 @@ class Config:
     F: float = 2.0
     F_d: float = 2.0
     tau: float = 1.0                 # target = tau·tol
-    force_lattice: bool = False      # positive control only: skip the exempt and analytic routes, and accept
-                                     # without the interval test (an exempt context's interval has width ~0)
+    force_lattice: bool = False      # positive control only: skip the exempt and analytic routes and the interval
+                                     # test (an exempt context's interval has width ~0); the answer's status is
+                                     # CONTROL, never accepted or usable
 
     def __post_init__(self) -> None:
         if self.estimator not in ("envelope", "fitted"):
@@ -194,6 +195,8 @@ class Walk:
     proved_exceedance: dict | None = None
     delta: dict | None = None          # accepted: value, estimate, level, rule
     delta_reason: str | None = None
+    refusals: list | None = None       # every candidate (estimate within target) refused for the interval
+    disjoint: list | None = None       # every level whose band [V − E_s, V + E_s] misses [L, U] altogether
     levels: list | None = None
     trace: list | None = None
     price_units: int = 0
@@ -211,7 +214,7 @@ def walk(get: Callable[[int, int], "Level | str"], c: om.Context, x: float, lo: 
     Arithmetic that leaves the floating-point range while the price is undecided propagates (the caller refuses
     the context); once the price is fixed it only withholds the delta (DR-07)."""
     sgn = 1.0 if c.is_call else -1.0
-    w = Walk(levels=[], trace=[])
+    w = Walk(levels=[], trace=[], refusals=[], disjoint=[])
     st = {"need_price": analytic is None, "delta_open": True, "used": 0}
     if om.early_dividend(c):
         st["delta_open"], w.delta_reason = False, D_DIVIDEND
@@ -261,14 +264,21 @@ def _level(w: Walk, st: dict, get, c, x, lo, hi, cfg: Config, sgn: float, clear:
     k = len(w.levels) - 1
     w.trace.append({"k": k, "m": ms[-1], "H": hh, "V": v, "E": e, "Es": es, "t": t, "tol": tol, "dist": dist,
                     "estimator": how, **detail})
+    if dist > es:   # the stated band is wholly outside a proved interval: an estimator failure, whatever is served
+        w.disjoint.append({"k": k, "V": v, "Es": es, "dist": dist, "tol": tol, "within_target": es <= t,
+                           "for": "price" if st["need_price"] else "delta"})
     if st["need_price"]:
+        side = "below L" if v < lo else "above U"
         if es <= t and gap > es:
             w.proved_exceedance = {"k": k, "V": v, "Es": es, "dist": dist}
+            w.refusals.append({"k": k, "V": v, "Es": es, "dist": dist, "tol": tol, "side": side, "why": CONTRADICTED})
             w.price_reason = CONTRADICTED
             return False
         if es > t:
             w.price_reason = ABOVE_TARGET
-        elif gap > 0.0:
+        elif gap > 0.0:   # refused, never clipped; the walk refines further (Max, 2026-10-29, amendment A-1)
+            w.refusals.append({"k": k, "V": v, "Es": es, "dist": dist, "tol": tol, "side": side,
+                               "why": OUTSIDE_INTERVAL})
             w.price_reason = OUTSIDE_INTERVAL
         else:
             w.price = {"value": v, "continuation": hh, "estimate": es, "level": k, "estimator": how,
@@ -381,7 +391,8 @@ def _price(c: om.Context, cfg: Config, level_source) -> oe.Answer:
     hi = eu + b
     half = (hi - lo) / 2.0
     check(b, lo, hi, half)
-    audit.update(european=eu, exercise=x, L=lo, U=hi, h=half, bound=b)
+    # the analytic estimate is the half-width plus a padding of 0.1·tol(L), recorded apart (amendment A-1)
+    audit.update(european=eu, exercise=x, L=lo, U=hi, h=half, padding=f_lo, analytic_target=t_lo, bound=b)
     if hi < lo:
         audit["interval_inconsistent"] = True
         return _answer(oe.ROUTE_NONE, oe.UNRESOLVED, None, None, *none, INCONSISTENT, "no price", work, audit)
@@ -408,7 +419,8 @@ def _price(c: om.Context, cfg: Config, level_source) -> oe.Answer:
 
     w = walk(get, c, x, lo, hi, cfg, analytic)
     audit.update(levels=[asdict(l) for l in w.levels], trace=w.trace, stopped=w.stopped,
-                 price_units=work + w.price_units, delta_units=w.delta_units)
+                 price_units=work + w.price_units, delta_units=w.delta_units, refusals=w.refusals,
+                 disjoint=w.disjoint)
     if w.proved_exceedance:
         audit["proved_exceedance"] = w.proved_exceedance
     total = work + w.price_units + w.delta_units
@@ -427,5 +439,10 @@ def _price(c: om.Context, cfg: Config, level_source) -> oe.Answer:
                        w.price_reason, "no price", total, audit)
     audit.update(price_level=w.price["level"], estimator=w.price["estimator"], target=w.price["target"],
                  exercise_resolved=w.price["exercise_resolved"])
+    if cfg.force_lattice:   # the interval test was not applied: a control's numbers, never an accepted answer
+        audit["inside_interval"] = lo <= w.price["value"] <= hi
+        dctl = (oe.CONTROL,) + dpart[1:] if w.delta is not None else dpart
+        return _answer(oe.ROUTE_LATTICE, oe.CONTROL, w.price["value"], w.price["estimate"], *dctl, None, dreason,
+                       total, audit)
     return _answer(oe.ROUTE_LATTICE, oe.ESTIMATED, w.price["value"], w.price["estimate"], *dpart, None, dreason,
                    total, audit)

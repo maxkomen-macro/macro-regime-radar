@@ -41,6 +41,10 @@ from . import adaptive, cases, reference, score
 BENCH_DIR = Path(__file__).resolve().parent
 REPO = BENCH_DIR.parent.parent
 SWEEP = (0.5, 0.25, 0.1)   # report-only targets, as fractions of tol (decision 3; Phase 4 starts from these)
+# what a bench-only Tier 2 output (a target sweep, a dividend scenario) keeps: its answer and its own proved
+# interval, so that every output is held to the interval rows, not only the main answer (amendment A-1)
+IV_KEEP = ("route", "price_status", "value", "estimate", "units", "reason", "L", "U", "proved_exceedance",
+           "interval_inconsistent", "refusals", "disjoint")
 
 # Files whose hashes the freeze pins: the engine (Tier 1 and Tier 2) and every bench module that can change a
 # result or its scoring.
@@ -128,8 +132,7 @@ def work(job: tuple) -> dict:
         out["sweep"] = {}
         for tau in SWEEP:
             a = adaptive.run(c, dataclasses.replace(cfg, tau=tau), cache)
-            out["sweep"][str(tau)] = {"route": a["route"], "price_status": a["price_status"], "units": a["units"],
-                                      "value": a["value"], "estimate": a["estimate"], "reason": a["reason"]}
+            out["sweep"][str(tau)] = {k: a.get(k) for k in IV_KEEP}
         if opts["repeat"]:
             again = adaptive.run(c, cfg)    # from scratch: no cache, a fresh walk
             out["repeat_identical"] = again == out["tier2"]
@@ -139,9 +142,7 @@ def work(job: tuple) -> dict:
             for side, f in (("up", 1.0 + 0.10), ("down", 1.0 - 0.10)):
                 cb = dataclasses.replace(c, divs=tuple((d, a * f) for d, a in c.divs))
                 t = adaptive.run(cb, cfg)
-                out["divsens"][side] = {"tier2": {k: t[k] for k in ("route", "price_status", "value", "estimate",
-                                                                   "reason")},
-                                        "ref": _pack(ds[side]["ref"])}
+                out["divsens"][side] = {"tier2": {k: t.get(k) for k in IV_KEEP}, "ref": _pack(ds[side]["ref"])}
         for k in ("control_european", "convention"):
             if k in rec:
                 out[k] = rec[k]

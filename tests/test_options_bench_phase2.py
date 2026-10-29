@@ -253,6 +253,10 @@ def test_price_selection_needs_no_failure_and_headroom_above_the_floor():
     assert calibrate._price_check([_row(adaptive.UNSCORED, 0.0, 0.0, 1e-4)], 2.0)["pass"]
     proved = ("x", {"route": oe.ROUTE_LATTICE, "price_status": oe.UNRESOLVED, "proved_exceedance": True})
     assert not calibrate._price_check([proved], 4.0)["pass"]
+    for flag in ("disjoint_price", "outside", "inconsistent"):   # amendment A-1: each fails a candidate
+        assert not calibrate._price_check([("x", {"route": oe.ROUTE_LATTICE, "price_status": oe.UNRESOLVED,
+                                                   flag: True})], 4.0)["pass"]
+    assert not calibrate._delta_check([("x", {"delta_status": oe.WITHHELD, "disjoint_delta": True})], 4.0)["pass"]
 
 
 # ── the Phase 2 scorer ───────────────────────────────────────────────────────
@@ -275,6 +279,44 @@ def test_scorer_classifies_a_runner_record():
     assert k["price_pop"] in adaptive.POPULATIONS and k["band"] == calibrate.band(k["days"])
     broken = dict(out, price_verdict={"verdict": adaptive.STRADDLE, "needs_r1": True})
     assert score2.classify(broken)["price_pop"] == adaptive.UNSCORED   # never a pass
+
+
+def _iv_record():
+    out = phase2.work((stored("G2-dividends/3"), adaptive.config_json(oa.Config()), {"repeat": False}))
+    assert "error" not in out and out["tier2"]["value"] is not None and out["tier2"].get("L") is not None
+    return out
+
+
+def test_every_tier2_output_is_held_to_its_proved_interval():
+    out = _iv_record()
+    k = score2.classify(out)
+    assert k["outside_outputs"] == [] and k["inconsistent_outputs"] == []
+    assert all(s.get("L") is not None for s in out["sweep"].values())
+    # a bench-only output (a target in the sweep) outside its own [L, U] is a phase failure, as is the main one
+    for where, name in (("sweep", "sweep 0.5"), ("tier2", "tier2")):
+        bad = json.loads(json.dumps(out))
+        o = bad["sweep"]["0.5"] if where == "sweep" else bad["tier2"]
+        o.update(price_status=oe.ESTIMATED, value=o["U"] + 1.0)
+        rows = [score2.classify(bad)]
+        assert rows[0]["outside_outputs"] == [name]
+        assert score2.summary(rows)["interval"]["served_outside"] == 1
+
+
+def test_a_disjoint_band_fails_and_a_refusal_is_reported_not_passed():
+    out = _iv_record()
+    dis = json.loads(json.dumps(out))
+    dis["tier2"]["disjoint"] = [{"k": 3, "V": 1.0, "Es": 0.01, "dist": 0.05, "tol": 0.01, "within_target": False,
+                                 "for": "price"}]
+    s = score2.summary([score2.classify(dis)])
+    assert s["interval"]["disjoint_bands"] == 1 and s["interval"]["disjoint_within_target"] == 0
+    ref = json.loads(json.dumps(out))
+    ref["tier2"]["refusals"] = [{"k": 3, "V": 1.0, "Es": 0.01, "dist": 0.002, "tol": 0.01, "side": "below L",
+                                 "why": oa.OUTSIDE_INTERVAL}]
+    s = score2.summary([score2.classify(ref)])
+    assert s["interval"]["disjoint_bands"] == 0 and s["interval"]["served_outside"] == 0
+    u = s["undershoots"]
+    assert u["with_refusal"] == 1 and u["events"] == 1 and u["below_L"] == 1
+    assert u["dist_tol_max"] == pytest.approx(0.2)
 
 
 def test_r1_regression_row():

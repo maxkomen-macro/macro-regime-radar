@@ -29,6 +29,7 @@ ESTIMATED = "estimated, cross-check pending"   # Tier 2 lattice: a per-contract 
 UNRESOLVED = "unresolved"            # the engine ran and could not state a value it stands behind
 OUTSIDE = "outside the domain"       # a named reason the context is not priced
 INPUT = "input failure"              # the inputs describe no valid context
+CONTROL = "positive control"         # Tier 2 forced through the lattice without the interval test: never served
 
 # Delta statuses.
 SERVED = "served"

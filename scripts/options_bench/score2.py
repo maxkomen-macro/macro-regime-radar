@@ -65,6 +65,7 @@ def classify(rec: dict) -> dict:
                r0_value=rec["r0"]["value"]["status"] == "reliable", r0_delta=rec["r0"]["delta"]["status"] == "reliable",
                r1="r1" in rec, proved_exceedance=bool(t.get("proved_exceedance")),
                interval_inconsistent=bool(t.get("interval_inconsistent")))
+    out.update(interval_facts(rec))
     priced = t["value"] is not None
     out["priced"] = priced
     if priced:
@@ -113,6 +114,41 @@ def classify(rec: dict) -> dict:
     return out
 
 
+def interval_facts(rec: dict) -> dict:
+    """The proved-interval facts of every Tier 2 output in one record: the main answer, each target in the sweep
+    and each dividend scenario (bench-only outputs are held to the same rows, amendment A-1). A usable value
+    outside its own [L, U], a band wholly outside it, or an inconsistent interval fails the phase; a refusal does
+    not, and is reported (below L: a numerical undershoot, its cause not established)."""
+    outs = [("tier2", rec["tier2"])] + [(f"sweep {k}", v) for k, v in (rec.get("sweep") or {}).items()] + \
+           [(f"divsens {k}", v["tier2"]) for k, v in (rec.get("divsens") or {}).items()]
+    outside, disjoint, inconsistent, refusals = [], [], [], []
+    for name, o in outs:
+        if o.get("price_status") in PRICED and o.get("value") is not None and o.get("L") is not None \
+                and not o["L"] <= o["value"] <= o["U"]:
+            outside.append(name)
+        if o.get("interval_inconsistent"):
+            inconsistent.append(name)
+        disjoint += [{"output": name, "dist_tol": d["dist"] / d["tol"], "Es_tol": d["Es"] / d["tol"],
+                      "within_target": d["within_target"], "for": d["for"]} for d in o.get("disjoint") or []]
+        refusals += [{"output": name, "dist_tol": d["dist"] / d["tol"], "side": d["side"], "why": d["why"]}
+                     for d in o.get("refusals") or []]
+    return {"outside_outputs": outside, "disjoint": disjoint, "inconsistent_outputs": inconsistent,
+            "interval_refusals": refusals}
+
+
+def undershoots(rows: list[dict]) -> dict:
+    """Interval refusals of the main answer: how often and by how much (in tol), by side. Not passes."""
+    ev = [x for r in rows for x in r.get("interval_refusals", []) if x["output"] == "tier2"]
+    mags = [x["dist_tol"] for x in ev]
+    n = len(rows)
+    with_ref = sum(any(x["output"] == "tier2" for x in r.get("interval_refusals", [])) for r in rows)
+    return {"cases": n, "with_refusal": with_ref, "share": with_ref / n if n else None, "events": len(ev),
+            "below_L": sum(x["side"] == "below L" for x in ev), "above_U": sum(x["side"] == "above U" for x in ev),
+            "final_refused": sum(r.get("reason") in (oa.OUTSIDE_INTERVAL, oa.CONTRADICTED) for r in rows),
+            "dist_tol_p50": _q(mags, 0.5), "dist_tol_max": max(mags) if mags else None,
+            "bench_only_events": sum(x["output"] != "tier2" for r in rows for x in r.get("interval_refusals", []))}
+
+
 # ── groups ───────────────────────────────────────────────────────────────────
 
 def populations(rows: list[dict], field: str) -> dict:
@@ -149,10 +185,16 @@ def summary(rows: list[dict]) -> dict:
                      "accuracy": dict(Counter(r.get("price_accuracy") for r in ana))} | populations(ana, "price_pop")
     ex = [r for r in ok if r["route"] == oe.ROUTE_EXEMPT]
     s["exempt"] = {"cases": len(ex), "accuracy": dict(Counter(r.get("price_accuracy") for r in ex))}
-    s["interval"] = {"served_outside": sum(r.get("inside_interval") is False for r in lat),
+    s["interval"] = {"served_outside": sum(bool(r["outside_outputs"]) for r in ok),
+                     "outside_outputs": dict(Counter(n.split(" ")[0] for r in ok for n in r["outside_outputs"])),
+                     "disjoint_bands": sum(bool(r["disjoint"]) for r in ok),
+                     "disjoint_within_target": sum(any(d["within_target"] for d in r["disjoint"]) for r in ok),
+                     "disjoint_on_delta_levels": sum(any(d["for"] == "delta" for d in r["disjoint"]) for r in ok),
+                     "disjoint_dist_tol_max": max((d["dist_tol"] for r in ok for d in r["disjoint"]), default=None),
                      "proved_exceedances": sum(r["proved_exceedance"] for r in ok),
-                     "inconsistent": sum(r["interval_inconsistent"] for r in ok),
-                     "refused_outside": sum(r["reason"] == oa.OUTSIDE_INTERVAL for r in ok)}
+                     "inconsistent": sum(bool(r["inconsistent_outputs"]) for r in ok),
+                     "refused_outside": sum(r["reason"] in (oa.OUTSIDE_INTERVAL, oa.CONTRADICTED) for r in ok)}
+    s["undershoots"] = undershoots(ok)
     dl = [r for r in ok if r["delta_status"] == oe.SERVED and r.get("delta_has_estimate")]
     s["delta"] = populations(dl, "delta_pop")
     s["delta_estimator_scored"] = s["delta"]["scored"]
@@ -274,10 +316,14 @@ def gate(groups: dict, rows: list[dict], integrity: dict, named: dict) -> dict:
     comps["analytic"]["verdict"] = _verdict(a_out > 0 or a_pop[adaptive.CONFIRMED] > 0 or a_fail > 0,
                                             a_pop[adaptive.UNRESOLVED] > 0, comps["analytic"]["cases"] == 0)
 
-    iv = {k: tot(lambda x, k=k: x["interval"][k]) for k in ("served_outside", "proved_exceedances", "inconsistent",
-                                                           "refused_outside")}
-    comps["interval"] = iv | {"verdict": _verdict(iv["served_outside"] + iv["proved_exceedances"] + iv["inconsistent"] > 0,
-                                                  False, not ok)}
+    iv = {k: tot(lambda x, k=k: x["interval"][k]) for k in ("served_outside", "disjoint_bands",
+                                                           "disjoint_within_target", "disjoint_on_delta_levels",
+                                                           "proved_exceedances", "inconsistent", "refused_outside")}
+    # amendment A-1: any usable output outside [L, U] (bench-only outputs included), any band wholly outside it,
+    # or an inconsistent interval fails the row; refusals alone do not, and are reported apart
+    comps["interval"] = iv | {"verdict": _verdict(iv["served_outside"] + iv["disjoint_bands"] + iv["proved_exceedances"]
+                                                  + iv["inconsistent"] > 0, False, not ok),
+                              "refusals": {g: x["undershoots"] for g, x in groups.items()}}
 
     d_fail = tot(lambda x: x["delta_accuracy"].get("fail", 0))
     d_ind = tot(lambda x: x["delta_accuracy"].get("indeterminate", 0))
@@ -324,7 +370,7 @@ def gate(groups: dict, rows: list[dict], integrity: dict, named: dict) -> dict:
 NAMES = {"tier1": "Tier 1 unchanged", "samples": "Sample counts", "price_accuracy": "Tier 2 price accuracy",
          "estimator_coverage_price": "Estimator coverage, price (area 6)",
          "estimator_coverage_delta": "Estimator coverage, delta (area 6)", "analytic": "Analytic route",
-         "interval": "Proved interval (lattice)", "delta": "Displayed delta (area 4)",
+         "interval": "Proved interval (every Tier 2 output)", "delta": "Displayed delta (area 4)",
          "divsens": "Dividend scenario (area 5)", "references": "Reference reliability (area 1)",
          "named": "Named regressions", "run": "Determinism and run integrity", "work": "Work, per context"}
 
@@ -452,6 +498,15 @@ def markdown(sc: dict) -> str:
         ref = ", ".join(f"{k}: {v}" for k, v in sorted(x["refusals"].items(), key=lambda kv: -kv[1])[:3])
         L.append(f"| {name} | {x['cases']} | {_f(x['coverage'])} | {x['label']} | {_f(x['work']['p50'])} | "
                  f"{_f(x['work']['p95'])} | {_f(x['work']['max'])} | {ref} |")
+    L += ["", "## Interval refusals by group and maturity band (report only; refusals are not passes)", "",
+          "Candidates outside the proved interval are refused, never served or clipped. Below L they are numerical "
+          "undershoots; their cause has not been established as roundoff.", "",
+          "| Group, band | Cases | With a refusal | Share | Refusals | Below L | Above U | Finally refused | "
+          "Distance p50 (tol) | max (tol) |", "|---|---|---|---|---|---|---|---|---|---|"]
+    for name, x in sc["bands"].items():
+        u = x["undershoots"]
+        L.append(f"| {name} | {u['cases']} | {u['with_refusal']} | {_f(u['share'])} | {u['events']} | {u['below_L']} | "
+                 f"{u['above_U']} | {u['final_refused']} | {_f(u['dist_tol_p50'])} | {_f(u['dist_tol_max'])} |")
     L += ["", "## Targets below tol (report only)", "", "| Group | τ = 1 | 0.5 | 0.25 | 0.1 |", "|---|---|---|---|---|"]
     for name, x in sc["groups"].items():
         L.append(f"| {name} | " + " | ".join(_f(x["sweep"][t]["coverage"]) for t in ("1", "0.5", "0.25", "0.1")) + " |")
