@@ -24,7 +24,7 @@ from src.desk import options_math as om
 # Price statuses.
 EXACT = "exact"                      # intrinsic at expiry, or the European value of an exempt context (theorem)
 OBSERVED = "observed accuracy"       # Tier 1: within the suite's observed worst error; no per-contract figure
-ANALYTIC = "analytic bound"          # Tier 2: the midpoint of a proved interval, half-width as the estimate
+ANALYTIC = "analytic bound"          # Tier 2: the midpoint of a proved interval; estimate half-width + 0.1·tol
 ESTIMATED = "estimated, cross-check pending"   # Tier 2 lattice: a per-contract estimate, no Phase 3 check yet
 UNRESOLVED = "unresolved"            # the engine ran and could not state a value it stands behind
 OUTSIDE = "outside the domain"       # a named reason the context is not priced
