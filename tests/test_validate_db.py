@@ -1480,3 +1480,59 @@ def test_codex_r05_a_count_dated_after_today_is_never_read_as_current(tmp_path):
     assert fresh["share_counts_as_of"] is None and fresh["share_counts_rows"] == 3
     st = state(fresh)
     assert st["state"] == "unknown" and st["as_of"] is None and st["reason"] == v.freshness_mod.SHARE_COUNTS_NONE_READABLE
+
+
+# ── Options Finder earnings cache: the encrypted vault's digest publishes a full run (design EC 4.1) ──
+
+def _with_vault(path: Path, vault: dict, secret: str = "vault-TESTONLY-5c", when=NOW) -> Path:
+    from src.events import earnings_store as store
+    conn = sqlite3.connect(path)
+    store.write_vault(conn, vault, secret, when)
+    conn.close()
+    return path
+
+
+def _vault(rows: int = 1) -> dict:
+    entry = {"run": "2026-09-05T10:00:00Z", "at": "2026-09-05T10:00:00Z", "status": "passing", "complete": True,
+             "rows": [["ZQAA1", "amc", 2026, 3, False]] * rows}
+    return {"format": 1, "runs": [], "days": {"2026-09-20": [entry]}, "occ": {}}
+
+
+def test_a_full_refresh_whose_only_change_is_new_cache_observations_publishes(tmp_path):
+    """Two snapshots identical but for the vault's observations: the digest changed, so a full refresh
+    uploads; a write that changes only the bookkeeping (the runs list, the ciphertext, updated_at) does not."""
+    prev = _with_vault(_make_path(tmp_path, "prev.db"), _vault(1))
+    cur = _with_vault(_make_path(tmp_path, "cur.db"), _vault(2))
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert "earnings_cache_vault" in rep["changed_tables"] and rep["upload"] is True
+    skip = _vault(1)
+    skip["runs"].append({"id": "2026-09-05T15:00:00Z", "status": "skipped", "reason": "US trading hours"})
+    same = v.validate(_with_vault(_make_path(tmp_path, "same.db"), skip, when=NOW.replace(hour=23)), prev, "full", now=NOW)
+    assert same["verdict"] == "pass", same["failures"]
+    assert "earnings_cache_vault" not in same["changed_tables"] and same["upload"] is False
+
+
+def test_the_vault_only_counts_as_a_change_in_full_mode_and_a_first_vault_publishes(tmp_path):
+    prev = _make_path(tmp_path, "prev.db")
+    cur = _with_vault(_make_path(tmp_path, "cur.db"), _vault(1))
+    assert v.validate(cur, prev, "full", now=NOW)["upload"] is True
+    assert "earnings_cache_vault" in v.MODE_TABLES["full"]
+    assert all("earnings_cache_vault" not in ts for m, ts in v.MODE_TABLES.items() if m != "full")
+
+
+def test_a_vault_table_that_cannot_be_read_only_warns(tmp_path):
+    """A vault of another layout: the fingerprint that cannot run is a warning; the database still validates
+    and publishes on its other changes."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+    conn = sqlite3.connect(cur)
+    conn.execute("CREATE TABLE earnings_cache_vault (id INTEGER PRIMARY KEY, blob BLOB)")
+    conn.execute("INSERT INTO earnings_cache_vault VALUES (1, X'00')")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert not rep["corruption"]["not_executed"]
+    assert any(w.startswith("advisory check not run: earnings_cache_vault fingerprint") for w in rep["warnings"])
