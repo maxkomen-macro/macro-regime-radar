@@ -348,15 +348,21 @@ def score_dirs(dirs: list[Path]) -> dict:
             raise SystemExit("shards from different runs: score them separately")
     freeze = json.loads(Path(first["freeze"]).read_text())
     ids = [r["case"]["id"] for r in recs]
-    refs, _ = phase2.read_refs(Path(first["refs"]))
-    expected = {r["case"]["id"] for r in refs}
+    refs, ref_mans = phase2.read_refs(Path(first["refs"]))
+    pop = phase2.refs_population(refs, ref_mans)
+    # the population is the reference run's regenerated case list (its seed, sizes and named cases), and for a
+    # held-out run that must be the freeze's; received records are never the denominator (Codex S-2)
+    expected = set(pop.get("expected_ids", []))
+    ho_why = phase2.held_out_mismatch(pop, freeze) if first["held_out"] else None
     n_shard = int(first["shard"].split("/")[1])
     integrity = {"hashes_match_freeze": phase2.sha(Path(first["freeze"])) == first["freeze_sha256"]
                  and all(m["files_sha256"] == freeze["files_sha256"] for m in mans) and not phase2.check_freeze(freeze),
-                 "complete": set(ids) == expected and len(ids) == len(set(ids)) and all(m.get("finished_utc") for m in mans)
-                 and len({m["shard"] for m in mans}) == n_shard,
+                 "refs_complete": pop["complete"], "refs_why": pop.get("why"), "held_out_mismatch": ho_why,
+                 "complete": bool(pop["complete"] and ho_why is None and set(ids) == expected
+                                  and len(ids) == len(set(ids)) and all(m.get("finished_utc") for m in mans)
+                                  and len({m["shard"] for m in mans}) == n_shard),
                  "expected": len(expected), "received": len(ids), "duplicates": len(ids) - len(set(ids)),
-                 "golden": golden_check(), "held_out": first["held_out"]}
+                 "missing": len(expected - set(ids)), "golden": golden_check(), "held_out": first["held_out"]}
     rows = [classify(r) for r in recs]
     by = defaultdict(list)
     for r in rows:

@@ -168,6 +168,38 @@ def read_refs(run_dir: Path) -> tuple[list[dict], list[dict]]:
     return recs, mans
 
 
+def refs_population(recs: list[dict], mans: list[dict]) -> dict:
+    """The reference run's own case list, regenerated from its manifests (seed, sizes, named), against the
+    records received: every shard compatible and present, every case there once and finished. Missing cases are
+    never silently dropped from both sides of a count (Codex S-2)."""
+    try:
+        score.check_compatible(mans)
+        ids = [r["case"]["id"] for r in recs]
+        comp = score.completeness(mans, set(ids))
+    except ValueError as e:
+        return {"complete": False, "why": str(e)}
+    comp["duplicates"] = len(ids) - len(set(ids))
+    comp["unfinished_shards"] = sorted(m["shard"] for m in mans if not m.get("finished_utc"))
+    comp["complete"] = bool(comp["complete"] and not comp["missing_shards"] and not comp["duplicates"]
+                            and not comp["unfinished_shards"])
+    first = mans[0]
+    comp["seed"], comp["per_group"], comp["named"] = first["seed"], first["per_group"], first["named"]
+    comp["expected_ids"] = sorted(c.id for c in cases.suite(first["seed"], first["per_group"], named=first["named"]))
+    return comp
+
+
+def held_out_mismatch(pop: dict, freeze: dict) -> str | None:
+    """Why a reference run is not the freeze's held-out population, or None."""
+    ho = freeze["held_out"]
+    if not pop["complete"]:
+        return "the reference run is incomplete: " + json.dumps({k: pop.get(k) for k in (
+            "why", "missing", "missing_shards", "duplicates", "unfinished_shards")})
+    if pop["seed"] != ho["seed"] or pop["per_group"] != ho["per_group"] or pop["named"] != ho.get("named", True):
+        return (f"the reference run is seed {pop['seed']} with sizes {pop['per_group']}; the freeze's held-out run "
+                f"is seed {ho['seed']} with sizes {ho['per_group']}")
+    return None
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--refs", required=True, help="a finished run.py directory (its R0 and baseline answers)")
@@ -184,15 +216,11 @@ def main(argv=None) -> int:
         raise SystemExit("files differ from the freeze: " + ", ".join(bad))
     cfg = config_from(freeze)
     recs, mans = read_refs(Path(args.refs))
-    seeds = {m["seed"] for m in mans}
+    pop = refs_population(recs, mans)
     if args.held_out:
-        ho = freeze["held_out"]
-        sizes = [m["per_group"] for m in mans]
-        if seeds != {ho["seed"]} or any(s != ho["per_group"] for s in sizes):
-            raise SystemExit(f"the reference run is seed {sorted(seeds)} with sizes {sizes}; the freeze's held-out run "
-                             f"is seed {ho['seed']} with sizes {ho['per_group']}")
-        if not all(m.get("finished_utc") for m in mans):
-            raise SystemExit("the held-out reference run has an unfinished shard")
+        why = held_out_mismatch(pop, freeze)
+        if why:
+            raise SystemExit(why)
     i_shard, n_shard = (int(x) for x in args.shard.split("/"))
     recs = sorted(recs, key=lambda r: r["case"]["id"])
     mine = [r for k, r in enumerate(recs) if k % n_shard == i_shard]
@@ -211,6 +239,8 @@ def main(argv=None) -> int:
            "files_sha256": file_hashes(), "refs": str(Path(args.refs).resolve()),
            "refs_manifests": [{k: m.get(k) for k in ("seed", "per_group", "bench_files_sha256", "engine", "shard",
                                                     "cases_in_shard", "started_utc", "finished_utc")} for m in mans],
+           "refs_population": {k: pop.get(k) for k in ("complete", "why", "expected", "received", "missing",
+                                                       "missing_shards", "duplicates", "unfinished_shards")},
            "held_out": args.held_out, "shard": args.shard, "cases_in_shard": len(mine),
            "repeat_every": args.repeat_every, "sweep": list(SWEEP),
            "tightening": {"fraction": adaptive.R1_FRACTION, "escalate_max": adaptive.R1_ESCALATE_MAX,
