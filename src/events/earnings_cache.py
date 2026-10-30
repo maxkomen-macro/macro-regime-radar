@@ -136,6 +136,7 @@ class Reply:
     rows: list[tuple[str, date, str]] = field(default_factory=list)  # (symbol, day, release code)
     malformed: int = 0
     outside: int = 0
+    unresolved: bool = False  # abandoned before any status arrived: the provider may yet answer 429 (Codex S-10)
 
 
 def fetch(window: Window, api_key: str, get=None) -> Reply:
@@ -443,14 +444,19 @@ def fetch_until(window: Window, api_key: str, get, until: datetime,
     worker.join(left)
     if "fatal" in box:
         raise box["fatal"]
+    alive = worker.is_alive()
     if "out" in box:
         return box["out"]
     box["abandoned"] = True
+    # a status that arrived before the deadline is kept; none at all is unresolved, and the run then assumes the
+    # 429 it may have been (S-10): the 24-hour slow pace can never be lost to a late reply
+    rep.status = getattr(box.get("resp"), "status_code", None)
+    rep.unresolved = rep.status is None and alive
     if box.get("resp") is not None:
         # closed on a thread of its own: a close waits for the read it would interrupt (the buffered reader's
         # lock), so closing here would wait out the drip
         threading.Thread(target=_close_quietly, args=(box["resp"],), name="earnings-cache-close", daemon=True).start()
-    rep.failure = "time limit" if worker.is_alive() else box.get("error", "error")
+    rep.failure = "time limit" if alive else box.get("error", "error")
     return [], rep
 
 
@@ -593,7 +599,7 @@ class _Run:
         rows, rep = fetch_until(w, self.key, self.get, min(now + timedelta(seconds=CALL_S), self.started + HARD_STOP),
                                 self.clock)
         if rep.failure is not None:
-            self.saw_429 = self.saw_429 or rep.status == 429
+            self.saw_429 = self.saw_429 or rep.status == 429 or rep.unresolved
             self.unanswered.append(w)
             raise _Stop(rep.failure)
         self.malformed += rep.malformed

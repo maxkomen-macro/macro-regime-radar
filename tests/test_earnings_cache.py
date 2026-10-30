@@ -451,6 +451,32 @@ def test_a_reply_that_drips_past_its_limit_is_abandoned(mod, db):
     assert res.status == "failed" and "stopped: time limit" in res.line and drip.closed
 
 
+def test_an_abandoned_call_whose_429_arrives_late_keeps_the_slow_pace(mod, db, monkeypatch):
+    """Codex S-10: a call abandoned before any status arrived may still be answered 429 by Finnhub; the run
+    must assume it did. The abandoned call's run records a 429, and the next run within 24 hours paces at 12 s.
+    Here the provider's 429 arrives 0.5 s (wall time) after a 0.2 s call limit."""
+    import time
+
+    monkeypatch.setattr(mod, "CALL_S", 0.2)
+    clock = Clock(NOW)
+    fake = Finnhub(market(), clock)
+
+    def late_429(url, params=None, timeout=None, stream=False):
+        if not fake.calls:
+            fake.calls.append((params["from"], params["to"], clock()))
+            time.sleep(0.5)
+            return Resp(429)
+        return fake(url, params, timeout, stream)
+
+    res, _, _, _ = run(mod, db, late_429, clock=clock)
+    assert "stopped: time limit" in res.line, res.line
+    rec = vault_of(db).vault["runs"][-1]
+    assert rec["saw_429"] is True and rec["calls"] == 1 and "provisional" not in rec
+    monkeypatch.setattr(mod, "CALL_S", 15.0)
+    res, fake2, sleeps, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=20)))
+    assert fake2.calls and sleeps[1:3] == [12.0, 12.0], res.line
+
+
 @pytest.mark.parametrize("stage", ["headers", "body"])
 def test_a_real_socket_dripping_bytes_cannot_hold_a_call_past_its_deadline(mod, stage):
     """Codex S-8: Requests' timeouts bound each socket wait, not the call. A local server that keeps sending a
