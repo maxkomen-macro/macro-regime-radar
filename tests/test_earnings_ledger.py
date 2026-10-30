@@ -237,7 +237,9 @@ def test_the_always_run_step_with_nothing_pending_does_nothing(mod, db):
 def test_REQUIRED_a_newer_contradiction_reaches_the_reader_at_the_next_publish_or_after_48_hours(mod, db, tmp_path):
     """Design 9.6: the Finder reads the published database only. A contradiction seen by a run whose refresh
     fails stays in the ledger; the older snapshot keeps its coverage until the Finder adopts a database carrying
-    the contradiction (a later run writes it into the vault table), or until its newest read is 48 hours old."""
+    the contradiction (a later run writes it into the vault table), or until its newest read is 48 hours old.
+    This pins the temporary reader limitation the owner accepted for this PR (Amendment A-2, "next validated
+    publish or observation expiry"); the API reading the ledger is a separate change required before display."""
     rows = _reconciled_market()
     run(mod, db, Finnhub(rows, None))
     run(mod, db, Finnhub(rows, None), clock=Clock(NOW + timedelta(hours=20)))

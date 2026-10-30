@@ -67,11 +67,14 @@ validation exactly as before.
 - **Out of reach.** Only a person deleting every ledger asset by hand, alongside a vault table from before the
   ledger existed, can look like a first run.
 
-**The reader.** The Finder reads only the published database, never the ledger and never Finnhub. A contradiction
-seen by a run whose refresh is not published reaches it at the first of: a later published database whose vault
-carries it (the next run that reads the ledger writes it into the vault table), or the older snapshot's own freshness
-limit, 48 hours after its newest read. Until then the Finder can show coverage from that snapshot; closing the gap
-needs the API to read the ledger, which is the owner's decision, and the display stays off until it is settled. A
+**The reader, and its temporary limitation: next validated publish or observation expiry.** The Finder reads only
+the published database, never the ledger and never Finnhub. A contradiction seen by a run whose refresh is not
+published reaches it only at the first of: the next validated publish of a database whose vault carries it (the next
+run that reads the ledger writes it into the vault table), or the expiry of the snapshot's own observations, 48 hours
+after the newest read supporting them. Until then the Finder can keep showing coverage from that older snapshot.
+End-to-end contradiction handling is therefore **not complete**: the API reading the ledger in the background, so
+newer invalidation evidence withdraws affected coverage even when the database has not changed, is a separate,
+planned change (Amendment A-2, 2026-10-30) and a **required step before the display can be turned on**. A
 reservation's provisional withdrawals in a published vault count once the reservation is 15 minutes old.
 
 ## The vault
@@ -126,6 +129,8 @@ written approval and the owner's release decision.
 1. Add `EARNINGS_CACHE_KEY` (a long random string) as a GitHub Actions secret. Without it the step skips.
 2. Deploy the API on Render by hand, with the same `EARNINGS_CACHE_KEY` in its environment, so the worker can open
    the vault. Nothing reaches the public while the display switch is off.
-3. After Finnhub's written approval and the release decision, set `FINDER_EARNINGS_DISPLAY=1` on Render.
+3. Before the display: the separate reader-invalidation change (the API reading the ledger, Amendment A-2) is
+   planned, approved, built, reviewed and tested. Until then the display stays off.
+4. After that, Finnhub's written approval and the release decision, set `FINDER_EARNINGS_DISPLAY=1` on Render.
 
 `python -m src.events.earnings_cache --report --db <copy>` prints the vault's counts per state (needs the key).
