@@ -451,6 +451,56 @@ def test_a_reply_that_drips_past_its_limit_is_abandoned(mod, db):
     assert res.status == "failed" and "stopped: time limit" in res.line and drip.closed
 
 
+@pytest.mark.parametrize("stage", ["headers", "body"])
+def test_a_real_socket_dripping_bytes_cannot_hold_a_call_past_its_deadline(mod, stage):
+    """Codex S-8: Requests' timeouts bound each socket wait, not the call. A local server that keeps sending a
+    byte every 40 ms (in the headers, or in the body) never trips a read timeout, and urllib3 buffers the body
+    so `iter_content(64 KB)` waits for 64 KB; the deadline check between chunks never ran. The call is now
+    abandoned at its absolute deadline, through a real Requests response."""
+    import socket
+    import threading
+    import time
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    port = srv.getsockname()[1]
+    done = threading.Event()
+
+    def serve():
+        conn, _ = srv.accept()
+        try:
+            conn.recv(4096)
+            if stage == "body":
+                conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1000\r\n\r\n")
+            else:
+                conn.sendall(b"HTTP/1.1 200 OK\r\nX-Slow: ")
+            while not done.is_set():
+                conn.sendall(b"a")
+                time.sleep(0.04)
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    session = requests.Session()  # the module's requests.get is refused by _no_network
+
+    def get(url, params=None, timeout=None, stream=False):
+        return session.get(f"http://127.0.0.1:{port}/", timeout=timeout, stream=stream)
+
+    real = lambda: datetime.now(timezone.utc)  # noqa: E731
+    t0 = time.monotonic()
+    try:
+        rows, rep = mod.fetch_until(mod.Window(TODAY, TODAY), "TESTONLY", get, real() + timedelta(seconds=0.4), real)
+    finally:
+        done.set()
+        srv.close()
+    took = time.monotonic() - t0
+    assert rows == [] and rep.failure == "time limit", rep.failure
+    assert took < 1.0, took  # 0.4 s limit; the server would drip for 40 s (1000 bytes)
+
+
 def test_a_reply_over_4_mb_is_abandoned(mod, db):
     big = Resp(200, chunks=[b" " * (1024 * 1024)] * 5)
     res, _, _, _ = run(mod, db, Finnhub(market(), None, raw={1: big}))

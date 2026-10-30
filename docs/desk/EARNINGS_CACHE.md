@@ -33,7 +33,8 @@ Safeguards (each ends the run with a skip, never a call): only a scheduled full-
 12 hours of its cron slot calls Finnhub from GitHub Actions; never in weekday 09:00 to 17:00 New York hours (checked
 before every call); 10 hours since the last passing run; 60 s since the last call; 6 s between calls (12 s for 24
 hours after a 429); at most 40 calls a run and 80 a UTC day; no call on a UTC date after the run's start; no call
-started after 8 minutes, each call bounded to 15 s and the run to 8 minutes 45 s; a reply body over 4 MB is dropped.
+started after 8 minutes, each call bounded to 15 s of wall time (connect, headers and body:
+a reply that keeps dripping bytes is abandoned) and the run to 8 minutes 45 s; a reply body over 4 MB is dropped.
 The run's 40-call reservation is uploaded to the ledger before the first call.
 
 ## The durable ledger (Amendment A-1, 2026-10-30)

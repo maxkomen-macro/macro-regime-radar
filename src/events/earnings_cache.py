@@ -64,6 +64,7 @@ import os
 import sqlite3
 import sys
 import tempfile
+import threading
 import time as _time
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -416,19 +417,61 @@ FULL_CRONS = {"17 11 * * *": (11, 17, frozenset(range(1, 8))), "23 0 * * 2-6": (
 def fetch_until(window: Window, api_key: str, get, until: datetime,
                 clock: Callable[[], datetime]) -> tuple[list[dict], Reply]:
     """One whole-market call under an absolute deadline (design EC 1.2): streamed, read in chunks, abandoned
-    once the clock passes `until` or the body passes MAX_BODY. Never raises; keeps no URL or exception text."""
-    get = get or requests.get
-    rep, kept = Reply(window), []
+    once the clock passes `until` or the body passes MAX_BODY. Never raises; keeps no URL or exception text.
+
+    Requests' timeouts bound each socket wait, not the call: a reply that keeps dripping bytes can hold
+    `iter_content` past any deadline (Codex S-8). So the call runs on its own daemon thread and this thread
+    waits for it at most until `until`, in wall-clock seconds; past that the call is abandoned (its response
+    closed, its result ignored) and answers "time limit", whatever stage it was in: connect, headers or body."""
+    rep = Reply(window)
     left = (until - clock()).total_seconds()
     if left <= 0:
         rep.failure = "time limit"
-        return kept, rep
+        return [], rep
+    box: dict = {}
+
+    def call() -> None:
+        try:
+            box["out"] = _fetch(window, api_key, get or requests.get, until, clock, left, box)
+        except Exception as exc:  # noqa: BLE001 — the type only, never the text
+            box["error"] = type(exc).__name__
+        except BaseException as exc:  # an interrupt or exit is the run's, not the call's: raised again below
+            box["fatal"] = exc
+
+    worker = threading.Thread(target=call, name="earnings-cache-call", daemon=True)
+    worker.start()
+    worker.join(left)
+    if "fatal" in box:
+        raise box["fatal"]
+    if "out" in box:
+        return box["out"]
+    box["abandoned"] = True
+    if box.get("resp") is not None:
+        # closed on a thread of its own: a close waits for the read it would interrupt (the buffered reader's
+        # lock), so closing here would wait out the drip
+        threading.Thread(target=_close_quietly, args=(box["resp"],), name="earnings-cache-close", daemon=True).start()
+    rep.failure = "time limit" if worker.is_alive() else box.get("error", "error")
+    return [], rep
+
+
+def _close_quietly(resp) -> None:
+    try:
+        resp.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _fetch(window: Window, api_key: str, get, until: datetime, clock: Callable[[], datetime], left: float,
+           box: dict) -> tuple[list[dict], Reply]:
+    """The call itself, on fetch_until's thread; `box["resp"]` lets the waiting thread close the response."""
+    rep, kept = Reply(window), []
     try:
         resp = get(FINNHUB_URL, params={"from": window.start.isoformat(), "to": window.end.isoformat(), "token": api_key},
                    timeout=(left, left), stream=True)
     except Exception as exc:  # the message names the URL, token included: keep the type only
         rep.failure = type(exc).__name__
         return kept, rep
+    box["resp"] = resp
     try:
         rep.status = resp.status_code
         if resp.status_code != 200:
@@ -441,7 +484,7 @@ def fetch_until(window: Window, api_key: str, get, until: datetime,
                 if len(body) > MAX_BODY:
                     rep.failure = "reply too large"
                     return kept, rep
-                if clock() >= until:
+                if clock() >= until or box.get("abandoned"):
                     rep.failure = "time limit"
                     return kept, rep
         except Exception as exc:  # noqa: BLE001 — a read timeout or a dropped connection: the type only
