@@ -221,6 +221,14 @@ def test_unconfirmed_contested_when_the_newest_read_of_the_session_failed_its_ch
     assert_unknown(d)
 
 
+def test_unconfirmed_contested_when_a_newer_request_for_the_session_got_no_answer(world):
+    v = vault(CHAIN)
+    v["withdrawn"] = {SESSION.isoformat(): store.iso(T1 + timedelta(minutes=5))}
+    d = world.serve_vault(v).ok(**UP)
+    assert d["coverage"][0] == of.CACHE_WORDS["contested"]
+    assert_unknown(d)
+
+
 def test_the_48_hour_edge(world):
     inside = world.serve_vault(vault(CHAIN), now=T1 + timedelta(hours=48) - timedelta(seconds=1)).ok(**UP)
     assert inside["coverage"][0].startswith("Finnhub's calendar lists these regular quarterly reports through")

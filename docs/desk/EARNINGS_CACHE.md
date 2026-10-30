@@ -21,7 +21,8 @@ timeout). It prints one summary line of counts, never a symbol, date, key or URL
 
 One run asks Finnhub's whole-market `/calendar/earnings` for 7-day windows over days 0 to 119 (18 calls), then the
 lookback week before today. A reply of 1,000 rows or more is split in halves, recursively; the observed reply cap is
-1,500 rows, so a single day at the cap is recorded as capped (incomplete). Each split is checked against its parent.
+1,500 rows, so a single day at the cap is recorded as capped (incomplete). Each split is checked against its parent
+row for row: symbol, date, release time, fiscal label, reported figures and how many times each row appears.
 
 Run outcomes, worst first: failed (no reply), inconsistent (a malformed reply or row, a split that does not match its
 parent, or a dashboard row for one of the 12 tape names missing from the reply covering its day, or nothing to
@@ -43,15 +44,18 @@ The per-run, per-slot and spacing guards still hold; the site keeps serving the 
 One row of `earnings_cache_vault`: AES-256-GCM over the compressed JSON, keyed through HKDF-SHA256 from
 `EARNINGS_CACHE_KEY`, so the public `data-latest` database carries ciphertext only (D5). It keeps the runs, the newest
 two covering entries for each New York day, and every (symbol, date) any reply listed, with the fiscal labels seen and
-the labels a passing run saw with actual figures. A new key starts a new vault; the same key that cannot open the
-blob leaves it untouched. The validator publishes a full run when the vault's keyed `content_digest` changes
-(`scripts/validate_db.py`), and a vault that cannot be read only warns.
+the labels a passing run saw with actual figures, and, for each day a request asked for and got no answer, when.
+A new key starts a new vault; the same key that cannot open the blob leaves it untouched. The validator publishes a
+full run when the vault's keyed `content_digest` changes (`scripts/validate_db.py`): it covers the observations, the
+unanswered requests and every run that charged a call (its calls, status and any 429), not a zero-call skip. A vault
+that cannot be read only warns.
 
 ## The read-time rules
 
 - A day is stable when its two newest covering entries are both from passing runs and complete, the newer under 48
-  hours old and the two at most 48 hours apart. A newer entry that is not passing withdraws the day. D is the last
-  day of the unbroken stable stretch from the session.
+  hours old and the two at most 48 hours apart. A newer entry that is not passing, or a newer request for the day
+  that got no answer (a failed call, a 429, a time limit), withdraws the day. D is the last day of the unbroken
+  stable stretch from the session.
 - A listing is stable when its day is stable and both entries list the symbol once with the same valid label.
 - A listing the newest entry no longer shows is a possible report until its date passes, its quarter is seen
   reported on another date, or the same quarter is stable on another date (then shown as moved).
@@ -62,7 +66,8 @@ blob leaves it untouched. The validator publishes a full run when the vault's ke
   one quarter on two dates, an earlier quarter listed later) leaves it unknown.
 
 States the Finder shows: reconciled (through K), listed (dates shown, not reconciled), unlisted (no listing through
-D), unconfirmed (no stable session day: contested when the session's newest read failed its checks, else unread),
+D), unconfirmed (no stable session day: contested when the session's newest read failed its checks or a newer request
+for it got no answer, else unread),
 and withheld (the display switch off).
 
 ## The display switch

@@ -1513,6 +1513,18 @@ def test_a_full_refresh_whose_only_change_is_new_cache_observations_publishes(tm
     assert "earnings_cache_vault" not in same["changed_tables"] and same["upload"] is False
 
 
+def test_a_full_refresh_whose_only_change_is_a_charged_request_publishes(tmp_path):
+    """Codex S-2: a run whose only request got a 429 answers nothing, but its call charge and slow-down change
+    the digest, so the database publishes and the next run sees them."""
+    prev = _with_vault(_make_path(tmp_path, "prev.db"), _vault(1))
+    failed = _vault(1)
+    failed["runs"].append({"id": "2026-09-05T15:00:00Z", "status": "failed", "calls": 1,
+                           "calls_by_utc_date": {"2026-09-05": 1}, "saw_429": True})
+    rep = v.validate(_with_vault(_make_path(tmp_path, "cur.db"), failed), prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert "earnings_cache_vault" in rep["changed_tables"] and rep["upload"] is True
+
+
 def test_the_vault_only_counts_as_a_change_in_full_mode_and_a_first_vault_publishes(tmp_path):
     prev = _make_path(tmp_path, "prev.db")
     cur = _with_vault(_make_path(tmp_path, "cur.db"), _vault(1))

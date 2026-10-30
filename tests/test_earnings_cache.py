@@ -119,9 +119,10 @@ class Finnhub:
     """Answers each call from the master list. `fail_at`: {call number: status}; `cap`: rows per reply at most;
     `raw`: {call number: Resp}; `omit`: {call number: symbols left out of that reply}."""
 
-    def __init__(self, rows, clock, fail_at=None, cap=None, raw=None, omit=None):
+    def __init__(self, rows, clock, fail_at=None, cap=None, raw=None, omit=None, alter=None):
         self.rows, self.clock = rows, clock
         self.fail_at, self.cap, self.raw, self.omit = fail_at or {}, cap, raw or {}, omit or {}
+        self.alter = alter or {}  # {call number: function of that reply's rows}
         self.calls = []
 
     def __call__(self, url, params=None, timeout=None, stream=False):
@@ -136,6 +137,8 @@ class Finnhub:
             return self.raw[n]
         items = [r for r in self.rows if not _iso(r) or params["from"] <= r["date"] <= params["to"]]  # bad rows ride along
         items = [r for r in items if r["symbol"] not in self.omit.get(n, ())]
+        if n in self.alter:
+            items = self.alter[n]([dict(r) for r in items])
         if self.cap is not None:
             items = items[: self.cap]
         return Resp(200, {"earningsCalendar": items})
@@ -244,6 +247,31 @@ def test_halves_that_differ_from_their_whole_make_the_run_inconsistent_and_keep_
     assert entry["status"] == "inconsistent"
 
 
+@pytest.mark.parametrize("change", ["hour", "label", "reported", "duplicate"])
+def test_halves_that_list_the_same_names_with_other_fields_fail_the_split_check(mod, db, change):
+    """S-3: the check compares whole rows (symbol, date, release time, fiscal label, reported figures, and how
+    many times each appears), not only the (symbol, date) pairs."""
+    rows = market({3: 1200})
+    stray = sym(1000 + 3 * 3000 + 5)
+
+    def alter(items):
+        for r in items:
+            if r["symbol"] == stray:
+                if change == "hour":
+                    r["hour"] = "bmo"
+                elif change == "label":
+                    r["quarter"] = 4
+                elif change == "reported":
+                    r["epsActual"] = 0.5
+        return items + ([dict(next(r for r in items if r["symbol"] == stray))] if change == "duplicate" else [])
+
+    res, fake, _, _ = run(mod, db, Finnhub(rows, None, alter={3: alter}))
+    assert res.status == "inconsistent", res.line
+    assert "split checks failed 0" not in res.line
+    same, _, _, _ = run(mod, db, Finnhub(rows, None), clock=Clock(NOW + timedelta(hours=20)))
+    assert "split checks failed 0" in same.line
+
+
 def test_a_single_day_at_1500_rows_is_capped_and_the_run_is_partial(mod, db):
     rows = market({5: 1600})
     res, _, _, _ = run(mod, db, Finnhub(rows, None, cap=1500))
@@ -261,6 +289,38 @@ def test_a_429_stops_at_once_and_the_next_run_paces_at_5_a_minute(mod, db):
     later = Clock(NOW + timedelta(hours=20))
     _, _, sleeps2, _ = run(mod, db, clock=later)
     assert sleeps2[1:3] == [12.0, 12.0]
+
+
+def _reconciled_market():
+    """market() plus one name with a reported Q3 on day -3, Q4 on day 4 and Q1 2027 on day 60."""
+    d = lambda n: (TODAY + timedelta(days=n)).isoformat()  # noqa: E731
+    return market(extra=[{"symbol": "ZQZZ9", "date": d(-3), "hour": "amc", "year": 2026, "quarter": 3, "epsActual": 1.0},
+                         {"symbol": "ZQZZ9", "date": d(4), "hour": "amc", "year": 2026, "quarter": 4},
+                         {"symbol": "ZQZZ9", "date": d(60), "hour": "amc", "year": 2027, "quarter": 1}])
+
+
+@pytest.mark.parametrize("fail_at", [1, 2])
+def test_a_failed_request_withdraws_what_older_reads_established_for_its_window(mod, db, fail_at):
+    """S-1 (R5): two passing runs reconcile ZQZZ9; a newer run whose request for a window got no answer leaves
+    that window's days unconfirmed (and the windows it answered, as a non-passing run, too), while the windows
+    it never asked keep the older reads."""
+    rows = _reconciled_market()
+    run(mod, db, Finnhub(rows, None))
+    run(mod, db, Finnhub(rows, None), clock=Clock(NOW + timedelta(hours=20)))
+    later = NOW + timedelta(hours=44)  # Thursday 18:00 in New York
+    session = TODAY + timedelta(days=2)
+    v = vault_of(db).vault
+    before = store.coverage(v, store.index(v)["ZQZZ9"], session, later)
+    assert before.state == "reconciled" and before.through == TODAY + timedelta(days=60)
+    res, fake, _, _ = run(mod, db, Finnhub(rows, None, fail_at={fail_at: 429}), clock=Clock(later))
+    # the second case answered one window with no tape date to cross-check, so it is inconsistent, not partial
+    assert len(fake.calls) == fail_at and res.status == ("failed" if fail_at == 1 else "inconsistent"), res.line
+    v = vault_of(db).vault
+    after = store.coverage(v, store.index(v)["ZQZZ9"], session, later)
+    assert after.state == "unconfirmed" and store.contested(v, session)
+    asked_through = session + timedelta(days=7 * fail_at - 1)  # the asked windows end here
+    assert not any(store.day_stable(v, session + timedelta(days=n), later) for n in range(7 * fail_at))
+    assert store.day_stable(v, asked_through + timedelta(days=1), later)  # never asked: the older reads stand
 
 
 def test_a_network_error_reports_its_type_only(mod, db):
@@ -451,6 +511,16 @@ def test_the_step_never_raises_and_exits_0(mod, db, monkeypatch, capsys):
     assert mod.main(["--db", str(db)], now=NOW) == 0
     out = capsys.readouterr().out
     assert "failed: RuntimeError" in out and TOKEN not in out
+
+
+def test_the_vault_digest_changes_with_a_charged_call_even_when_nothing_was_answered(mod, db):
+    """S-2: a run whose first request got a 429 adds no observation, but its call charge and slow-down must be
+    published, so the digest changes."""
+    run(mod, db)
+    first = table_rows(db, store.TABLE)[0]
+    res, _, _, _ = run(mod, db, Finnhub(market(), None, fail_at={1: 429}), clock=Clock(NOW + timedelta(hours=20)))
+    assert res.status == "failed"
+    assert table_rows(db, store.TABLE)[0][3] != first[3]
 
 
 def test_the_vault_digest_changes_with_observations_not_with_a_skip(mod, db):

@@ -235,6 +235,30 @@ def test_the_vault_round_trips_and_holds_ciphertext_only(tmp_path):
     empty.close()
 
 
+def test_the_content_digest_carries_every_run_that_charged_a_call():
+    """S-2: the call charges, the reservation and a 429 are publication-worthy; a zero-call skip is not."""
+    v = build([(60, (2026, 4), False)])
+    a = store.content_digest(v, SECRET)
+    v["runs"].append({"id": "s", "status": "skipped", "calls": 0, "calls_by_utc_date": {}, "saw_429": False})
+    assert store.content_digest(v, SECRET) == a
+    v["runs"].append({"id": "f", "status": "failed", "calls": 1, "calls_by_utc_date": {"2026-10-29": 1}, "saw_429": True})
+    b = store.content_digest(v, SECRET)
+    assert b != a
+    v["runs"][-1]["saw_429"] = False
+    assert store.content_digest(v, SECRET) not in (a, b)
+
+
+def test_a_newer_unanswered_request_withdraws_a_day_and_marks_it_contested():
+    """S-1: a withdrawal newer than the day's newest entry makes the day unstable and contested; an older one
+    does nothing."""
+    v = build([(-5, (2026, 3), True), (60, (2026, 4), False)])
+    assert cov(v).state == "reconciled" and not store.contested(v, SESSION)
+    v["withdrawn"] = {SESSION.isoformat(): store.iso(T2 - timedelta(hours=1))}
+    assert cov(v).state == "reconciled"
+    v["withdrawn"] = {SESSION.isoformat(): store.iso(T1 + timedelta(minutes=1))}
+    assert cov(v).state == "unconfirmed" and store.contested(v, SESSION)
+
+
 def test_the_content_digest_ignores_the_runs_bookkeeping():
     v = build([(60, (2026, 4), False)])
     a = store.content_digest(v, SECRET)

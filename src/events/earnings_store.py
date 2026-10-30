@@ -10,7 +10,8 @@ the newest two covering entries per New York day, and every (symbol, date) occur
 
 Read-time rules (capability report rev 2, R2/R4/R5, and the owner's 2026-10-29 23:26 UTC clarifications):
   - a day is stable when its two newest covering entries both come from passing runs and are complete, the
-    newest is under 48 hours old and the two are at most 48 hours apart; a newer non-passing entry withdraws it;
+    newest is under 48 hours old and the two are at most 48 hours apart; a newer non-passing entry, or a newer
+    request for the day that got no answer, withdraws it;
   - D is the last day of the unbroken stable stretch from the session;
   - a listing is stable when its day is stable and both entries list it once, with the same fiscal label;
   - an occurrence its day's newest entry no longer lists is a possible event until its date passes, its quarter
@@ -62,11 +63,15 @@ def key_id(secret: str) -> str:
 
 
 def content_digest(vault: Mapping[str, Any], secret: str) -> str:
-    """A keyed digest of the observations (days and occurrences, not the runs' bookkeeping): it changes when a
-    run that called Finnhub merged what it saw, and not when a skip was recorded (design EC 4.1)."""
+    """A keyed digest of what must be published (design EC 4.1): the observations (days, occurrences and
+    withdrawals) and every run that charged a call (its calls per UTC date, status and 429), so a run that called
+    Finnhub changes it even when nothing was answered (Codex S-2), and a zero-call skip does not."""
     import hmac
 
-    body = json.dumps({"days": vault.get("days") or {}, "occ": vault.get("occ") or {}}, separators=(",", ":"),
+    charged = [{k: r.get(k) for k in ("id", "status", "calls", "calls_by_utc_date", "saw_429")}
+               for r in vault.get("runs") or [] if isinstance(r, Mapping) and r.get("calls")]
+    body = json.dumps({"days": vault.get("days") or {}, "occ": vault.get("occ") or {},
+                       "withdrawn": vault.get("withdrawn") or {}, "charged": charged}, separators=(",", ":"),
                       sort_keys=True).encode("utf-8")
     return hmac.new(_hkdf(secret, b"digest", 32), body, "sha256").hexdigest()
 
@@ -91,7 +96,7 @@ def unseal(nonce: bytes, blob: bytes, secret: str) -> dict:
 
 
 def empty_vault() -> dict:
-    return {"format": FORMAT, "runs": [], "days": {}, "occ": {}}
+    return {"format": FORMAT, "runs": [], "days": {}, "occ": {}, "withdrawn": {}}
 
 
 @dataclass
@@ -208,12 +213,29 @@ def _entries(vault: Mapping[str, Any], d: date) -> list[dict]:
     return list((vault.get("days") or {}).get(d.isoformat()) or [])
 
 
+def _withdrawn_after(vault: Mapping[str, Any], d: date, entry: Mapping[str, Any]) -> bool:
+    """A request for `d` that got no answer, newer than `entry` (Codex S-1: a failed read withdraws, R5)."""
+    w = (vault.get("withdrawn") or {}).get(d.isoformat())
+    return w is not None and at(w) >= at(entry["at"])
+
+
+def contested(vault: Mapping[str, Any], d: date) -> bool:
+    """The newest read covering `d` was not a passing, complete one, or a newer request for it got no answer."""
+    es = _entries(vault, d)
+    if not es:
+        return (vault.get("withdrawn") or {}).get(d.isoformat()) is not None
+    e1 = es[0]
+    return not (e1.get("status") == PASSING and e1.get("complete") is True) or _withdrawn_after(vault, d, e1)
+
+
 def day_stable(vault: Mapping[str, Any], d: date, now: datetime) -> bool:
     es = _entries(vault, d)
     if len(es) < DAY_ENTRIES:
         return False
     e1, e2 = es[0], es[1]
     if not all(e.get("status") == PASSING and e.get("complete") is True for e in (e1, e2)):
+        return False
+    if _withdrawn_after(vault, d, e1):
         return False
     t1, t2 = at(e1["at"]), at(e2["at"])
     return now - t1 < FRESH and timedelta(0) <= t1 - t2 <= FRESH

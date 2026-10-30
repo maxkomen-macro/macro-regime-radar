@@ -58,7 +58,7 @@ import sqlite3
 import sys
 import tempfile
 import time as _time
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
@@ -513,6 +513,7 @@ class _Run:
     calls: int = 0
     saw_429: bool = False
     answers: list[_Answer] = field(default_factory=list)
+    unanswered: list[Window] = field(default_factory=list)  # requests sent that got no answer (Codex S-1)
     splits: int = 0
     split_ok: int = 0
     split_bad: int = 0
@@ -540,6 +541,7 @@ class _Run:
                                 self.clock)
         if rep.failure is not None:
             self.saw_429 = self.saw_429 or rep.status == 429
+            self.unanswered.append(w)
             raise _Stop(rep.failure)
         self.malformed += rep.malformed
         self.outside += rep.outside
@@ -547,11 +549,12 @@ class _Run:
         self.answers.append(ans)
         return ans
 
-    def ask(self, w: Window) -> set[tuple[str, date]]:
-        """The (symbol, date) set under `w`: a reply of SPLIT_AT rows or more is asked again as its halves (R1)
-        and checked against them (R3). A stop part-way leaves every answer so far in place."""
+    def ask(self, w: Window) -> Counter:
+        """The rows under `w`, whole (every field the cache keeps) and counted: a reply of SPLIT_AT rows or more is
+        asked again as its halves (R1) and checked against them (R3; Codex S-3: a changed release time, label or
+        reported figure, or a duplicate, fails the check). A stop part-way leaves every answer so far in place."""
         ans = self.call(w)
-        whole = {(x["s"], x["d"]) for x in ans.rows}
+        whole = Counter((x["s"], x["d"], x["h"], x["y"], x["q"], x["r"]) for x in ans.rows)
         span = (w.end - w.start).days + 1
         if len(ans.rows) < SPLIT_AT or span == 1:
             return whole
@@ -559,8 +562,8 @@ class _Run:
         self.splits += 1
         first = Window(w.start, w.start + timedelta(days=span // 2 - 1))
         union = self.ask(first)
-        union |= self.ask(Window(first.end + timedelta(days=1), w.end))
-        ok = union == whole if len(ans.rows) < CAP else whole <= union
+        union += self.ask(Window(first.end + timedelta(days=1), w.end))
+        ok = union == whole if len(ans.rows) < CAP else not (whole - union)
         self.split_ok += ok
         self.split_bad += not ok
         return union
@@ -698,9 +701,19 @@ def _merge(db_path: Path, vault: dict, r: _Run, today: date, start: datetime, fi
         rows = sorted([x["s"], x["h"], x["y"], x["q"], x["r"]] for x in c.rows if x["d"] == d)
         entry = {"run": store.iso(start), "at": at, "status": status, "complete": ok, "rows": rows}
         days[d.isoformat()] = ([entry] + list(days.get(d.isoformat()) or []))[: store.DAY_ENTRIES]
+    # a request sent and not answered withdraws every day it asked for (Codex S-1, R5): older reads of those days
+    # stop counting until two newer passing reads agree again; days never asked keep their reads
+    withdrawn = vault.setdefault("withdrawn", {})
+    for w in r.unanswered:
+        d = w.start
+        while d <= w.end:
+            withdrawn[d.isoformat()] = at
+            d += timedelta(days=1)
     keep_from = (today - timedelta(days=KEEP_DAYS_BEFORE)).isoformat()
     for k in [k for k in days if k < keep_from]:
         del days[k]
+    for k in [k for k in withdrawn if k < keep_from]:
+        del withdrawn[k]
     occ = vault.setdefault("occ", {})
     for a in r.answers:  # every answered reply, replaced parents included (R5: additions always count)
         for x in a.rows:

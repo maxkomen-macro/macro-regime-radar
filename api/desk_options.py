@@ -603,9 +603,7 @@ def _from_cache(sym: str, session: date, item: dict, cache: dict) -> tuple[list[
     out = {"earnings": cov.state, "earnings_through": cov.through.isoformat() if cov.through else None,
            "listed_through": cov.listed_through.isoformat() if cov.listed_through else None, "unreadable": unreadable}
     if cov.state == "unconfirmed":
-        newest = ((vault.get("days") or {}).get(session.isoformat()) or [None])[0]
-        contested = isinstance(newest, dict) and not (newest.get("status") == store.PASSING and newest.get("complete") is True)
-        out["reason"] = "contested" if contested else "unread"
+        out["reason"] = "contested" if store.contested(vault, session) else "unread"
     sources = [CACHE_SOURCE] if any(r["source"] != HAND_SOURCE for r in rows) or cov.state in ("reconciled", "unlisted") else []
     if hand:
         sources.append(HAND_SOURCE)
