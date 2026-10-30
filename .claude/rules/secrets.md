@@ -23,7 +23,7 @@ All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). 
 |---|---|
 | `FRED_API_KEY` | Required — raises in `src/config.py:17` if missing |
 | `FINNHUB_API_KEY` | Optional — news ingest, and since launch-1 the single-name panel's fundamentals on the API host (`api/providers/finnhub.py`; the key rides in a header, never a URL) |
-| `EARNINGS_CACHE_KEY` | Optional — the Options Finder earnings cache's vault key (`src/events/earnings_store.py`). GitHub Actions secret for the refresh step (absent → the step skips) and the same value on the API host so the worker can open the vault. A new value starts a new vault. Never logged or printed |
+| `EARNINGS_CACHE_KEY` | Optional — the Options Finder earnings cache's vault key (`src/events/earnings_store.py`). GitHub Actions secret for the refresh step (absent → the step skips) and the same value on the API host so the worker can open the vault. A new value starts a new vault. The same key seals the durable ledger's release assets, which the refresh steps upload and fetch with the workflow's built-in `GITHUB_TOKEN` (no new secret). Never logged or printed |
 | `FINDER_EARNINGS_DISPLAY` | API host setting, not a secret — the Finder's earnings display switch (`api/desk_options.py`), off unless `1`/`true`/`on`/`yes`. Off: hand-maintained earnings rows only (plan D6). The owner sets it, after Finnhub's written approval |
 | `NEWS_API_KEY` | Optional — required for news ingest. **Note the underscore.** Code uses `NEWS_API_KEY`, not `NEWSAPI_KEY` |
 | `ANTHROPIC_API_KEY` | Optional — required for AI regime interpretation |

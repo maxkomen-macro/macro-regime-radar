@@ -4,8 +4,8 @@ The Finder's earnings dates beyond the 12 tape names, built to the earnings-cach
 D6), the capability report's revision 2 (R1 to R5) and the owner's clarifications of 2026-10-29. Code:
 `src/events/earnings_cache.py` (the refresh step), `src/events/earnings_store.py` (the vault and the read-time
 rules), `api/desk_options.py` (the reader and the display switch), `src/desk/options_finder.py` (the coverage
-sentences and flags). Tests: `tests/test_earnings_cache.py`, `tests/test_earnings_store.py`,
-`tests/test_desk_options_earnings_cache.py`.
+sentences and flags), `src/events/earnings_ledger.py` (the durable ledger). Tests: `tests/test_earnings_cache.py`,
+`tests/test_earnings_store.py`, `tests/test_earnings_ledger.py`, `tests/test_desk_options_earnings_cache.py`.
 
 **What it is not.** Coverage is provider data: Finnhub's dates and fiscal labels for regular quarterly reports,
 reconciled with the quarters Finnhub shows as reported. It is never company confirmation, and unscheduled earnings
@@ -34,22 +34,64 @@ Safeguards (each ends the run with a skip, never a call): only a scheduled full-
 before every call); 10 hours since the last passing run; 60 s since the last call; 6 s between calls (12 s for 24
 hours after a 429); at most 40 calls a run and 80 a UTC day; no call on a UTC date after the run's start; no call
 started after 8 minutes, each call bounded to 15 s and the run to 8 minutes 45 s; a reply body over 4 MB is dropped.
-The run's 40-call reservation is written before the first call.
+The run's 40-call reservation is uploaded to the ledger before the first call.
 
-**Known limit.** The vault lives in the database the refresh publishes. A run whose refresh fails validation (or is
-cancelled) is not published, so the next run does not see that run's calls, its 429 slow-down or what it saw.
-The per-run, per-slot and spacing guards still hold; the site keeps serving the last validated database.
+## The durable ledger (Amendment A-1, 2026-10-30)
+
+The vault in the database persists only when the refresh publishes its database, so the run's call accounting also
+lives in a durable ledger on the `data-latest` release (`src/events/earnings_ledger.py`): immutable, sequenced assets
+`earnings-cache-ledger-<9-digit seq>.bin`, each a sealed copy of the vault (the same key, ciphertext only). A write
+uploads a new asset under a new name, never replacing one; only after that upload succeeds are ledger assets other
+than the two newest deleted, so a failed write never removes the last state that reached the release.
+
+Three workflow steps, full mode only, each `continue-on-error` and bounded, with only the built-in `GITHUB_TOKEN`:
+"Fetch earnings cache ledger" (2 minutes, just before the cache step) lists and downloads the newest two assets;
+the cache step uploads a reservation before its first call and its final state after its last; "Publish earnings
+cache ledger" (2 minutes, `if: always()`, after the database publish) uploads a final state the cache step could not,
+whether validation failed, the publish failed or the job was cancelled. The database's upload stays gated on
+validation exactly as before.
+
+- **Start state.** The higher seq of the newest asset that opens and the vault table. Every write is numbered above
+  every listed asset and the table, so a recovery is always the newest state.
+- **Reservation.** Before the first call: 40 calls charged, a 429 assumed, finished at the latest moment the run can
+  still be calling (start plus the step's 10 minutes), and every day it plans to ask provisionally withdrawn. If it
+  cannot be uploaded, the run makes no call. The final write replaces it with the exact record.
+- **No allowance, no call.** The ledger cannot be listed or downloaded, or an asset's name is not in sequence form:
+  the run skips and writes nothing.
+- **Conservative restart.** The newest asset does not open (key, decryption, format or sequence), the two copies
+  disagree at the same seq, or the ledger is gone while the table shows it existed: the run records 80 calls for the
+  UTC day with a 429, withdraws every day it covers at that moment, and makes no call. Uncertain accounting is never
+  reset to zero: the daily cap, the 24-hour slow pace and the 10-hour spacing all hold, and every day stays unknown
+  until two passing reads newer than the restart.
+- **Spacing and the 429 pace** count passing runs, reservations still in place and restart records.
+- **Out of reach.** Only a person deleting every ledger asset by hand, alongside a vault table from before the
+  ledger existed, can look like a first run.
+
+**The reader.** The Finder reads only the published database, never the ledger and never Finnhub. A contradiction
+seen by a run whose refresh is not published reaches it at the first of: a later published database whose vault
+carries it (the next run that reads the ledger writes it into the vault table), or the older snapshot's own freshness
+limit, 48 hours after its newest read. Until then the Finder can show coverage from that snapshot; closing the gap
+needs the API to read the ledger, which is the owner's decision, and the display stays off until it is settled. A
+reservation's provisional withdrawals in a published vault count once the reservation is 15 minutes old.
 
 ## The vault
 
 One row of `earnings_cache_vault`: AES-256-GCM over the compressed JSON, keyed through HKDF-SHA256 from
 `EARNINGS_CACHE_KEY`, so the public `data-latest` database carries ciphertext only (D5). It keeps the runs, the newest
 two covering entries for each New York day, and every (symbol, date) any reply listed, with the fiscal labels seen and
-the labels a passing run saw with actual figures, and, for each day a request asked for and got no answer, when.
+the labels a passing run saw with actual figures (with the run that first saw each, its fiscal identity and
+reporting date: an anchor a passing run saw reported is kept, never inferred from a scheduled or estimated report),
+and, for each day a request asked for and got no answer, when.
 A new key starts a new vault; the same key that cannot open the blob leaves it untouched. The validator publishes a
 full run when the vault's keyed `content_digest` changes (`scripts/validate_db.py`): it covers the observations, the
 unanswered requests and every run that charged a call (its calls, status and any 429), not a zero-call skip. A vault
 that cannot be read only warns.
+
+The validator's whole change (Amendment A-1, exception X1): `earnings_cache_vault` added to `MODE_TABLES["full"]`, and
+one `ADVISORY_FINGERPRINT_SQL` entry, `SELECT key_id, content_digest FROM earnings_cache_vault ORDER BY id`. Every
+other check is unchanged. A full run whose only change is the vault therefore publishes when validation passes, which
+also fires the existing Vercel deploy step (an occasional extra publish and deploy the owner accepted). The ledger
+assets are not part of validation.
 
 ## The read-time rules
 

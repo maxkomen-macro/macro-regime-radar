@@ -17,6 +17,7 @@ import hashlib
 import json
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 import requests
@@ -152,7 +153,60 @@ def _iso(row) -> bool:
     return True
 
 
-def run(mod, db, fake=None, *, clock=None, now=NOW, env=None, cache_key=SECRET, **kw):
+class Release:
+    """The data-latest release's assets, as the `gh` command line sees them (design EC section 9). `fail`: a set
+    of operations (list, download, upload, delete) that fail; `upload_fails`: how many uploads fail next."""
+
+    def __init__(self):
+        self.assets: dict[str, bytes] = {}
+        self.fail: set[str] = set()
+        self.upload_fails = 0
+        self.calls: list[list[str]] = []
+
+    def __call__(self, args, timeout):
+        assert timeout <= 30.0
+        self.calls.append(list(args))
+        op = args[1]
+        if op == "view":
+            if "list" in self.fail:
+                return 1, ""
+            return 0, json.dumps({"assets": [{"name": n} for n in sorted(self.assets)]})
+        if op == "download":
+            name, where = args[args.index("--pattern") + 1], args[args.index("--dir") + 1]
+            if "download" in self.fail or name not in self.assets:
+                return 1, ""
+            (Path(where) / name).write_bytes(self.assets[name])
+            return 0, ""
+        if op == "upload":
+            assert "--clobber" not in args  # a write never deletes before it uploads (DR-20)
+            path = Path(args[3])
+            if "upload" in self.fail or self.upload_fails > 0 or path.name in self.assets:
+                self.upload_fails = max(0, self.upload_fails - 1)
+                return 1, ""
+            self.assets[path.name] = path.read_bytes()
+            return 0, ""
+        if op == "delete-asset":
+            if "delete" in self.fail:
+                return 1, ""
+            self.assets.pop(args[3], None)
+            return 0, ""
+        raise AssertionError(args)
+
+    def ledger_names(self):
+        return sorted(n for n in self.assets if n.startswith(store.LEDGER_PREFIX))
+
+
+RELEASES: dict = {}
+
+
+def release_of(db) -> Release:
+    return RELEASES.setdefault(str(db), Release())
+
+
+def run(mod, db, fake=None, *, clock=None, now=NOW, env=None, cache_key=SECRET, release=None, fetch=True, **kw):
+    """One refresh as the workflow runs it: the ledger fetch step, then the cache step (design 9.2)."""
+    from src.events import earnings_ledger
+
     clock = clock or Clock(now)
     fake = fake if fake is not None else Finnhub(market(), clock)
     if isinstance(fake, Finnhub):
@@ -163,8 +217,11 @@ def run(mod, db, fake=None, *, clock=None, now=NOW, env=None, cache_key=SECRET, 
         sleeps.append(s)
         clock.advance(s)
 
+    rel = release if release is not None else release_of(db)
+    if fetch:
+        earnings_ledger.fetch(Path(db).parent, rel)
     res = mod.run_cache(db, now=clock(), get=fake, sleep=sleep, clock=clock, api_key=TOKEN, cache_key=cache_key,
-                        env=env if env is not None else {}, **kw)
+                        env=env if env is not None else {}, ledger_dir=Path(db).parent, gh=rel, **kw)
     return res, fake, sleeps, clock
 
 
@@ -343,14 +400,26 @@ def test_a_run_that_reaches_40_calls_stops_as_partial(mod, db):
     assert len(fake.calls) == 40 and res.status == "partial" and "stopped: call cap" in res.line
 
 
+def edit_state(db, change, secret=SECRET):
+    """Change the stored state in both copies alike: the vault table and the newest ledger asset (same seq)."""
+    conn = sqlite3.connect(db)
+    opened = store.open_vault(conn, secret)
+    change(opened.vault)
+    store.write_vault(conn, opened.vault, secret, NOW)
+    conn.close()
+    rel = release_of(db)
+    top = rel.ledger_names()[-1]
+    rel.assets[top] = store.seal_ledger(opened.vault, secret, store.ledger_seq(top), NOW)
+
+
 def test_the_daily_cap_counts_every_run_charged_to_the_utc_date(mod, db):
     run(mod, db)
-    conn = sqlite3.connect(db)
-    opened = store.open_vault(conn, SECRET)
-    opened.vault["runs"][0]["calls_by_utc_date"] = {NOW.date().isoformat(): 75}
-    opened.vault["runs"][0]["status"] = "partial"  # no spacing skip
-    store.write_vault(conn, opened.vault, SECRET, NOW)
-    conn.close()
+
+    def charge(v):
+        v["runs"][0]["calls_by_utc_date"] = {NOW.date().isoformat(): 75}
+        v["runs"][0]["status"] = "partial"  # no spacing skip
+
+    edit_state(db, charge)
     res, fake, _, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=1)))
     assert len(fake.calls) == 5 and "stopped: daily call cap" in res.line
 
@@ -450,17 +519,41 @@ def test_missing_keys_skip_without_writing(mod, db):
     assert vault_of(db).status == "absent"
 
 
-def test_a_rotated_key_starts_a_fresh_vault_and_a_corrupt_blob_is_never_overwritten(mod, db):
+def test_a_rotated_key_restarts_conservatively_and_then_starts_a_fresh_vault(mod, db):
+    """Amendment A-1 (design 9.3): the old key's accounting cannot be read, so it is never reset to zero: the run
+    charges the whole UTC day, assumes a 429, withdraws every day and makes no call; a later run starts afresh."""
     run(mod, db)
-    res, _, _, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=20)), cache_key="another-TESTONLY-key")
-    assert "new vault: rotated" in res.line
+    other = "another-TESTONLY-key"
+    res, fake, _, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=20)), cache_key=other)
+    assert "accounting uncertain" in res.line and not fake.calls
+    v = vault_of(db, other).vault
+    assert v["runs"][-1]["calls_by_utc_date"] == {(NOW + timedelta(hours=20)).date().isoformat(): 80}
+    later = NOW + timedelta(hours=44)  # Thursday 18:00 in New York, a new UTC day, 24 h after the restart
+    res, fake, sleeps, _ = run(mod, db, clock=Clock(later), cache_key=other)
+    assert res.status == "passing" and len(fake.calls) == 19, res.line
+    assert sleeps[1:3] == [6.0, 6.0]  # the assumed 429 is exactly 24 h old: the normal pace again
+
+
+def test_a_corrupt_vault_table_never_overwritten_without_a_ledger(mod, db):
+    run(mod, db)
     conn = sqlite3.connect(db)
     conn.execute(f"UPDATE {store.TABLE} SET blob = X'00'")
     conn.commit()
     conn.close()
     before = table_rows(db, store.TABLE)
-    res, fake, _, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=40)), cache_key="another-TESTONLY-key")
+    release_of(db).assets.clear()  # no ledger either
+    res, fake, _, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=20)))
     assert "the vault does not open" in res.line and not fake.calls and table_rows(db, store.TABLE) == before
+
+
+def test_a_corrupt_vault_table_is_rebuilt_from_a_readable_ledger(mod, db):
+    run(mod, db)
+    conn = sqlite3.connect(db)
+    conn.execute(f"UPDATE {store.TABLE} SET blob = X'00'")
+    conn.commit()
+    conn.close()
+    res, fake, _, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=20)))
+    assert res.status == "passing" and len(fake.calls) == 19 and vault_of(db).status == "ok"
 
 
 def test_the_reservation_is_written_before_the_first_call(mod, db):

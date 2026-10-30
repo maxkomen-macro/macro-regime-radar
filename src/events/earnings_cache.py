@@ -10,6 +10,13 @@ is not a scheduled first attempt of a full refresh, 40 calls a run and 80 a UTC 
 
     python -m src.events.earnings_cache [--db PATH]          the step (data/macro_radar.db by default)
     python -m src.events.earnings_cache --report [--db PATH] counts per state (needs EARNINGS_CACHE_KEY)
+    python -m src.events.earnings_cache --fetch-ledger       the workflow's ledger fetch (src/events/earnings_ledger.py)
+    python -m src.events.earnings_cache --publish-ledger     the workflow's always-run ledger upload
+
+The step's accounting and invalidation state persist in the durable ledger, a set of sequenced, encrypted
+release assets on data-latest, whether or not the refresh's database validates or publishes (design EC section 9,
+Amendment A-1). The run reserves its calls in the ledger before the first one and makes none when the ledger
+cannot be read or written; uncertain accounting restarts conservatively, never at zero.
 
 The read-only probe the plan ran first, unchanged: it says whether the free plan's assumptions hold and writes
 nothing, no database row and no file.
@@ -80,6 +87,7 @@ from src.events.earnings import (  # noqa: E402  (reuse, never modify)
     _api_key,
     _when,
 )
+from src.events import earnings_ledger as ledger  # noqa: E402
 from src.events import earnings_store as store  # noqa: E402
 
 HEAVY_WINDOWS = 2  # the fullest 7-day windows re-asked as halves
@@ -591,20 +599,113 @@ def _prune_runs(vault: dict, now: datetime) -> None:
     vault["runs"] = [r for r in vault.get("runs") or [] if now - store.at(r["finished"]) <= KEEP_RUNS]
 
 
-def _record_skip(conn, vault: dict, secret: str, now: datetime, reason: str) -> RunResult:
+RESERVATION_SPAN = timedelta(minutes=10)  # the step's timeout: a reservation's run ends by then (DR-23)
+UNCERTAIN = "accounting uncertain"
+
+
+@dataclass
+class _Start:
+    vault: dict
+    m: int  # the highest seq observed: every ledger asset listed (opened or not) and the vault table (DR-22)
+    note: str = ""
+    restart: str | None = None  # why the accounting is uncertain (design 9.3), else None
+
+
+def _start_state(conn, secret: str, st: "ledger.State", start: datetime) -> _Start | str:
+    """The state the run starts from (design 9.1, 9.3), or the reason it must stop without any write."""
+    table = store.open_vault(conn, secret)
+    t_vault = table.vault if table.status == "ok" else None
+    t_seq = int(t_vault.get("seq") or 0) if t_vault is not None else 0
+    m = max([t_seq] + [store.ledger_seq(n) for n in st.names])
+    opened: list[tuple[int, dict]] = []
+    top_ok = True
+    for seq in sorted(st.files, reverse=True):
+        try:
+            o = store.open_ledger(st.files[seq].read_bytes(), secret, seq)
+        except OSError:
+            o = store.Opened("unreadable")
+        if o.status == "ok":
+            opened.append((seq, o.vault))
+        elif seq == st.top:
+            top_ok = False
+    restart = None
+    if st.state == "ok" and (not top_ok or not opened or opened[0][0] != st.top):
+        restart = "the newest ledger asset does not open"
+    if st.state == "absent" and t_vault is not None and t_vault.get("seq") is not None:
+        restart = "the ledger is missing"
+    best = opened[0] if opened else None
+    if best is not None and t_vault is not None and t_seq == best[0] and t_vault != best[1]:
+        restart = "the ledger and the vault disagree"
+    if best is None and table.status == "unreadable" and restart is None:
+        return "the vault does not open"  # never overwrite a corrupt blob silently (design 1.1)
+    if best is not None and (t_vault is None or best[0] >= t_seq):
+        base = best[1]
+    elif t_vault is not None:
+        base = t_vault
+    else:
+        base = store.empty_vault()
+    for k, v in store.empty_vault().items():
+        base.setdefault(k, v)
+    note = "" if (best is not None or table.status == "ok") else f" (new vault: {table.status})"
+    return _Start(base, m, note, restart)
+
+
+def _write_final(conn, vault: dict, secret: str, seq: int, now: datetime, directory: Path, gh) -> bool:
+    """A final state (design 9.4): the vault table, then a new ledger asset marked pending, then one upload try;
+    the always-run step uploads it if this try fails. True when it reached the release now."""
+    vault["seq"] = seq
+    store.write_vault(conn, vault, secret, now)
+    path = ledger.write_local(directory, seq, store.seal_ledger(vault, secret, seq, now))
+    ledger.mark_pending(directory, path)
+    if ledger.upload(directory, path, gh):
+        ledger.mark_pending(directory, None)
+        return True
+    return False
+
+
+def _record_skip(conn, start: _Start, secret: str, now: datetime, reason: str, directory: Path, gh) -> RunResult:
+    vault = start.vault
     vault["runs"].append({"id": store.iso(now), "started": store.iso(now), "finished": store.iso(now),
                           "status": store.SKIPPED, "calls": 0, "calls_by_utc_date": {}, "saw_429": False,
                           "reason": reason})
     _prune_runs(vault, now)
-    store.write_vault(conn, vault, secret, now)
+    _write_final(conn, vault, secret, start.m + 1, now, directory, gh)
     return RunResult(store.SKIPPED, f"{TAG} skipped: {reason}", True)
+
+
+def _restart(conn, start: _Start, secret: str, now: datetime, directory: Path, gh) -> RunResult:
+    """Conservative restart (design 9.3): uncertain accounting is never reset to zero. A synthetic record charges
+    the whole day and assumes a 429 now; a barrier withdraws every day, so no older read supports any day."""
+    vault = start.vault
+    today = now.astimezone(NY).date()
+    vault["runs"].append({"id": store.iso(now), "started": store.iso(now), "finished": store.iso(now),
+                          "status": store.PARTIAL, "calls": DAY_CAP,
+                          "calls_by_utc_date": {now.date().isoformat(): DAY_CAP}, "saw_429": True,
+                          "reason": UNCERTAIN})
+    days = {(today + timedelta(days=n)).isoformat() for n in range(-KEEP_DAYS_BEFORE, HORIZON_DAYS)}
+    days |= set(vault.get("days") or {}) | set(vault.get("withdrawn") or {})
+    for p in (vault.get("provisional") or {}).values():
+        days |= set(p.get("days") or ())
+    withdrawn = vault.setdefault("withdrawn", {})
+    for d in days:
+        withdrawn[d] = store.iso(now)
+    vault["provisional"] = {}
+    _prune_runs(vault, now)
+    _write_final(conn, vault, secret, start.m + 1, now, directory, gh)
+    return RunResult(store.SKIPPED, f"{TAG} skipped: {UNCERTAIN} ({start.restart})", True)
+
+
+def _holds(r: Mapping) -> bool:
+    """A record that may stand for a run that passed or whose accounting is uncertain: spacing counts it (9.5)."""
+    return r.get("status") == store.PASSING or r.get("provisional") is True or r.get("reason") == UNCERTAIN
 
 
 def run_cache(db_path: Path, *, now: datetime | None = None, get=None, sleep: Callable[[float], None] = _time.sleep,
               clock: Callable[[], datetime] | None = None, api_key: str | None = None,
-              cache_key: str | None = None, env: Mapping[str, str] | None = None) -> RunResult:
-    """One run of the step (design EC section 1). Never raises for Finnhub, the key or the vault: every end is
-    a RunResult with one summary line."""
+              cache_key: str | None = None, env: Mapping[str, str] | None = None,
+              ledger_dir: Path | None = None, gh=None) -> RunResult:
+    """One run of the step (design EC sections 1 and 9). Never raises for Finnhub, the key, the vault or the
+    ledger: every end is a RunResult with one summary line."""
     clock = clock or (lambda: datetime.now(timezone.utc))
     start = (now or clock()).astimezone(timezone.utc)
     env = os.environ if env is None else env
@@ -614,33 +715,49 @@ def run_cache(db_path: Path, *, now: datetime | None = None, get=None, sleep: Ca
     secret = env.get(store.KEY_ENV, "").strip() if cache_key is None else cache_key
     if not secret:
         return RunResult(store.SKIPPED, f"{TAG} skipped: no cache key", False)
+    directory = Path(ledger_dir) if ledger_dir is not None else Path(db_path).parent
+    gh = gh or ledger.gh_cli(env)
+    st = ledger.read_state(directory)
+    if st.state == "unavailable":  # the run cannot know a newer ledger: no call and no competing seq (9.3)
+        return RunResult(store.SKIPPED, f"{TAG} skipped: the ledger could not be read", False)
     conn = sqlite3.connect(db_path)
     try:
-        opened = store.open_vault(conn, secret)
-        if opened.status == "unreadable":
-            return RunResult(store.SKIPPED, f"{TAG} skipped: the vault does not open", False)
-        vault = opened.vault if opened.status == "ok" else store.empty_vault()
-        note = "" if opened.status == "ok" else f" (new vault: {opened.status})"
+        s0 = _start_state(conn, secret, st, start)
+        if isinstance(s0, str):
+            return RunResult(store.SKIPPED, f"{TAG} skipped: {s0}", False)
+        if s0.restart:
+            return _restart(conn, s0, secret, start, directory, gh)
+        vault = s0.vault
         gate = actions_gate(env, start)
         if gate:
             return RunResult(store.SKIPPED, f"{TAG} skipped: {gate}", False)
         if in_trading_hours(start):
-            return _record_skip(conn, vault, secret, start, "US trading hours")
-        passed = [store.at(r["finished"]) for r in vault["runs"] if r.get("status") == store.PASSING]
-        if passed and start - max(passed) < SPACING:
-            return _record_skip(conn, vault, secret, start, "a complete run finished less than 10 hours ago")
+            return _record_skip(conn, s0, secret, start, "US trading hours", directory, gh)
+        held = [store.at(r["finished"]) for r in vault["runs"] if _holds(r)]
+        if held and start - max(held) < SPACING:
+            return _record_skip(conn, s0, secret, start, "a complete run finished less than 10 hours ago",
+                                directory, gh)
         slow = any(r.get("saw_429") and start - store.at(r["finished"]) < SLOW_FOR for r in vault["runs"])
         rid = store.iso(start)
-        # the reservation (design EC 1.1 step 7): a run killed mid-way still counts its whole allowance
-        vault["runs"].append({"id": rid, "started": rid, "finished": rid, "status": store.PARTIAL, "calls": RUN_CAP,
-                              "calls_by_utc_date": {start.date().isoformat(): RUN_CAP}, "saw_429": False,
-                              "reason": "interrupted"})
+        today = start.astimezone(NY).date()
+        plan = windows(today) + [Window(today - timedelta(days=LOOKBACK_DAYS), today - timedelta(days=1))]
+        # the reservation (design 9.4): durable in the release before any call, or no call at all
+        vault["runs"].append({"id": rid, "started": rid, "finished": store.iso(start + RESERVATION_SPAN),
+                              "status": store.PARTIAL, "calls": RUN_CAP,
+                              "calls_by_utc_date": {start.date().isoformat(): RUN_CAP}, "saw_429": True,
+                              "provisional": True, "reason": "interrupted"})
+        planned = sorted({(w.start + timedelta(days=n)).isoformat() for w in plan
+                          for n in range((w.end - w.start).days + 1)})
+        vault.setdefault("provisional", {})[rid] = {"at": rid, "days": planned}
+        vault["seq"] = s0.m + 1
+        path = ledger.write_local(directory, s0.m + 1, store.seal_ledger(vault, secret, s0.m + 1, start))
+        if not ledger.upload(directory, path, gh):
+            path.unlink(missing_ok=True)
+            return RunResult(store.SKIPPED, f"{TAG} skipped: the ledger could not be written", False)
         try:
             store.write_vault(conn, vault, secret, start)
         except sqlite3.Error:
-            return RunResult(store.SKIPPED, f"{TAG} skipped: the vault could not be written", False)
-        today = start.astimezone(NY).date()
-        plan = windows(today) + [Window(today - timedelta(days=LOOKBACK_DAYS), today - timedelta(days=1))]
+            pass  # the reservation is durable in the release; the final write retries the table
         r = _Run(key, get, sleep, clock, start, SLOW_PACE_S if slow else PACE_S, _charged(vault, exclude=rid))
         stopped = None
         sleep(GAP_S)
@@ -650,14 +767,22 @@ def run_cache(db_path: Path, *, now: datetime | None = None, get=None, sleep: Ca
         except _Stop as stop:
             stopped = stop.reason
         finished = clock().astimezone(timezone.utc)
+        # other runs' provisional withdrawals: those runs are over (data-write concurrency), so they now count
+        vault["provisional"].pop(rid, None)
+        withdrawn = vault.setdefault("withdrawn", {})
+        for p in vault["provisional"].values():
+            for d in p.get("days") or ():
+                withdrawn[d] = max(withdrawn.get(d, p["at"]), p["at"])
+        vault["provisional"] = {}
         status, counts = _merge(db_path, vault, r, today, start, finished, stopped)
         rec = next(x for x in vault["runs"] if x["id"] == rid)
+        rec.pop("provisional", None)
         rec.update(finished=store.iso(finished), status=status, calls=r.calls,
                    calls_by_utc_date={start.date().isoformat(): r.calls} if r.calls else {}, saw_429=r.saw_429,
                    reason=stopped or "", counts=counts)
         _prune_runs(vault, finished)
-        store.write_vault(conn, vault, secret, finished)
-        line = (f"{TAG} {status}{note}: " + ", ".join(f"{k} {v}" for k, v in counts.items())
+        _write_final(conn, vault, secret, s0.m + 2, finished, directory, gh)
+        line = (f"{TAG} {status}{s0.note}: " + ", ".join(f"{k} {v}" for k, v in counts.items())
                 + (f"; stopped: {stopped}" if stopped else ""))
         return RunResult(status, line, True)
     finally:
@@ -728,6 +853,8 @@ def _merge(db_path: Path, vault: dict, r: _Run, today: date, start: datetime, fi
             # reported evidence is bound to the label it was seen with, from a passing run only (design EC 1.6)
             if status == store.PASSING and x["r"] and lab is not None and x["d"] <= today and list(lab) not in o["reported"]:
                 o["reported"].append(list(lab))
+                # provenance of a retained anchor (Amendment A-1): the first passing run that saw it reported
+                o.setdefault("reported_by", []).append([lab[0], lab[1], store.iso(start), at])
             occ[k] = o
     cutoff = (today - timedelta(days=KEEP_OCC_DAYS)).isoformat()
     for k in [k for k, o in occ.items() if o["d"] < cutoff]:
@@ -782,10 +909,25 @@ def main(argv: list[str] | None = None, *, now: datetime | None = None) -> int:
                                              "default, or the read-only probe, or a local report.")
     ap.add_argument("--probe", action="store_true", help="run the read-only free-plan probe")
     ap.add_argument("--report", action="store_true", help="print the vault's counts per state (needs the cache key)")
+    ap.add_argument("--fetch-ledger", action="store_true", help="the workflow's step before the run: list and "
+                                                               "download the durable ledger (design 9.2)")
+    ap.add_argument("--publish-ledger", action="store_true", help="the workflow's always-run step: upload a final "
+                                                                 "ledger state still pending (design 9.2)")
     ap.add_argument("--db", help="the database (the step: data/macro_radar.db; the probe: default a temporary copy "
                                  "of the public data-latest database)")
     args = ap.parse_args(argv)
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    if args.fetch_ledger or args.publish_ledger:
+        directory = (Path(args.db) if args.db else DB_PATH).parent
+        try:
+            if args.fetch_ledger:
+                st = ledger.fetch(directory, ledger.gh_cli())
+                print(f"{TAG} ledger: {st.state}, {len(st.names)} assets" + (f" ({st.reason})" if st.reason else ""))
+            else:
+                print(f"{TAG} ledger publish: {ledger.publish_pending(directory, ledger.gh_cli())}")
+        except Exception as exc:  # never fail the refresh
+            print(f"{TAG} ledger failed: {type(exc).__name__}")
+        return 0
     if not args.probe:
         db = Path(args.db) if args.db else DB_PATH
         if args.report:

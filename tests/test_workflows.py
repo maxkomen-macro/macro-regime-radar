@@ -232,22 +232,52 @@ def test_the_earnings_cache_step_runs_after_the_news_feed_in_full_mode_and_canno
     covers its imports and the store's."""
     steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
     names = [s["name"] for s in steps]
-    step = steps[names.index("Refresh news feed") + 1]
+    # EC7 (Amendment A-1): the ledger fetch step sits between the news feed and the cache step
+    assert steps[names.index("Refresh news feed") + 1]["name"] == "Fetch earnings cache ledger"
+    step = steps[names.index("Refresh news feed") + 2]
     assert step["name"] == "Load earnings cache (Options Finder)"
     assert step["if"] == "steps.mode.outputs.mode == 'full'"
     assert step["continue-on-error"] is True and step["timeout-minutes"] == 10
+    # EC7: plus the built-in GH_TOKEN for the ledger uploads; no new secret
     assert step["env"] == {"FINNHUB_API_KEY": "${{ secrets.FINNHUB_API_KEY }}",
-                           "EARNINGS_CACHE_KEY": "${{ secrets.EARNINGS_CACHE_KEY }}"}
+                           "EARNINGS_CACHE_KEY": "${{ secrets.EARNINGS_CACHE_KEY }}",
+                           "GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
     assert step["run"].strip() == "python -m src.events.earnings_cache"
     after = names.index("Load earnings cache (Options Finder)")
     for later in ("Trim intraday data to last 30 days (prevent DB bloat)", "Checkpoint WAL into main DB file",
                   "Validate the refreshed database"):
         assert after < names.index(later), later
     assert after > names.index("Load earnings calendar")  # the cross-check reads the dashboard's rows
-    assert sum("earnings_cache" in (s.get("run") or "") for s in steps) == 1
+    assert sum((s.get("run") or "").strip() == "python -m src.events.earnings_cache" for s in steps) == 1
+    assert sum("earnings_cache" in (s.get("run") or "") for s in steps) == 3  # EC7: + the two ledger steps
     mods = _module_imports(ROOT / "src/events/earnings_cache.py") | _module_imports(ROOT / "src/events/earnings_store.py")
     third_party = {m for m in mods if m not in STDLIB and m != "src"}
     assert third_party <= _requirement_modules(ROOT / "requirements.txt"), third_party
+
+
+def test_the_earnings_cache_ledger_steps_are_bounded_and_the_publish_one_always_runs():
+    """EC7 (Amendment A-1, design EC 9.2): the ledger is fetched just before the
+    cache step and a pending final state is uploaded after the database publish
+    even when validation fails or the job is cancelled. Both steps are full mode
+    only, cannot fail the refresh, are bounded, and see only the built-in token.
+    The database's upload stays gated on validation exactly as before."""
+    steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
+    names = [s["name"] for s in steps]
+    fetch = steps[names.index("Fetch earnings cache ledger")]
+    publish = steps[names.index("Publish earnings cache ledger")]
+    assert names.index("Fetch earnings cache ledger") + 1 == names.index("Load earnings cache (Options Finder)")
+    assert fetch["if"] == "steps.mode.outputs.mode == 'full'"
+    assert publish["if"] == "always() && steps.mode.outputs.mode == 'full'"
+    for step, flag in ((fetch, "--fetch-ledger"), (publish, "--publish-ledger")):
+        assert step["continue-on-error"] is True and step["timeout-minutes"] == 2
+        assert step["env"] == {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+        assert step["run"].strip() == f"python -m src.events.earnings_cache {flag}"
+    for earlier in ("Validate the refreshed database", "Publish validated DB snapshot to data-latest release",
+                    "Publish the validation verdict"):
+        assert names.index(earlier) < names.index("Publish earnings cache ledger"), earlier
+    db_publish = steps[names.index("Publish validated DB snapshot to data-latest release")]
+    assert db_publish["if"] == "steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload == 'true'"
+    assert "earnings-cache-ledger" not in (db_publish.get("run") or "")
 
 
 def test_intraday_validates_its_own_feeds():

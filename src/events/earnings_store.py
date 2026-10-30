@@ -38,6 +38,12 @@ AAD = b"earnings_cache_vault/v1"
 SALT = b"mrr-earnings-cache"
 KEY_ENV = "EARNINGS_CACHE_KEY"
 FRESH = timedelta(hours=48)  # plan D3
+LEDGER_PREFIX, LEDGER_SUFFIX = "earnings-cache-ledger-", ".bin"
+LEDGER_AAD = b"earnings_cache_ledger/v1"
+LEDGER_FORMAT = 1
+# a reservation's provisional withdrawals count once the run that wrote them can no longer be running (its step's
+# 10-minute timeout, with room): before that it is in flight, and its own final write replaces them (design 9.6)
+PROVISIONAL_GRACE = timedelta(minutes=15)
 DAY_ENTRIES = 2  # covering entries kept per day
 LABEL_YEARS = (1990, 2100)
 
@@ -68,11 +74,11 @@ def content_digest(vault: Mapping[str, Any], secret: str) -> str:
     Finnhub changes it even when nothing was answered (Codex S-2), and a zero-call skip does not."""
     import hmac
 
-    charged = [{k: r.get(k) for k in ("id", "status", "calls", "calls_by_utc_date", "saw_429")}
+    charged = [{k: r.get(k) for k in ("id", "status", "calls", "calls_by_utc_date", "saw_429", "finished")}
                for r in vault.get("runs") or [] if isinstance(r, Mapping) and r.get("calls")]
     body = json.dumps({"days": vault.get("days") or {}, "occ": vault.get("occ") or {},
-                       "withdrawn": vault.get("withdrawn") or {}, "charged": charged}, separators=(",", ":"),
-                      sort_keys=True).encode("utf-8")
+                       "withdrawn": vault.get("withdrawn") or {}, "provisional": vault.get("provisional") or {},
+                       "charged": charged}, separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hmac.new(_hkdf(secret, b"digest", 32), body, "sha256").hexdigest()
 
 
@@ -96,7 +102,64 @@ def unseal(nonce: bytes, blob: bytes, secret: str) -> dict:
 
 
 def empty_vault() -> dict:
-    return {"format": FORMAT, "runs": [], "days": {}, "occ": {}, "withdrawn": {}}
+    return {"format": FORMAT, "runs": [], "days": {}, "occ": {}, "withdrawn": {}, "provisional": {}}
+
+
+# ── the durable ledger's assets (design EC section 9) ────────────────────────
+
+def ledger_name(seq: int) -> str:
+    return f"{LEDGER_PREFIX}{seq:09d}{LEDGER_SUFFIX}"
+
+
+def ledger_seq(name: str) -> int | None:
+    """The seq of a ledger asset's name; None for a name that is not a ledger asset; ValueError for one that looks
+    like a ledger asset but whose seq part is not exactly 9 digits (the order is then unsafe, DR-22)."""
+    if not name.startswith(LEDGER_PREFIX):
+        return None
+    mid = name[len(LEDGER_PREFIX):]
+    if not mid.endswith(LEDGER_SUFFIX):
+        raise ValueError("not a sequenced ledger name")
+    mid = mid[: -len(LEDGER_SUFFIX)]
+    if len(mid) != 9 or not mid.isdigit():
+        raise ValueError("not a sequenced ledger name")
+    return int(mid)
+
+
+def seal_ledger(vault: Mapping[str, Any], secret: str, seq: int, now: datetime) -> bytes:
+    """One ledger asset: the vault sealed under its own AAD in a public envelope (key id, seq, time; no symbol,
+    no report date, no count of names)."""
+    import base64
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    nonce = os.urandom(12)
+    plain = zlib.compress(json.dumps(vault, separators=(",", ":"), sort_keys=True).encode("utf-8"), 9)
+    blob = AESGCM(_hkdf(secret, b"aes-key", 32)).encrypt(nonce, plain, LEDGER_AAD)
+    return json.dumps({"format": LEDGER_FORMAT, "key_id": key_id(secret), "seq": seq, "written_at": iso(now),
+                       "nonce": base64.b64encode(nonce).decode(), "blob": base64.b64encode(blob).decode()}).encode()
+
+
+def open_ledger(raw: bytes, secret: str, seq: int) -> Opened:
+    """ok with the vault, rotated (another key), or unreadable (tampered, truncated, or a seq that disagrees with
+    its name or its body). Never raises."""
+    import base64
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    try:
+        env = json.loads(raw)
+        if not isinstance(env, dict) or env.get("format") != LEDGER_FORMAT or env.get("seq") != seq:
+            return Opened("unreadable")
+        if env.get("key_id") != key_id(secret):
+            return Opened("rotated")
+        plain = AESGCM(_hkdf(secret, b"aes-key", 32)).decrypt(base64.b64decode(env["nonce"]),
+                                                               base64.b64decode(env["blob"]), LEDGER_AAD)
+        out = json.loads(zlib.decompress(plain).decode("utf-8"))
+    except Exception:  # noqa: BLE001 — a state, never an error
+        return Opened("unreadable")
+    if not isinstance(out, dict) or out.get("format") != FORMAT or out.get("seq") != seq:
+        return Opened("unreadable")
+    return Opened("ok", out)
 
 
 @dataclass
@@ -213,19 +276,33 @@ def _entries(vault: Mapping[str, Any], d: date) -> list[dict]:
     return list((vault.get("days") or {}).get(d.isoformat()) or [])
 
 
-def _withdrawn_after(vault: Mapping[str, Any], d: date, entry: Mapping[str, Any]) -> bool:
-    """A request for `d` that got no answer, newer than `entry` (Codex S-1: a failed read withdraws, R5)."""
+def withdrawal(vault: Mapping[str, Any], d: date, now: datetime | None) -> datetime | None:
+    """The newest withdrawal of `d`: a request for it that got no answer (Codex S-1), a conservative restart's
+    barrier (DR-17), or a reservation's provisional withdrawal once its run can no longer be running (design 9.6;
+    with now None, every provisional one counts)."""
+    out = None
     w = (vault.get("withdrawn") or {}).get(d.isoformat())
-    return w is not None and at(w) >= at(entry["at"])
+    if w is not None:
+        out = at(w)
+    for p in (vault.get("provisional") or {}).values():
+        t = at(p["at"])
+        if d.isoformat() in (p.get("days") or ()) and (now is None or now - t >= PROVISIONAL_GRACE):
+            out = t if out is None else max(out, t)
+    return out
 
 
-def contested(vault: Mapping[str, Any], d: date) -> bool:
+def _withdrawn_after(vault: Mapping[str, Any], d: date, entry: Mapping[str, Any], now: datetime | None) -> bool:
+    w = withdrawal(vault, d, now)
+    return w is not None and w >= at(entry["at"])
+
+
+def contested(vault: Mapping[str, Any], d: date, now: datetime | None = None) -> bool:
     """The newest read covering `d` was not a passing, complete one, or a newer request for it got no answer."""
     es = _entries(vault, d)
     if not es:
-        return (vault.get("withdrawn") or {}).get(d.isoformat()) is not None
+        return withdrawal(vault, d, now) is not None
     e1 = es[0]
-    return not (e1.get("status") == PASSING and e1.get("complete") is True) or _withdrawn_after(vault, d, e1)
+    return not (e1.get("status") == PASSING and e1.get("complete") is True) or _withdrawn_after(vault, d, e1, now)
 
 
 def day_stable(vault: Mapping[str, Any], d: date, now: datetime) -> bool:
@@ -235,7 +312,7 @@ def day_stable(vault: Mapping[str, Any], d: date, now: datetime) -> bool:
     e1, e2 = es[0], es[1]
     if not all(e.get("status") == PASSING and e.get("complete") is True for e in (e1, e2)):
         return False
-    if _withdrawn_after(vault, d, e2):  # both reads must postdate any withdrawal (Codex S-4)
+    if _withdrawn_after(vault, d, e2, now):  # both reads must postdate any withdrawal (Codex S-4)
         return False
     t1, t2 = at(e1["at"]), at(e2["at"])
     return now - t1 < FRESH and timedelta(0) <= t1 - t2 <= FRESH

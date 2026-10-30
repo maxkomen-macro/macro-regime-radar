@@ -223,10 +223,24 @@ jobs:
           print(f'Stored {n} new headlines')
           "
 
+      # Options Finder earnings cache, durable ledger (Amendment A-1, design EC
+      # 9.2): download the newest sealed ledger assets from data-latest, so the
+      # cache step's call accounting survives a refresh whose database is not
+      # published. Counts and a state word only; never fails the refresh.
+      - name: Fetch earnings cache ledger
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m src.events.earnings_cache --fetch-ledger
+
       # Options Finder earnings cache (plan D1): Finnhub's whole-market calendar
       # into an encrypted vault table, with its own call caps and trading-hours
       # guard. It prints one summary line of counts and exits 0 on every end, so
-      # it cannot fail the refresh; the timeout bounds it.
+      # it cannot fail the refresh; the timeout bounds it. GH_TOKEN (the
+      # built-in token) uploads its reservation before the first call and its
+      # final state after the last, as new ledger assets (design EC 9.4).
       - name: Load earnings cache (Options Finder)
         if: steps.mode.outputs.mode == 'full'
         continue-on-error: true
@@ -234,6 +248,7 @@ jobs:
         env:
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           EARNINGS_CACHE_KEY: ${{ secrets.EARNINGS_CACHE_KEY }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m src.events.earnings_cache
 
       - name: Trim intraday data to last 30 days (prevent DB bloat)
@@ -304,6 +319,18 @@ jobs:
         run: |
           python scripts/validation_asset.py validation.json data/macro_radar.db publish/validation.json
           gh release upload data-latest publish/validation.json --clobber
+
+      # Earnings cache ledger (design EC 9.2.3): if the cache step left a final
+      # state it could not upload, upload it now under its own sequenced name,
+      # whether validation failed, the publish failed or the job was cancelled.
+      # Independent of the database's upload, which stays gated on validation.
+      - name: Publish earnings cache ledger
+        if: always() && steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python -m src.events.earnings_cache --publish-ledger
 
       # launch-1: the static site ships a copy of the validated snapshot, so a
       # published full refresh asks Vercel for a fresh deploy. Absent the
