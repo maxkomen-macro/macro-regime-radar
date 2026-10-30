@@ -6,8 +6,12 @@ values are "estimated, cross-check pending" until the Phase 3 cross-check exists
 
 - Plan: "Options engine Phase 2 plan: convergence controller", revision 2, approved 2026-10-29 05:39 UTC, with
   amendment A-1 (2026-10-29 18:11 UTC: interval refusals and the analytic-route estimate).
-- Design: design P2-2 with addenda A1–A3 (project files, `review-loop/options-adaptive/designs/`), approved by
-  Codex on its fourth design pass.
+- Design: design P2-2 (project files, `review-loop/options-adaptive/designs/`), approved by Codex on its fourth
+  design pass. Addendum A (A1–A3) was written during the build, after that pass, and reviewed in code-review
+  rounds 1–4, not as a design pass. A1 and A3 are amendment A-1. A2 is a deviation from design 9.3: calibration
+  aims its tightened reference at 0.1 of the finest straddling candidate's estimate, not at the floor, and reads
+  its reliability against each candidate's own 0.1·E_s; in the held-out run the target is exactly 0.1·E_s, as the
+  design says.
 - Attempt: **attempt 1**, the only one. Calibration seed 20261026; held-out seed 20261029. No failed attempt
   precedes it; the exploratory and provisional calibrations listed below are not attempts and are kept on record.
 - Provenance: every run here is **Claude's recorded run**, not reproduced by Codex. Codex reviewed the code, the
@@ -121,15 +125,15 @@ G4, 4.7% of G5, 4.8% of G6 and 0.07% of T1 cases (at some level). Almost all sit
 undershoots**, and their cause has not been established as roundoff. The largest is 0.032 tol (G5); G3 has 11
 above U. In 142 cases no later level was accepted and the price stayed unresolved. The scorecard reports
 frequency, side and size by group, maturity band and output (main answer, each sweep target, each dividend
-scenario). At τ = 0.1 the analytic route is never taken, and many sweep refusals there are lattice values at L
-short by 1e-15 tol or less (the median in G1).
+scenario). At τ = 0.1 the analytic route is never taken, and many sweep refusals there are lattice values at an
+interval end by a hair (G1 at 0.1·tol: median 3e-14 tol; 1,403 below L, 57 above U).
 
 ### Coverage and work (report only in Phase 2)
 
 | | Tier 2 | Tier 1 (same held-out cases) |
 |---|---|---|
 | Priced, random groups G1–G6 | 98.4% (14,758 of 15,000) | 98.9% (14,828 of 15,000) |
-| Work per priced context, p50 / p95 / max | 0.52 M / 25.0 M / 94.2 M units | 0.09 M / not reported / 51.9 M units (with G0) |
+| Work per priced context, p50 / p95 / max | 0.52 M / 25.0 M / 94.2 M units (G1–G6) | 0.09 M / not reported / 51.9 M units (the merged scorer's G0–G6 and T1 total) |
 
 - Tier 2 prices 0.5 points fewer of these contexts than Tier 1; its refusals are named (outside the interval,
   estimate above target, the schedule cap). The coverage-at-least-the-baseline row stays a later obligation, as
@@ -142,7 +146,7 @@ short by 1e-15 tol or less (the median in G1).
 
 The merged scorer, run on the same held-out reference run, scores today's served baseline:
 
-- Prices: 15,081 scored in the random groups, 0 failures, 0 indeterminate; deltas 0 failures.
+- Prices: 15,081 scored in the in-domain groups (G0–G6 and T1), 0 failures, 0 indeterminate; deltas 0 failures.
 - **Dividend scenario: 1 failure and 1 indeterminate.** G2-dividends/1239 (21-day call, a 2.04 dividend on day
   4, volatility 0.50): the baseline's price change between the ±10% dividend states differs from the reference's
   by 1.13 tol. G2-dividends/1725 straddles the threshold. Tier 2 refuses a scenario price on both cases.

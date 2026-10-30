@@ -171,6 +171,16 @@ def test_the_analytic_route_is_taken_exactly_when_h_plus_the_padding_meets_the_t
                 assert a.estimate == a.audit["h"] + a.audit["padding"] <= tau * om.tolerance(a.audit["L"], c.spot)
 
 
+def test_an_inconsistent_interval_is_refused_and_flagged(monkeypatch):
+    # a premium bound that leaves U below L (here none at all on a deep put whose intrinsic exceeds its European
+    # value) contradicts itself: no value is stated, and the audit flags it for the phase gate
+    assert om.european(R1) < 10.0
+    monkeypatch.setattr(om, "premium_bound", lambda c, charge=None, decide=None: 0.0)
+    a = oa.price(R1)
+    assert a.price_status == oe.UNRESOLVED and a.reason == oa.INCONSISTENT and a.value is None
+    assert a.audit["interval_inconsistent"] is True and a.audit["U"] < a.audit["L"]
+
+
 def test_named_regressions_keep_their_delta_withholding():
     b8 = ctx(next(c for c in cases.NAMED if c.id == "named/B8"))
     a = oa.price(b8)

@@ -320,6 +320,32 @@ def test_a_disjoint_band_fails_and_a_refusal_is_reported_not_passed():
     assert s["undershoots"]["sweep 0.5"]["events"] == 0
 
 
+def _interval_verdict(rows):
+    groups = {"G2-dividends": score2.summary(rows)}
+    integrity = {"golden": True, "hashes_match_freeze": True, "complete": True}
+    named = {"r1": {"pass": True}, "failures": [], "unresolved": [], "missing": []}
+    return score2.gate(groups, rows, integrity, named)["components"]["interval"]["verdict"]
+
+
+def test_the_gate_fails_the_interval_row_on_each_defect_and_not_on_a_refusal():
+    out = _iv_record()
+    assert _interval_verdict([score2.classify(out)]) == "pass"
+    for defect in ("outside", "disjoint", "inconsistent", "refusal"):
+        bad = json.loads(json.dumps(out))
+        if defect == "outside":
+            bad["sweep"]["0.5"].update(price_status=oe.ESTIMATED, value=bad["sweep"]["0.5"]["U"] + 1.0)
+        elif defect == "disjoint":
+            bad["divsens"]["up"]["tier2"]["disjoint"] = [{"k": 3, "V": 1.0, "Es": 0.01, "dist": 0.05, "tol": 0.01,
+                                                          "within_target": False, "for": "price"}]
+        elif defect == "inconsistent":
+            bad["tier2"]["interval_inconsistent"] = True
+        else:
+            bad["tier2"]["refusals"] = [{"k": 3, "V": 1.0, "Es": 0.01, "dist": 0.002, "tol": 0.01, "side": "below L",
+                                         "why": oa.OUTSIDE_INTERVAL}]
+        want = "pass" if defect == "refusal" else "fail"
+        assert _interval_verdict([score2.classify(bad)]) == want, defect
+
+
 @pytest.mark.parametrize("where", ["sweep 0.25", "divsens up"])
 def test_bench_only_refusals_are_reported_with_their_own_frequency_and_magnitude(where):
     out = _iv_record()

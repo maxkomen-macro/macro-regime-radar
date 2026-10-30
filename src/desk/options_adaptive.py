@@ -2,7 +2,7 @@
 
 Refines the baseline's lattice (options_math._lattice, imported read-only) beyond Tier 1's levels and states a
 per-contract error estimate for the value it returns. Routes, in order: input failure; intrinsic at expiry;
-exempt (European, by theorem); outside the domain; the analytic interval (the midpoint of the proved interval
+outside the domain; exempt (European, by theorem); the analytic interval (the midpoint of the proved interval
 when it is narrow enough); the lattice. The price and the delta are accepted by separate tests.
 
 Values are "estimated, cross-check pending" until the Phase 3 cross-check exists. Nothing under api/ imports
