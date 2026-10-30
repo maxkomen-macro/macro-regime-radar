@@ -22,7 +22,8 @@ timeout). It prints one summary line of counts, never a symbol, date, key or URL
 One run asks Finnhub's whole-market `/calendar/earnings` for 7-day windows over days 0 to 119 (18 calls), then the
 lookback week before today. A reply of 1,000 rows or more is split in halves, recursively; the observed reply cap is
 1,500 rows, so a single day at the cap is recorded as capped (incomplete). Each split is checked against its parent
-row for row: symbol, date, release time, fiscal label, reported figures and how many times each row appears.
+row for row: symbol, date, release time, fiscal label, the actual EPS and revenue figures, and how many times each
+row appears.
 
 Run outcomes, worst first: failed (no reply), inconsistent (a malformed reply or row, a split that does not match its
 parent, or a dashboard row for one of the 12 tape names missing from the reply covering its day, or nothing to
@@ -54,8 +55,8 @@ that cannot be read only warns.
 
 - A day is stable when its two newest covering entries are both from passing runs and complete, the newer under 48
   hours old and the two at most 48 hours apart. A newer entry that is not passing, or a newer request for the day
-  that got no answer (a failed call, a 429, a time limit), withdraws the day. D is the last day of the unbroken
-  stable stretch from the session.
+  that got no answer (a failed call, a 429, a time limit), withdraws the day until two reads newer than that request
+  are stable again. D is the last day of the unbroken stable stretch from the session.
 - A listing is stable when its day is stable and both entries list the symbol once with the same valid label.
 - A listing the newest entry no longer shows is a possible report until its date passes, its quarter is seen
   reported on another date, or the same quarter is stable on another date (then shown as moved).

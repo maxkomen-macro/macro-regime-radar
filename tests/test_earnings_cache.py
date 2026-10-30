@@ -247,12 +247,14 @@ def test_halves_that_differ_from_their_whole_make_the_run_inconsistent_and_keep_
     assert entry["status"] == "inconsistent"
 
 
-@pytest.mark.parametrize("change", ["hour", "label", "reported", "duplicate"])
+@pytest.mark.parametrize("change", ["hour", "label", "reported", "eps revised", "revenue for eps", "duplicate"])
 def test_halves_that_list_the_same_names_with_other_fields_fail_the_split_check(mod, db, change):
     """S-3: the check compares whole rows (symbol, date, release time, fiscal label, reported figures, and how
     many times each appears), not only the (symbol, date) pairs."""
     rows = market({3: 1200})
     stray = sym(1000 + 3 * 3000 + 5)
+    if change in ("eps revised", "revenue for eps"):
+        rows = [dict(r, epsActual=1.0) if r["symbol"] == stray else r for r in rows]
 
     def alter(items):
         for r in items:
@@ -263,6 +265,10 @@ def test_halves_that_list_the_same_names_with_other_fields_fail_the_split_check(
                     r["quarter"] = 4
                 elif change == "reported":
                     r["epsActual"] = 0.5
+                elif change == "eps revised":  # Codex S-5: a figure revised, not only added
+                    r["epsActual"] = 9.0
+                elif change == "revenue for eps":
+                    r["revenueActual"] = r.pop("epsActual")
         return items + ([dict(next(r for r in items if r["symbol"] == stray))] if change == "duplicate" else [])
 
     res, fake, _, _ = run(mod, db, Finnhub(rows, None, alter={3: alter}))

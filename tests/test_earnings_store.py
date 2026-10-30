@@ -259,6 +259,18 @@ def test_a_newer_unanswered_request_withdraws_a_day_and_marks_it_contested():
     assert cov(v).state == "unconfirmed" and store.contested(v, SESSION)
 
 
+def test_after_a_withdrawal_a_day_needs_two_newer_passing_reads_again():
+    """Codex S-4: a read older than the withdrawal never counts again; one newer passing read is not enough."""
+    old = NOW - timedelta(hours=30)
+    v = build([(-5, (2026, 3), True), (60, (2026, 4), False)], runs=(T1, old))
+    v["withdrawn"] = {day(n).isoformat(): store.iso(old + timedelta(hours=1)) for n in range(-7, 120)}
+    assert not store.day_stable(v, SESSION, NOW) and cov(v).state == "unconfirmed"
+    assert not store.contested(v, SESSION)  # the newest read is passing and newer than the withdrawal: unread
+    v = build([(-5, (2026, 3), True), (60, (2026, 4), False)], runs=(T1, T2))
+    v["withdrawn"] = {day(n).isoformat(): store.iso(T2 - timedelta(hours=1)) for n in range(-7, 120)}
+    assert store.day_stable(v, SESSION, NOW) and cov(v).state == "reconciled"
+
+
 def test_the_content_digest_ignores_the_runs_bookkeeping():
     v = build([(60, (2026, 4), False)])
     a = store.content_digest(v, SECRET)

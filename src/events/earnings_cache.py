@@ -174,9 +174,11 @@ def _parse(items: list, window: Window, rep: Reply, keep: list | None = None) ->
         hour = str(item.get("hour") or "").strip().lower()
         rep.rows.append((sym, day, hour))
         if keep is not None:
+            actuals = tuple(item.get(k) if _finite(item.get(k)) else None for k in ("epsActual", "revenueActual"))
             keep.append({"s": sym, "d": day, "h": hour if hour in RELEASE_CODES else "unknown",
                          "y": _plain(item.get("year")), "q": _plain(item.get("quarter")),
-                         "r": any(_finite(item.get(k)) for k in ("epsActual", "revenueActual"))})
+                         "r": any(a is not None for a in actuals),
+                         "a": actuals})  # for the split check only (Codex S-5); the vault keeps "r"
 
 
 def _finite(v) -> bool:
@@ -550,11 +552,11 @@ class _Run:
         return ans
 
     def ask(self, w: Window) -> Counter:
-        """The rows under `w`, whole (every field the cache keeps) and counted: a reply of SPLIT_AT rows or more is
-        asked again as its halves (R1) and checked against them (R3; Codex S-3: a changed release time, label or
-        reported figure, or a duplicate, fails the check). A stop part-way leaves every answer so far in place."""
+        """The rows under `w`, whole (every field the cache reads, the actual figures themselves included) and
+        counted: a reply of SPLIT_AT rows or more is asked again as its halves (R1) and checked against them (R3;
+        Codex S-3, S-5: a changed release time, label or actual figure, or a duplicate, fails the check). A stop part-way leaves every answer so far in place."""
         ans = self.call(w)
-        whole = Counter((x["s"], x["d"], x["h"], x["y"], x["q"], x["r"]) for x in ans.rows)
+        whole = Counter((x["s"], x["d"], x["h"], x["y"], x["q"], x["a"]) for x in ans.rows)
         span = (w.end - w.start).days + 1
         if len(ans.rows) < SPLIT_AT or span == 1:
             return whole

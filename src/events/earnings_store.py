@@ -11,7 +11,7 @@ the newest two covering entries per New York day, and every (symbol, date) occur
 Read-time rules (capability report rev 2, R2/R4/R5, and the owner's 2026-10-29 23:26 UTC clarifications):
   - a day is stable when its two newest covering entries both come from passing runs and are complete, the
     newest is under 48 hours old and the two are at most 48 hours apart; a newer non-passing entry, or a newer
-    request for the day that got no answer, withdraws it;
+    request for the day that got no answer, withdraws it, until two reads newer than that request agree again;
   - D is the last day of the unbroken stable stretch from the session;
   - a listing is stable when its day is stable and both entries list it once, with the same fiscal label;
   - an occurrence its day's newest entry no longer lists is a possible event until its date passes, its quarter
@@ -235,7 +235,7 @@ def day_stable(vault: Mapping[str, Any], d: date, now: datetime) -> bool:
     e1, e2 = es[0], es[1]
     if not all(e.get("status") == PASSING and e.get("complete") is True for e in (e1, e2)):
         return False
-    if _withdrawn_after(vault, d, e1):
+    if _withdrawn_after(vault, d, e2):  # both reads must postdate any withdrawal (Codex S-4)
         return False
     t1, t2 = at(e1["at"]), at(e2["at"])
     return now - t1 < FRESH and timedelta(0) <= t1 - t2 <= FRESH
