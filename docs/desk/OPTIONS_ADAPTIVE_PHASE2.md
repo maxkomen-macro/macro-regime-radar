@@ -157,6 +157,24 @@ The merged scorer, run on the same held-out reference run, scores today's served
 These are facts about Tier 1 on a new seed. This branch does not change Tier 1 and does not fix them; they are
 listed for the owner's decision.
 
+## Open review findings (the owner's decision)
+
+Codex's final whole-branch review (round 6, at `30ffef1`) found two gaps in the held-out runner, both from the
+first bench commit and neither in the pricing or scoring math:
+
+- **S-9.** `phase2.py` resumes a run without fingerprinting the reference records, so a reference file changed
+  between sessions could keep earlier verdicts. Calibration already guards this.
+- **S-10.** `phase2.py` adopts results that have no manifest and stamps them with the current freeze.
+  Calibration already refuses these.
+
+The recorded attempt did not meet either case. It ran in one session in a fresh directory, with no resume. All
+17,207 records carry the same case, R0 value and delta, Tier 1 answer and dividend-scenario references as the
+reference file holds now (0 differ). Evidence: `review-loop/options-adaptive/held-out/S-9-S-10-proof.txt` in the
+project files. Codex has not reproduced it.
+
+Both files are frozen, so fixing them on this branch after the held-out run would break the freeze's hash match
+at HEAD. Whether to fix them here or in a follow-up is the owner's decision.
+
 ## Limits of these claims
 
 - Each statement is about one frozen attempt, one seed and one group, on the bench's synthetic distribution; it
