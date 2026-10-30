@@ -189,8 +189,8 @@ sentence on the contracts not priced says the allowance is an observed accuracy,
   last expiry scanned; rows for one day are one report (conflicting times become unknown); and when any earnings
   row could not be read, no move is served and no absence of earnings is claimed. A move also needs the earnings
   coverage complete through its second expiry; stored rows never are, so with them every move is null with the
-  reason ("Earnings dates past the stored ones are unknown..."). Reconciled coverage through K is, for pairs
-  whose second expiry is on or before K.
+  reason ("Earnings dates past the stored ones are unknown..."). Reconciled coverage through K is complete
+  for pairs whose second expiry is on or before K.
 - Coverage sentences never claim an absence the data cannot prove ("No earnings date found ... through
   <date>", "Other company events ... are not tracked").
 
