@@ -136,7 +136,8 @@ class Reply:
     rows: list[tuple[str, date, str]] = field(default_factory=list)  # (symbol, day, release code)
     malformed: int = 0
     outside: int = 0
-    unresolved: bool = False  # abandoned before any status arrived: the provider may yet answer 429 (Codex S-10)
+    unresolved: bool = False  # sent but no status established (abandoned or a transport error): perhaps a 429
+    # (Codex S-10, S-11); the run then assumes it was
 
 
 def fetch(window: Window, api_key: str, get=None) -> Reply:
@@ -449,9 +450,9 @@ def fetch_until(window: Window, api_key: str, get, until: datetime,
         return box["out"]
     box["abandoned"] = True
     # a status that arrived before the deadline is kept; none at all is unresolved, and the run then assumes the
-    # 429 it may have been (S-10): the 24-hour slow pace can never be lost to a late reply
+    # 429 it may have been (S-10, S-11): the 24-hour slow pace can never be lost to a late or lost reply
     rep.status = getattr(box.get("resp"), "status_code", None)
-    rep.unresolved = rep.status is None and alive
+    rep.unresolved = rep.status is None
     if box.get("resp") is not None:
         # closed on a thread of its own: a close waits for the read it would interrupt (the buffered reader's
         # lock), so closing here would wait out the drip
@@ -476,6 +477,7 @@ def _fetch(window: Window, api_key: str, get, until: datetime, clock: Callable[[
                    timeout=(left, left), stream=True)
     except Exception as exc:  # the message names the URL, token included: keep the type only
         rep.failure = type(exc).__name__
+        rep.unresolved = True  # sent, perhaps answered 429, but no status came back (Codex S-11)
         return kept, rep
     box["resp"] = resp
     try:

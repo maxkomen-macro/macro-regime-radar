@@ -477,6 +477,27 @@ def test_an_abandoned_call_whose_429_arrives_late_keeps_the_slow_pace(mod, db, m
     assert fake2.calls and sleeps[1:3] == [12.0, 12.0], res.line
 
 
+@pytest.mark.parametrize("error", [requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError])
+def test_a_call_that_fails_with_no_status_keeps_the_slow_pace(mod, db, error):
+    """Codex S-11 (S-10's sibling): a request sent that ends in a transport error before any status may have
+    been a 429 nobody saw. The run records a 429, and the next run within 24 hours paces at 12 s."""
+    clock = Clock(NOW)
+    fake = Finnhub(market(), clock)
+
+    def lost(url, params=None, timeout=None, stream=False):
+        if not fake.calls:
+            fake.calls.append((params["from"], params["to"], clock()))
+            raise error("TESTONLY transport failure")
+        return fake(url, params, timeout, stream)
+
+    res, _, _, _ = run(mod, db, lost, clock=clock)
+    assert error.__name__ in res.line, res.line
+    rec = vault_of(db).vault["runs"][-1]
+    assert rec["saw_429"] is True and rec["calls"] == 1 and "provisional" not in rec
+    res, fake2, sleeps, _ = run(mod, db, clock=Clock(NOW + timedelta(hours=20)))
+    assert fake2.calls and sleeps[1:3] == [12.0, 12.0], res.line
+
+
 @pytest.mark.parametrize("stage", ["headers", "body"])
 def test_a_real_socket_dripping_bytes_cannot_hold_a_call_past_its_deadline(mod, stage):
     """Codex S-8: Requests' timeouts bound each socket wait, not the call. A local server that keeps sending a
