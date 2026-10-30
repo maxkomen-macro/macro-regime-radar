@@ -60,8 +60,8 @@ validation exactly as before.
 - **No allowance, no call.** The ledger cannot be listed or downloaded, or an asset's name is not in sequence form:
   the run skips and writes nothing.
 - **Conservative restart.** The newest asset does not open (key, decryption, format or sequence), the two copies
-  disagree at the same seq, or the ledger is gone while the table shows it existed: the run records 80 calls for the
-  UTC day with a 429, withdraws every day it covers at that moment, and makes no call. Uncertain accounting is never
+  disagree at the same seq, or the ledger is gone while the table shows it existed or is sealed under another key:
+  the run records 80 calls for the UTC day with a 429, withdraws every day it covers at that moment, and makes no call. Uncertain accounting is never
   reset to zero: the daily cap, the 24-hour slow pace and the 10-hour spacing all hold, and every day stays unknown
   until two passing reads newer than the restart.
 - **Spacing and the 429 pace** count passing runs, reservations still in place and restart records.

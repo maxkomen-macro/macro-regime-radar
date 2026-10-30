@@ -674,7 +674,9 @@ def _start_state(conn, secret: str, st: "ledger.State", start: datetime) -> _Sta
     restart = None
     if st.state == "ok" and (not top_ok or not opened or opened[0][0] != st.top):
         restart = "the newest ledger asset does not open"
-    if st.state == "absent" and t_vault is not None and t_vault.get("seq") is not None:
+    if st.state == "absent" and ((t_vault is not None and t_vault.get("seq") is not None)
+                                 or table.status == "rotated"):
+        # a vault under another key may hold charged calls and a 429 nobody can read: never a zero start (S-9)
         restart = "the ledger is missing"
     best = opened[0] if opened else None
     if best is not None and t_vault is not None and t_seq == best[0] and t_vault != best[1]:

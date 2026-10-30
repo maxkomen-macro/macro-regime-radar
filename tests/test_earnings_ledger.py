@@ -183,6 +183,36 @@ def test_REQUIRED_an_unreadable_missing_or_conflicting_ledger_restarts_conservat
     assert "less than 10 hours ago" in res.line and not fake.calls  # the restart's record holds spacing
 
 
+def test_REQUIRED_a_missing_ledger_with_a_vault_under_another_key_restarts_conservatively(mod, db):
+    """Codex S-9: the two failures together. The ledger is gone and the vault table is sealed under another key,
+    so its charged calls and its 429 cannot be read; the start must not be a zero one. Conservative restart:
+    the whole UTC day charged, a 429 assumed, every day withdrawn, no call, and the restart holds spacing."""
+    from src.events import earnings_cache as ec
+
+    rel = release_of(db)
+    res, fake, _, _ = run(mod, db, Finnhub(market(), None, fail_at={5: 429}))
+    assert fake.calls and "HTTP 429" in res.line
+    rel.assets.clear()
+    other = "another-TESTONLY-key"
+    later = NOW + timedelta(hours=20)
+    st = ledger.fetch(db.parent, rel)
+    import sqlite3
+
+    conn = sqlite3.connect(db)
+    try:
+        assert store.open_vault(conn, other).status == "rotated"
+        start = ec._start_state(conn, other, st, later)
+    finally:
+        conn.close()
+    assert start.restart == "the ledger is missing"
+    res, fake, _, _ = run(mod, db, Finnhub(market(), None), clock=Clock(later), cache_key=other)
+    assert "accounting uncertain" in res.line and not fake.calls
+    v = vault_of(db, other).vault
+    assert v["runs"][-1]["calls_by_utc_date"] == {later.date().isoformat(): 80} and v["runs"][-1]["saw_429"] is True
+    res, fake, _, _ = run(mod, db, Finnhub(market(), None), clock=Clock(later + timedelta(hours=1)), cache_key=other)
+    assert "less than 10 hours ago" in res.line and not fake.calls
+
+
 # ── REQUIRED: a failed publication ──────────────────────────────────────────
 
 def test_REQUIRED_a_final_upload_that_fails_is_published_by_the_always_run_step(mod, db, tmp_path):
