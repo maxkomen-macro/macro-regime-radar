@@ -11,9 +11,11 @@ here reads the file. The pure engine prices it, one run at a time (the Finder lo
 the §12.0 envelope like every Desk route.
 
 Additive and isolated (C1): the lens's chain, the dividends panel and the fundamentals panel are read
-through their existing functions or not at all. The Finder sends no Finnhub request: its earnings dates are
-the stored rows the refresh writes (design A-3), and the route never calls `market.profile`, so no dashboard
-panel's Finnhub capacity is spent here.
+through their existing functions or not at all. The Finder sends no Finnhub request: its earnings dates come
+from what the refresh stores (design A-3), and the route never calls `market.profile`, so no dashboard panel's
+Finnhub capacity is spent here. Which stored dates it may show is the display switch's call (FINDER_EARNINGS_DISPLAY,
+off unless set; plan rev 2 D6): off, only the hand-maintained earnings rows; on, the earnings cache's vault read
+through src/events/earnings_store.py (design EC section 5).
 
 The page this route serves ships unlisted (OPTIONS_FINDER_LISTED = false in the web app): reachable by its
 link, not shown in any menu. Unlisted is not private.
@@ -224,14 +226,32 @@ def _read_inputs() -> dict:
                                 + (" WHERE kind IS NULL OR kind != 'earnings'" if has_kind else "")).fetchone()[0]
             macro_through = str(last)[:10] if last else None
             if has_kind:
-                for sym, at, name in conn.execute("SELECT symbol, event_datetime, event_name FROM event_calendar "
-                                                  "WHERE kind = 'earnings' ORDER BY event_datetime").fetchall():
-                    earnings.append({"symbol": sym, "at": at, "name": name})
+                src = "source" if "source" in cols else "NULL"
+                for sym, at, name, source in conn.execute(f"SELECT symbol, event_datetime, event_name, {src} FROM event_calendar "
+                                                          "WHERE kind = 'earnings' ORDER BY event_datetime").fetchall():
+                    earnings.append({"symbol": sym, "at": at, "name": name, "source": source})
                 symbols = sorted({e["symbol"] for e in earnings if e["symbol"]})
         return {"stored": True, "curve": curve, "macro": macro, "macro_through": macro_through,
-                "earnings": earnings, "earnings_symbols": symbols}
+                "earnings": earnings, "earnings_symbols": symbols, "earnings_cache": _read_cache(conn)}
     finally:
         conn.close()
+
+
+def _read_cache(conn) -> dict:
+    """The earnings cache's vault (design EC section 5), opened with EARNINGS_CACHE_KEY: its state, and when it
+    opens the vault with its occurrences indexed by symbol. Never raises (C1); nothing here is served as is."""
+    import os
+
+    try:
+        from src.events import earnings_store as store
+
+        opened = store.open_vault(conn, os.environ.get(store.KEY_ENV, "").strip())
+        if opened.status != "ok":
+            return {"status": opened.status}
+        return {"status": "ok", "vault": opened.vault, "index": store.index(opened.vault)}
+    except Exception:  # noqa: BLE001 — a value, never an error (C1)
+        log.exception("desk: the Options Finder's earnings cache could not be read")
+        return {"status": "unreadable"}
 
 
 def stored_inputs() -> dict:
@@ -498,14 +518,104 @@ def _stored_time(at: str) -> tuple[str, str] | None:
     return ny.date().isoformat(), STORED_TIMES.get((ny.hour, ny.minute), "unknown")
 
 
+DISPLAY_ENV = "FINDER_EARNINGS_DISPLAY"
+FINNHUB_SOURCE = "finnhub_earnings"  # src/events/earnings.py SOURCE: the dashboard's stored Finnhub rows
+HAND_SOURCE = "Earnings calendar (hand-maintained)"
+CACHE_SOURCE = "Finnhub earnings calendar (whole-market calendar read by the site's refresh; provider data)"
+
+
+def display_on() -> bool:
+    """FINDER_EARNINGS_DISPLAY: off unless set to 1, true, on or yes (plan rev 2 D6). Read on every request."""
+    import os
+
+    return os.environ.get(DISPLAY_ENV, "").strip().lower() in ("1", "true", "on", "yes")
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 def _earnings(symbol: str, session: date, item: dict) -> tuple[list[dict], dict, str | None, list[str]]:
-    """(event rows, coverage, the source sentence or None, notes): the item's stored rows for the symbol, with no
-    Finnhub request (design A-3). A stored row is a date Finnhub listed at some refresh; when it was last checked,
-    and whether every report is stored, is not recorded, so the coverage is never complete."""
+    """(event rows, coverage, the source sentence or None, notes), with no Finnhub request (design A-3). The display
+    switch off (D6): the hand-maintained rows only, and the coverage withheld. On, with the earnings cache open: what
+    its read-time rules allow (design EC section 5). On, without it: the stored rows, as before the cache."""
     sym = symbol
     if share_class(sym):
         # an unverified spelling could read as "no earnings date found" (Codex S-1)
         return [], {"earnings": "not_checked", "earnings_through": None}, None, []
+    if not display_on():
+        hand, unreadable = _hand(sym, item)
+        cov = {"earnings": "withheld", "earnings_through": None, "unreadable": unreadable}
+        return hand, cov, (HAND_SOURCE if hand else None), []
+    cache = item.get("earnings_cache") or {}
+    if cache.get("status") == "ok":
+        try:
+            return _from_cache(sym, session, item, cache)
+        except Exception:  # noqa: BLE001 — the stored rows, as before the cache, never an error (C1)
+            log.exception("desk: the Options Finder's earnings cache could not be applied")
+    return _stored(sym, item)
+
+
+def _hand(sym: str, item: dict) -> tuple[list[dict], int]:
+    """The symbol's hand-maintained earnings rows (any source but the dashboard's Finnhub rows) as event rows, and
+    the number that could not be placed."""
+    rows, unreadable = [], 0
+    for e in item.get("earnings") or []:
+        if e.get("symbol") != sym or e.get("source") == FINNHUB_SOURCE:
+            continue
+        placed = _stored_time(e.get("at"))
+        if placed is None:
+            unreadable += 1
+            continue
+        rows.append({"kind": "earnings", "name": e.get("name") or f"{sym} earnings", "date": placed[0],
+                     "time": placed[1], "at": None, "source": HAND_SOURCE})
+    return rows, unreadable
+
+
+def _seen(t: datetime) -> str:
+    from api.calendar import NY
+
+    ny = t.astimezone(NY)
+    return f"{ny:%b} {ny.day}, {ny:%H:%M} ET"
+
+
+def _from_cache(sym: str, session: date, item: dict, cache: dict) -> tuple[list[dict], dict, str | None, list[str]]:
+    from src.desk.options_finder import _day
+    from src.events import earnings_store as store
+
+    hand, unreadable = _hand(sym, item)
+    vault, now = cache["vault"], _now()
+    cov = store.coverage(vault, cache["index"].get(sym, []), session, now,
+                         [date.fromisoformat(h["date"]) for h in hand])
+    hand_days = {h["date"] for h in hand}
+    rows = list(hand)
+    for o in cov.events:
+        if o.day.isoformat() in hand_days:
+            continue  # one report per day: the hand-maintained row wins, as in src/events/earnings.py
+        if o.possible:
+            src = f"Finnhub earnings calendar (no longer listed, last seen {_seen(o.last_seen)}; a possible report)"
+        else:
+            src = f"Finnhub earnings calendar (last seen {_seen(o.last_seen)}; scheduled, not confirmed by the company"
+            src += "".join(f"; moved from {_day(d)}" for d in o.moved_from) + ")"
+        name = f"{sym} earnings" + (f" (Q{o.label[1]} {o.label[0]})" if o.label else "")
+        rows.append({"kind": "earnings", "name": name, "date": o.day.isoformat(),
+                     "time": o.hour if o.hour in ("bmo", "amc", "dmh") else "unknown", "at": None, "source": src})
+    out = {"earnings": cov.state, "earnings_through": cov.through.isoformat() if cov.through else None,
+           "listed_through": cov.listed_through.isoformat() if cov.listed_through else None, "unreadable": unreadable}
+    if cov.state == "unconfirmed":
+        newest = ((vault.get("days") or {}).get(session.isoformat()) or [None])[0]
+        contested = isinstance(newest, dict) and not (newest.get("status") == store.PASSING and newest.get("complete") is True)
+        out["reason"] = "contested" if contested else "unread"
+    sources = [CACHE_SOURCE] if any(r["source"] != HAND_SOURCE for r in rows) or cov.state in ("reconciled", "unlisted") else []
+    if hand:
+        sources.append(HAND_SOURCE)
+    return rows, out, "; ".join(sources) or None, []
+
+
+def _stored(sym: str, item: dict) -> tuple[list[dict], dict, str | None, list[str]]:
+    """The item's stored rows for the symbol (the route before the earnings cache). A stored row is a date Finnhub
+    listed at some refresh; when it was last checked, and whether every report is stored, is not recorded, so the
+    coverage is never complete."""
     stored, unreadable = [], 0
     for e in item.get("earnings") or []:
         if e.get("symbol") != sym:
