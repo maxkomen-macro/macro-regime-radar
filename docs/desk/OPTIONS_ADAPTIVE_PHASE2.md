@@ -28,7 +28,8 @@ values are "estimated, cross-check pending" until the Phase 3 cross-check exists
 | `scripts/options_bench/calibration/` | The freeze (`phase2-freeze.json`) and the selection report it was chosen from |
 
 Tier 2 routes, in order: input failure; intrinsic at expiry; outside the domain; exempt (European, by theorem);
-the analytic interval; the lattice. The proved interval is [L, U] with L = max(European, intrinsic) and
+the analytic interval; the lattice. (The module docstring lists exempt before the domain test; the code tests the domain
+first. The docstring is left as frozen so that the engine file keeps the freeze's hash.) The proved interval is [L, U] with L = max(European, intrinsic) and
 U = European + the early-exercise premium bound.
 
 - **Analytic route.** Returns the midpoint of [L, U] and states E = h + 0.1·tol(L), the half-width h plus a
