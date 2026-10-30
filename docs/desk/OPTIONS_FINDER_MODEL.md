@@ -169,14 +169,18 @@ sentence on the contracts not priced says the allowance is an observed accuracy,
 
 ## Events
 
-- Earnings (the rows the site's refresh stores from Finnhub's calendar; the Finder sends no Finnhub request.
+- Earnings (the earnings cache's dates, or the hand-maintained rows only while the display switch is off:
+  `docs/desk/EARNINGS_CACHE.md`; the Finder sends no Finnhub request.
   Not checked for a share-class listing such as BRK.B, whose spelling there is not verified), macro releases (the
   stored calendar, with release instants), and dividends (at their cum close) are placed against the session,
   the date and each expiry. A release time that is not known is "may be on either side", never guessed.
 - A modelled row with earnings before the date is flagged: the volatility held flat usually fails after a
   report. While the earnings coverage is not complete through the date, every modelled row also says earnings
   dates are unknown, and the answer's `earnings_status` is "unknown" (or "not_checked"): unknown is never shown
-  as no earnings. Stored rows record no checked horizon, so with them the status is always "unknown".
+  as no earnings. Stored rows record no checked horizon, so with them the status is always "unknown". The earnings
+  cache's reconciled coverage through K counts as complete through K: on or after the date, the unknown flag gives
+  way to a reconciled one (Finnhub lists no other regular quarterly report before the date; provider data, not
+  confirmed by the company), and through the last expiry scanned the status is "reconciled".
 - **Implied earnings move**: from the two nearest expiries after a report, assuming the same diffusive
   variance rate over both and one variance jump at the report: e² = T1·T2·(σ1² − σ2²)/(T2 − T1), served as one
   standard deviation of the move, or null with the reason. A report gets no move of its own when another report
@@ -185,7 +189,8 @@ sentence on the contracts not priced says the allowance is an observed accuracy,
   last expiry scanned; rows for one day are one report (conflicting times become unknown); and when any earnings
   row could not be read, no move is served and no absence of earnings is claimed. A move also needs the earnings
   coverage complete through its second expiry; stored rows never are, so with them every move is null with the
-  reason ("Earnings dates past the stored ones are unknown...").
+  reason ("Earnings dates past the stored ones are unknown..."). Reconciled coverage through K is, for pairs
+  whose second expiry is on or before K.
 - Coverage sentences never claim an absence the data cannot prove ("No earnings date found ... through
   <date>", "Other company events ... are not tracked").
 
