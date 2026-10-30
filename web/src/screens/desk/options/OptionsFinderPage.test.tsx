@@ -223,11 +223,66 @@ describe("Options Finder: the answer", () => {
   it.each([
     ["unknown", "No events are listed before the last expiry, but earnings dates are unknown, so a report is not ruled out."],
     ["known", "No events are listed before the last expiry."],
-  ])("with no events and earnings %s, the events card says so (design A-3)", async (status, words) => {
+    ["reconciled", "No events are listed before the last expiry. Finnhub's calendar lists no other regular quarterly report through then (provider data, not confirmed by the company; unscheduled earnings updates are not covered)."],
+    ["not_checked", "No events are listed before the last expiry, but earnings dates are unknown, so a report is not ruled out."],
+  ])("with no events and earnings %s, the events card says so (design A-3, EC section 6)", async (status, words) => {
     stubDesk({ [ROUTE]: () => ({ ...UP, events: [], earnings_moves: [], earnings_status: status }) });
     renderTab(UP_URL);
     await stateOf("answered");
     expect(screen.getByTestId("of-no-events")).toHaveTextContent(words);
+  });
+
+  // the earnings cache (design EC section 6): the route's words and sources, shown as served
+  const CACHE_WORDS = {
+    reconciled:
+      "Finnhub's calendar lists these regular quarterly reports through Feb 15, 2027, reconciled with the fiscal quarters it shows as reported. This is provider data, not confirmed by the company; unscheduled earnings updates are not covered, and earnings dates after Feb 15, 2027 are unknown.",
+    listed: "Earnings dates listed are from Finnhub's calendar; they could not be reconciled with a reported fiscal quarter, so other earnings dates are unknown.",
+    unlisted: "Finnhub's calendar lists no report for SYN through Feb 19, 2027, so its earnings dates are unknown.",
+    unread:
+      "Finnhub's calendar has not yet been read completely and consistently twice for these dates (the newer read under 48 hours old, the two at most 48 hours apart), so earnings dates are unknown.",
+    contested: "A newer read of Finnhub's calendar for these dates was incomplete or disagreed with earlier reads, so earnings dates are unknown.",
+    withheld: "Earnings dates from Finnhub are not shown on this page, so a report before your date is not ruled out.",
+  };
+  const RECONCILED_FLAG = "Finnhub's calendar lists no other regular quarterly report before your date (provider data, not confirmed by the company; unscheduled earnings updates are not covered).";
+  const UNKNOWN = /Earnings dates are unknown for this name, so a report before your date is not ruled out/;
+
+  it.each(Object.entries(CACHE_WORDS))("shows the earnings cache's %s coverage sentence as served", async (_state, words) => {
+    const coverage = [words, ...(UP.coverage as string[]).slice(1)];
+    stubDesk({ [ROUTE]: () => ({ ...UP, coverage }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(within(page()).getByText(words)).toBeInTheDocument();
+  });
+
+  it("shows a reconciled answer's flag on each modelled row and the cache's event sources, never the unknown flag", async () => {
+    const rows = (UP.rows as OptionRow[]).map((r) => (r.modelled ? { ...r, flags: [...r.flags.filter((f) => !UNKNOWN.test(f)), RECONCILED_FLAG] } : r));
+    const source = "Finnhub earnings calendar (last seen Oct 24, 09:00 ET; scheduled, not confirmed by the company; moved from Nov 25, 2026)";
+    const possible = "Finnhub earnings calendar (no longer listed, last seen Oct 23, 21:00 ET; a possible report)";
+    const events = (UP.events as { kind: string; source: string }[]).map((e) => (e.kind === "earnings" ? { ...e, source } : e));
+    const extra = { ...(UP.events as Record<string, unknown>[]).find((e) => e.kind === "earnings"), id: "earnings-2026-12-02", date: "2026-12-02", source: possible };
+    stubDesk({ [ROUTE]: () => ({ ...UP, rows, events: [...events, extra], earnings_status: "reconciled", coverage: [CACHE_WORDS.reconciled] }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const modelled = rows.filter((r) => r.modelled);
+    fireEvent.click(screen.getByTestId("of-all"));
+    expect(screen.getAllByTitle((t) => t.includes(RECONCILED_FLAG))).toHaveLength(modelled.length);
+    expect(screen.queryAllByTitle(UNKNOWN)).toHaveLength(0);
+    const list = screen.getByTestId("of-events");
+    expect(list).toHaveTextContent(source);
+    expect(list).toHaveTextContent(possible);
+  });
+
+  it("with the display switch off, shows no Finnhub date and says the coverage is withheld (plan D6)", async () => {
+    const events = (UP.events as { kind: string }[]).filter((e) => e.kind !== "earnings");
+    const sources = (UP.sources as string[]).filter((x) => !x.startsWith("Finnhub"));
+    stubDesk({ [ROUTE]: () => ({ ...UP, events, sources, earnings_moves: [], coverage: [CACHE_WORDS.withheld, ...(UP.coverage as string[]).slice(1)] }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(within(page()).getByText(CACHE_WORDS.withheld)).toBeInTheDocument();
+    expect(page().textContent).not.toMatch(/Finnhub earnings calendar/);
+    const modelled = (UP.rows as OptionRow[]).filter((r) => r.modelled);
+    fireEvent.click(screen.getByTestId("of-all"));
+    expect(screen.getAllByTitle(UNKNOWN)).toHaveLength(modelled.length);
   });
 
   it("says why a delta is not served, in the cell, for every reason the route gives (design D-1)", async () => {

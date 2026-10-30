@@ -27,7 +27,7 @@ import { MINUS, NOT_SERVED, dayLong, dayShort, grouped, isFiniteNumber, num, pct
 import { premium } from "./premium";
 import { OPTIONS_FINDER_LISTED } from "./flag";
 import { carriedNote } from "./entry";
-import { FRAMING, LENSES, MARKET_IMPLIED, NOT_DEPLOYED, OCC_URL, PRICER_WORDS, SCREEN_WORDS, TIMING_WORDS, kindWord, viewWord } from "./finder-copy";
+import { FRAMING, LENSES, MARKET_IMPLIED, NOT_DEPLOYED, NO_EVENTS_WORDS, OCC_URL, PRICER_WORDS, SCREEN_WORDS, TIMING_WORDS, kindWord, viewWord } from "./finder-copy";
 import "./options.css";
 
 // ── The thesis in the address ─────────────────────────────────────────────
@@ -541,9 +541,7 @@ function Events({ d }: { d: OptionsFinderResponse }) {
         </ul>
       ) : (
         <p className="of-note" data-testid="of-no-events">
-          {d.earnings_status === "known"
-            ? "No events are listed before the last expiry."
-            : "No events are listed before the last expiry, but earnings dates are unknown, so a report is not ruled out."}
+          {NO_EVENTS_WORDS[d.earnings_status === "known" || d.earnings_status === "reconciled" ? d.earnings_status : "unknown"]}
         </p>
       )}
       {moves.map((m) =>

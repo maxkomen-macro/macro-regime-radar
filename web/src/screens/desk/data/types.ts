@@ -1266,8 +1266,9 @@ export interface OptionsFinderResponse extends Envelope {
   dividends?: { ex_date: string; cum_session: string; amount: number | null; period: string | null; label: "projected, not declared" | "declared" }[];
   events?: OptionEvent[];
   coverage?: string[];
-  /** "known" only when the earnings coverage is complete through the scan's last expiry (design A-3). */
-  earnings_status?: "known" | "unknown" | "not_checked";
+  /** "known" only when the earnings coverage is complete through the scan's last expiry (design A-3); "reconciled"
+   * when that coverage is the earnings cache's, reconciled with Finnhub's fiscal quarters (design EC section 6). */
+  earnings_status?: "known" | "reconciled" | "unknown" | "not_checked";
   earnings_moves?: { event_id: string; date: string; move_sd_pct: number | null; expiries: string[] | null; reason: string | null }[];
   /** Served when the quotes are one session behind the newest completed session. */
   stale?: string | null;

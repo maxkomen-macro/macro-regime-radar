@@ -71,4 +71,12 @@ export const TIMING_WORDS: Readonly<Record<string, string>> = {
 
 export const MARKET_IMPLIED = "market-implied, not a forecast";
 
+/** The events card's line when no event is listed before the last expiry, by earnings_status (design A-3, EC section 6). */
+export const NO_EVENTS_WORDS: Readonly<Record<string, string>> = {
+  known: "No events are listed before the last expiry.",
+  reconciled:
+    "No events are listed before the last expiry. Finnhub's calendar lists no other regular quarterly report through then (provider data, not confirmed by the company; unscheduled earnings updates are not covered).",
+  unknown: "No events are listed before the last expiry, but earnings dates are unknown, so a report is not ruled out.",
+};
+
 export const NOT_DEPLOYED = "The Options Finder is not deployed on the data service yet. This preview page goes live once the API carrying it is deployed.";
