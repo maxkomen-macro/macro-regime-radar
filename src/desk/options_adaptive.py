@@ -321,7 +321,9 @@ def _deep(levels: list, hh: float, x: float, sgn: float) -> bool:
 
 
 def _delta_holds(d: dict, levels: list, hh: float, x: float, es: float, tol: float, clear: bool, sgn: float) -> bool:
-    """Whether a delta accepted at an earlier level still passes its rule's test on the accepted price's level."""
+    """Whether a delta accepted at an earlier level still passes its rule's test on the accepted price's level.
+    There es <= tau·tol <= tol < DELTA_ZONE·tol, so an envelope delta clear of the zone is also clear of the
+    exercise decision; the decision test is kept so the rule reads as the one the walk applies."""
     if d["rule"] == "deep exercise":
         return _deep(levels, hh, x, sgn)
     return clear and hh - x > om.DELTA_ZONE * tol and hh - x >= es

@@ -1,6 +1,6 @@
 """scripts/options_bench/phase2.py — Tier 2 on a finished bench run, with tightened references (test tooling).
 
-    python -m scripts.options_bench.phase2 --refs RUN_DIR --freeze scripts/options_bench/calibration/phase2-freeze.json \
+    python -m scripts.options_bench.phase2 --refs RUN_DIR --freeze scripts/options_bench/calibration/phase2-freeze-2.json \
         --out P2_DIR [--held-out] [--workers 4]
     python -m scripts.options_bench.score2 P2_DIR
 

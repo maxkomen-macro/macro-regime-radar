@@ -453,3 +453,15 @@ def test_answers_match_in_a_fresh_process():
                          env={"FRED_API_KEY": "placeholder", "PATH": "/usr/bin:/bin"}).stdout.split()
     a = oa.price(om.Context(True, 100.0, 95.0, 400, 0.04, 0.02, 0.35, ((100, 0.8), (282, 0.8))))
     assert out == [repr(a.value), repr(a.estimate), repr(a.delta), str(a.units)]
+
+
+@pytest.mark.parametrize("tau", [0.1, 0.5, 1.0])
+def test_at_an_accepted_price_the_zone_test_implies_the_decision_test(tau):
+    # es <= tau·tol <= tol < 5·tol: a continuation clear of the zone is clear of its own estimate, so a retained
+    # envelope delta is never withdrawn for the decision alone (the boundary cannot be reached at the price level)
+    tol = 0.0099
+    es = tau * tol
+    assert om.DELTA_ZONE * tol > es
+    assert oa._delta_holds({"rule": "envelope"}, [], 1.0 + om.DELTA_ZONE * tol * 1.001, 1.0, es, tol, True, -1.0)
+    assert not oa._delta_holds({"rule": "envelope"}, [], 1.0 + om.DELTA_ZONE * tol * 0.999, 1.0, es, tol, True, -1.0)
+    assert not oa._delta_holds({"rule": "envelope"}, [], 1.0 + om.DELTA_ZONE * tol * 2, 1.0, es, tol, False, -1.0)

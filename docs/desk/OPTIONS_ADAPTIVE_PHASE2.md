@@ -5,15 +5,22 @@ serving the baseline (Tier 1). The engine switch is Phase 7 and needs the owner'
 values are "estimated, cross-check pending" until the Phase 3 cross-check exists.
 
 - Plan: "Options engine Phase 2 plan: convergence controller", revision 2, approved 2026-10-29 05:39 UTC, with
-  amendment A-1 (2026-10-29 18:11 UTC: interval refusals and the analytic-route estimate).
+  amendment A-1 (2026-10-29 18:11 UTC: interval refusals and the analytic-route estimate) and amendment A-2
+  (2026-11-02 20:53 UTC: fix S-9 and S-10 here, hold a retained delta to the accepted price's exercise-zone
+  test, make acceptance require the held-out run of the frozen population, then run attempt 2).
 - Design: design P2-2 (project files, `review-loop/options-adaptive/designs/`), approved by Codex on its fourth
   design pass. Addendum A (A1–A3) was written during the build, after that pass, and reviewed in code-review
   rounds 1–4, not as a design pass. A1 and A3 are amendment A-1. A2 is a deviation from design 9.3: calibration
   aims its tightened reference at 0.1 of the finest straddling candidate's estimate, not at the floor, and reads
   its reliability against each candidate's own 0.1·E_s; in the held-out run the target is exactly 0.1·E_s, as the
   design says.
-- Attempt: **attempt 1**, the only one. Calibration seed 20261026; held-out seed 20261029. No failed attempt
-  precedes it; the exploratory and provisional calibrations listed below are not attempts and are kept on record.
+- Attempts: **attempt 1** (freeze `2f7bf07`, engine `adaptive-p2.0`, held-out seed 20261029) met every gate row
+  and is now **historical**: amendment A-2 changed the controller and the bench after it, so its results stand
+  only for the code at `2f7bf07` and are superseded. Its freeze, selection report and scorecards are kept
+  unchanged. **Attempt 2** (engine `adaptive-p2.1`, held-out seed 20261102, fixed before its calibration) is
+  pending: it recalibrates on seed 20261026, freezes to `calibration/phase2-freeze-2.json`, and is evaluated
+  once on the fresh seed. The results sections below are attempt 1's until attempt 2 is scored. The exploratory
+  and provisional calibrations listed below are not attempts and are kept on record.
 - Provenance: every run here is **Claude's recorded run**, not reproduced by Codex. Codex reviewed the code, the
   freeze and the selection report (rounds 1–5); it did not rerun calibration or the held-out evaluation.
 
@@ -25,11 +32,11 @@ values are "estimated, cross-check pending" until the Phase 3 cross-check exists
 | `src/desk/options_adaptive.py` | Tier 2: routes, the analytic interval, the refinement walk, both estimators, three schedules, the delta gate |
 | `tests/fixtures/options_baseline_golden.json` | Tier 1's served outputs on the named cases, R-1 and a 300-case stratified subset |
 | `scripts/options_bench/{adaptive,phase2,calibrate,score2,routine}.py` | Adapter and verdict protocol, frozen runner, calibration, Phase 2 scorer, routine subset |
-| `scripts/options_bench/calibration/` | The freeze (`phase2-freeze.json`) and the selection report it was chosen from |
+| `scripts/options_bench/calibration/` | Attempt 1's freeze (`phase2-freeze.json`) and selection report, kept byte for byte; attempt 2's go to `phase2-freeze-2.json` and `phase2-selection-2.json` |
 
 Tier 2 routes, in order: input failure; intrinsic at expiry; outside the domain; exempt (European, by theorem);
-the analytic interval; the lattice. (The module docstring lists exempt before the domain test; the code tests the domain
-first. The docstring is left as frozen so that the engine file keeps the freeze's hash.) The proved interval is [L, U] with L = max(European, intrinsic) and
+the analytic interval; the lattice. (Attempt 1's frozen docstring listed exempt before the domain test; the code
+has always tested the domain first, and the docstring is corrected for attempt 2.) The proved interval is [L, U] with L = max(European, intrinsic) and
 U = European + the early-exercise premium bound.
 
 - **Analytic route.** Returns the midpoint of [L, U] and states E = h + 0.1·tol(L), the half-width h plus a
@@ -49,7 +56,7 @@ U = European + the early-exercise premium bound.
 - **Positive control.** `force_lattice` skips the exempt and analytic routes and the interval test; its answers
   carry the status "positive control" and are never accepted or usable.
 
-## Calibration and freeze
+## Calibration and freeze (attempt 1)
 
 Selection rule (as approved): F is the smallest of {2, 2.5, 3, 4} with no confirmed or unresolved case and a
 needed factor at most F/1.25; F_d the same way; ties go to the highest worst random-group coverage, then the
@@ -143,7 +150,7 @@ interval end by a hair (G1 at 0.1·tol: median 3e-14 tol; 1,403 below L, 57 abov
   contracts would exceed the 300 M request budget; that is a Phase 4/5 question and is not claimed here.
 - Targets below tol: 97.2% priced at 0.5·tol, 95.4% at 0.25·tol, 83.8% at 0.1·tol (random groups).
 
-## What the baseline shows on the held-out seed (Tier 1, unchanged by this branch)
+## What the baseline shows on attempt 1's held-out seed (Tier 1, unchanged by this branch)
 
 The merged scorer, run on the same held-out reference run, scores today's served baseline:
 
@@ -154,26 +161,40 @@ The merged scorer, run on the same held-out reference run, scores today's served
 - One lattice dispute to investigate (T1-near-boundary/1351, a dividend on day 0).
 - G0-exempt has 300 scored prices, below the merged gate's 1,000, because the freeze sizes G0 at 300.
 
-These are facts about Tier 1 on a new seed. This branch does not change Tier 1 and does not fix them; they are
-listed for the owner's decision.
+These are facts about Tier 1 on a new seed. This branch does not change Tier 1 and does not fix them. The
+dividend-scenario failure is recorded as a separate follow-up (backlog B-1 in the project files'
+`review-loop/options-adaptive/BACKLOG.md`), as the owner asked on 2026-11-02.
 
-## Open review findings (the owner's decision)
+## Review findings S-9 and S-10 (resolved for attempt 2)
 
-Codex's final whole-branch review (round 6, at `30ffef1`) found two gaps in the held-out runner, both from the
-first bench commit and neither in the pricing or scoring math:
+Codex's final whole-branch review of attempt 1 (round 6, at `30ffef1`) found two gaps in the held-out runner,
+both from the first bench commit and neither in the pricing or scoring math:
 
-- **S-9.** `phase2.py` resumes a run without fingerprinting the reference records, so a reference file changed
-  between sessions could keep earlier verdicts. Calibration already guards this.
-- **S-10.** `phase2.py` adopts results that have no manifest and stamps them with the current freeze.
-  Calibration already refuses these.
+- **S-9.** `phase2.py` resumed a run without fingerprinting the reference records, so a reference file changed
+  between sessions could keep earlier verdicts.
+- **S-10.** `phase2.py` adopted results that had no manifest and stamped them with the current freeze.
 
-The recorded attempt did not meet either case. It ran in one session in a fresh directory, with no resume. All
-17,207 records carry the same case, R0 value and delta, Tier 1 answer and dividend-scenario references as the
-reference file holds now (0 differ). Evidence: `review-loop/options-adaptive/held-out/S-9-S-10-proof.txt` in the
-project files. Codex has not reproduced it.
+The owner chose to fix both here and rerun (amendment A-2). Since `f6c96ad` the manifest fingerprints every
+reference file, a resume after they change is refused, a result file without its manifest is refused, and the
+scorer checks both. Attempt 1 ran before the fix: in one session, in a fresh directory, with no resume, and all
+17,207 of its records carry the same case, R0 value and delta, Tier 1 answer and dividend-scenario references as
+the reference file holds now (0 differ; `review-loop/options-adaptive/held-out/S-9-S-10-proof.txt` in the
+project files). That is Claude's recorded evidence, not reproduced by Codex, and it does not make attempt 1 the
+acceptance: its results are historical and attempt 2 is the evaluation of the final code.
 
-Both files are frozen, so fixing them on this branch after the held-out run would break the freeze's hash match
-at HEAD. Whether to fix them here or in a follow-up is the owner's decision.
+## Amendment A-2: the retained delta and the acceptance prerequisite
+
+- **Retained delta.** Before A-2 a delta accepted at a level whose price estimate was still above target was
+  kept when the price was accepted at a finer level, even if that price's continuation sat inside the exercise
+  zone (within 5·tol of the exercise value). Now such a delta is re-judged on the accepted price's level: an
+  envelope delta must pass that price's zone and decision tests, and a deep-exercise delta of ±1 must still meet
+  the deep rule over every level run (a deep-exercise delta sits in the zone by nature, so the zone test is not
+  applied to it). One that fails is withdrawn, recorded in the audit as `delta_withdrawn`, counted in the
+  scorecard, and the delta is judged afresh at the price's level. Synthetic regressions cover the bypass, the
+  kept case, the deep-exercise exception and a deep rule broken at a later level.
+- **Acceptance prerequisite.** Only a run started with `--held-out` on the freeze's own population (seed, sizes,
+  named cases, every case finished), whose seed is not the development seed, can be a Phase 2 acceptance. Any
+  other run's gate rows are kept and labelled "diagnostic only, not a Phase 2 acceptance", and never read "met".
 
 ## Limits of these claims
 
