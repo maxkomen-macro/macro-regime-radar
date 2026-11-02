@@ -15,7 +15,8 @@ case is priced a second time from scratch, and the two answers must be identical
 The freeze file fixes the configuration and the SHA-256 of every engine and bench file; the runner refuses to
 start if any differs. With --held-out it also refuses a RUN_DIR whose seed or per-group sizes are not the
 freeze's. Results are one JSON line per case in P2_DIR/results-<shard>.jsonl, written as each case finishes, so
-an interrupted run resumes with the same command.
+an interrupted run resumes with the same command. The manifest also fingerprints RUN_DIR's files: a resume after
+the references changed is refused, and so are results found without their manifest.
 """
 
 from __future__ import annotations
@@ -168,6 +169,12 @@ def read_refs(run_dir: Path) -> tuple[list[dict], list[dict]]:
     return recs, mans
 
 
+def refs_fingerprint(run_dir: Path) -> dict:
+    """SHA-256 of every result and manifest file of a reference run: what a Tier 2 result was judged against.
+    Resuming or scoring against references that changed since is refused (Codex S-9, as calibration's S-5)."""
+    return {p.name: sha(p) for p in sorted(run_dir.glob("results-*.jsonl")) + sorted(run_dir.glob("manifest-*.json"))}
+
+
 def refs_population(recs: list[dict], mans: list[dict]) -> dict:
     """The reference run's own case list, regenerated from its manifests (seed, sizes, named), against the
     records received: every shard compatible and present, every case there once and finished. Missing cases are
@@ -228,6 +235,11 @@ def main(argv=None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     tag = f"{i_shard}of{n_shard}"
     res_path = out / f"results-{tag}.jsonl"
+    man_path = out / f"manifest-{tag}.json"
+    if not man_path.exists() and res_path.exists() and res_path.stat().st_size:
+        # results with no record of the code, configuration and references that made them are never adopted
+        # (Codex S-10, as calibration's S-6)
+        raise SystemExit(f"{res_path} has results but no {man_path.name}: use a new --out")
     done = set()
     if res_path.exists():
         prev, truncated = score.read_results(res_path)
@@ -237,6 +249,7 @@ def main(argv=None) -> int:
     man = {"runner": "scripts/options_bench/phase2.py", "command": sys.argv, "freeze": str(args.freeze),
            "freeze_sha256": sha(Path(args.freeze)), "config": adaptive.config_json(cfg), "engine_version": oa.VERSION,
            "files_sha256": file_hashes(), "refs": str(Path(args.refs).resolve()),
+           "refs_files_sha256": refs_fingerprint(Path(args.refs)),
            "refs_manifests": [{k: m.get(k) for k in ("seed", "per_group", "bench_files_sha256", "engine", "shard",
                                                     "cases_in_shard", "started_utc", "finished_utc")} for m in mans],
            "refs_population": {k: pop.get(k) for k in ("complete", "why", "expected", "received", "missing",
@@ -246,11 +259,10 @@ def main(argv=None) -> int:
            "tightening": {"fraction": adaptive.R1_FRACTION, "escalate_max": adaptive.R1_ESCALATE_MAX,
                           "cell_cap": adaptive.R1_CELL_CAP},
            "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-    man_path = out / f"manifest-{tag}.json"
     if man_path.exists():
         prior = json.loads(man_path.read_text())
-        keys = ("freeze_sha256", "config", "files_sha256", "refs_manifests", "held_out", "shard", "cases_in_shard",
-                "repeat_every")
+        keys = ("freeze_sha256", "config", "files_sha256", "refs_manifests", "refs_files_sha256", "held_out", "shard",
+                "cases_in_shard", "repeat_every")
         diff = [k for k in keys if json.loads(json.dumps(prior.get(k))) != json.loads(json.dumps(man.get(k)))]
         if diff:
             raise SystemExit(f"this directory was started with other code or inputs ({', '.join(diff)}): use a new --out")

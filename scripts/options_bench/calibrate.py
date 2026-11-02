@@ -51,7 +51,11 @@ TARGET_GROUP, TARGET_ALL, TARGET_DELTA = 1000, 10_000, 300
 SIZE_MIN, SIZE_STEP, SIZE_MAX, SIZE_SD = 2400, 100, 8000, 4.0
 RANDOM = [g for g in cases.RANDOM_IN_DOMAIN_GROUPS if g != "G0-exempt"]   # G1 to G6: the groups the targets bind
 APART = {"T1-near-boundary": 1500, "X1-outside": 400, "G0-exempt": 300}  # held-out, reported apart (plan rev 2)
-HELD_OUT_SEED = 20261029   # never run before this freeze (the bench's only earlier seed is 20261026)
+# Attempt 1 (freeze 2f7bf07, scripts/options_bench/calibration/phase2-freeze.json) used held-out seed 20261029.
+# Attempt 2 (amendment A-2) draws a fresh one, fixed here before its calibration: never run before its freeze.
+ATTEMPT = 2
+HELD_OUT_SEED = 20261102
+USED_SEEDS = (20261026, 20261029)   # the development seed and attempt 1's held-out seed
 BANDS = ((1, 180), (181, 730), (731, 1118), (1119, 1464))
 
 
@@ -160,6 +164,8 @@ def row(r: dict, est: str, sched: str, f: float, fd: float = 2.0) -> dict:
 
 
 CAL_SEED = 20261026   # development data: the stored run's seed
+# attempt 1's freeze stays where it was, unchanged; each later attempt writes its own
+FREEZE_OUT = phase2.BENCH_DIR / "calibration" / f"phase2-freeze-{ATTEMPT}.json"
 
 
 def cal_manifest(refs: Path) -> dict:
@@ -172,8 +178,7 @@ def cal_manifest(refs: Path) -> dict:
             "refs_complete": pop["complete"], "refs_why": pop.get("why"),
             "refs_bench_files_sha256": mans[0].get("bench_files_sha256"),
             # the reference records themselves, not only their ids and manifests (Codex S-5)
-            "refs_files_sha256": {p.name: phase2.sha(p) for p in sorted(refs.glob("results-*.jsonl"))
-                                  + sorted(refs.glob("manifest-*.json"))},
+            "refs_files_sha256": phase2.refs_fingerprint(refs),
             "files_sha256": phase2.file_hashes()}
 
 
@@ -418,7 +423,17 @@ def select(cal_dir: Path) -> dict:
     return report
 
 
+EARLIER_ATTEMPTS = [{"attempt": 1, "freeze": "scripts/options_bench/calibration/phase2-freeze.json",
+                     "commit": "2f7bf07", "engine_version": "adaptive-p2.0", "held_out_seed": 20261029,
+                     "freeze_sha256": "40a65e6d37d7a9e2a992828914e86deceefec5e4c155872fdf3dc5669a1f04e8",
+                     "selection": "scripts/options_bench/calibration/phase2-selection.json",
+                     "selection_sha256": "390323a36c06f319b900ea113d471e0134e9c4bbc62e3d345502c7d822d966e3",
+                     "result": "gate met; superseded by attempt 2 (amendment A-2: S-9, S-10, the retained delta)"}]
+
+
 def freeze_doc(report: dict, cal_dir: Path) -> dict:
+    if HELD_OUT_SEED in USED_SEEDS:
+        raise SystemExit(f"held-out seed {HELD_OUT_SEED} has been run before: draw a fresh one")
     sel = report["selected"]
     sz = report["sizes"]
     cfg = oa.Config(estimator=sel["estimator"], schedule=sel["schedule"], F=sel["F"], F_d=sel["F_d"], tau=1.0)
@@ -426,7 +441,9 @@ def freeze_doc(report: dict, cal_dir: Path) -> dict:
     per_group.update(sz["per_group"])
     per_group.update(APART)
     return {
-        "phase": "options adaptive Phase 2, attempt 1",
+        "phase": f"options adaptive Phase 2, attempt {ATTEMPT}",
+        "attempt": ATTEMPT,
+        "earlier_attempts": EARLIER_ATTEMPTS,
         "frozen_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "config": adaptive.config_json(cfg),
         "engine_version": oa.VERSION,
@@ -456,7 +473,7 @@ def main(argv=None) -> int:
     ap.add_argument("--out", required=True)
     ap.add_argument("--workers", type=int, default=os.cpu_count() or 1)
     ap.add_argument("--select", action="store_true", help="select, size and write the proposed freeze")
-    ap.add_argument("--freeze-out", default=str(phase2.BENCH_DIR / "calibration" / "phase2-freeze.json"))
+    ap.add_argument("--freeze-out", default=str(FREEZE_OUT))
     args = ap.parse_args(argv)
     out = Path(args.out)
     if not args.select:

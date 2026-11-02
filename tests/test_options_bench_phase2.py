@@ -370,3 +370,104 @@ def test_bench_only_refusals_are_reported_with_their_own_frequency_and_magnitude
 def test_r1_regression_row():
     r = score2.r1_regression()
     assert r["pass"] and r["tier1_value"] == 9.99969863054983 and r["tier2_route"] == oe.ROUTE_ANALYTIC
+
+
+# ── held-out provenance and the acceptance prerequisite (amendment A-2) ──────
+
+def _held_out_setup(tmp_path, seed=7):
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    rec = stored("G1-nodiv/0")
+    (refs / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    (refs / "manifest-0of1.json").write_text(json.dumps(manifest(seed, {"G1-nodiv": 1})))
+    fz = json.loads(freeze_now(tmp_path).read_text())
+    fz["held_out"] = {"seed": seed, "per_group": manifest(seed, {"G1-nodiv": 1})["per_group"], "named": False}
+    p = tmp_path / "freeze.json"
+    p.write_text(json.dumps(fz))
+    return refs, p, rec
+
+
+def _run(refs, p, out, *extra):
+    return phase2.main(["--refs", str(refs), "--freeze", str(p), "--out", str(out), "--workers", "1",
+                        "--repeat-every", "0", *extra])
+
+
+def test_a_held_out_resume_refuses_references_changed_since_pricing(tmp_path):
+    # S-9: the held-out counterpart of calibration's S-5 test. R0 edited in place, same id, same manifest
+    refs, p, rec = _held_out_setup(tmp_path)
+    out = tmp_path / "p2"
+    assert _run(refs, p, out, "--held-out") == 0
+    assert _run(refs, p, out, "--held-out") == 0          # an unchanged resume is accepted
+    edited = dict(rec, ref=dict(rec["ref"], value=dict(rec["ref"]["value"], ref=999.0)))
+    (refs / "results-0of1.jsonl").write_text(json.dumps(edited) + "\n")
+    with pytest.raises(SystemExit, match="refs_files_sha256"):
+        _run(refs, p, out, "--held-out")
+    (refs / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    man = json.loads((out / "manifest-0of1.json").read_text())
+    assert man["refs_files_sha256"] == phase2.refs_fingerprint(refs)
+    (refs / "results-0of1.jsonl").write_text(json.dumps(edited) + "\n")
+    # the scorer refuses to count those verdicts too: the run row fails
+    sc = score2.score_dirs([out])
+    assert sc["integrity"]["refs_match_manifest"] is False
+    assert sc["gate"]["components"]["run"]["verdict"] == "fail" and not sc["gate"]["met"]
+
+
+def test_results_without_their_manifest_are_never_adopted(tmp_path):
+    # S-10: the runner refuses an orphan result file rather than skipping its cases and stamping a new manifest
+    refs, p, rec = _held_out_setup(tmp_path)
+    out = tmp_path / "p2"
+    out.mkdir()
+    (out / "results-0of1.jsonl").write_text(json.dumps({"case": rec["case"], "tier2": {}}) + "\n")
+    with pytest.raises(SystemExit, match="no manifest-0of1.json"):
+        _run(refs, p, out, "--held-out")
+    assert not (out / "manifest-0of1.json").exists()
+    # an empty result file is not a result: the run starts
+    (out / "results-0of1.jsonl").write_text("")
+    assert _run(refs, p, out, "--held-out") == 0
+    # the scorer refuses a result shard whose manifest is missing
+    (out / "results-1of2.jsonl").write_text(json.dumps({"case": rec["case"]}) + "\n")
+    with pytest.raises(SystemExit, match="without their manifest"):
+        score2.score_dirs([out])
+
+
+def test_only_the_held_out_run_of_the_frozen_population_can_be_an_acceptance(tmp_path):
+    refs, p, _ = _held_out_setup(tmp_path)
+    ho, dev = tmp_path / "ho", tmp_path / "dev"
+    assert _run(refs, p, ho, "--held-out") == 0
+    assert _run(refs, p, dev) == 0
+    a = score2.score_dirs([ho])
+    assert a["integrity"]["acceptance"] == {"eligible": True, "why": None}
+    assert a["gate"]["verdict"] != score2.DIAGNOSTIC and "rows_verdict" not in a["gate"]
+    d = score2.score_dirs([dev])
+    assert d["gate"]["verdict"] == score2.DIAGNOSTIC and d["gate"]["met"] is False
+    assert d["gate"]["rows_verdict"] == a["gate"]["verdict"]          # the rows are kept, labelled diagnostic
+    assert "development run" in d["gate"]["acceptance"]["why"]
+    assert "diagnostic only" in score2.markdown(d)
+    # a population other than the freeze's, and a held-out seed equal to the development seed, are refused
+    fz = json.loads(p.read_text())
+    assert not score2.acceptance(True, "the reference run is seed 8", fz)["eligible"]
+    fz["held_out"]["seed"] = calibrate.CAL_SEED
+    why = score2.acceptance(True, None, fz)
+    assert not why["eligible"] and "development seed" in why["why"]
+
+
+def test_a_gate_without_an_acceptance_record_is_never_met():
+    rows = [score2.classify(_iv_record())]
+    groups = {"G2-dividends": score2.summary(rows)}
+    integrity = {"golden": True, "hashes_match_freeze": True, "complete": True, "refs_match_manifest": True}
+    named = {"r1": {"pass": True}, "failures": [], "unresolved": [], "missing": []}
+    g = score2.gate(groups, rows, integrity, named)
+    assert g["verdict"] == score2.DIAGNOSTIC and g["met"] is False
+
+
+def test_attempt_two_draws_a_fresh_held_out_seed_and_leaves_attempt_one_alone():
+    assert calibrate.ATTEMPT == 2 and calibrate.HELD_OUT_SEED not in calibrate.USED_SEEDS
+    assert calibrate.CAL_SEED in calibrate.USED_SEEDS and 20261029 in calibrate.USED_SEEDS
+    assert calibrate.FREEZE_OUT.name == "phase2-freeze-2.json"
+    e = calibrate.EARLIER_ATTEMPTS[0]
+    # attempt 1's freeze and selection report are kept byte for byte as reviewed (Max, 2026-11-02)
+    assert phase2.sha(REPO / e["freeze"]) == e["freeze_sha256"]
+    assert phase2.sha(REPO / e["selection"]) == e["selection_sha256"]
+    one = json.loads((REPO / e["freeze"]).read_text())
+    assert one["phase"] == "options adaptive Phase 2, attempt 1" and one["held_out"]["seed"] == 20261029
+    assert one["engine_version"] == calibrate.EARLIER_ATTEMPTS[0]["engine_version"]

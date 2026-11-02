@@ -368,7 +368,8 @@ def gate(groups: dict, rows: list[dict], integrity: dict, named: dict) -> dict:
     comps["run"] = integrity | {"repeated": len(rep), "repeat_differs": sum(not r["repeat_identical"] for r in rep),
                                 "crashes": sum("error" in r for r in rows)}
     comps["run"]["verdict"] = _verdict(comps["run"]["crashes"] > 0 or comps["run"]["repeat_differs"] > 0
-                                       or not integrity["hashes_match_freeze"], False,
+                                       or not integrity["hashes_match_freeze"]
+                                       or not integrity.get("refs_match_manifest", False), False,
                                        not integrity["complete"] or not rep)
 
     big = max((x["work"]["max_level_units"] for x in every), default=0)
@@ -376,7 +377,31 @@ def gate(groups: dict, rows: list[dict], integrity: dict, named: dict) -> dict:
     comps["work"]["verdict"] = _verdict(big > om.REFINE_UNITS_MAX, False, False)
 
     worst = min((x["verdict"] for x in comps.values()), key=score.VERDICT_ORDER.index)
-    return {"components": comps, "verdict": score.OVERALL[worst], "met": worst == "pass"}
+    # a Phase 2 acceptance needs the held-out run of the freeze's own population; any other run's rows are a
+    # diagnostic, labelled as such and never "met" (Max, 2026-11-02, amendment A-2)
+    acc = integrity.get("acceptance") or {"eligible": False, "why": "no held-out prerequisite was recorded"}
+    if not acc["eligible"]:
+        return {"components": comps, "verdict": DIAGNOSTIC, "rows_verdict": score.OVERALL[worst], "met": False,
+                "acceptance": acc}
+    return {"components": comps, "verdict": score.OVERALL[worst], "met": worst == "pass", "acceptance": acc}
+
+
+DIAGNOSTIC = "diagnostic only, not a Phase 2 acceptance"
+
+
+def acceptance(held_out: bool, ho_why: str | None, freeze: dict) -> dict:
+    """Whether a run can stand as the Phase 2 acceptance: started with --held-out, on the freeze's held-out
+    population exactly (seed, sizes, named cases; every case finished), on a seed that is not the development
+    seed the freeze was calibrated on."""
+    from .calibrate import CAL_SEED
+    why = []
+    if not held_out:
+        why.append("a development run (not started with --held-out)")
+    if ho_why:
+        why.append(ho_why)
+    if freeze.get("held_out", {}).get("seed") == CAL_SEED:
+        why.append(f"the freeze's held-out seed is the development seed {CAL_SEED}")
+    return {"eligible": not why, "why": "; ".join(why) or None}
 
 
 NAMES = {"tier1": "Tier 1 unchanged", "samples": "Sample counts", "price_accuracy": "Tier 2 price accuracy",
@@ -400,9 +425,15 @@ def score_dirs(dirs: list[Path]) -> dict:
         mans += [json.loads(p.read_text()) for p in sorted(d.glob("manifest-*.json"))]
     if not mans:
         raise SystemExit("no manifest: these results cannot be traced to a run")
+    for d in dirs:   # results whose own manifest is missing cannot be traced to their run (Codex S-10)
+        orphans = [p.name for p in sorted(d.glob("results-*.jsonl"))
+                   if not (d / p.name.replace("results-", "manifest-").replace(".jsonl", ".json")).exists()]
+        if orphans:
+            raise SystemExit(f"results without their manifest in {d}: {', '.join(orphans)}")
     first = mans[0]
     for m in mans[1:]:
-        if any(m.get(k) != first.get(k) for k in ("freeze_sha256", "config", "files_sha256", "refs_manifests")):
+        if any(m.get(k) != first.get(k) for k in ("freeze_sha256", "config", "files_sha256", "refs_manifests",
+                                                   "refs_files_sha256", "held_out")):
             raise SystemExit("shards from different runs: score them separately")
     freeze = json.loads(Path(first["freeze"]).read_text())
     ids = [r["case"]["id"] for r in recs]
@@ -413,14 +444,19 @@ def score_dirs(dirs: list[Path]) -> dict:
     expected = set(pop.get("expected_ids", []))
     ho_why = phase2.held_out_mismatch(pop, freeze) if first["held_out"] else None
     n_shard = int(first["shard"].split("/")[1])
+    # the references now are the ones Tier 2 was judged against (Codex S-9); a manifest without the fingerprint
+    # (attempt 1's) cannot show it
+    refs_now = phase2.refs_fingerprint(Path(first["refs"]))
     integrity = {"hashes_match_freeze": phase2.sha(Path(first["freeze"])) == first["freeze_sha256"]
                  and all(m["files_sha256"] == freeze["files_sha256"] for m in mans) and not phase2.check_freeze(freeze),
+                 "refs_match_manifest": all(m.get("refs_files_sha256") == refs_now for m in mans),
                  "refs_complete": pop["complete"], "refs_why": pop.get("why"), "held_out_mismatch": ho_why,
                  "complete": bool(pop["complete"] and ho_why is None and set(ids) == expected
                                   and len(ids) == len(set(ids)) and all(m.get("finished_utc") for m in mans)
                                   and len({m["shard"] for m in mans}) == n_shard),
                  "expected": len(expected), "received": len(ids), "duplicates": len(ids) - len(set(ids)),
                  "missing": len(expected - set(ids)), "golden": golden_check(), "held_out": first["held_out"]}
+    integrity["acceptance"] = acceptance(first["held_out"], phase2.held_out_mismatch(pop, freeze), freeze)
     rows = [classify(r) for r in recs]
     by = defaultdict(list)
     for r in rows:
@@ -477,7 +513,8 @@ def markdown(sc: dict) -> str:
          f"- Configuration: {json.dumps(sc['config'])}; engine {sc['engine_version']}",
          f"- Freeze: `{sc['freeze']}` (sha256 {sc['freeze_sha256'][:12]}…)",
          f"- Provenance: {sc['provenance']}.",
-         f"- **Gate verdict: {g['verdict']}**", "",
+         f"- **Gate verdict: {g['verdict']}**"
+         + (f" (rows: {g['rows_verdict']}; {g['acceptance']['why']})" if g.get("rows_verdict") else ""), "",
          "Every limit is a one-sided 95% Clopper–Pearson upper limit for that group alone, under this frozen "
          "attempt and seed; six limits are not a joint statement. The estimator-coverage limit is conditional on "
          "Tier 2 acceptance and reference resolution (covered, confirmed and unresolved cases); the resolved-all and "

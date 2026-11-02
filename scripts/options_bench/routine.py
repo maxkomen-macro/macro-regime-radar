@@ -18,7 +18,7 @@ from pathlib import Path
 
 from . import golden, phase2, run, score, score2
 
-FREEZE = phase2.BENCH_DIR / "calibration" / "phase2-freeze.json"
+FREEZE = phase2.BENCH_DIR / "calibration" / "phase2-freeze-2.json"   # the current attempt's
 
 
 def _records(d: Path) -> dict:
