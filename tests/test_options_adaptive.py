@@ -292,6 +292,82 @@ def test_plus_minus_one_only_on_the_deep_exercise_rule():
     assert w.delta is None and w.delta_reason == oa.D_ZONE   # Tier 1 would serve −1 here; Tier 2 withholds
 
 
+def _from_extrapolants(h0, bs):
+    """Raw doubling levels whose successive extrapolations 2h(k) − h(k−1) are bs."""
+    hs = [h0]
+    for b in bs:
+        hs.append((b + hs[-1]) / 2.0)
+    return hs
+
+
+OTM_PUT = om.Context(False, 99.0, 100.0, 200, 0.05, 0.0, 0.2)   # X = 1, tol 0.0099, zone 0.0495
+
+
+def test_an_earlier_delta_is_held_to_the_accepted_prices_exercise_zone():
+    # amendment A-2 (synthetic): at level 3 the price estimate (0.04) is above target (0.0099), while the
+    # continuation clears the zone (1.052 − 1 > 0.0495) and its estimate, so the envelope delta is accepted there;
+    # at level 4 the price is accepted with its continuation inside the zone (1.048 − 1 <= 0.0495). The earlier
+    # delta must not ride past the accepted price's own test.
+    hs = _from_extrapolants(1.0, [1.075, 1.055, 1.052, 1.048])
+    ds = [-0.40, -0.41, -0.415, -0.4175, -0.41875]
+    w = oa.walk(synthetic(hs, ds), OTM_PUT, 1.0, 1.0, 1.2, oa.Config())
+    t3, t4 = w.trace
+    assert t3["Es"] > t3["t"] and t3["H"] - 1.0 > om.DELTA_ZONE * t3["tol"] and t3["H"] - 1.0 >= t3["Es"]
+    assert t4["Es"] <= t4["t"] and t4["H"] - 1.0 <= om.DELTA_ZONE * t4["tol"]
+    assert w.price["level"] == 4
+    assert w.delta is None and w.delta_reason == oa.D_ZONE
+    assert w.withdrawn["rule"] == "envelope" and w.withdrawn["level"] == 3 and w.withdrawn["k"] == 4
+
+
+def test_a_retained_delta_that_passes_the_accepted_prices_test_is_kept():
+    # the same walk with the accepted continuation still clear of the zone: nothing is withdrawn or recomputed
+    hs = _from_extrapolants(1.0, [1.08, 1.06, 1.057, 1.0545])
+    ds = [-0.40, -0.41, -0.415, -0.4175, -0.41875]
+    w = oa.walk(synthetic(hs, ds), OTM_PUT, 1.0, 1.0, 1.2, oa.Config())
+    assert w.price["level"] == 4 and w.withdrawn is None
+    assert w.delta["level"] == 3 and w.delta["rule"] == "envelope"
+
+
+ITM_PUT = om.Context(False, 80.0, 100.0, 200, 0.05, 0.0, 0.2)   # X = 20
+
+
+def test_the_deep_exercise_delta_survives_the_accepted_prices_zone():
+    # deep exercise accepted at level 3 before the price (estimate 0.1 above target 0.01); the price is accepted at
+    # level 4 at the exercise value, inside the zone by nature. The deep rule still holds over every level run,
+    # so the delta of −1 is kept: the legitimate exception
+    hs = _from_extrapolants(19.8, [19.90, 19.95, 19.952, 19.953])
+    w = oa.walk(synthetic(hs, [-1.0] * 5), ITM_PUT, 20.0, 20.0, 20.5, oa.Config())
+    assert w.trace[0]["Es"] > w.trace[0]["t"] and w.price["level"] == 4 and w.price["value"] == 20.0
+    assert w.withdrawn is None
+    assert w.delta == {"value": -1.0, "estimate": oa.DELTA_FLOOR, "level": 3, "rule": "deep exercise"}
+
+
+def test_a_deep_delta_is_withdrawn_when_a_later_level_breaks_the_rule():
+    # the same, but at level 4 one step-1 node continues (delta −0.98): the deep rule fails over the levels run,
+    # so the −1 accepted at level 3 is withdrawn and the delta judged afresh at the price's level (in the zone)
+    hs = _from_extrapolants(19.8, [19.90, 19.95, 19.952, 19.953])
+    w = oa.walk(synthetic(hs, [-1.0] * 4 + [-0.98]), ITM_PUT, 20.0, 20.0, 20.5, oa.Config())
+    assert w.price["level"] == 4
+    assert w.delta is None and w.delta_reason == oa.D_ZONE
+    assert w.withdrawn["rule"] == "deep exercise" and w.withdrawn["level"] == 3
+
+
+def test_a_withdrawn_delta_is_audited_and_not_served(monkeypatch):
+    real = oa.walk
+
+    def walk(get, c, x, lo, hi, cfg, analytic=None):
+        w = real(get, c, x, lo, hi, cfg, analytic)
+        if w.price is not None:
+            w.withdrawn, w.delta, w.delta_reason = {"k": 4, "value": -0.4, "rule": "envelope"}, None, oa.D_ZONE
+        return w
+
+    monkeypatch.setattr(oa, "walk", walk)
+    a = oa.price(PUT)
+    assert a.route == oe.ROUTE_LATTICE and a.priced
+    assert a.audit["delta_withdrawn"]["rule"] == "envelope"
+    assert a.delta is None and a.delta_status == oe.WITHHELD and a.delta_reason == oa.D_ZONE
+
+
 def test_early_dividend_withholds_the_delta_and_keeps_the_price():
     c = om.Context(True, 100.0, 95.0, 120, 0.03, 0.0, 0.25, ((2, 1.0),))
     a = oa.price(c)

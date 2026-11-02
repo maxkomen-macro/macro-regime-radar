@@ -59,7 +59,8 @@ def record(a: oe.Answer) -> dict:
            "delta_estimate": a.delta_estimate, "reason": a.reason, "delta_reason": a.delta_reason, "units": a.units}
     for k in ("L", "U", "h", "padding", "analytic_target", "european", "exercise", "bound", "n0", "multipliers",
               "stopped", "price_units", "delta_units", "price_level", "estimator", "target", "exercise_resolved",
-              "delta_rule", "delta_level", "proved_exceedance", "interval_inconsistent", "refusals", "disjoint"):
+              "delta_rule", "delta_level", "delta_withdrawn", "proved_exceedance", "interval_inconsistent", "refusals",
+              "disjoint"):
         if k in au:
             out[k] = au[k]
     out["levels"] = [[l["m"], l["steps"], l["h"], l["delta"], l["units"]] for l in au.get("levels", [])]

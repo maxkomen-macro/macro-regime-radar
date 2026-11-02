@@ -2,8 +2,9 @@
 
 Refines the baseline's lattice (options_math._lattice, imported read-only) beyond Tier 1's levels and states a
 per-contract error estimate for the value it returns. Routes, in order: input failure; intrinsic at expiry;
-exempt (European, by theorem); outside the domain; the analytic interval (the midpoint of the proved interval
-when it is narrow enough); the lattice. The price and the delta are accepted by separate tests.
+outside the domain; exempt (European, by theorem); the analytic interval (the midpoint of the proved interval
+when it is narrow enough); the lattice. The price and the delta are accepted by separate tests; a delta accepted
+before the price is held to the accepted price's own test (amendment A-2).
 
 Values are "estimated, cross-check pending" until the Phase 3 cross-check exists. Nothing under api/ imports
 this module; the design is .loop/design-P2-2.md (review-loop/options-adaptive/designs/ in the project files).
@@ -22,7 +23,7 @@ import numpy as np
 from src.desk import options_engine as oe
 from src.desk import options_math as om
 
-VERSION = "adaptive-p2.0"
+VERSION = "adaptive-p2.1"   # p2.0: attempt 1 (freeze 2f7bf07); p2.1: amendment A-2
 ENGINE = "adaptive"
 
 SCHEDULES = {"doubling": (1, 2, 4, 8, 16, 32), "multiples": (1, 2, 3, 4, 5, 6)}
@@ -196,6 +197,7 @@ class Walk:
     delta: dict | None = None          # accepted: value, estimate, level, rule
     delta_reason: str | None = None
     refusals: list | None = None       # every candidate (estimate within target) refused for the interval
+    withdrawn: dict | None = None      # a delta accepted before the price, failing the accepted price's own test
     disjoint: list | None = None       # every level whose band [V − E_s, V + E_s] misses [L, U] altogether
     levels: list | None = None
     trace: list | None = None
@@ -285,8 +287,14 @@ def _level(w: Walk, st: dict, get, c, x, lo, hi, cfg: Config, sgn: float, clear:
                        "tol": tol, "target": t, "exercise_resolved": abs(hh - x) >= es}
             w.price_reason = None
             st["need_price"] = False
+            if w.delta is not None and not _delta_holds(w.delta, w.levels, hh, x, es, tol, clear, sgn):
+                # a delta accepted at an earlier level is held to the accepted price's own exercise-zone test (or,
+                # on the deep-exercise rule, to that rule over every level run), then judged afresh at this level
+                # (Max, 2026-11-02, amendment A-2)
+                w.withdrawn = {"k": k, **w.delta}
+                w.delta = None
     if w.delta is None and st["delta_open"]:
-        deep = hh <= x and all(l.h <= x and abs(l.delta - sgn) <= DEEP for l in w.levels)
+        deep = _deep(w.levels, hh, x, sgn)
         if deep:
             w.delta = {"value": sgn, "estimate": DELTA_FLOOR, "level": k, "rule": "deep exercise"}
             w.delta_reason = None
@@ -305,6 +313,18 @@ def _level(w: Walk, st: dict, get, c, x, lo, hi, cfg: Config, sgn: float, clear:
             if es <= t and w.delta_reason == D_ZONE:
                 st["delta_open"] = False   # the continuation is accurate to t <= tol: the zone question is settled
     return True
+
+
+def _deep(levels: list, hh: float, x: float, sgn: float) -> bool:
+    """Both step-1 nodes exercise at every level run, and the continuation is at most the exercise value."""
+    return hh <= x and all(l.h <= x and abs(l.delta - sgn) <= DEEP for l in levels)
+
+
+def _delta_holds(d: dict, levels: list, hh: float, x: float, es: float, tol: float, clear: bool, sgn: float) -> bool:
+    """Whether a delta accepted at an earlier level still passes its rule's test on the accepted price's level."""
+    if d["rule"] == "deep exercise":
+        return _deep(levels, hh, x, sgn)
+    return clear and hh - x > om.DELTA_ZONE * tol and hh - x >= es
 
 
 # ── the controller ───────────────────────────────────────────────────────────
@@ -421,6 +441,8 @@ def _price(c: om.Context, cfg: Config, level_source) -> oe.Answer:
     audit.update(levels=[asdict(l) for l in w.levels], trace=w.trace, stopped=w.stopped,
                  price_units=work + w.price_units, delta_units=w.delta_units, refusals=w.refusals,
                  disjoint=w.disjoint)
+    if w.withdrawn:
+        audit["delta_withdrawn"] = w.withdrawn
     if w.proved_exceedance:
         audit["proved_exceedance"] = w.proved_exceedance
     total = work + w.price_units + w.delta_units

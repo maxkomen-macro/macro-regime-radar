@@ -64,7 +64,8 @@ def classify(rec: dict) -> dict:
                tier1_matches=rec.get("tier1_matches"), repeat_identical=rec.get("repeat_identical"),
                r0_value=rec["r0"]["value"]["status"] == "reliable", r0_delta=rec["r0"]["delta"]["status"] == "reliable",
                r1="r1" in rec, proved_exceedance=bool(t.get("proved_exceedance")),
-               interval_inconsistent=bool(t.get("interval_inconsistent")))
+               interval_inconsistent=bool(t.get("interval_inconsistent")),
+               delta_withdrawn=(t.get("delta_withdrawn") or {}).get("rule"))
     out.update(interval_facts(rec))
     priced = t["value"] is not None
     out["priced"] = priced
@@ -214,7 +215,9 @@ def summary(rows: list[dict]) -> dict:
     priced = [r for r in ok if r["priced"]]
     s["delta_shown"] = {"priced": len(priced), "shown": sum(r["delta_status"] == oe.SERVED for r in priced),
                         "rules": dict(Counter(r.get("delta_rule") for r in priced if r["delta_status"] == oe.SERVED)),
-                        "withheld": dict(Counter(r["delta_reason"] for r in priced if r["delta_status"] != oe.SERVED))}
+                        "withheld": dict(Counter(r["delta_reason"] for r in priced if r["delta_status"] != oe.SERVED)),
+                        # deltas accepted before the price and withdrawn at its level (amendment A-2), by rule
+                        "withdrawn": dict(Counter(r["delta_withdrawn"] for r in priced if r.get("delta_withdrawn")))}
     s["divsens"] = dict(Counter(r["divsens"] for r in ok if "divsens" in r))
     s["divsens_err_tol_max"] = max((r["divsens_err_tol"] for r in ok if "divsens_err_tol" in r), default=None)
     units = [r["units"] for r in ok if r["priced"]]
