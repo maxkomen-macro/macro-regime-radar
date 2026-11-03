@@ -585,8 +585,8 @@ def _from_cache(sym: str, session: date, item: dict, cache: dict) -> tuple[list[
 
     hand, unreadable = _hand(sym, item)
     vault, now = cache["vault"], _now()
-    cov = store.coverage(vault, cache["index"].get(sym, []), session, now,
-                         [date.fromisoformat(h["date"]) for h in hand])
+    hand_dates = [date.fromisoformat(h["date"]) for h in hand]
+    cov = store.coverage(vault, cache["index"].get(sym, []), session, now, hand_dates)
     hand_days = {h["date"] for h in hand}
     rows = list(hand)
     for o in cov.events:
@@ -600,14 +600,49 @@ def _from_cache(sym: str, session: date, item: dict, cache: dict) -> tuple[list[
         name = f"{sym} earnings" + (f" (Q{o.label[1]} {o.label[0]})" if o.label else "")
         rows.append({"kind": "earnings", "name": name, "date": o.day.isoformat(),
                      "time": o.hour if o.hour in ("bmo", "amc", "dmh") else "unknown", "at": None, "source": src})
-    out = {"earnings": cov.state, "earnings_through": cov.through.isoformat() if cov.through else None,
-           "listed_through": cov.listed_through.isoformat() if cov.listed_through else None, "unreadable": unreadable}
-    if cov.state == "unconfirmed":
-        out["reason"] = "contested" if store.contested(vault, session, now) else "unread"
-    sources = [CACHE_SOURCE] if any(r["source"] != HAND_SOURCE for r in rows) or cov.state in ("reconciled", "unlisted") else []
+    withdrawn = _ledger_overlay(sym, session, now, hand_dates, vault, cov)
+    if withdrawn is not None:
+        # unknown, with the published vault's rows and provenance (design LR 3.3): never no earnings
+        out = {"earnings": "unconfirmed", "earnings_through": None, "listed_through": None, "unreadable": unreadable,
+               "reason": withdrawn}
+    else:
+        out = {"earnings": cov.state, "earnings_through": cov.through.isoformat() if cov.through else None,
+               "listed_through": cov.listed_through.isoformat() if cov.listed_through else None, "unreadable": unreadable}
+        if cov.state == "unconfirmed":
+            out["reason"] = "contested" if store.contested(vault, session, now) else "unread"
+    sources = [CACHE_SOURCE] if any(r["source"] != HAND_SOURCE for r in rows) or out["earnings"] in ("reconciled", "unlisted") else []
     if hand:
         sources.append(HAND_SOURCE)
     return rows, out, "; ".join(sources) or None, []
+
+
+def _ledger_overlay(sym: str, session: date, now: datetime, hand_dates: list[date], published: Mapping[str, Any],
+                    pub: Any) -> str | None:
+    """The withdraw-only rule (design LR 3.3; Amendment A-3): None serves the published answer `pub`; otherwise the
+    reason the answer is unknown. It can only withdraw: the ledger never adds confidence. `contested` only when the
+    newer ledger state itself holds an incomplete, disagreeing or unanswered read of the session (store.contested);
+    every other withdrawal is `unchecked`, which claims no disagreement: a newer state that would say more, a state
+    that does not continue the other, or no trusted state at all (Codex S-12). One reader snapshot, read once; any
+    exception answers unknown, never the stored rows (DR-29)."""
+    try:
+        from api import earnings_ledger_reader as reader
+        from src.events import earnings_store as store
+
+        snap = reader.current()
+        if snap.status != "ok" or snap.vault is None or snap.seq is None:
+            return "unchecked"
+        p, l = int(published.get("seq") or 0), int(snap.seq)
+        if l < p:  # the database is newer: it must carry everything the ledger held
+            return None if store.continues(snap.vault, published) else "unchecked"
+        if l == p:
+            return None if snap.vault == published else "unchecked"
+        led = store.coverage(snap.vault, (snap.index or {}).get(sym, []), session, now, hand_dates)
+        if store.material(led) == store.material(pub) and store.continues(published, snap.vault):
+            return None
+        return "contested" if store.contested(snap.vault, session, now) else "unchecked"
+    except Exception as exc:  # noqa: BLE001 — unknown, with no detail that could carry a symbol or a date
+        log.warning("desk: the earnings ledger check failed (%s)", type(exc).__name__)
+        return "unchecked"
 
 
 def _stored(sym: str, item: dict) -> tuple[list[dict], dict, str | None, list[str]]:

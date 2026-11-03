@@ -34,6 +34,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from api import assistant_budget, bootstrap, db, security, stream
+from api import earnings_ledger_reader
 from api import worker as worker_mod
 from api.db import NotStored
 from api import freshness as freshness_mod
@@ -128,6 +129,9 @@ async def _lifespan(_: FastAPI):
         await asyncio.to_thread(bootstrap.refresh_db)
     except Exception as exc:  # noqa: BLE001 — no traceback: its text can carry a signed URL
         log.warning("DB bootstrap failed (%s); continuing with the on-disk DB", bootstrap.public_error(exc))
+    # The earnings ledger reader (api/earnings_ledger_reader.py, design LR): a
+    # daemon thread, only with GH_DB_TOKEN and EARNINGS_CACHE_KEY; never raises.
+    earnings_ledger_reader.start()
     # The background worker (api/worker.py, fix/prelaunch-1): preloads the
     # heavy libraries, builds the first generation of every derived result,
     # and rebuilds on every database change; handlers only look results up.
@@ -158,6 +162,7 @@ async def _lifespan(_: FastAPI):
         refresh_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await refresh_task
+    await asyncio.to_thread(earnings_ledger_reader.stop)
     await asyncio.to_thread(analytics.stop)
     await stream.hub.stop()
 
