@@ -15,8 +15,13 @@ values are "estimated, cross-check pending" until the Phase 3 cross-check exists
   its reliability against each candidate's own 0.1·E_s; in the held-out run the target is exactly 0.1·E_s, as the
   design says.
 - Attempts: **attempt 2** (freeze `ef7d784`, engine `adaptive-p2.1`, held-out seed 20261102, fixed before its
-  calibration) is the evaluation of the final code: **it met every gate row**, on a `--held-out` run of the
-  freeze's own population, so the acceptance prerequisite holds. **Attempt 1** (freeze `2f7bf07`, engine
+  calibration) is the acceptance evaluation: **it met every gate row**, on a `--held-out` run of the freeze's
+  own population, so the acceptance prerequisite holds.
+- Revision covered: every attempt 2 number here is for revision **`ef7d784`**, run from an immutable checkout of
+  it. The later commits change no engine file (`src/` is identical to `ef7d784`), configuration or tolerance:
+  `17d985a` adds guard-only case-input checks to the bench runner, scorer and calibration (S-14), and the rest
+  change only reports. The recorded case inputs and results are shown to be that freeze's population (S-14
+  below); the guards have not been run as a new evaluation, and freeze 2 does not match the bench files now. **Attempt 1** (freeze `2f7bf07`, engine
   `adaptive-p2.0`, held-out seed 20261029) also met every gate row and is **historical**: amendment A-2 changed
   the controller and the bench after it, so its results stand only for the code at `2f7bf07` and are
   superseded. Its freeze, selection report and scorecards are kept unchanged. The exploratory and provisional
@@ -288,7 +293,7 @@ scorer checks both. Attempt 1 ran before the fix: in one session, in a fresh dir
 17,207 of its records carry the same case, R0 value and delta, Tier 1 answer and dividend-scenario references as
 the reference file holds now (0 differ; `review-loop/options-adaptive/held-out/S-9-S-10-proof.txt` in the
 project files). That is Claude's recorded evidence, not reproduced by Codex, and it does not make attempt 1 the
-acceptance: its results are historical and attempt 2 is the evaluation of the final code.
+acceptance: its results are historical and attempt 2 (revision `ef7d784`) is the acceptance evaluation.
 
 ## Review finding S-14 (fixed after attempt 2's run; the recorded run is unaffected)
 
