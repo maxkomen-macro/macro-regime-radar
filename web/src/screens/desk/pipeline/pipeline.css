@@ -197,6 +197,7 @@
    stays in view (R2-1); 84px leaves room for the two day-dated columns (§11) at 601px. */
 .pl-table td.pl-feeds,
 .pl-table td.pl-status,
+.pl-table td.pl-stored,
 .pl-table tbody th {
   white-space: normal;
   min-width: 84px;
@@ -318,5 +319,12 @@
 /* §11: provider and frequency beside the series name, quieter than the name. */
 .pl-table .pl-prov {
   font-weight: 400;
+  color: var(--dk-t3);
+}
+/* D2: the declared fallback rule under the stored provider, quieter, on its own line. */
+.pl-table .pl-policy {
+  display: block;
+  font-family: var(--dk-sans);
+  font-size: 12px;
   color: var(--dk-t3);
 }

@@ -14,7 +14,7 @@ import { renderWithProviders } from "../../../test/utils";
 import { deskError, stubDesk } from "../../../test/desk";
 import type { PipelineGroup } from "../data/types";
 import { refreshWords } from "./badge";
-import { findSeries, LINEAGE, SCHEMA_PREVIEW } from "./PipelinePage";
+import { findSeries, LINEAGE, policyWords, SCHEMA_PREVIEW, storedWords } from "./PipelinePage";
 import { LAST_STUDY_KEY, readLastStudy, writeLastStudy } from "../event-study/question";
 
 function LocationSpy() {
@@ -42,6 +42,36 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = realFetch;
   vi.restoreAllMocks();
+});
+
+describe("Stored provider (D2)", () => {
+  const yahoo = { code: "yfinance", name: "Yahoo", rows: 40, first: "2026-06-01", last: "2026-07-27" };
+  const eod = { code: "eodhd", name: "EODHD", rows: 2, first: "2026-07-28", last: "2026-07-29" };
+  it("names one provider with its row count, and the declared policy apart when it differs", () => {
+    const s = { freq: "daily" as const, policy: "EODHD first, Yahoo when EODHD does not serve it", stored: { basis: "row_provider" as const, rows: 40, latest: "Yahoo", providers: [yahoo] } };
+    expect(storedWords(s)).toEqual({ main: "Yahoo · all 40 rows", detail: null });
+    expect(policyWords(s)).toBe("policy: EODHD first, Yahoo when EODHD does not serve it");
+    // FRED stored by FRED: the policy only repeats the provider, so it is left out
+    expect(policyWords({ policy: "FRED", stored: { ...s.stored, providers: [{ ...yahoo, code: "fred", name: "FRED" }] } })).toBeNull();
+  });
+  it("mixed-source coverage names each provider's rows and span, and the newest row's provider", () => {
+    const s = { freq: "daily" as const, stored: { basis: "row_provider" as const, rows: 42, latest: "EODHD", providers: [yahoo, eod] } };
+    expect(storedWords(s)).toEqual({ main: "Mixed: Yahoo 40 rows, Jun 1, 2026 – Jul 27, 2026; EODHD 2 rows, Jul 28, 2026 – Jul 29, 2026", detail: "newest row: EODHD" });
+  });
+  it("nothing stored prints nothing, and a raw_series row names its table's one writer", () => {
+    expect(storedWords({ freq: "daily", stored: null })).toBeNull();
+    const fred = { code: "fred", name: "FRED", rows: 1, first: "2026-08-01", last: "2026-08-01" };
+    expect(storedWords({ freq: "monthly", stored: { basis: "table_writer", rows: 1, latest: "FRED", providers: [fred] } })).toEqual({ main: "FRED · all 1 row", detail: "the table's one writer" });
+  });
+  it("every price row of the fixture shows Yahoo as stored and the policy apart; gold's policy is Yahoo alone", async () => {
+    renderTab("/desk/data-pipeline?group=fx-commodities");
+    const rows = await screen.findByRole("region", { name: "FX & commodities series" });
+    const gold = within(rows).getAllByRole("row").find((r) => r.textContent?.includes("GC=F"));
+    expect(gold?.querySelector(".pl-stored")?.textContent).toBe("Yahoo · all 6,541 rowspolicy: Yahoo (EODHD does not carry this instrument)");
+    for (const g of groups)
+      for (const s of g.series)
+        if (s.stored && s.policy !== "FRED") expect(s.stored.providers.map((p) => p.name)).toEqual(["Yahoo"]);
+  });
 });
 
 describe("Pipeline words", () => {
@@ -107,13 +137,14 @@ describe("Data Pipeline tab", () => {
     renderTab("/desk/data-pipeline?group=credit");
     const rows = await screen.findByRole("region", { name: "Credit series" });
     expect(rows).toHaveAttribute("tabindex", "0");
-    // §11: provider and frequency beside the series; a daily series dated to the day, a monthly one to the month.
-    // The served row (desk-v2: feeds): the registry's provider declaration, the tabs whose values read it, its note.
+    // §11: frequency beside the series; a daily series dated to the day, a monthly one to the month.
+    // The served row (desk-v2: feeds): who stored its rows (D2), the tabs whose values read it, its note.
     expect(within(rows).getAllByRole("row")[1].textContent).toBe(
-      "US HY OAS · FRED (Desk daily history), dailyBAMLH0A0HYM2Sep 25, 2023Sep 23, 2026Overview, Event Study, Regime, Macro, Ledgercurrent · ICE BofA index OAS, published the next morning. FRED serves a rolling three years only (since April 2026); the store keeps every observation it has been served, from 2023-09-25.",
+      "US HY OAS · dailyBAMLH0A0HYM2FRED · all 787 rowsSep 25, 2023Sep 23, 2026Overview, Event Study, Regime, Macro, Ledgercurrent · ICE BofA index OAS, published the next morning. FRED serves a rolling three years only (since April 2026); the store keeps every observation it has been served, from 2023-09-25.",
     );
-    // IG is daily at FRED, stored one row a month: first its first month stamp, last its watermark (S-03).
-    expect(within(rows).getAllByRole("row")[2].textContent).toContain("Dec 1, 1996Sep 23, 2026");
+    // IG is daily at FRED, stored one row a month: first its first month stamp, last its watermark (S-03);
+    // raw_series has no provider column, so the row names its table's one writer (D2).
+    expect(within(rows).getAllByRole("row")[2].textContent).toContain("FRED · all 358 rows · the table's one writerDec 1, 1996Sep 23, 2026");
     expect(screen.getByText("showing 2 of 2 · the list scrolls inside the group; the page does not grow")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Rates/ }));
     await waitFor(() => expect(screen.getByTestId("loc").textContent).toContain("group=rates"));
