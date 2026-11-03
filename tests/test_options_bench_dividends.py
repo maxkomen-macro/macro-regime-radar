@@ -12,6 +12,7 @@ escrowed dividend at r - q, the bench's model at r: they agree only when q = 0, 
 
 from __future__ import annotations
 
+import json
 import math
 
 import pytest
@@ -201,3 +202,18 @@ def test_records_from_before_the_three_grid_check_classify_as_before():
     row = score.classify(rec)
     assert "quantlib_disputed" not in row and "quantlib_spread_tol" not in row
     assert row["quantlib_method"] == "fd-escrowed"
+
+
+# ── request-level work (design D-3) ─────────────────────────────────────────
+
+def test_a_request_is_measured_whole_and_read_against_the_finder_cap(tmp_path):
+    from scripts.options_bench import engine, requests
+    _, of = engine.load(str(requests.REPO))
+    r = requests.one(of, {"chain": "syn", "view": "up", "months": 1})
+    assert r["units"] > 0 and r["rows"] > 0 and r["cap"] == of.WORK_LIMIT
+    assert r["over_cap"] == (r["units"] > of.WORK_LIMIT)
+    a, b = tmp_path / "a.jsonl", tmp_path / "b.jsonl"
+    a.write_text(json.dumps(r) + "\n")
+    b.write_text(json.dumps(r | {"units": 2 * r["units"], "over_cap": True}) + "\n")
+    table = requests.compare(a, b)
+    assert "| syn | up | 1 |" in table and "| 2.00 |" in table and "no / yes" in table
