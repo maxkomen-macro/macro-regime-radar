@@ -364,6 +364,22 @@ def test_cross_table_gaps_that_widen_are_new_however_small_the_change(tmp_path):
     assert [f["new"] for f in q.compare(run(0.004, "same.db"), prev)["flags"]] == [False]
 
 
+def test_a_repeated_bar_whose_volume_changed_is_new(tmp_path):
+    # Codex S-04: the repeated volume is part of what the stale check measured
+    def run(volume, name):
+        conn = _db(tmp_path, name)
+        vols = [1_000_000.0 + i for i in range(len(DATES))]
+        vols[201] = vols[200] = volume
+        closes = _walk(len(DATES))
+        closes[201] = closes[200]
+        _put(conn, "SPY", DATES, closes, volumes=vols)
+        return q.run(conn)
+    prev = run(1_000_000.0, "prev.db")
+    assert [f["check"] for f in prev["flags"]] == ["stale"]
+    assert [f["new"] for f in q.compare(run(1.0, "cur.db"), prev)["flags"]] == [True]
+    assert [f["new"] for f in q.compare(run(1_000_000.0, "same.db"), prev)["flags"]] == [False]
+
+
 def test_a_restated_history_keeps_its_moves_to_float_noise(tmp_path):
     # the tolerance holds a real restatement: scaling every close before an ex-date by a
     # distribution factor moves no observation of a flag away from that date by 1e-9

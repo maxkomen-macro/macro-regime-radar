@@ -316,9 +316,12 @@ def _severity(table: str, series: str, check: str, tier1: set[str]) -> str:
 
 def _flag(s: Series, d: str, check: str, detail: str, tier1: set[str], i: int | None = None,
           move: float | None = None, observed: tuple = ()) -> dict:
-    """One flag. `observed` is what the check saw (the earlier date and the move or
-    moves it measured, the run or the gap), which tells a known flag from one whose
-    numbers changed (compare). A move check (split, implausible) also carries the
+    """One flag. `observed` holds the stored observations the flag is about, in
+    scale-free form (the earlier date; the move or moves; the repeated volume; the
+    run or the gap; nothing more for a row on a closed day), which tells a known flag
+    from one whose numbers changed (compare). Left out: the context a test weighs
+    (robust sigma, peers), and a level it only compared for equality (a repeated
+    close), which a restatement rescales without changing the flag. A move check (split, implausible) also carries the
     move and the two closes it runs between."""
     out = {"check": check, "table": s.table, "series": s.series, "interval": s.interval, "date": d,
            "severity": _severity(s.table, s.series, check, tier1), "detail": detail, "observed": list(observed)}
@@ -363,7 +366,8 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
         for i in range(1, n):
             if s.closes[i] == s.closes[i - 1] and s.volumes[i] == s.volumes[i - 1] and s.volumes[i] is not None:
                 flags.append(_flag(s, s.dates[i], "stale", f"close {s.closes[i]:g} and volume {s.volumes[i]:g} repeat "
-                                                             f"{s.dates[i - 1]}'s bar", tier1, observed=(s.dates[i - 1],)))
+                                                             f"{s.dates[i - 1]}'s bar", tier1,
+                                   observed=(s.dates[i - 1], float(s.volumes[i]))))
                 taken.add(i)
     if p.stale_run:
         run, need = 1, STALE_RUN_MONTHLY if s.interval == "1mo" else STALE_RUN
