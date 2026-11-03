@@ -421,3 +421,150 @@ def coverage(vault: Mapping[str, Any], raws: Iterable[Mapping[str, Any]], sessio
     if k is None:
         return unknown("no stable next quarter after the reported one")
     return Coverage("reconciled", through=k, events=events)
+
+
+# ── the API's ledger reader (design LR, Amendment A-3) ───────────────────────
+# Pure helpers for api/earnings_ledger_reader.py and the Finder's withdraw-only rule (api/desk_options.py). Nothing
+# above changes: the cache job keeps open_ledger, and coverage is computed exactly as before.
+
+MAX_PLAIN = 16 * 1024 * 1024  # a real vault is a few MB (design LR 2.1, DR-30)
+LEDGER_LIMITS = {"days": 400, "occ": 50_000, "withdrawn": 400, "provisional": 400, "runs": 500}
+LEDGER_MAX_ROWS = 5000  # rows in one day entry
+
+
+def _schema_ok(v: Any) -> bool:
+    """The opened vault's shape, checked before anything uses it (design LR 2.1)."""
+    if not isinstance(v, dict) or v.get("format") != FORMAT:
+        return False
+    for k, typ in (("days", dict), ("occ", dict), ("withdrawn", dict), ("provisional", dict), ("runs", list)):
+        x = v.get(k, typ())
+        if not isinstance(x, typ) or len(x) > LEDGER_LIMITS[k]:
+            return False
+    for entries in (v.get("days") or {}).values():
+        if not isinstance(entries, list) or len(entries) > DAY_ENTRIES:
+            return False
+        for e in entries:
+            if not isinstance(e, dict) or not isinstance(e.get("at"), str):
+                return False
+            rows = e.get("rows", [])
+            if not isinstance(rows, list) or len(rows) > LEDGER_MAX_ROWS:
+                return False
+    for o in (v.get("occ") or {}).values():
+        if not isinstance(o, dict) or not all(isinstance(o.get(f), str) for f in ("s", "d", "f", "l")):
+            return False
+        if not all(isinstance(o.get(f, []), list) for f in ("labels", "reported", "reported_by")):
+            return False
+    for p in (v.get("provisional") or {}).values():
+        if not isinstance(p, dict) or not isinstance(p.get("at"), str) or not isinstance(p.get("days", []), list):
+            return False
+    if not all(isinstance(w, str) for w in (v.get("withdrawn") or {}).values()):
+        return False
+    return all(isinstance(r, dict) for r in v.get("runs") or [])
+
+
+def open_ledger_bounded(raw: bytes, secret: str, seq: int) -> Opened:
+    """open_ledger with bounds (design LR 2.1): the same envelope, key and seq checks; the plaintext capped at
+    MAX_PLAIN; a complete stream (checksum verified, DR-33) with no trailing bytes; then the schema. ok, rotated or
+    unreadable. Never raises."""
+    import base64
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    try:
+        env = json.loads(raw)
+        if not isinstance(env, dict) or env.get("format") != LEDGER_FORMAT or env.get("seq") != seq:
+            return Opened("unreadable")
+        if env.get("key_id") != key_id(secret):
+            return Opened("rotated")
+        packed = AESGCM(_hkdf(secret, b"aes-key", 32)).decrypt(base64.b64decode(env["nonce"]),
+                                                                base64.b64decode(env["blob"]), LEDGER_AAD)
+        d = zlib.decompressobj()
+        plain = d.decompress(packed, MAX_PLAIN)
+        if d.unconsumed_tail or not d.eof or d.unused_data:
+            return Opened("unreadable")
+        out = json.loads(plain.decode("utf-8"))
+    except Exception:  # noqa: BLE001 — a state, never an error
+        return Opened("unreadable")
+    if not _schema_ok(out) or out.get("seq") != seq:
+        return Opened("unreadable")
+    return Opened("ok", out)
+
+
+def material(cov: Coverage) -> tuple:
+    """What a coverage answer says, without its provenance times (first_seen, last_seen): the answer served keeps
+    the published vault's, so no time is ever renewed (design LR 3.2)."""
+    return (cov.state, cov.through, cov.listed_through, cov.reason,
+            tuple(sorted((o.day, o.hour, o.label, o.listed, o.possible, tuple(o.moved_from)) for o in cov.events)))
+
+
+def _newest_run_day(v: Mapping[str, Any]) -> date | None:
+    from zoneinfo import ZoneInfo
+
+    starts = [at(r["started"]) for r in v.get("runs") or [] if isinstance(r, Mapping) and r.get("started")]
+    return max(starts).astimezone(ZoneInfo("America/New_York")).date() if starts else None
+
+
+def _prefix(a: Any, b: Any) -> bool:
+    a, b = list(a or []), list(b or [])
+    return b[: len(a)] == a
+
+
+def _day_continues(old: list, new: list | None) -> bool:
+    """new == (N + old)[:DAY_ENTRIES] for zero or more entries N, newest first, none older than old's newest."""
+    if not old:
+        return True
+    if new is None:
+        return False
+    newest = at(old[0]["at"])
+    for k in range(len(new) + 1):
+        if new[k:] == old[: len(new) - k] and len(new) == min(DAY_ENTRIES, k + len(old)):
+            if all(at(e["at"]) >= newest for e in new[:k]):
+                return True
+    return False
+
+
+def continues(older: Mapping[str, Any], newer: Mapping[str, Any]) -> bool:
+    """True only when `newer` could have come from `older` by the cache's own writes (design LR 3.4; DR-24, DR-25,
+    DR-31): day entries only gain newer reads in front, withdrawals never fall or vanish, a reservation is either
+    kept, converted into withdrawals, or superseded by its own run's final record, and an occurrence keeps its
+    first sighting and every label and reported label it had. Days and occurrences below the writer's own
+    pruning floors may vanish. These are every field the read-time rules consult. Never raises."""
+    from src.events.earnings_cache import KEEP_DAYS_BEFORE, KEEP_OCC_DAYS
+
+    try:
+        top = _newest_run_day(newer)
+        f = (top - timedelta(days=KEEP_DAYS_BEFORE)).isoformat() if top else ""
+        g = (top - timedelta(days=KEEP_OCC_DAYS)).isoformat() if top else ""
+        o_days, n_days = older.get("days") or {}, newer.get("days") or {}
+        o_w, n_w = older.get("withdrawn") or {}, newer.get("withdrawn") or {}
+        o_p, n_p = older.get("provisional") or {}, newer.get("provisional") or {}
+        for d, entries in o_days.items():
+            if d >= f and not _day_continues(list(entries or []), n_days.get(d)):
+                return False
+        for d, w in o_w.items():
+            if d >= f and (d not in n_w or at(n_w[d]) < at(w)):
+                return False
+        runs = {r.get("id"): r for r in newer.get("runs") or [] if isinstance(r, Mapping)}
+        for rid, p in o_p.items():
+            if n_p.get(rid) == p:
+                continue
+            t = at(p["at"])
+            kept = [d for d in p.get("days") or () if d >= f]
+            if all(d in n_w and at(n_w[d]) >= t for d in kept):
+                continue
+            rec = runs.get(p["at"])
+            if rec is not None and not rec.get("provisional"):
+                continue
+            return False
+        n_occ = newer.get("occ") or {}
+        for k, o in (older.get("occ") or {}).items():
+            if o["d"] < g:
+                continue
+            n = n_occ.get(k)
+            if n is None or any(n.get(x) != o.get(x) for x in ("s", "d", "f")) or at(n["l"]) < at(o["l"]):
+                return False
+            if not all(_prefix(o.get(x), n.get(x)) for x in ("labels", "reported", "reported_by")):
+                return False
+        return True
+    except Exception:  # noqa: BLE001 — anything malformed is a break
+        return False
