@@ -82,9 +82,11 @@ held by T + 10 min 45 s when polling succeeds. The rule (`_ledger_overlay` in `a
 withdraw: with the published vault at seq p and the held ledger state at seq l, it serves the published answer when
 l < p and the database continues the ledger, when l == p and the two states are equal, or when l > p, the ledger's
 answer for the symbol is materially the same and the ledger continues the database
-(`earnings_store.material`, `earnings_store.continues`); otherwise the answer is "earnings dates unknown"
-(`contested`), with the published rows and their provenance still listed. Anything but a trusted held state answers
-unknown with its own sentence (`unchecked`): the reader off, starting after an API restart (nothing is persisted),
+(`earnings_store.material`, `earnings_store.continues`); otherwise the answer is "earnings dates unknown", with the
+published rows and their provenance still listed. Its sentence says a newer read was incomplete or disagreed
+(`contested`) only when the newer ledger state itself holds such a read of the visitor's session; every other
+withdrawal (a newer state that would say more, states that do not continue each other) uses the neutral `unchecked`
+sentence, as does anything but a trusted held state: the reader off, starting after an API restart (nothing is persisted),
 stale (transient failures for `EARNINGS_LEDGER_STALE_S`, at most 1800 s, since the last successful check), or a
 confirmed invalid listing or asset (missing, misnamed, unreadable, rotated, unauthorized, a seq below the highest
 already held, or a higher seq that does not continue the held state), each at once. The reader's check time only

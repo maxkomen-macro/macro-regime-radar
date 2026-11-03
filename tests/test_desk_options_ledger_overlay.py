@@ -121,14 +121,15 @@ def test_the_same_seq_and_state_serves_the_published_answer(world):
     assert all(of.RECONCILED_FLAG in r["flags"] for r in modelled(d))
 
 
-def test_the_same_seq_with_another_state_answers_contested(world):
+def test_the_same_seq_with_another_state_answers_unchecked(world):
+    """Two states under one seq: a fact about the states, not a read that disagreed (Codex S-12)."""
     published = P()
     w = world.serve_vault(published, ledger=None)
     other = copy.deepcopy(published)
     other["withdrawn"] = {SESSION.isoformat(): store.iso(T1)}
     hold(w, other)
     d = w.ok(**UP)
-    assert d["coverage"][0] == of.CACHE_WORDS["contested"]
+    assert d["coverage"][0] == of.CACHE_WORDS["unchecked"]
     assert_unknown(d)
 
 
@@ -140,13 +141,13 @@ def test_an_older_ledger_that_the_database_continues_serves_the_published_answer
     assert w.ok(**UP)["coverage"][0] == RECONCILED
 
 
-def test_an_older_ledger_with_a_withdrawal_the_database_lost_answers_contested(world):
+def test_an_older_ledger_with_a_withdrawal_the_database_lost_answers_unchecked(world):
     w = world.serve_vault(P(), ledger=None)
     older = seqd(vault(CHAIN), 3)
     older["withdrawn"] = {SESSION.isoformat(): store.iso(T1 + timedelta(minutes=5))}
     hold(w, older)
     d = w.ok(**UP)
-    assert d["coverage"][0] == of.CACHE_WORDS["contested"]
+    assert d["coverage"][0] == of.CACHE_WORDS["unchecked"]
     assert_unknown(d)
 
 
@@ -183,17 +184,33 @@ def test_REQUIRED_an_older_database_with_a_newer_contradiction_answers_unknown_a
     assert w.ok(**UP)["coverage"][0] == RECONCILED
 
 
-def test_a_newer_ledger_whose_answer_differs_answers_contested_even_when_it_would_say_more(world):
-    """Withdraw-only: a ledger state that reconciles further than the database is never served."""
+def test_a_newer_ledger_that_would_say_more_is_never_served_and_claims_no_disagreement(world):
+    """Withdraw-only (Codex S-12's repro): the database holds one passing read, the ledger adds a second passing read
+    with the same rows, which would reconcile. The answer stays unknown, and its sentence never says a read was
+    incomplete or disagreed."""
     short = seqd(vault(CHAIN, runs=(T1,), statuses=("passing",), complete=(True,)), 4)  # unconfirmed: one read
     w = world.serve_vault(short, ledger=None)
-    hold(w, seqd(vault(CHAIN), 5))
+    newer = advance(short, T0, seq=5)
+    assert store.continues(short, newer) and not store.contested(newer, SESSION, NOW)
+    assert store.coverage(newer, store.index(newer)["SYN"], SESSION, NOW).state == "reconciled"
+    hold(w, newer)
+    d = w.ok(**UP)
+    assert d["coverage"][0] == of.CACHE_WORDS["unchecked"]
+    assert_unknown(d)
+
+
+def test_a_newer_ledger_with_an_unanswered_request_for_the_session_answers_contested(world):
+    published = P()
+    w = world.serve_vault(published, ledger=None)
+    newer = advance(published, T0, seq=6, days=set())
+    newer["withdrawn"] = {SESSION.isoformat(): store.iso(T0)}
+    hold(w, newer)
     d = w.ok(**UP)
     assert d["coverage"][0] == of.CACHE_WORDS["contested"]
     assert_unknown(d)
 
 
-def test_a_newer_ledger_that_forks_from_the_database_answers_contested(world):
+def test_a_newer_ledger_that_forks_from_the_database_answers_unchecked(world):
     """The same answer but not reachable from P by the cache's writes (a published withdrawal dropped)."""
     published = P()
     published["withdrawn"] = {(SESSION - timedelta(days=3)).isoformat(): store.iso(T2 - timedelta(hours=1))}
@@ -202,23 +219,26 @@ def test_a_newer_ledger_that_forks_from_the_database_answers_contested(world):
     newer["withdrawn"] = {}
     assert not store.continues(published, newer)
     hold(w, newer)
-    assert w.ok(**UP)["coverage"][0] == of.CACHE_WORDS["contested"]
+    assert w.ok(**UP)["coverage"][0] == of.CACHE_WORDS["unchecked"]
 
 
-def test_a_symbol_missing_from_the_ledger_index_evaluates_normally(world):
-    """DR-29: no KeyError and no `unchecked`; the ledger lists nothing for it, which differs from P: contested."""
+def test_a_symbol_missing_from_the_ledger_index_evaluates_normally(world, caplog):
+    """DR-29: no KeyError, so no failed check; the ledger lists nothing for it, which differs from P: unknown."""
     published = P()
     w = world.serve_vault(published, ledger=None)
     snap = hold(w, advance(published, T0, seq=6))
     w.mp.setattr(reader, "current", lambda: reader.Snapshot("ok", seq=6, asset_id=7, vault=snap.vault, index={},
                                                             last_success=0.0, high=6))
-    assert w.ok(**UP)["coverage"][0] == of.CACHE_WORDS["contested"]
+    caplog.set_level("WARNING", logger="mrr.desk")
+    assert w.ok(**UP)["coverage"][0] == of.CACHE_WORDS["unchecked"]
+    assert not any("earnings ledger check failed" in r.getMessage() for r in caplog.records)
 
 
 # ── failures inside the overlay ─────────────────────────────────────────────
 
 @pytest.mark.parametrize("where", ["current", "coverage", "continues", "seq"])
-def test_an_exception_in_the_overlay_answers_unknown_never_the_stored_rows(world, where):
+def test_an_exception_in_the_overlay_answers_unknown_never_the_stored_rows(world, where, caplog):
+    caplog.set_level("WARNING", logger="mrr.desk")
     published = P()
     w = world.serve_vault(published, ledger=None)
     hold(w, advance(published, T0, seq=6))
@@ -249,6 +269,9 @@ def test_an_exception_in_the_overlay_answers_unknown_never_the_stored_rows(world
     assert d["coverage"][0] == of.CACHE_WORDS["unchecked"]
     assert_unknown(d)
     assert "Finnhub earnings calendar (stored)" not in [e["source"] for e in earnings(d)]
+    assert any("earnings ledger check failed (RuntimeError)" in r.getMessage() or
+               "earnings ledger check failed (ValueError)" in r.getMessage() for r in caplog.records)
+    assert not any("synthetic" in r.getMessage() for r in caplog.records)  # no detail logged
 
 
 # ── the wording reaches the page (DR-28) ────────────────────────────────────

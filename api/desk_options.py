@@ -619,8 +619,10 @@ def _from_cache(sym: str, session: date, item: dict, cache: dict) -> tuple[list[
 def _ledger_overlay(sym: str, session: date, now: datetime, hand_dates: list[date], published: Mapping[str, Any],
                     pub: Any) -> str | None:
     """The withdraw-only rule (design LR 3.3; Amendment A-3): None serves the published answer `pub`; otherwise the
-    reason the answer is unknown, `unchecked` (the reader holds no trusted state) or `contested` (the newest ledger
-    state disagrees). It can only withdraw: the ledger never adds confidence. One reader snapshot, read once; any
+    reason the answer is unknown. It can only withdraw: the ledger never adds confidence. `contested` only when the
+    newer ledger state itself holds an incomplete, disagreeing or unanswered read of the session (store.contested);
+    every other withdrawal is `unchecked`, which claims no disagreement: a newer state that would say more, a state
+    that does not continue the other, or no trusted state at all (Codex S-12). One reader snapshot, read once; any
     exception answers unknown, never the stored rows (DR-29)."""
     try:
         from api import earnings_ledger_reader as reader
@@ -631,12 +633,13 @@ def _ledger_overlay(sym: str, session: date, now: datetime, hand_dates: list[dat
             return "unchecked"
         p, l = int(published.get("seq") or 0), int(snap.seq)
         if l < p:  # the database is newer: it must carry everything the ledger held
-            return None if store.continues(snap.vault, published) else "contested"
+            return None if store.continues(snap.vault, published) else "unchecked"
         if l == p:
-            return None if snap.vault == published else "contested"
+            return None if snap.vault == published else "unchecked"
         led = store.coverage(snap.vault, (snap.index or {}).get(sym, []), session, now, hand_dates)
-        same = store.material(led) == store.material(pub) and store.continues(published, snap.vault)
-        return None if same else "contested"
+        if store.material(led) == store.material(pub) and store.continues(published, snap.vault):
+            return None
+        return "contested" if store.contested(snap.vault, session, now) else "unchecked"
     except Exception as exc:  # noqa: BLE001 — unknown, with no detail that could carry a symbol or a date
         log.warning("desk: the earnings ledger check failed (%s)", type(exc).__name__)
         return "unchecked"
