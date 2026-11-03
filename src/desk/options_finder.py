@@ -917,11 +917,16 @@ def between(ev: Event, start: date, end: date, closes) -> str | None:
 
 UNKNOWN_FLAG = ("Earnings dates are unknown for this name, so a report before your date is not ruled out; the "
                 "modelled value holds this contract's volatility flat.")
+# the earnings cache's reconciled coverage (design EC section 6): provider data, never a company confirmation
+RECONCILED_FLAG = ("Finnhub's calendar lists no other regular quarterly report before your date (provider data, not "
+                   "confirmed by the company; unscheduled earnings updates are not covered).")
 
 
-def event_flags(evs: Sequence[Event], session: date, by: date, closes, known_through: date | None = None) -> list[str]:
+def event_flags(evs: Sequence[Event], session: date, by: date, closes, known_through: date | None = None,
+                reconciled: bool = False) -> list[str]:
     """The earnings flags of one modelled row: each found report before (or perhaps before) the visitor's date, and
-    UNKNOWN_FLAG while the earnings coverage is not complete through that date (design A-3)."""
+    UNKNOWN_FLAG while the earnings coverage is not complete through that date (design A-3); RECONCILED_FLAG in its
+    place when the coverage through that date is the earnings cache's reconciled one (design EC section 6)."""
     out = []
     for ev in evs:
         if ev.kind != "earnings":
@@ -935,6 +940,8 @@ def event_flags(evs: Sequence[Event], session: date, by: date, closes, known_thr
                        "modelled value holds this contract's volatility flat, which usually fails after a report.")
     if known_through is None or known_through < by:
         out.append(UNKNOWN_FLAG)
+    elif reconciled:
+        out.append(RECONCILED_FLAG)
     return out
 
 
@@ -1033,14 +1040,46 @@ def earnings_moves(evs: Sequence[Event], session: date, last_expiry: date, close
     return out
 
 
+# The earnings cache's coverage states (design EC section 6); the states the route sent before keep their words.
+CACHE_WORDS = {
+    "reconciled": ("Finnhub's calendar lists these regular quarterly reports through {k}, reconciled with the fiscal "
+                   "quarters it shows as reported. This is provider data, not confirmed by the company; unscheduled "
+                   "earnings updates are not covered, and earnings dates after {k} are unknown."),
+    "listed": ("Earnings dates listed are from Finnhub's calendar; they could not be reconciled with a reported fiscal "
+               "quarter, so other earnings dates are unknown."),
+    "unlisted": "Finnhub's calendar lists no report for {symbol} through {d}, so its earnings dates are unknown.",
+    "unconfirmed": ("Finnhub's calendar has not yet been read completely and consistently twice for these dates (the "
+                    "newer read under 48 hours old, the two at most 48 hours apart), so earnings dates are unknown."),
+    "contested": ("A newer read of Finnhub's calendar for these dates was incomplete or disagreed with earlier reads, so "
+                  "earnings dates are unknown."),
+    "withheld": "Earnings dates from Finnhub are not shown on this page, so a report before your date is not ruled out.",
+}
+UNREADABLE_WORDS = "Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out."
+
+
+def _cache_words(cov: Mapping[str, Any], symbol: str, status: str, through: date | None, unreadable: bool) -> str:
+    if unreadable and status in ("reconciled", "unlisted"):
+        return UNREADABLE_WORDS  # no reconciliation or absence claim while a row could not be read (design S-10)
+    if status == "reconciled":
+        return CACHE_WORDS["reconciled"].format(k=_day(through)) if through is not None else "Earnings dates could not be read."
+    if status == "unlisted":
+        d = _date(cov.get("listed_through"))
+        return CACHE_WORDS["unlisted"].format(symbol=symbol, d=_day(d)) if d is not None else "Earnings dates could not be read."
+    if status == "unconfirmed" and cov.get("reason") == "contested":
+        return CACHE_WORDS["contested"]
+    return CACHE_WORDS[status]
+
+
 def coverage_words(cov: Mapping[str, Any], symbol: str, dividends_ok: bool, found_earnings: bool,
                    unreadable: bool = False) -> list[str]:
     out = []
     status = cov.get("earnings")
     through = _date(cov.get("earnings_through"))
-    if status in ("fetched", "not_found") and through is not None and unreadable and not found_earnings:
+    if status in CACHE_WORDS:
+        out.append(_cache_words(cov, symbol, status, through, unreadable))
+    elif status in ("fetched", "not_found") and through is not None and unreadable and not found_earnings:
         # no absence claim while a row could not be read (design S-10 step 5)
-        out.append("Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out.")
+        out.append(UNREADABLE_WORDS)
     elif status == "stored" and through is None:
         out.append("Earnings dates listed are from Finnhub's calendar as stored by the site's refresh; when they were "
                    "last checked is not recorded, and other earnings dates are unknown.")
@@ -1094,6 +1133,7 @@ class RowCtx:
     budget_c: int
     events: list[Event]
     earnings_through: date | None = None  # earnings coverage complete through this date, else None (design A-3)
+    reconciled: bool = False  # that coverage is the earnings cache's reconciled one (design EC section 6)
 
 
 def _context_on(rc: RowCtx, q: Quote, sigma: float, start: date, spot: float) -> om.Context:
@@ -1342,7 +1382,7 @@ def _row(rc: RowCtx, z: Sized, vs: list, target_d: Decimal, be: tuple | None) ->
         "european_value": now.european,
         "early_exercise": {"premium": premium_out, "flag": flag},
         "event_ids": row_event_ids(rc.events, m.session, t.by, q.exp, m.closes),
-        "flags": event_flags(rc.events, m.session, t.by, m.closes, rc.earnings_through) if modelled else [],
+        "flags": event_flags(rc.events, m.session, t.by, m.closes, rc.earnings_through, rc.reconciled) if modelled else [],
         "carry_source": rc.carries[q.exp].source,
         "provider": provider,
         "_sigma": sigma,
@@ -1646,7 +1686,9 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         run_notes.append(f"{unusable} earnings rows were unusable and were ignored.")
     # complete only when a calendar was read through a date with nothing unusable; stored rows never are (design A-3)
     cov = coverage or {}
-    complete_through = _date(cov.get("earnings_through")) if cov.get("earnings") in ("fetched", "not_found") and not unusable else None
+    complete_through = (_date(cov.get("earnings_through"))
+                        if cov.get("earnings") in ("fetched", "not_found", "reconciled") and not unusable else None)
+    reconciled = cov.get("earnings") == "reconciled" and complete_through is not None
     evs = sorted(evs + dividend_events(sched), key=lambda ev: (ev.day, ev.id))
 
     # carry per expiry (no up-front estimate: the counter refuses at the charge that would pass the budget, DR-44)
@@ -1665,7 +1707,7 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
     half_d = s0_d + (x_d - s0_d) / 2
     prices = {"target": x_d, "half": half_d, "flat": s0_d}
     rc = RowCtx(t, m, curve, sched, carries, pricer, prices, commission_cents(t.commission), budget_cents(t.budget), evs,
-                complete_through)
+                complete_through, reconciled)
     sized: list[Sized] = []
     for q in survivors:  # screen 10 before 9 (rev 5): sizing is exact and needs no volatility
         if carries[q.exp].source == "outside domain":
@@ -1760,7 +1802,7 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
     if cov.get("earnings") == "not_checked":
         earnings_status = "not_checked"
     elif complete_through is not None and complete_through >= last_scanned:
-        earnings_status = "known"
+        earnings_status = "reconciled" if reconciled else "known"
     else:
         earnings_status = "unknown"
     answer = {

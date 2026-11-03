@@ -41,6 +41,8 @@ ROOTS: list[tuple[str, set[str]]] = [
     # desk/event-study: the XNYS session calendar src/desk/event_study.py imports
     # at module load (tests/test_api_lock.py pins these roots to the txt file).
     ("exchange-calendars", set()),
+    # the Options Finder earnings cache's encrypted vault (src/events/earnings_store.py)
+    ("cryptography", set()),
 ]
 
 

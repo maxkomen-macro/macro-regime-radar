@@ -97,6 +97,9 @@ DATE_COLUMNS = {
 ADVISORY_TABLES = {"share_counts"}
 ADVISORY_FINGERPRINT_SQL = {
     "share_counts": "SELECT symbol, shares_outstanding, as_of, source FROM share_counts ORDER BY symbol",
+    # Options Finder earnings cache (design EC 4.1): the encrypted vault's public digest of its observations,
+    # so a run that read Finnhub publishes and a skip that only records bookkeeping does not
+    "earnings_cache_vault": "SELECT key_id, content_digest FROM earnings_cache_vault ORDER BY id",
 }
 # Rolling-window tables shrink by design (intraday trimmed to 30 days, news
 # aged out); their freshness is judged by max date, never by row count.
@@ -117,9 +120,10 @@ RECOMPUTED_TABLES = {"alert_feed"}
 # the spend, so new ledger rows count as a change in the modes that enrich.
 MODE_TABLES = {
     # Codex R-20: desk_series_runs too, so a refresh that only restores rows' provenance publishes;
-    # desk/cap-weight: share_counts, so a refresh whose only news is a new share count publishes it
+    # desk/cap-weight: share_counts, so a refresh whose only news is a new share count publishes it;
+    # earnings_cache_vault, so a run's observations, withdrawals and call accounting are never dropped (EC 4.1)
     "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices", "desk_series",
-             "desk_series_runs", "share_counts"],
+             "desk_series_runs", "share_counts", "earnings_cache_vault"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also capture the official close after the

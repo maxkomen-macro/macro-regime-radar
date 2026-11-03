@@ -72,6 +72,11 @@ class World:
         self.fh = fk.FakeFinnhub({})  # the dashboard client's transport: the Finder must send it nothing
         monkeypatch.setattr(market, "_utcnow", lambda: fk.NOW)
         monkeypatch.setenv("FINNHUB_API_KEY", "dashboard-key")
+        # The stored-row path these tests pin is the route's answer with the display switch on and no earnings
+        # cache (plan rev 2 D6, design EC section 5); the switch off and the cache have their own tests
+        # (tests/test_desk_options_earnings_cache.py).
+        monkeypatch.setenv(desk_options.DISPLAY_ENV, "1")
+        monkeypatch.delenv("EARNINGS_CACHE_KEY", raising=False)
         monkeypatch.setattr(eod, "_bucket", TokenBucket(rate=1e6, burst=10**6))
         monkeypatch.setattr(market, "_client", eod.EodhdClient("tok", transport=httpx.MockTransport(self.fake), max_retries=0))
         monkeypatch.setattr(fh, "_client", fh.FinnhubClient("dashboard-key", transport=httpx.MockTransport(self.fh)))
@@ -557,7 +562,8 @@ def test_the_item_keeps_the_newest_fifteen_rows_and_every_macro_row_from_a_month
     got = desk_options.desk_options_inputs({})
     assert got["stored"] and all(len(v) == 15 and v[0][0] == "2026-10-23" for v in got["curve"].values())
     assert [m["name"] for m in got["macro"]] == ["CPI", "Far"] and got["macro_through"] == "2027-12-12"
-    assert got["earnings"] == [{"symbol": "SYN", "at": "2026-11-30T21:30:00Z", "name": "SYN earnings (Q3 2026)"}]
+    assert got["earnings"] == [{"symbol": "SYN", "at": "2026-11-30T21:30:00Z", "name": "SYN earnings (Q3 2026)",
+                                "source": "finnhub_earnings"}]
     assert got["earnings_symbols"] == ["SYN"]
 
 

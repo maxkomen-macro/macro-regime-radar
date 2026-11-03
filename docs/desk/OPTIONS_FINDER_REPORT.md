@@ -181,6 +181,8 @@ decision; the adaptive-pricing proposal is the place to settle it.
   says other earnings dates are unknown, flags every modelled contract with that, and serves no implied earnings
   move (the stored rows record no checked horizon). Prices are unchanged. A shared earnings cache with recorded
   coverage and freshness is its own planned PR; it needs the owner's approval for its refresh-workflow step.
+  **Superseded by the earnings cache** (`docs/desk/EARNINGS_CACHE.md`): with the display switch off, the shipped
+  default, the Finder shows hand-maintained earnings rows only (D6); with it on, the cache's reconciled coverage.
 - **`finder2_carry` lives in `options_finder.py`**, not its own module.
 - **F7's tests are in `positions/option.test.tsx`**, not spread over the three files the plan names.
 
@@ -192,4 +194,4 @@ decision; the adaptive-pricing proposal is the place to settle it.
 | Marketplace quota | Per-session chain cache, the provider ceiling, one scan at a time, typed refusals (`busy`, `rate_limited`). |
 | Wide chains | The work budget refuses with a reason, never a partial ranking; top-20 pruning by value bounds: the bounds are proved, and their allowance for the lattice's error (twice its tolerance) is validated, not proved. |
 | Modelled values | Labelled modelled, with the volatility held and the ±10-point sensitivity on every modelled contract. |
-| Events | Earnings, macro releases and dividends before the date are listed and flagged on each contract; earnings dates beyond the stored ones are "unknown", never "none", and no implied earnings move is served until the cache records coverage; other company events are named as not tracked. |
+| Events | Earnings, macro releases and dividends before the date are listed and flagged on each contract; earnings dates beyond what the earnings cache reconciles are "unknown", never "none", and an implied earnings move needs reconciled coverage through its second expiry (`docs/desk/EARNINGS_CACHE.md`); other company events are named as not tracked. |

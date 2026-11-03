@@ -27,6 +27,9 @@ from urllib.parse import urlencode
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ.setdefault("FRED_API_KEY", "fixture")
+# the stored-row answer (the display switch on, no earnings cache; plan rev 2 D6), which the fixture has always held
+os.environ["FINDER_EARNINGS_DISPLAY"] = "1"
+os.environ.pop("EARNINGS_CACHE_KEY", None)
 
 OUT = ROOT / "web" / "src" / "fixtures" / "desk" / "options-finder.json"
 REQUESTS = [
