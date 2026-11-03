@@ -349,8 +349,36 @@ def test_a_flag_whose_numbers_changed_is_new_and_a_dividend_restatement_is_not(t
     assert ("split", True) in [(f["check"], f["new"]) for f in q.compare(moved, prev)["flags"]]
 
 
+def test_cross_table_gaps_that_widen_are_new_however_small_the_change(tmp_path):
+    # Codex S-02: a 0.40% cross-table gap growing to 1.30% (and any smaller drift) is not the published flag
+    def run(step, name):
+        conn = _db(tmp_path, name)
+        dates, adj = DATES[:5], _walk(5)
+        _put(conn, "SPY", dates, adj)
+        _put(conn, "SPY", dates, [c * (math.exp(step) if i >= 2 else 1) for i, c in enumerate(adj)], table="market_daily")
+        return q.run(conn)
+    prev = run(0.004, "prev.db")
+    assert [f["check"] for f in prev["flags"]] == ["cross_table"]
+    for step, name in ((0.013, "wider.db"), (0.0041, "drift.db")):
+        assert [f["new"] for f in q.compare(run(step, name), prev)["flags"]] == [True]
+    assert [f["new"] for f in q.compare(run(0.004, "same.db"), prev)["flags"]] == [False]
+
+
+def test_a_restated_history_keeps_its_moves_to_float_noise(tmp_path):
+    # the tolerance holds a real restatement: scaling every close before an ex-date by a
+    # distribution factor moves no observation of a flag away from that date by 1e-9
+    base = _walk(len(DATES))
+    halved = base[:300] + [c / 2 for c in base[300:]]
+    prev = _split_run(tmp_path, "p.db", halved)
+    for k in (0.9999, 0.99, 0.956):
+        cur = _split_run(tmp_path, f"k{k}.db", [c * k for c in halved[:350]] + halved[350:])
+        (a,), (b,) = prev["flags"], cur["flags"]
+        assert abs(a["observed"][1] - b["observed"][1]) < 1e-9
+
+
 def test_observations_match_only_within_the_tolerance():
-    assert q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.69])
+    assert q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.693 + 1e-9])
+    assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.6929])
     assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.71])
     assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-05", -0.693])
     assert not q._same_observation(["2026-01-02", 3], ["2026-01-02", 4])
