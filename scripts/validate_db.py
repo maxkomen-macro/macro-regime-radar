@@ -469,10 +469,11 @@ def _quality_label(f: dict) -> str:
 
 def _price_quality(cur: dict, prev: dict | None) -> tuple[dict, list[str], list[str]]:
     """Analyst Desk P0c: the price-quality flags against the previous snapshot's.
-    A flag on a blocking-class check (split, implausible or stale in asset_prices
-    or market_daily, implausible in a tier-1 desk_series series) fails only when
-    it is new: the previous published snapshot does not carry it, so publishing
-    would put a number on screen that is not there now. One the published database
+    A flag on a blocking-class check (split or implausible in asset_prices or
+    market_daily, implausible in a tier-1 desk_series series) fails only when it
+    is new: the previous published snapshot does not carry it with the same move
+    (quality.same_flag), so publishing would put a number on screen that is not
+    there now. One the published database
     already carries is reported and never blocks, since holding the refresh back
     would not take it off screen. Every other check is advisory: a new one is a
     warning, a known one is counted. Without a previous snapshot nothing is
@@ -488,7 +489,7 @@ def _price_quality(cur: dict, prev: dict | None) -> tuple[dict, list[str], list[
     for f in failed:
         failures.append(f"price quality: {f['check']} in {_quality_label(f)}: {f['detail']}. New in this snapshot (the published "
                         "database does not carry it), so publishing would put it on screen; fix the rows at the source, or record "
-                        "the evidence that the move is real in src/market_data/quality.ACCEPTED")
+                        "the evidence that the move is real, with the move, in src/market_data/quality.ACCEPTED")
     if not judged["judged"]:
         blocking_class = [f for f in flags if f["blocking"]]
         if blocking_class:

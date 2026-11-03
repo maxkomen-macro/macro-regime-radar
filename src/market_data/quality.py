@@ -11,16 +11,19 @@ Checks, per stored series (one symbol and interval of one table):
 
   split        the close moved by a ratio within 3% of a split factor (2:1,
                3:1, 3:2, 1:2, 1:10, ...), at least 31% in log terms, and the
-               new level held the next session. ETFs only: an index, a
-               futures contract, an FX rate or a FRED series cannot split.
+               new level held the next stored session. ETFs only: an index, a
+               futures contract, an FX rate or a FRED series cannot split. On
+               the newest row nothing can show the level held, so a split
+               ratio there is judged by size alone (implausible, or a jump).
   implausible  one move larger than the instrument class has ever made in
                the stored history, with room to spare: a log move of 0.405
                (+50% or -33%) for equities, ETFs and gold futures, log 1.10
                (x3) for volatility, 3 percentage points for a yield or a
                spread, log 0.22 (+25%) for a currency; a month allows log
                0.69 (x2) for equities and log 0.405 for currencies.
-  stale        a bar that repeats the previous one: the same close and the
-               same volume, in a series that carries volume.
+  stale        a bar that may repeat the previous one: the same close and the
+               same volume, in a series that carries volume. Two real sessions
+               can match, so this is advisory.
   stale_run    the same close three or more sessions in a row, or two
                month-ends in a row on a monthly series (yields and spreads
                are left out: an unchanged rate is ordinary).
@@ -34,24 +37,33 @@ Checks, per stored series (one symbol and interval of one table):
   gap          NYSE sessions missing between two stored rows of a series that
                trades on NYSE's calendar (US ETFs and indices, the VIX).
   off_calendar a row dated on a day NYSE was closed, for the same series.
-  cross_table  market_daily stores raw closes and asset_prices adjusted ones
-               for the same ETFs, so their ratio changes only on an ex-date,
-               and then downward. A one-session blip in the ratio, a rise, or
-               a fall of more than 10% is a close one of the two tables holds
-               wrong.
+  cross_table  the same ETF in both tables. market_daily keeps each close as
+               the provider served it when the row was written (Polygon's raw
+               closes before 2026-05-27, Yahoo's auto-adjusted ones since, a
+               row rewritten when a later fetch covers it); asset_prices is
+               the whole adjusted history, refetched every full run. Between
+               fetches their ratio moves only on an ex-date, and then
+               downward, as the newer adjustment lowers older closes. A
+               one-session blip, a rise, or a fall of more than 10% says the
+               tables disagree: a wrong close in one of them, two sources or
+               adjustment vintages spliced, or one table not refreshed.
 
 Robust sigma is 1.4826 x the median absolute deviation of the series' own
 moves over the 250 observations before the row (recomputed every 21 rows),
 so a move is never judged against itself.
 
-`blocking` on a flag marks the checks the validator may block on: split,
-implausible and stale in asset_prices and market_daily, whose rows go on
-screen as they are stored, and implausible in a tier-1 desk_series series.
-Everything else is advisory. The validator blocks only on such a flag that the
-previous published snapshot did not already carry: the published database
-already shows a known one, so holding the refresh back would protect nobody.
-ACCEPTED lists flags someone checked against an independent source and found
-real; each carries its evidence.
+`blocking` on a flag marks the checks the validator may block on: split and
+implausible in asset_prices and market_daily, whose rows go on screen as they
+are stored, and implausible in a tier-1 desk_series series. Everything else is
+advisory. The validator blocks only on such a flag that the previous published
+snapshot did not already carry with the same move (`same_flag`): the published
+database already shows that number, so holding the refresh back would protect
+nobody, while a changed move at the same date is a new number. ACCEPTED lists
+flags someone checked against an independent source and found real, each
+bound to its move and carrying its evidence.
+
+Not covered: market_intraday (the five-minute bars the intraday refresh keeps
+for 30 days). Its own checks are a separate follow-up.
 """
 
 from __future__ import annotations
@@ -78,14 +90,16 @@ SPLIT_TOLERANCE = 0.03
 SPLIT_MIN_LOG = math.log(1.36)  # 3:2 is the smallest factor checked (log 0.405); 1.36 leaves the tolerance room
 SPLIT_FACTORS = (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 1.5)
 RATIO_STEP = 0.003    # cross_table: 0.3% in log terms
+SAME_MOVE = 0.01      # a known flag's move, matched within this (log units, or percentage points for a rate)
 RATIO_DROP = math.log(1 / 0.9)  # cross_table: a fall in the ratio above 10% is no distribution
 
-# Flags checked against an independent source and found real (never blocking). Key:
-# (check, table, series, interval, date) -> the evidence. Empty on 2026-11-03.
-ACCEPTED: dict[tuple[str, str, str, str, str], str] = {}
+# Flags checked against an independent source and found real (never blocking while the stored move is the
+# one checked, within SAME_MOVE). Key: (check, table, series, interval, date) -> (move, evidence). Empty on 2026-11-03.
+ACCEPTED: dict[tuple[str, str, str, str, str], tuple[float, str]] = {}
 
 BLOCKING_TABLES = ("asset_prices", "market_daily")
-BLOCKING_CHECKS = ("split", "implausible", "stale")
+BLOCKING_CHECKS = ("split", "implausible")
+CAL_FIRST, CAL_LAST = date(min(cal.HOLIDAYS), 1, 1), date(max(cal.HOLIDAYS), 12, 31)
 
 
 @dataclass(frozen=True)
@@ -221,9 +235,10 @@ def _moves(s: Series, p: Profile) -> list[float | None]:
     out: list[float | None] = [None]
     for a, b in zip(s.closes, s.closes[1:]):
         if p.transform == "level":
-            out.append(b - a)
-        else:
-            out.append(math.log(b / a) if a > 0 and b > 0 else None)
+            m = b - a
+            out.append(m if math.isfinite(m) else None)
+        else:  # a difference of logs: no ratio of two extreme closes can underflow or overflow
+            out.append(math.log(b) - math.log(a) if a > 0 and b > 0 else None)
     return out
 
 
@@ -254,10 +269,14 @@ def _sigmas(moves: list[float | None]) -> list[float | None]:
 def _fmt(p: Profile, m: float) -> str:
     if p.transform == "level":
         return f"{m * 100:+.0f}bp"
+    if m > 700:  # exp() would overflow; the move is astronomically large either way
+        return f"log move {m:+.1f}"
     return f"{math.expm1(m) * 100:+.1f}%"
 
 
 def _split_factor(m: float) -> float | None:
+    if abs(m) > math.log(max(SPLIT_FACTORS) * (1 + SPLIT_TOLERANCE)):
+        return None
     ratio = math.exp(m)
     for f in SPLIT_FACTORS:
         for target in (f, 1 / f):
@@ -274,9 +293,11 @@ def _ratio_label(target: float) -> str:
 
 
 def _nyse_missing(a: str, b: str) -> list[str]:
-    """NYSE sessions strictly between two stored dates, within years the calendar knows."""
+    """NYSE sessions strictly between two stored dates, within years the calendar knows
+    (the scan is clamped to them, so two rows centuries apart cost at most the table's span)."""
     out = []
-    d, end = date.fromisoformat(a) + timedelta(days=1), date.fromisoformat(b)
+    d = max(date.fromisoformat(a) + timedelta(days=1), CAL_FIRST)
+    end = min(date.fromisoformat(b), CAL_LAST + timedelta(days=1))
     while d < end:
         if cal.calendar_known(d) and cal.is_trading_day(d):
             out.append(d.isoformat())
@@ -300,18 +321,33 @@ def _blocking(table: str, series: str, check: str, tier1: set[str]) -> bool:
     return table == "desk_series" and check == "implausible" and series in tier1
 
 
-def _flag(s: Series, d: str, check: str, detail: str, tier1: set[str]) -> dict:
+def _flag(s: Series, d: str, check: str, detail: str, tier1: set[str], move: float | None = None) -> dict:
     blocking = _blocking(s.table, s.series, check, tier1)
-    key = (check, s.table, s.series, s.interval, d)
+    k = (check, s.table, s.series, s.interval, d)
     out = {"check": check, "table": s.table, "series": s.series, "interval": s.interval, "date": d,
-           "blocking": blocking and key not in ACCEPTED, "detail": detail}
-    if key in ACCEPTED:
-        out["accepted"] = ACCEPTED[key]
+           "blocking": blocking, "detail": detail, "move": move}
+    accepted = ACCEPTED.get(k)
+    if accepted is not None and _same_move(move, accepted[0]):
+        out["blocking"] = False
+        out["accepted"] = accepted[1]
     return out
 
 
 def key(flag: dict) -> tuple[str, str, str, str, str]:
     return flag["check"], flag["table"], flag["series"], flag["interval"], flag["date"]
+
+
+def _same_move(a: float | None, b: float | None) -> bool:
+    if a is None or b is None:
+        return a is None and b is None
+    return abs(a - b) <= SAME_MOVE
+
+
+def same_flag(a: dict, b: dict) -> bool:
+    """One flag in two snapshots: the same check on the same row, and, where the flag carries a
+    move (split, implausible), the same move within SAME_MOVE. A move that changed at the same
+    date is a different number on screen, so it is a different flag."""
+    return key(a) == key(b) and _same_move(a.get("move"), b.get("move"))
 
 
 def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) -> list[dict]:
@@ -326,17 +362,19 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
         nxt = moves[i + 1] if i + 1 < n else None
         prv = moves[i - 1] if i - 1 in taken else None  # the row before was a bad print: this move may be its way back
         returning = prv is not None and abs(m + prv) <= 0.5 * abs(m)
-        if p.splits and abs(m) >= SPLIT_MIN_LOG and (target := _split_factor(m)) is not None \
-                and (nxt is None or abs(m + nxt) > 0.5 * abs(m)) and not returning:
+        target = _split_factor(m) if p.splits and abs(m) >= SPLIT_MIN_LOG else None
+        if target is not None and nxt is not None and abs(m + nxt) > 0.5 * abs(m) and not returning:
             flags.append(_flag(s, s.dates[i], "split", f"close {s.closes[i - 1]:g} -> {s.closes[i]:g} on {s.dates[i]}: "
-                                                         f"ratio {math.exp(m):.4f}, near {_ratio_label(target)}", tier1))
+                                                         f"ratio {math.exp(m):.4f}, near {_ratio_label(target)}", tier1, m))
             taken.add(i)
             continue
         if p.implausible is not None and abs(m) >= p.implausible:
+            unconfirmed = f"; a split ratio ({_ratio_label(target)}), unconfirmed on the newest row" \
+                if target is not None and nxt is None else ""
             flags.append(_flag(s, s.dates[i], "implausible", f"{_fmt(p, m)} from {s.dates[i - 1]} "
                                                                f"({s.closes[i - 1]:g} -> {s.closes[i]:g}), beyond the {p.kind} limit "
-                                                               f"of {_fmt(p, p.implausible) if p.transform == 'level' else f'log {p.implausible:.3f}'}",
-                               tier1))
+                                                               f"of {_fmt(p, p.implausible) if p.transform == 'level' else f'log {p.implausible:.3f}'}"
+                                                               f"{unconfirmed}", tier1, m))
             taken.add(i)
     # stale: a repeated bar, and a run of one close
     if s.volumes is not None and any((v or 0) > 0 for v in s.volumes):
@@ -389,12 +427,13 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
 
 
 def cross_table(raw: Series, adj: Series, tier1: set[str]) -> list[dict]:
-    """market_daily's raw closes against asset_prices' adjusted ones for the same
-    symbol, on the sessions both store, consecutive in both. Flags are the
-    market_daily series' (dated at the row whose ratio moved)."""
+    """market_daily's closes against asset_prices' adjusted ones for the same
+    symbol, on the sessions both store. Flags are the market_daily series'
+    (dated at the row whose ratio moved), always advisory."""
     a = dict(zip(adj.dates, adj.closes))
     pairs = [(d, c, a[d]) for d, c in zip(raw.dates, raw.closes) if d in a and c > 0 and a[d] > 0]
-    steps = [None] + [math.log((c1 / a1) / (c0 / a0)) for (_, c0, a0), (_, c1, a1) in zip(pairs, pairs[1:])]
+    logq = [math.log(c) - math.log(ad) for _, c, ad in pairs]
+    steps = [None] + [q1 - q0 for q0, q1 in zip(logq, logq[1:])]
     flags = []
     i = 1
     while i < len(pairs):
@@ -402,16 +441,17 @@ def cross_table(raw: Series, adj: Series, tier1: set[str]) -> list[dict]:
         nxt = steps[i + 1] if i + 1 < len(pairs) else None
         if abs(s) > RATIO_STEP and nxt is not None and abs(s + nxt) <= 0.001 + 0.2 * abs(s):
             d = pairs[i][0]
-            flags.append(_flag(raw, d, "cross_table", f"{d}: the raw close ({pairs[i][1]:g}) and the adjusted close "
+            flags.append(_flag(raw, d, "cross_table", f"{d}: market_daily's close ({pairs[i][1]:g}) and asset_prices' "
                                                        f"({pairs[i][2]:g}) disagree for one session ({s * 100:+.2f}%, back on "
-                                                       f"{pairs[i + 1][0]}): one of the two tables holds a wrong close", tier1))
+                                                       f"{pairs[i + 1][0]}): a wrong close in one of the two tables?", tier1))
             i += 2
             continue
         if s > RATIO_STEP or s < -RATIO_DROP:
             d = pairs[i][0]
             why = "rose, which no distribution explains" if s > 0 else "fell by more than any distribution"
-            flags.append(_flag(raw, d, "cross_table", f"{d}: raw/adjusted ratio {why} ({s * 100:+.2f}% from {pairs[i - 1][0]}); "
-                                                       "two adjustment bases or sources spliced?", tier1))
+            flags.append(_flag(raw, d, "cross_table", f"{d}: the market_daily/asset_prices close ratio {why} "
+                                                       f"({s * 100:+.2f}% from {pairs[i - 1][0]}): sources or adjustment vintages "
+                                                       "spliced, or one table not refreshed?", tier1))
         i += 1
     return flags
 
@@ -452,11 +492,13 @@ def run(conn: sqlite3.Connection) -> dict:
 def compare(current: dict, previous: dict | None) -> dict:
     """Current flags against the previous snapshot's: each flag marked new or known.
     Without a previous snapshot nothing is new or known (`judged` is False)."""
-    seen = {key(f) for f in (previous or {}).get("flags", [])} if previous is not None else None
-    out = []
-    for f in current.get("flags", []):
-        out.append({**f, "new": None if seen is None else key(f) not in seen})
-    return {"judged": seen is not None, "flags": out}
+    if previous is None:
+        return {"judged": False, "flags": [{**f, "new": None} for f in current.get("flags", [])]}
+    seen: dict[tuple, list[dict]] = {}
+    for f in previous.get("flags", []):
+        seen.setdefault(key(f), []).append(f)
+    out = [{**f, "new": not any(same_flag(f, g) for g in seen.get(key(f), []))} for f in current.get("flags", [])]
+    return {"judged": True, "flags": out}
 
 
 def counts(flags: list[dict]) -> dict[str, dict[str, int]]:

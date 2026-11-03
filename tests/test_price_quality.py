@@ -148,7 +148,7 @@ def test_volatility_triples_are_implausible(tmp_path):
     assert f["series"] == "^VIX" and f["blocking"]
 
 
-def test_a_repeated_bar_is_stale_but_a_repeated_close_on_new_volume_is_not(tmp_path):
+def test_a_repeated_bar_is_stale_and_advisory_but_a_repeated_close_on_new_volume_is_not(tmp_path):
     conn = _db(tmp_path)
     closes = _walk(len(DATES))
     vols = [1_000_000.0 + i for i in range(len(DATES))]
@@ -157,7 +157,7 @@ def test_a_repeated_bar_is_stale_but_a_repeated_close_on_new_volume_is_not(tmp_p
     closes[250] = closes[249]       # the close repeats on its own volume: ordinary
     _put(conn, "IWM", DATES, closes, volumes=vols)
     (f,) = _flags(conn, "stale")
-    assert (f["date"], f["blocking"]) == (DATES[200], True)
+    assert (f["date"], f["blocking"]) == (DATES[200], False)  # two real sessions can match (design DR-01)
 
 
 def test_a_series_without_volume_is_judged_on_runs_only(tmp_path):
@@ -289,9 +289,59 @@ def test_an_accepted_flag_never_blocks(tmp_path, monkeypatch):
     closes = _walk(len(DATES))
     closes = closes[:300] + [c / 2 for c in closes[300:]]
     _put(conn, "XLK", DATES, closes)
-    monkeypatch.setitem(q.ACCEPTED, ("split", "asset_prices", "XLK", "1d", DATES[300]), "checked against the issuer's notice")
+    (f,) = _flags(conn, "split")
+    k = ("split", "asset_prices", "XLK", "1d", DATES[300])
+    monkeypatch.setitem(q.ACCEPTED, k, (f["move"], "checked against the issuer's notice"))
     (f,) = _flags(conn, "split")
     assert f["blocking"] is False and f["accepted"] == "checked against the issuer's notice"
+    # the acceptance is bound to the move that was checked: another move on that date still blocks
+    monkeypatch.setitem(q.ACCEPTED, k, (f["move"] + 0.5, "checked against the issuer's notice"))
+    (f,) = _flags(conn, "split")
+    assert f["blocking"] is True and "accepted" not in f
+
+
+def test_a_split_ratio_on_the_newest_row_is_judged_by_size_alone(tmp_path):
+    """Nothing after the newest row can show the level held (design DR-02): it is no split,
+    but a halving is still past the ETF limit, and the detail names the ratio."""
+    conn = _db(tmp_path)
+    closes = _walk(len(DATES))
+    closes[-1] = closes[-2] / 2
+    _put(conn, "XLK", DATES, closes)
+    assert not _flags(conn, "split")
+    (f,) = _flags(conn, "implausible")
+    assert f["date"] == DATES[-1] and f["blocking"] and "unconfirmed on the newest row" in f["detail"]
+
+
+def test_a_different_move_on_a_known_date_is_a_new_flag(tmp_path):
+    """Design DR-03: the previous snapshot's split at a date does not cover a different split there."""
+    prev, cur = _db(tmp_path, "p.db"), _db(tmp_path, "c.db")
+    closes = _walk(len(DATES))
+    _put(prev, "XLK", DATES, closes[:300] + [c / 2 for c in closes[300:]])
+    _put(cur, "XLK", DATES, closes[:300] + [c / 3 for c in closes[300:]])
+    got = q.compare(q.run(cur), q.run(prev))
+    (f,) = [f for f in got["flags"] if f["check"] == "split"]
+    assert f["new"] is True and f["blocking"]
+    same = q.compare(q.run(prev), q.run(prev))
+    assert [f["new"] for f in same["flags"] if f["check"] == "split"] == [False]
+
+
+def test_extreme_finite_closes_never_abort_the_check(tmp_path):
+    """Design DR-05: a ratio of two finite closes can underflow or overflow; logs are differenced."""
+    conn = _db(tmp_path)
+    _put(conn, "XLK", DATES[:4], [1e308, 1e-308, 1e308, 5.0])
+    _put(conn, "SPY", DATES[:3], [1e-308, 1e308, 1e308], table="market_daily")
+    _put(conn, "SPY", DATES[:3], [1e308, 1e-308, 1.0])
+    _put(conn, "DGS10", DATES[:3], [1.7e308, -1.7e308, 4.0], table="desk_series")
+    out = q.run(conn)
+    assert {f["check"] for f in out["flags"]} >= {"implausible"}
+
+
+def test_rows_centuries_apart_are_scanned_only_over_the_calendar_years(tmp_path):
+    conn = _db(tmp_path)
+    _put(conn, "SPY", ["0001-01-02", "1962-01-02", "9999-12-30"], [1.0, 1.0, 1.0])
+    out = q.run(conn)  # returns at once; the gap check sees only 1962-2027
+    gaps = [f for f in out["flags"] if f["check"] == "gap"]
+    assert len(gaps) == 1 and gaps[0]["date"] == "9999-12-30"
 
 
 def test_compare_marks_new_and_known_and_says_when_it_could_not(tmp_path):
