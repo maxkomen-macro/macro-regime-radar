@@ -5,6 +5,7 @@ blocking only on a new blocking-class flag."""
 
 from __future__ import annotations
 
+import itertools
 import math
 import random
 import sqlite3
@@ -75,6 +76,7 @@ def _flags(conn, check=None, series=None):
 
 
 DATES = _sessions("2026-09-03", 400)
+_SEQ = itertools.count()
 
 
 # ── the module, check by check ───────────────────────────────────────────────────────────────────────────
@@ -291,13 +293,14 @@ def test_an_accepted_flag_never_blocks(tmp_path, monkeypatch):
     _put(conn, "XLK", DATES, closes)
     (f,) = _flags(conn, "split")
     k = ("split", "asset_prices", "XLK", "1d", DATES[300])
-    monkeypatch.setitem(q.ACCEPTED, k, (f["move"], "checked against the issuer's notice"))
+    monkeypatch.setitem(q.ACCEPTED, k, (f["move"], f["close"], "checked against the issuer's notice"))
     (f,) = _flags(conn, "split")
     assert f["blocking"] is False and f["accepted"] == "checked against the issuer's notice"
-    # the acceptance is bound to the move that was checked: another move on that date still blocks
-    monkeypatch.setitem(q.ACCEPTED, k, (f["move"] + 0.5, "checked against the issuer's notice"))
-    (f,) = _flags(conn, "split")
-    assert f["blocking"] is True and "accepted" not in f
+    # the acceptance is bound to the move and the close that were checked
+    monkeypatch.setitem(q.ACCEPTED, k, (f["move"] + 0.5, f["close"], "checked against the issuer's notice"))
+    assert _flags(conn, "split")[0]["blocking"] is True
+    monkeypatch.setitem(q.ACCEPTED, k, (f["move"], f["close"] * 10, "checked against the issuer's notice"))
+    assert _flags(conn, "split")[0]["blocking"] is True
 
 
 def test_a_split_ratio_on_the_newest_row_is_judged_by_size_alone(tmp_path):
@@ -312,17 +315,51 @@ def test_a_split_ratio_on_the_newest_row_is_judged_by_size_alone(tmp_path):
     assert f["date"] == DATES[-1] and f["blocking"] and "unconfirmed on the newest row" in f["detail"]
 
 
-def test_a_different_move_on_a_known_date_is_a_new_flag(tmp_path):
-    """Design DR-03: the previous snapshot's split at a date does not cover a different split there."""
-    prev, cur = _db(tmp_path, "p.db"), _db(tmp_path, "c.db")
-    closes = _walk(len(DATES))
-    _put(prev, "XLK", DATES, closes[:300] + [c / 2 for c in closes[300:]])
-    _put(cur, "XLK", DATES, closes[:300] + [c / 3 for c in closes[300:]])
-    got = q.compare(q.run(cur), q.run(prev))
-    (f,) = [f for f in got["flags"] if f["check"] == "split"]
-    assert f["new"] is True and f["blocking"]
-    same = q.compare(q.run(prev), q.run(prev))
-    assert [f["new"] for f in same["flags"] if f["check"] == "split"] == [False]
+def _put_db(tmp_path, closes, symbol="XLK"):
+    conn = _db(tmp_path, f"x{next(_SEQ)}.db")
+    _put(conn, symbol, DATES[:len(closes)], closes)
+    return conn
+
+
+def _newness(tmp_path, prev_closes, cur_closes, check="split", symbol="XLK", dates=None):
+    """Whether the current snapshot's `check` flag is new against the previous snapshot's rows."""
+    dates = dates or DATES
+    n = next(_SEQ)
+    prev, cur = _db(tmp_path, f"p{n}.db"), _db(tmp_path, f"c{n}.db")
+    _put(prev, symbol, dates[:len(prev_closes)], prev_closes)
+    _put(cur, symbol, dates[:len(cur_closes)], cur_closes)
+    (f,) = [f for f in q.run(cur)["flags"] if f["check"] == check]
+    return not q.unchanged(f, q.previous_pair(prev, f))
+
+
+def test_a_flag_is_new_when_its_observations_are(tmp_path):
+    """Design DR-03, DR-07, DR-08: newness is judged on the two rows the move runs between."""
+    base = _walk(len(DATES))
+    halved = base[:300] + [c / 2 for c in base[300:]]
+    # the same rows in both snapshots: already published
+    assert _newness(tmp_path, halved, halved) is False
+    # a dividend restatement of the whole adjusted history (3%) leaves the same move on screen
+    assert _newness(tmp_path, halved, [c * 0.97 for c in halved]) is False
+    # a different move on the same date is a new number (DR-03)
+    assert _newness(tmp_path, halved, base[:300] + [c / 3 for c in base[300:]]) is True
+    # every close rescaled tenfold, same move: the closes on screen change (DR-07)
+    assert _newness(tmp_path, halved, [c * 10 for c in halved]) is True
+    # the bad row itself is new
+    assert _newness(tmp_path, base, halved) is True
+
+
+def test_a_later_row_that_confirms_a_published_move_is_not_new(tmp_path):
+    """Design DR-08: appending a session can turn a published move into a confirmed split, or an
+    implausible print into a split; the move's rows are unchanged, so nothing new reaches the screen."""
+    base = _walk(len(DATES))
+    cur = base[:300] + [c / 2 for c in base[300:]]
+    # the previous snapshot ends on the halved row (implausible there); the current one adds a session
+    assert _newness(tmp_path, cur[:301], cur) is False
+    # a move of +48% (no flag at log 0.392, under the ETF limit) confirmed as a 3:2 reverse split by the next row
+    k = 1.48 * base[299] / base[300]  # the move into row 300 is exactly +48%
+    up = base[:300] + [c * k for c in base[300:]]
+    assert not [f for f in q.run(_put_db(tmp_path, up[:301]))["flags"] if f["blocking"]]
+    assert _newness(tmp_path, up[:301], up) is False
 
 
 def test_extreme_finite_closes_never_abort_the_check(tmp_path):
@@ -409,6 +446,20 @@ def test_without_a_previous_snapshot_nothing_blocks_and_the_report_says_why(tmp_
     assert not [f for f in rep["failures"] if f.startswith("price quality")]
     assert any("not judged, because no previous snapshot" in w and "split asset_prices SPY 2026-08-03" in w for w in rep["warnings"])
     assert rep["price_quality"]["judged"] is False
+
+
+def test_appending_a_session_to_a_published_split_publishes(tmp_path):
+    """Design DR-08 end to end: the published copy ends on a halved close (implausible); the refresh
+    adds the next session, which confirms the level (split). The halved close is already on screen."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03", news="2026-09-05 17:00:00")
+    _history(prev, split_on="2026-09-03")
+    _make(cur, rows_news=60)
+    _history(cur, split_on="2026-09-03")
+    assert v.validate(prev, None, "verify-only", now=NOW)["price_quality"]["counts"]["implausible"]["total"] == 1
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert [(f["check"], f["date"], f["new"]) for f in rep["price_quality"]["known_blocking_class"]] == [("split", "2026-09-03", False)]
 
 
 def test_a_new_advisory_flag_warns_and_publishes(tmp_path):

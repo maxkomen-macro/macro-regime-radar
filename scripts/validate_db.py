@@ -467,13 +467,14 @@ def _quality_label(f: dict) -> str:
     return f"{f['table']} {f['series']}{'' if f['interval'] == '1d' else ' (' + f['interval'] + ')'} {f['date']}"
 
 
-def _price_quality(cur: dict, prev: dict | None) -> tuple[dict, list[str], list[str]]:
+def _price_quality(cur: dict, prev: dict | None, previous: Path | None = None) -> tuple[dict, list[str], list[str]]:
     """Analyst Desk P0c: the price-quality flags against the previous snapshot's.
     A flag on a blocking-class check (split or implausible in asset_prices or
     market_daily, implausible in a tier-1 desk_series series) fails only when it
-    is new: the previous published snapshot does not carry it with the same move
-    (quality.same_flag), so publishing would put a number on screen that is not
-    there now. One the published database
+    is new: the two rows its move runs between are not both in the previous
+    published snapshot, consecutive, with the same move and closes
+    (quality.previous_pair and quality.unchanged), so publishing would put a
+    number on screen that is not there now. One the published database
     already carries is reported and never blocks, since holding the refresh back
     would not take it off screen. Every other check is advisory: a new one is a
     warning, a known one is counted. Without a previous snapshot nothing is
@@ -485,11 +486,24 @@ def _price_quality(cur: dict, prev: dict | None) -> tuple[dict, list[str], list[
         return {}, failures, warnings
     judged = quality.compare(pq, (prev or {}).get("price_quality") if prev is not None and "price_quality" in prev else None)
     flags = judged["flags"]
+    if judged["judged"] and previous is not None:
+        # design DR-07/DR-08: a blocking-class flag is new when its observations are, whatever either snapshot calls it
+        conn = _open(previous)
+        try:
+            for f in flags:
+                if f["blocking"]:
+                    pair = _mandatory(cur, f"price quality previous rows ({_quality_label(f)})", None,
+                                      lambda f=f: quality.previous_pair(conn, f))
+                    f["new"] = not quality.unchanged(f, pair)
+        finally:
+            conn.close()
+        for name in [n for n in cur.get("checks_not_executed") or [] if n.startswith("price quality previous rows")]:
+            failures.append(f"check not executed: {name}; a mandatory check that did not run never counts as clean")
     failed = [f for f in flags if f["blocking"] and f["new"]]
     for f in failed:
         failures.append(f"price quality: {f['check']} in {_quality_label(f)}: {f['detail']}. New in this snapshot (the published "
                         "database does not carry it), so publishing would put it on screen; fix the rows at the source, or record "
-                        "the evidence that the move is real, with the move, in src/market_data/quality.ACCEPTED")
+                        "the evidence that the move is real, with its move and close, in src/market_data/quality.ACCEPTED")
     if not judged["judged"]:
         blocking_class = [f for f in flags if f["blocking"]]
         if blocking_class:
@@ -734,7 +748,8 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
                 warnings.append(f"desk:{sid}: {noun}; the Desk {verb.format('it' if n == 1 else 'them')} ({_desk_tier_note(sid)})")
 
     # Analyst Desk P0c: price quality, judged against the previous snapshot's flags
-    price_quality, pq_failures, pq_warnings = _price_quality(cur, prev if prev and not prev.get("error") else None)
+    price_quality, pq_failures, pq_warnings = _price_quality(cur, prev if prev and not prev.get("error") else None,
+                                                             previous if prev and not prev.get("error") else None)
     failures.extend(pq_failures)
     warnings.extend(pq_warnings)
 
