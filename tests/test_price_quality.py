@@ -1,11 +1,10 @@
 """src/market_data/quality.py and its wiring into scripts/validate_db.py
 (Analyst Desk P0c): splits, implausible moves, repeated bars, stale runs,
-spikes, jumps, NYSE gaps, off-calendar rows and raw/adjusted mismatches;
-blocking only on a new blocking-class flag."""
+spikes, jumps, NYSE gaps, off-calendar rows and market_daily/asset_prices
+disagreements; every flag advisory, high severity where a bad row goes on screen."""
 
 from __future__ import annotations
 
-import itertools
 import math
 import random
 import sqlite3
@@ -76,7 +75,6 @@ def _flags(conn, check=None, series=None):
 
 
 DATES = _sessions("2026-09-03", 400)
-_SEQ = itertools.count()
 
 
 # ── the module, check by check ───────────────────────────────────────────────────────────────────────────
@@ -89,13 +87,13 @@ def test_a_clean_history_carries_no_flag(tmp_path):
     assert _flags(conn) == []
 
 
-def test_an_unadjusted_split_on_an_etf_is_a_blocking_split_flag(tmp_path):
+def test_an_unadjusted_split_on_an_etf_is_a_high_severity_split_flag(tmp_path):
     conn = _db(tmp_path)
     closes = _walk(len(DATES))
     closes = closes[:300] + [c / 2 for c in closes[300:]]  # a 2:1 split the adjustment missed
     _put(conn, "XLK", DATES, closes)
     (f,) = _flags(conn, "split")
-    assert (f["series"], f["date"], f["blocking"]) == ("XLK", DATES[300], True)
+    assert (f["series"], f["date"], f["severity"]) == ("XLK", DATES[300], "high")
     assert "1/2" in f["detail"]
     assert not _flags(conn, "implausible")  # the split explains it; one flag, not two
 
@@ -106,7 +104,7 @@ def test_a_reverse_split_is_named_too(tmp_path):
     closes = closes[:300] + [c * 10 for c in closes[300:]]
     _put(conn, "HYG", DATES, closes, table="market_daily")
     (f,) = _flags(conn, "split")
-    assert f["table"] == "market_daily" and f["blocking"] and "10x" in f["detail"]
+    assert f["table"] == "market_daily" and f["severity"] == "high" and "10x" in f["detail"]
 
 
 def test_a_halving_that_reverts_is_an_implausible_print_not_a_split(tmp_path):
@@ -116,7 +114,7 @@ def test_a_halving_that_reverts_is_an_implausible_print_not_a_split(tmp_path):
     _put(conn, "XLE", DATES, closes)
     assert not _flags(conn, "split")
     flags = _flags(conn, "implausible")
-    assert [f["date"] for f in flags] == [DATES[300], DATES[301]] and all(f["blocking"] for f in flags)
+    assert [f["date"] for f in flags] == [DATES[300], DATES[301]] and all(f["severity"] == "high" for f in flags)
 
 
 def test_an_index_cannot_split_so_a_halving_is_implausible(tmp_path):
@@ -126,7 +124,7 @@ def test_an_index_cannot_split_so_a_halving_is_implausible(tmp_path):
     _put(conn, "^GSPC", DATES, closes)
     assert not _flags(conn, "split")
     (f,) = _flags(conn, "implausible")
-    assert f["blocking"] and f["date"] == DATES[300]
+    assert f["severity"] == "high" and f["date"] == DATES[300]
 
 
 def test_the_largest_moves_on_record_stay_under_the_limits(tmp_path):
@@ -147,7 +145,7 @@ def test_volatility_triples_are_implausible(tmp_path):
     closes = closes[:300] + [c * 3.6 for c in closes[300:]]
     _put(conn, "^VIX", DATES, closes, volumes=[0.0] * len(DATES))
     (f,) = _flags(conn, "implausible")
-    assert f["series"] == "^VIX" and f["blocking"]
+    assert f["series"] == "^VIX" and f["severity"] == "high"
 
 
 def test_a_repeated_bar_is_stale_and_advisory_but_a_repeated_close_on_new_volume_is_not(tmp_path):
@@ -159,7 +157,7 @@ def test_a_repeated_bar_is_stale_and_advisory_but_a_repeated_close_on_new_volume
     closes[250] = closes[249]       # the close repeats on its own volume: ordinary
     _put(conn, "IWM", DATES, closes, volumes=vols)
     (f,) = _flags(conn, "stale")
-    assert (f["date"], f["blocking"]) == (DATES[200], False)  # two real sessions can match (design DR-01)
+    assert (f["date"], f["severity"]) == (DATES[200], "advisory")  # two real sessions can match (design DR-01)
 
 
 def test_a_series_without_volume_is_judged_on_runs_only(tmp_path):
@@ -169,7 +167,7 @@ def test_a_series_without_volume_is_judged_on_runs_only(tmp_path):
     _put(conn, "^VIX", DATES, closes, volumes=[0.0] * len(DATES))
     assert not _flags(conn, "stale")
     (f,) = _flags(conn, "stale_run")
-    assert f["date"] == DATES[101] and not f["blocking"] and "3 rows" in f["detail"]
+    assert f["date"] == DATES[101] and f["severity"] == "advisory" and "3 rows" in f["detail"]
 
 
 def test_two_equal_month_ends_are_a_stale_run(tmp_path):
@@ -196,8 +194,8 @@ def test_a_yield_moving_three_points_blocks_only_on_a_tier_one_series(tmp_path):
     _put(conn, "DGS10", DATES, bad, table="desk_series")
     _put(conn, "DCOILWTICO", DATES, [70.0 * math.exp(0.02 * i / len(DATES)) for i in range(len(DATES))], table="desk_series")
     (f,) = _flags(conn, "implausible", "DGS10")
-    assert f["blocking"] and f["detail"].startswith("+38") and "bp" in f["detail"]
-    assert q._blocking("desk_series", "DCOILWTICO", "implausible", q._tier1_desk()) is False  # tier 2: advisory
+    assert f["severity"] == "high" and f["detail"].startswith("+38") and "bp" in f["detail"]
+    assert q._severity("desk_series", "DCOILWTICO", "implausible", q._tier1_desk()) == "advisory"  # tier 2
 
 
 def test_a_print_that_reverts_is_a_spike_unless_its_peers_moved_too(tmp_path):
@@ -206,7 +204,7 @@ def test_a_print_that_reverts_is_a_spike_unless_its_peers_moved_too(tmp_path):
     jpy[300] = jpy[299] * 1.15
     _put(conn, "JPY=X", DATES, jpy, table="desk_series")
     (f,) = _flags(conn, "spike")
-    assert (f["series"], f["date"], f["blocking"]) == ("JPY=X", DATES[300], False)
+    assert (f["series"], f["date"], f["severity"]) == ("JPY=X", DATES[300], "advisory")
     # the same print on SPY, when three US-listed peers moved hard that day too, is a market day
     conn2 = _db(tmp_path, "q2.db")
     for i, sym in enumerate(("SPY", "QQQ", "IWM", "XLK")):
@@ -225,9 +223,9 @@ def test_a_missing_session_is_a_gap_and_a_holiday_row_is_off_calendar(tmp_path):
     dates.append("2026-09-07")  # Labor Day 2026: NYSE closed, the session after the last stored one
     _put(conn, "^VIX", dates, _walk(len(dates), start=15.0, sigma=0.03), volumes=[0.0] * len(dates))
     (gap,) = _flags(conn, "gap")
-    assert missing in gap["detail"] and not gap["blocking"]
+    assert missing in gap["detail"] and gap["severity"] == "advisory"
     (off,) = _flags(conn, "off_calendar")
-    assert off["date"] == "2026-09-07" and not off["blocking"]
+    assert off["date"] == "2026-09-07" and off["severity"] == "advisory"
 
 
 def test_futures_and_currencies_are_not_held_to_nyse_sessions(tmp_path):
@@ -262,7 +260,7 @@ def test_cross_table_names_a_one_session_mismatch_and_a_splice(tmp_path):
     flags = _flags(_cross(tmp_path, raw, adj), "cross_table")
     assert [f["date"] for f in flags] == [DATES[150], DATES[300]]
     assert "one session" in flags[0]["detail"] and "spliced" in flags[1]["detail"]
-    assert not any(f["blocking"] for f in flags)
+    assert all(f["severity"] == "advisory" for f in flags)
 
 
 def test_unreadable_rows_are_counted_never_silently_dropped(tmp_path):
@@ -286,23 +284,6 @@ def test_an_older_layout_without_volume_still_runs(tmp_path):
     assert out["series"] == 1 and not [f for f in out["flags"] if f["check"] == "stale"]
 
 
-def test_an_accepted_flag_never_blocks(tmp_path, monkeypatch):
-    conn = _db(tmp_path)
-    closes = _walk(len(DATES))
-    closes = closes[:300] + [c / 2 for c in closes[300:]]
-    _put(conn, "XLK", DATES, closes)
-    (f,) = _flags(conn, "split")
-    k = ("split", "asset_prices", "XLK", "1d", DATES[300])
-    monkeypatch.setitem(q.ACCEPTED, k, (f["move"], f["close"], "checked against the issuer's notice"))
-    (f,) = _flags(conn, "split")
-    assert f["blocking"] is False and f["accepted"] == "checked against the issuer's notice"
-    # the acceptance is bound to the move and the close that were checked
-    monkeypatch.setitem(q.ACCEPTED, k, (f["move"] + 0.5, f["close"], "checked against the issuer's notice"))
-    assert _flags(conn, "split")[0]["blocking"] is True
-    monkeypatch.setitem(q.ACCEPTED, k, (f["move"], f["close"] * 10, "checked against the issuer's notice"))
-    assert _flags(conn, "split")[0]["blocking"] is True
-
-
 def test_a_split_ratio_on_the_newest_row_is_judged_by_size_alone(tmp_path):
     """Nothing after the newest row can show the level held (design DR-02): it is no split,
     but a halving is still past the ETF limit, and the detail names the ratio."""
@@ -312,54 +293,7 @@ def test_a_split_ratio_on_the_newest_row_is_judged_by_size_alone(tmp_path):
     _put(conn, "XLK", DATES, closes)
     assert not _flags(conn, "split")
     (f,) = _flags(conn, "implausible")
-    assert f["date"] == DATES[-1] and f["blocking"] and "unconfirmed on the newest row" in f["detail"]
-
-
-def _put_db(tmp_path, closes, symbol="XLK"):
-    conn = _db(tmp_path, f"x{next(_SEQ)}.db")
-    _put(conn, symbol, DATES[:len(closes)], closes)
-    return conn
-
-
-def _newness(tmp_path, prev_closes, cur_closes, check="split", symbol="XLK", dates=None):
-    """Whether the current snapshot's `check` flag is new against the previous snapshot's rows."""
-    dates = dates or DATES
-    n = next(_SEQ)
-    prev, cur = _db(tmp_path, f"p{n}.db"), _db(tmp_path, f"c{n}.db")
-    _put(prev, symbol, dates[:len(prev_closes)], prev_closes)
-    _put(cur, symbol, dates[:len(cur_closes)], cur_closes)
-    (f,) = [f for f in q.run(cur)["flags"] if f["check"] == check]
-    return not q.unchanged(f, q.previous_pair(prev, f))
-
-
-def test_a_flag_is_new_when_its_observations_are(tmp_path):
-    """Design DR-03, DR-07, DR-08: newness is judged on the two rows the move runs between."""
-    base = _walk(len(DATES))
-    halved = base[:300] + [c / 2 for c in base[300:]]
-    # the same rows in both snapshots: already published
-    assert _newness(tmp_path, halved, halved) is False
-    # a dividend restatement of the whole adjusted history (3%) leaves the same move on screen
-    assert _newness(tmp_path, halved, [c * 0.97 for c in halved]) is False
-    # a different move on the same date is a new number (DR-03)
-    assert _newness(tmp_path, halved, base[:300] + [c / 3 for c in base[300:]]) is True
-    # every close rescaled tenfold, same move: the closes on screen change (DR-07)
-    assert _newness(tmp_path, halved, [c * 10 for c in halved]) is True
-    # the bad row itself is new
-    assert _newness(tmp_path, base, halved) is True
-
-
-def test_a_later_row_that_confirms_a_published_move_is_not_new(tmp_path):
-    """Design DR-08: appending a session can turn a published move into a confirmed split, or an
-    implausible print into a split; the move's rows are unchanged, so nothing new reaches the screen."""
-    base = _walk(len(DATES))
-    cur = base[:300] + [c / 2 for c in base[300:]]
-    # the previous snapshot ends on the halved row (implausible there); the current one adds a session
-    assert _newness(tmp_path, cur[:301], cur) is False
-    # a move of +48% (no flag at log 0.392, under the ETF limit) confirmed as a 3:2 reverse split by the next row
-    k = 1.48 * base[299] / base[300]  # the move into row 300 is exactly +48%
-    up = base[:300] + [c * k for c in base[300:]]
-    assert not [f for f in q.run(_put_db(tmp_path, up[:301]))["flags"] if f["blocking"]]
-    assert _newness(tmp_path, up[:301], up) is False
+    assert f["date"] == DATES[-1] and f["severity"] == "high" and "unconfirmed on the newest row" in f["detail"]
 
 
 def test_extreme_finite_closes_never_abort_the_check(tmp_path):
@@ -382,13 +316,13 @@ def test_rows_centuries_apart_are_scanned_only_over_the_calendar_years(tmp_path)
 
 
 def test_compare_marks_new_and_known_and_says_when_it_could_not(tmp_path):
-    a = {"flags": [{"check": "gap", "table": "t", "series": "s", "interval": "1d", "date": "2026-01-02", "blocking": False}]}
-    b = {"flags": a["flags"] + [{"check": "split", "table": "t", "series": "s", "interval": "1d", "date": "2026-01-05", "blocking": True}]}
+    a = {"flags": [{"check": "gap", "table": "t", "series": "s", "interval": "1d", "date": "2026-01-02", "severity": "advisory"}]}
+    b = {"flags": a["flags"] + [{"check": "split", "table": "t", "series": "s", "interval": "1d", "date": "2026-01-05", "severity": "high"}]}
     got = q.compare(b, a)
     assert got["judged"] and [f["new"] for f in got["flags"]] == [False, True]
     assert q.compare(b, None) == {"judged": False, "flags": [{**f, "new": None} for f in b["flags"]]}
-    assert q.counts(got["flags"]) == {"gap": {"total": 1, "new": 0, "blocking_class": 0},
-                                      "split": {"total": 1, "new": 1, "blocking_class": 1}}
+    assert q.counts(got["flags"]) == {"gap": {"total": 1, "new": 0, "high": 0},
+                                      "split": {"total": 1, "new": 1, "high": 1}}
 
 
 # ── the validator ────────────────────────────────────────────────────────────────────────────────────────
@@ -410,56 +344,44 @@ def _history(path: Path, *, split_on: str | None = None, gap: str | None = None)
     conn.close()
 
 
-def test_a_new_split_fails_validation(tmp_path):
+def test_a_new_split_is_named_but_never_blocks(tmp_path):
     prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
-    _make(prev)
+    _make(prev, daily="2026-09-03", news="2026-09-05 17:00:00")
     _history(prev)
-    _make(cur)
+    _make(cur, rows_news=60)
     _history(cur, split_on="2026-08-03")
     rep = v.validate(cur, prev, "full", now=NOW)
-    assert rep["verdict"] == "fail" and rep["upload"] is False
-    (msg,) = [f for f in rep["failures"] if f.startswith("price quality")]
-    assert "split in asset_prices SPY 2026-08-03" in msg and "New in this snapshot" in msg
-    assert [f["date"] for f in rep["price_quality"]["failed"]] == ["2026-08-03"]
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert not [f for f in rep["failures"] if "price quality" in f]
+    (msg,) = [w for w in rep["warnings"] if w.startswith("price quality (split")]
+    assert msg.startswith("price quality (split, high severity, new): asset_prices SPY 2026-08-03") and "never blocking" in msg
+    assert [(f["check"], f["date"], f["new"]) for f in rep["price_quality"]["high"]] == [("split", "2026-08-03", True)]
     md = v.summary_markdown(rep)
-    assert "**Price quality**" in md and "FAILED, new split: asset_prices SPY 2026-08-03" in md
+    assert "**Price quality** (advisory, never blocking)" in md and "- high severity, new: split asset_prices SPY 2026-08-03" in md
 
 
-def test_a_split_the_published_database_already_carries_is_reported_not_blocking(tmp_path):
+def test_a_known_split_is_counted_not_warned(tmp_path):
     prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
     _make(prev, daily="2026-09-03", news="2026-09-05 17:00:00")
     _history(prev, split_on="2026-08-03")
     _make(cur, rows_news=60)
     _history(cur, split_on="2026-08-03")
     rep = v.validate(cur, prev, "full", now=NOW)
-    assert not [f for f in rep["failures"] if f.startswith("price quality")], rep["failures"]
-    assert rep["verdict"] == "pass"
-    assert [f["date"] for f in rep["price_quality"]["known_blocking_class"]] == ["2026-08-03"]
-    assert "known, already published (never blocking): split asset_prices SPY 2026-08-03" in v.summary_markdown(rep)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert not [w for w in rep["warnings"] if w.startswith("price quality (split")]
+    assert rep["price_quality"]["counts"]["split"] == {"total": 1, "new": 0, "high": 1}
+    assert "- high severity, known: split asset_prices SPY 2026-08-03" in v.summary_markdown(rep)
 
 
-def test_without_a_previous_snapshot_nothing_blocks_and_the_report_says_why(tmp_path):
+def test_without_a_previous_snapshot_high_severity_flags_are_one_warning(tmp_path):
     cur = tmp_path / "cur.db"
     _make(cur)
     _history(cur, split_on="2026-08-03")
     rep = v.validate(cur, None, "verify-only", now=NOW)
-    assert not [f for f in rep["failures"] if f.startswith("price quality")]
-    assert any("not judged, because no previous snapshot" in w and "split asset_prices SPY 2026-08-03" in w for w in rep["warnings"])
+    assert not [f for f in rep["failures"] if "price quality" in f]
+    assert any("not judged new or known because no previous snapshot" in w and "split asset_prices SPY 2026-08-03" in w
+               for w in rep["warnings"])
     assert rep["price_quality"]["judged"] is False
-
-
-def test_appending_a_session_to_a_published_split_publishes(tmp_path):
-    """Design DR-08 end to end: the published copy ends on a halved close (implausible); the refresh
-    adds the next session, which confirms the level (split). The halved close is already on screen."""
-    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
-    _make(prev, daily="2026-09-03", news="2026-09-05 17:00:00")
-    _history(prev, split_on="2026-09-03")
-    _make(cur, rows_news=60)
-    _history(cur, split_on="2026-09-03")
-    assert v.validate(prev, None, "verify-only", now=NOW)["price_quality"]["counts"]["implausible"]["total"] == 1
-    rep = v.validate(cur, prev, "full", now=NOW)
-    assert rep["verdict"] == "pass", rep["failures"]
-    assert [(f["check"], f["date"], f["new"]) for f in rep["price_quality"]["known_blocking_class"]] == [("split", "2026-09-03", False)]
 
 
 def test_a_new_advisory_flag_warns_and_publishes(tmp_path):
@@ -470,21 +392,41 @@ def test_a_new_advisory_flag_warns_and_publishes(tmp_path):
     _history(cur, gap="2026-08-03")
     rep = v.validate(cur, prev, "full", now=NOW)
     assert rep["verdict"] == "pass", rep["failures"]
-    assert any(w.startswith("price quality (gap, advisory): asset_prices SPY 2026-08-04") for w in rep["warnings"])
+    assert any(w.startswith("price quality (gap, advisory, new): asset_prices SPY 2026-08-04") for w in rep["warnings"])
 
 
-def test_a_price_quality_check_that_cannot_run_fails(tmp_path, monkeypatch):
+def test_a_price_quality_check_that_cannot_run_is_a_warning(tmp_path, monkeypatch):
     prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
-    _make(prev)
-    _make(cur)
+    _make(prev, daily="2026-09-03", news="2026-09-05 17:00:00")
+    _make(cur, rows_news=60)
 
     def broken(conn):
         raise sqlite3.OperationalError("no such column: close")
 
     monkeypatch.setattr(v.quality, "run", broken)
     rep = v.validate(cur, prev, "full", now=NOW)
-    assert any(f.startswith("check not executed: price quality") for f in rep["failures"])
-    assert any(f.startswith("check not executed on the previous snapshot: price quality") for f in rep["failures"])
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert any(w.startswith("advisory check not run: price quality") for w in rep["warnings"])
+    assert any(w.startswith("advisory check not run on the previous snapshot: price quality") for w in rep["warnings"])
+    assert rep["price_quality"] == {}
+
+
+def test_the_quality_checks_change_no_verdict_on_the_validator_fixtures(tmp_path):
+    """C1: the price-quality block adds warnings and a report section, nothing else: the verdict,
+    the upload decision and the changed tables are what they are with the checks switched off."""
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03", news="2026-09-05 17:00:00")
+    _history(prev)
+    _make(cur, rows_news=60)
+    _history(cur, split_on="2026-08-03", gap="2026-07-01")
+    on = v.validate(cur, prev, "full", now=NOW)
+    import pytest as _pytest
+    with _pytest.MonkeyPatch.context() as mp:
+        mp.setattr(v, "PRICE_TABLES", ())
+        off = v.validate(cur, prev, "full", now=NOW)
+    for k in ("verdict", "upload", "changed", "changed_tables", "failures"):
+        assert on[k] == off[k], k
+    assert [w for w in on["warnings"] if not w.startswith("price quality")] == off["warnings"]
 
 
 def test_validate_db_keeps_its_lean_imports():
@@ -520,5 +462,5 @@ def test_the_published_database_holds_no_split_or_implausible_move():
 def test_the_published_database_judged_against_itself_has_nothing_new():
     rep = v.validate(REAL_DB, REAL_DB, "verify-only")
     pq = rep["price_quality"]
-    assert pq["judged"] and pq["failed"] == [] and pq["new"] == []
-    assert not [f for f in rep["failures"] if f.startswith("price quality")]
+    assert pq["judged"] and pq["new"] == []
+    assert not [w for w in rep["warnings"] if w.startswith("price quality")]

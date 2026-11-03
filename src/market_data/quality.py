@@ -52,20 +52,14 @@ Robust sigma is 1.4826 x the median absolute deviation of the series' own
 moves over the 250 observations before the row (recomputed every 21 rows),
 so a move is never judged against itself.
 
-`blocking` on a flag marks the checks the validator may block on: split and
-implausible in asset_prices and market_daily, whose rows go on screen as they
-are stored, and implausible in a tier-1 desk_series series. Everything else is
-advisory. The validator blocks only on such a flag whose observations are new:
-the two rows the move runs between are not both in the previous published
-snapshot, consecutive there, with the same move and closes within 10%
-(`previous_pair`, `unchanged`). Whatever the check calls it, and whether or
-not the previous snapshot flagged it, a move between unchanged published rows
-is already on screen, so holding the refresh back would protect nobody; a
-changed move, a rescaled close or a new row is a new number. The 10% allows
-the provider's dividend restatement of an adjusted history between two
-snapshots and nothing near a split or a unit error. ACCEPTED lists flags
-someone checked against an independent source and found real, each bound to
-its move and close the same way and carrying its evidence.
+Every flag is advisory: the validator reports flags and never fails a
+database on them. `severity` is "high" for a split or implausible move in
+asset_prices or market_daily, whose rows go on screen as they are stored, or an
+implausible move in a tier-1 desk_series series, and "advisory" otherwise. The
+validator names every new high-severity flag in its warnings. Whether any of
+them should block publishing is a separate decision (Codex design review,
+2026-11-03: blocking on these heuristics needs independently established,
+newly introduced corruption; see the review loop's backlog).
 
 Not covered: market_intraday (the five-minute bars the intraday refresh keeps
 for 30 days). Its own checks are a separate follow-up.
@@ -95,17 +89,10 @@ SPLIT_TOLERANCE = 0.03
 SPLIT_MIN_LOG = math.log(1.36)  # 3:2 is the smallest factor checked (log 0.405); 1.36 leaves the tolerance room
 SPLIT_FACTORS = (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 1.5)
 RATIO_STEP = 0.003    # cross_table: 0.3% in log terms
-SAME_MOVE = 0.01      # an unchanged move, within this (log units, or percentage points for a rate)
-SAME_LEVEL = math.log(1.1)  # an unchanged close, within this log factor (a dividend restatement between snapshots)
 RATIO_DROP = math.log(1 / 0.9)  # cross_table: a fall in the ratio above 10% is no distribution
 
-# Flags checked against an independent source and found real (never blocking while the stored move and close are
-# the ones checked: `unchanged`). Key: (check, table, series, interval, date) -> (move, close, evidence). Empty on
-# 2026-11-03.
-ACCEPTED: dict[tuple[str, str, str, str, str], tuple[float, float, str]] = {}
-
-BLOCKING_TABLES = ("asset_prices", "market_daily")
-BLOCKING_CHECKS = ("split", "implausible")
+SCREEN_TABLES = ("asset_prices", "market_daily")  # read on screen as stored
+HIGH_CHECKS = ("split", "implausible")
 CAL_FIRST, CAL_LAST = date(min(cal.HOLIDAYS), 1, 1), date(max(cal.HOLIDAYS), 12, 31)
 
 
@@ -153,7 +140,7 @@ def profile(table: str, series: str, interval: str = "1d") -> Profile:
         p = GOLD_FUT
     elif series in US_INDICES:
         p = INDEX
-    elif table in BLOCKING_TABLES and not series.startswith("^") and "=" not in series:
+    elif table in SCREEN_TABLES and not series.startswith("^") and "=" not in series:
         p = replace(ETF, peers=_US + (("gold",) if series in GOLD else ()))
     else:
         p = GENERIC
@@ -320,90 +307,24 @@ def _tier1_desk() -> set[str]:
     return {sid for sid, meta in freshness.DESK_REFRESH_SERIES.items() if int(meta.get("tier", 1)) == 1}
 
 
-def _blocking(table: str, series: str, check: str, tier1: set[str]) -> bool:
-    if check not in BLOCKING_CHECKS:
-        return False
-    if table in BLOCKING_TABLES:
-        return True
-    return table == "desk_series" and check == "implausible" and series in tier1
+def _severity(table: str, series: str, check: str, tier1: set[str]) -> str:
+    if check in HIGH_CHECKS and (table in SCREEN_TABLES or (table == "desk_series" and check == "implausible" and series in tier1)):
+        return "high"
+    return "advisory"
 
 
 def _flag(s: Series, d: str, check: str, detail: str, tier1: set[str], i: int | None = None,
           move: float | None = None) -> dict:
-    """One flag. For a move check (split, implausible) `i` is the row the move runs into, and the
-    flag carries both observations, so the validator can tell whether they are new."""
-    blocking = _blocking(s.table, s.series, check, tier1)
+    """One flag. A move check (split, implausible) also carries the move and the two closes it runs between."""
     out = {"check": check, "table": s.table, "series": s.series, "interval": s.interval, "date": d,
-           "blocking": blocking, "detail": detail, "move": move}
+           "severity": _severity(s.table, s.series, check, tier1), "detail": detail}
     if i is not None:
-        out.update(prev_date=s.dates[i - 1], prev_close=s.closes[i - 1], close=s.closes[i])
-        accepted = ACCEPTED.get((check, s.table, s.series, s.interval, d))
-        if accepted is not None and _same_move(move, accepted[0]) and _same_level(s.closes[i], accepted[1]):
-            out["blocking"] = False
-            out["accepted"] = accepted[2]
+        out.update(move=move, prev_date=s.dates[i - 1], prev_close=s.closes[i - 1], close=s.closes[i])
     return out
 
 
 def key(flag: dict) -> tuple[str, str, str, str, str]:
     return flag["check"], flag["table"], flag["series"], flag["interval"], flag["date"]
-
-
-def _same_move(a: float | None, b: float | None) -> bool:
-    if a is None or b is None:
-        return a is None and b is None
-    return abs(a - b) <= SAME_MOVE
-
-
-def _same_level(a: float | None, b: float | None) -> bool:
-    if a is None or b is None or a == 0 or b == 0 or (a > 0) != (b > 0):
-        return a == b
-    return abs(math.log(abs(a)) - math.log(abs(b))) <= SAME_LEVEL
-
-
-def _rate(table: str, series: str) -> bool:
-    return profile(table, series).transform == "level"
-
-
-def previous_pair(conn: sqlite3.Connection, flag: dict) -> tuple[str, float, str, float] | None:
-    """The flagged row and the stored row before it in another snapshot, as `load` reads them
-    (the newest two readable rows dated on or before the flag's date), or None when that snapshot
-    lacks the table, the series or the flagged date. A sqlite error raises."""
-    t, sym, interval, d = flag["table"], flag["series"], flag["interval"], flag["date"]
-    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    if t not in tables:
-        return None
-    sql = {"asset_prices": "SELECT date, close FROM asset_prices WHERE symbol = ? AND interval = ? AND date <= ? ORDER BY date DESC",
-           "market_daily": "SELECT date, close FROM market_daily WHERE symbol = ? AND ? = '1d' AND date <= ? ORDER BY date DESC",
-           "desk_series": "SELECT date, value FROM desk_series WHERE series_id = ? AND ? = '1d' AND date <= ? ORDER BY date DESC"}[t]
-    rows: list[tuple[str, float]] = []
-    for day, c in conn.execute(sql, (sym, interval, d)):
-        day, c = _iso(day), _num(c)
-        if day is None or c is None or (rows and day >= rows[-1][0]):
-            continue
-        rows.append((day, c))
-        if len(rows) == 2:
-            break
-    if len(rows) < 2 or rows[0][0] != d:
-        return None
-    return rows[1][0], rows[1][1], rows[0][0], rows[0][1]
-
-
-def unchanged(flag: dict, pair: tuple[str, float, str, float] | None) -> bool:
-    """Whether a move flag's two observations are already published: the other snapshot holds
-    the same two dates, consecutive, with the same move (SAME_MOVE) and each close within
-    SAME_LEVEL. A flag without observations (no move) is never unchanged."""
-    if pair is None or flag.get("move") is None or "close" not in flag:
-        return False
-    pd, pc, d, c = pair
-    if (pd, d) != (flag["prev_date"], flag["date"]):
-        return False
-    if _rate(flag["table"], flag["series"]):
-        m = c - pc
-    elif pc > 0 and c > 0:
-        m = math.log(c) - math.log(pc)
-    else:
-        return False
-    return _same_move(m, flag["move"]) and _same_level(pc, flag["prev_close"]) and _same_level(c, flag["close"])
 
 
 def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) -> list[dict]:
@@ -546,9 +467,9 @@ def run(conn: sqlite3.Connection) -> dict:
 
 
 def compare(current: dict, previous: dict | None) -> dict:
-    """Current flags against the previous snapshot's: each flag marked new or known by its key, for
-    the report. Without a previous snapshot nothing is new or known (`judged` is False). Whether a
-    blocking-class flag blocks is decided on its observations (`previous_pair`, `unchanged`), not here."""
+    """Current flags against the previous snapshot's, by key (check, table, series, interval,
+    date): each marked new or known. Without a previous snapshot nothing is new or known
+    (`judged` is False)."""
     if previous is None:
         return {"judged": False, "flags": [{**f, "new": None} for f in current.get("flags", [])]}
     seen = {key(f) for f in previous.get("flags", [])}
@@ -556,11 +477,11 @@ def compare(current: dict, previous: dict | None) -> dict:
 
 
 def counts(flags: list[dict]) -> dict[str, dict[str, int]]:
-    """Per check: flags in total, new, and on blocking-class series."""
+    """Per check: flags in total, new, and of high severity."""
     out: dict[str, dict[str, int]] = {}
     for f in flags:
-        c = out.setdefault(f["check"], {"total": 0, "new": 0, "blocking_class": 0})
+        c = out.setdefault(f["check"], {"total": 0, "new": 0, "high": 0})
         c["total"] += 1
         c["new"] += 1 if f.get("new") else 0
-        c["blocking_class"] += 1 if f["blocking"] else 0
+        c["high"] += 1 if f["severity"] == "high" else 0
     return dict(sorted(out.items()))

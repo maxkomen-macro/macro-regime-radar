@@ -45,6 +45,12 @@ table being absent or empty, a partial or failed fetch (its watermark), a date
 that moved earlier, rows that fell, a row the API sets aside, or a query on the
 table that cannot run is a warning, never a failure.
 
+Price quality (Analyst Desk P0c, src/market_data/quality.py) is advisory: splits,
+implausible moves, repeated bars, stale runs, spikes, jumps, NYSE gaps,
+off-calendar rows and market_daily/asset_prices disagreements are reported, new
+ones named against the previous snapshot's, and none fails a database; a run
+that cannot compute them is a warning.
+
 Output: a JSON report (--json), a GitHub Step Summary table (--summary, or
 $GITHUB_STEP_SUMMARY), and exit 0 only when the verdict is "pass". A stale
 verdict fails the run unless --allow-stale REASON documents why, in which
@@ -438,10 +444,12 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
                     sid: int(n) for sid, n in conn.execute(
                         f"SELECT d.series_id, COUNT(*) FROM desk_series d {provenance.COMMITTED_JOIN} "
                         "WHERE r.run_id IS NOT NULL AND d.date > r.as_of AND d.date <= ? GROUP BY d.series_id", (cut,))})
-        # Analyst Desk P0c: the price-quality flags (src/market_data/quality.py), a mandatory check on both
-        # snapshots: the previous snapshot's flags are what tells a new flag from one already published
+        # Analyst Desk P0c: the price-quality flags (src/market_data/quality.py), advisory on both snapshots
+        # (the previous snapshot's flags tell a new flag from a known one); one that cannot run is a warning
         if any(t in out["tables"] for t in PRICE_TABLES):
-            _mandatory(out, "price quality", "price_quality", lambda: quality.run(conn))
+            pq = _advisory(out, "price quality", lambda: quality.run(conn))
+            if pq is not None:
+                out["price_quality"] = pq
     finally:
         conn.close()
     return out
@@ -467,70 +475,49 @@ def _quality_label(f: dict) -> str:
     return f"{f['table']} {f['series']}{'' if f['interval'] == '1d' else ' (' + f['interval'] + ')'} {f['date']}"
 
 
-def _price_quality(cur: dict, prev: dict | None, previous: Path | None = None) -> tuple[dict, list[str], list[str]]:
-    """Analyst Desk P0c: the price-quality flags against the previous snapshot's.
-    A flag on a blocking-class check (split or implausible in asset_prices or
-    market_daily, implausible in a tier-1 desk_series series) fails only when it
-    is new: the two rows its move runs between are not both in the previous
-    published snapshot, consecutive, with the same move and closes
-    (quality.previous_pair and quality.unchanged), so publishing would put a
-    number on screen that is not there now. One the published database
-    already carries is reported and never blocks, since holding the refresh back
-    would not take it off screen. Every other check is advisory: a new one is a
-    warning, a known one is counted. Without a previous snapshot nothing is
-    judged new, so nothing fails, and the blocking-class flags are warnings."""
-    failures: list[str] = []
+def _price_quality(cur: dict, prev: dict | None) -> tuple[dict, list[str]]:
+    """Analyst Desk P0c: the price-quality flags (src/market_data/quality.py), all
+    advisory: they are reported and never fail a database. Each flag is marked
+    new or known against the previous snapshot's flags. Every new high-severity
+    flag (a split or implausible move in asset_prices or market_daily, an
+    implausible move in a tier-1 desk_series series) is named in the warnings;
+    new advisory ones are named up to PRICE_QUALITY_LISTED and counted beyond;
+    known ones are counted in the summary. Without a previous snapshot nothing
+    is new or known, and the high-severity flags are one warning line."""
     warnings: list[str] = []
     pq = cur.get("price_quality")
-    if pq is None:  # not stored, or the check did not run (then it fails as "not executed")
-        return {}, failures, warnings
+    if pq is None:  # no price table stored, or the check did not run (a warning of its own)
+        return {}, warnings
     judged = quality.compare(pq, (prev or {}).get("price_quality") if prev is not None and "price_quality" in prev else None)
     flags = judged["flags"]
-    if judged["judged"] and previous is not None:
-        # design DR-07/DR-08: a blocking-class flag is new when its observations are, whatever either snapshot calls it
-        conn = _open(previous)
-        try:
-            for f in flags:
-                if f["blocking"]:
-                    pair = _mandatory(cur, f"price quality previous rows ({_quality_label(f)})", None,
-                                      lambda f=f: quality.previous_pair(conn, f))
-                    f["new"] = not quality.unchanged(f, pair)
-        finally:
-            conn.close()
-        for name in [n for n in cur.get("checks_not_executed") or [] if n.startswith("price quality previous rows")]:
-            failures.append(f"check not executed: {name}; a mandatory check that did not run never counts as clean")
-    failed = [f for f in flags if f["blocking"] and f["new"]]
-    for f in failed:
-        failures.append(f"price quality: {f['check']} in {_quality_label(f)}: {f['detail']}. New in this snapshot (the published "
-                        "database does not carry it), so publishing would put it on screen; fix the rows at the source, or record "
-                        "the evidence that the move is real, with its move and close, in src/market_data/quality.ACCEPTED")
-    if not judged["judged"]:
-        blocking_class = [f for f in flags if f["blocking"]]
-        if blocking_class:
-            warnings.append(f"price quality: {len(blocking_class)} flag(s) on blocking-class checks not judged, because no previous "
-                            "snapshot was given to tell a new flag from a published one (reported, never blocking): "
-                            + "; ".join(f"{f['check']} {_quality_label(f)}" for f in blocking_class[:PRICE_QUALITY_LISTED])
-                            + (f"; and {len(blocking_class) - PRICE_QUALITY_LISTED} more" if len(blocking_class) > PRICE_QUALITY_LISTED else ""))
-    new_advisory = [f for f in flags if f["new"] and not f["blocking"]]
+    high = [f for f in flags if f["severity"] == "high"]
+    if judged["judged"]:
+        for f in [f for f in high if f["new"]]:
+            warnings.append(f"price quality ({f['check']}, high severity, new): {_quality_label(f)}: {f['detail']} "
+                            "(advisory, never blocking; a number on screen to check against an independent source)")
+    elif high:
+        warnings.append(f"price quality: {len(high)} high-severity flag(s), not judged new or known because no previous snapshot "
+                        "was given (advisory, never blocking): "
+                        + "; ".join(f"{f['check']} {_quality_label(f)}" for f in high[:PRICE_QUALITY_LISTED])
+                        + (f"; and {len(high) - PRICE_QUALITY_LISTED} more" if len(high) > PRICE_QUALITY_LISTED else ""))
+    new_advisory = [f for f in flags if f["new"] and f["severity"] != "high"]
     for f in new_advisory[:PRICE_QUALITY_LISTED]:
-        warnings.append(f"price quality ({f['check']}, advisory): {_quality_label(f)}: {f['detail']}")
+        warnings.append(f"price quality ({f['check']}, advisory, new): {_quality_label(f)}: {f['detail']}")
     if len(new_advisory) > PRICE_QUALITY_LISTED:
         warnings.append(f"price quality: {len(new_advisory) - PRICE_QUALITY_LISTED} more new advisory flag(s), listed in the --json report")
     for reason, n in sorted((pq.get("skipped") or {}).items()):
-        warnings.append(f"price quality: {n} row(s) not checked ({reason}); the checks above judge such rows")
+        warnings.append(f"price quality: {n} row(s) not checked ({reason}); the validator's own checks judge such rows")
     report = {
         "judged": judged["judged"],
         "series": pq.get("series"),
         "rows": pq.get("rows"),
         "counts": quality.counts(flags),
-        "failed": failed,
         "new": [f for f in flags if f["new"]],
-        "known_blocking_class": [f for f in flags if f["blocking"] and f["new"] is False],
-        "accepted": [f for f in flags if f.get("accepted")],
+        "high": high,
         "skipped": dict(pq.get("skipped") or {}),
         "flags": flags,
     }
-    return report, failures, warnings
+    return report, warnings
 
 
 # verifier V-33: the value sanity checks, each run on its own: (name, report key, table, query)
@@ -747,10 +734,8 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             else:
                 warnings.append(f"desk:{sid}: {noun}; the Desk {verb.format('it' if n == 1 else 'them')} ({_desk_tier_note(sid)})")
 
-    # Analyst Desk P0c: price quality, judged against the previous snapshot's flags
-    price_quality, pq_failures, pq_warnings = _price_quality(cur, prev if prev and not prev.get("error") else None,
-                                                             previous if prev and not prev.get("error") else None)
-    failures.extend(pq_failures)
+    # Analyst Desk P0c: price quality, advisory, marked new or known against the previous snapshot's flags
+    price_quality, pq_warnings = _price_quality(cur, prev if prev and not prev.get("error") else None)
     warnings.extend(pq_warnings)
 
     # review R-02: each tier-1 Desk series on its own, before any table-wide check
@@ -947,18 +932,17 @@ def summary_markdown(rep: dict) -> str:
             lines.append(f"- NOT EXECUTED on the previous snapshot: {name}")
     pq = rep.get("price_quality") or {}
     if pq:  # Analyst Desk P0c
-        lines += ["", f"**Price quality** · {pq.get('series')} series, {pq.get('rows'):,} rows · "
-                      + ("judged against the previous snapshot" if pq.get("judged") else "no previous snapshot, so nothing judged new"),
-                  "", "| Check | Flags | New | Blocking class |", "|---|---|---|---|"]
+        lines += ["", f"**Price quality** (advisory, never blocking) · {pq.get('series')} series, {pq.get('rows'):,} rows · "
+                      + ("new or known against the previous snapshot" if pq.get("judged") else "no previous snapshot, so nothing judged new"),
+                  "", "| Check | Flags | New | High severity |", "|---|---|---|---|"]
         for check, c in (pq.get("counts") or {}).items():
-            lines.append(f"| {check} | {c['total']} | {c['new'] if pq.get('judged') else '—'} | {c['blocking_class']} |")
-        for f in pq.get("failed") or []:
-            lines.append(f"- FAILED, new {f['check']}: {_quality_label(f)}: {f['detail']}")
-        known = pq.get("known_blocking_class") or []
-        for f in known[:PRICE_QUALITY_LISTED]:
-            lines.append(f"- known, already published (never blocking): {f['check']} {_quality_label(f)}: {f['detail']}")
-        if len(known) > PRICE_QUALITY_LISTED:
-            lines.append(f"- and {len(known) - PRICE_QUALITY_LISTED} more known blocking-class flag(s) in the --json report")
+            lines.append(f"| {check} | {c['total']} | {c['new'] if pq.get('judged') else '—'} | {c['high']} |")
+        high = pq.get("high") or []
+        for f in high[:PRICE_QUALITY_LISTED]:
+            state = "new" if f.get("new") else ("known" if f.get("new") is False else "not judged")
+            lines.append(f"- high severity, {state}: {f['check']} {_quality_label(f)}: {f['detail']}")
+        if len(high) > PRICE_QUALITY_LISTED:
+            lines.append(f"- and {len(high) - PRICE_QUALITY_LISTED} more high-severity flag(s) in the --json report")
     reg = rep.get("regime") or {}
     if reg:
         lines += ["", f"- Regime month {reg.get('latest_month')} · expected {reg.get('expected_month')}"]
