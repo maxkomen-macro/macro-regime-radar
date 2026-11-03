@@ -5,7 +5,10 @@ D6), the capability report's revision 2 (R1 to R5) and the owner's clarification
 `src/events/earnings_cache.py` (the refresh step), `src/events/earnings_store.py` (the vault and the read-time
 rules), `api/desk_options.py` (the reader and the display switch), `src/desk/options_finder.py` (the coverage
 sentences and flags), `src/events/earnings_ledger.py` (the durable ledger). Tests: `tests/test_earnings_cache.py`,
-`tests/test_earnings_store.py`, `tests/test_earnings_ledger.py`, `tests/test_desk_options_earnings_cache.py`.
+`tests/test_earnings_store.py`, `tests/test_earnings_ledger.py`, `tests/test_desk_options_earnings_cache.py`; the
+ledger reader: `api/earnings_ledger_reader.py`, `api/earnings_ledger_fetch.py`, tests
+`tests/test_earnings_ledger_reader.py`, `tests/test_earnings_ledger_reader_store.py`,
+`tests/test_desk_options_ledger_overlay.py`, `tests/test_earnings_ledger_lifespan.py`.
 
 **What it is not.** Coverage is provider data: Finnhub's dates and fiscal labels for regular quarterly reports,
 reconciled with the quarters Finnhub shows as reported. It is never company confirmation, and unscheduled earnings
@@ -68,15 +71,26 @@ validation exactly as before.
 - **Out of reach.** Only a person deleting every ledger asset by hand, alongside a vault table from before the
   ledger existed, can look like a first run.
 
-**The reader, and its temporary limitation: next validated publish or observation expiry.** The Finder reads only
-the published database, never the ledger and never Finnhub. A contradiction seen by a run whose refresh is not
-published reaches it only at the first of: the next validated publish of a database whose vault carries it (the next
-run that reads the ledger writes it into the vault table), or the expiry of the snapshot's own observations, 48 hours
-after the newest read supporting them. Until then the Finder can keep showing coverage from that older snapshot.
-End-to-end contradiction handling is therefore **not complete**: the API reading the ledger in the background, so
-newer invalidation evidence withdraws affected coverage even when the database has not changed, is a separate,
-planned change (Amendment A-2, 2026-10-30) and a **required step before the display can be turned on**. A
-reservation's provisional withdrawals in a published vault count once the reservation is 15 minutes old.
+**The ledger reader (design LR, Amendment A-3, 2026-11-02).** The Finder also reads the newest ledger state, so a
+contradiction seen by a run whose refresh is not published withdraws the affected coverage without the database
+changing (it replaces Amendment A-2's limitation, "next validated publish or observation expiry"). The API keeps that
+state in memory (`api/earnings_ledger_reader.py`): one background thread, started in the lifespan only when both
+`GH_DB_TOKEN` and `EARNINGS_CACHE_KEY` are set, lists the `data-latest` release every `EARNINGS_LEDGER_REFRESH_S`
+(default 600 s) and downloads only a changed newest asset, each request in a child process
+(`api/earnings_ledger_fetch.py`) killed at its deadline (15 s listing, 30 s download). An upload completed at T is
+held by T + 10 min 45 s when polling succeeds. The rule (`_ledger_overlay` in `api/desk_options.py`) can only
+withdraw: with the published vault at seq p and the held ledger state at seq l, it serves the published answer when
+l < p and the database continues the ledger, when l == p and the two states are equal, or when l > p, the ledger's
+answer for the symbol is materially the same and the ledger continues the database
+(`earnings_store.material`, `earnings_store.continues`); otherwise the answer is "earnings dates unknown"
+(`contested`), with the published rows and their provenance still listed. Anything but a trusted held state answers
+unknown with its own sentence (`unchecked`): the reader off, starting after an API restart (nothing is persisted),
+stale (transient failures for `EARNINGS_LEDGER_STALE_S`, at most 1800 s, since the last successful check), or a
+confirmed invalid listing or asset (missing, misnamed, unreadable, rotated, unauthorized, a seq below the highest
+already held, or a higher seq that does not continue the held state), each at once. The reader's check time only
+ever turns an answer unknown; it never renews an observation's age. Residual, not covered: a ledger rolled back by
+deleting newer assets while the API restarts; the cache run's own conservative restart withdraws every day at its
+next run and that state then reaches the reader. A reservation's provisional withdrawals in a published vault count once the reservation is 15 minutes old.
 
 ## The vault
 
@@ -130,8 +144,8 @@ written approval and the owner's release decision.
 1. Add `EARNINGS_CACHE_KEY` (a long random string) as a GitHub Actions secret. Without it the step skips.
 2. Deploy the API on Render by hand, with the same `EARNINGS_CACHE_KEY` in its environment, so the worker can open
    the vault. Nothing reaches the public while the display switch is off.
-3. Before the display: the separate reader-invalidation change (the API reading the ledger, Amendment A-2) is
-   planned, approved, built, reviewed and tested. Until then the display stays off.
+3. Before the display: the API's ledger reader (design LR, Amendment A-3) is merged, deployed and verified on
+   Render. While it is off or not yet holding a state, a displayed answer would be "earnings dates unknown".
 4. After that, Finnhub's written approval and the release decision, set `FINDER_EARNINGS_DISPLAY=1` on Render.
 
 `python -m src.events.earnings_cache --report --db <copy>` prints the vault's counts per state (needs the key).
