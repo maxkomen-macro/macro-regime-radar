@@ -264,12 +264,14 @@ def test_the_always_run_step_with_nothing_pending_does_nothing(mod, db):
 
 # ── REQUIRED: newer contradictory evidence alongside an older database snapshot ─
 
-def test_REQUIRED_a_newer_contradiction_reaches_the_reader_at_the_next_publish_or_after_48_hours(mod, db, tmp_path):
-    """Design 9.6: the Finder reads the published database only. A contradiction seen by a run whose refresh
-    fails stays in the ledger; the older snapshot keeps its coverage until the Finder adopts a database carrying
-    the contradiction (a later run writes it into the vault table), or until its newest read is 48 hours old.
-    This pins the temporary reader limitation the owner accepted for this PR (Amendment A-2, "next validated
-    publish or observation expiry"); the API reading the ledger is a separate change required before display."""
+def test_REQUIRED_a_newer_contradiction_reaches_the_reader_at_the_next_publish_or_after_48_hours(mod, db, tmp_path,
+                                                                                                monkeypatch):
+    """Design 9.6, as changed by design LR (Amendment A-3): a contradiction seen by a run whose refresh fails stays
+    in the ledger and not in the older published database. The database alone keeps its coverage until a later run
+    writes the contradiction into the vault table, or until its newest read is 48 hours old; the API's ledger
+    reader holds the newest ledger state, so the Finder withdraws the coverage at its next check, without the
+    database changing (design LR 3.3, l > p). Changed by LR1: before it, this test pinned the A-2 limitation that
+    the Finder kept the older answer until the next validated publish or observation expiry."""
     rows = _reconciled_market()
     run(mod, db, Finnhub(rows, None))
     run(mod, db, Finnhub(rows, None), clock=Clock(NOW + timedelta(hours=20)))
@@ -292,6 +294,27 @@ def test_REQUIRED_a_newer_contradiction_reaches_the_reader_at_the_next_publish_o
     assert res.status == "failed"
     unpublished(db, snapshot)  # the refresh failed: the Finder keeps the snapshot
     assert coverage_in(db, later + timedelta(hours=1)).state == "reconciled"  # 9.6: not withdrawn by itself
+    # design LR: the reader holds the newest ledger asset; the Finder's overlay withdraws the published answer
+    from api import desk_options
+    from api import earnings_ledger_reader as reader
+    import sqlite3
+
+    rel = release_of(db)
+    top = max(store.ledger_seq(n) for n in rel.ledger_names())
+    held = store.open_ledger_bounded(rel.assets[store.ledger_name(top)], SECRET, top)
+    conn = sqlite3.connect(db)
+    try:
+        published = store.open_vault(conn, SECRET).vault
+    finally:
+        conn.close()
+    assert held.status == "ok" and top > published["seq"]
+    snap = reader.Snapshot("ok", seq=top, asset_id=1, vault=held.vault, index=store.index(held.vault),
+                           last_success=0.0, high=top)
+    monkeypatch.setattr(reader, "current", lambda: snap)
+    t = later + timedelta(hours=1)
+    pub = store.coverage(published, store.index(published)["ZQZZ9"], session, t)
+    assert pub.state == "reconciled"
+    assert desk_options._ledger_overlay("ZQZZ9", session, t, [], published, pub) == "contested"
     newest_read = store.at(vault_of(db).vault["days"][session.isoformat()][0]["at"])
     assert coverage_in(db, newest_read + timedelta(hours=48)).state == "unconfirmed"  # (b) freshness
     # (a) a later run that reads the ledger writes the contradiction into the vault table it publishes

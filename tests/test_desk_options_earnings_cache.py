@@ -11,6 +11,7 @@ visitor's date; possible and moved reports; a share-class name; and no Finnhub r
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from datetime import date, datetime, timedelta, timezone
 
@@ -62,7 +63,19 @@ SHORT = [(-5, (2026, 3), True), (NOV30, (2026, 4), False)]  # K = Nov 30, before
 
 class CacheWorld(World):
     def serve_vault(self, v: dict | None, *, key: str | None = SECRET, write_key: str = SECRET, display: bool = True,
-                    hand=(), now: datetime = NOW, corrupt: bool = False, **store_kw) -> "CacheWorld":
+                    hand=(), now: datetime = NOW, corrupt: bool = False, ledger: str | None = "same",
+                    **store_kw) -> "CacheWorld":
+        """`ledger`: "same" (the default) has the API's ledger reader hold the published state (the steady state
+        after a validated publish, design LR 3.3 l == p); None leaves the reader off."""
+        from api import earnings_ledger_reader as reader
+
+        if ledger == "same" and v is not None:
+            held = json.loads(json.dumps(v))
+            snap = reader.Snapshot("ok", seq=int(held.get("seq") or 0), asset_id=1, vault=held,
+                                   index=store.index(held), last_success=0.0, high=int(held.get("seq") or 0))
+            self.mp.setattr(reader, "current", lambda: snap)
+        else:
+            self.mp.setattr(reader, "current", lambda: reader.Snapshot("off"))
         path = fk.store(self.tmp / f"cache{len(list(self.tmp.iterdir()))}.db", **{"macro": MACRO, "earnings": STORED, **store_kw})
         conn = sqlite3.connect(path)
         if v is not None:

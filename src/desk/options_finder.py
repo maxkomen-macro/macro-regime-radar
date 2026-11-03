@@ -1052,6 +1052,9 @@ CACHE_WORDS = {
                     "newer read under 48 hours old, the two at most 48 hours apart), so earnings dates are unknown."),
     "contested": ("A newer read of Finnhub's calendar for these dates was incomplete or disagreed with earlier reads, so "
                   "earnings dates are unknown."),
+    # the API's ledger reader could not confirm the published answer (design LR section 4, DR-28)
+    "unchecked": ("The site could not confirm that its newest read of Finnhub's calendar agrees with these dates, so "
+                  "earnings dates are unknown."),
     "withheld": "Earnings dates from Finnhub are not shown on this page, so a report before your date is not ruled out.",
 }
 UNREADABLE_WORDS = "Some of Finnhub's earnings rows could not be read, so no earnings date can be ruled out."
@@ -1065,8 +1068,8 @@ def _cache_words(cov: Mapping[str, Any], symbol: str, status: str, through: date
     if status == "unlisted":
         d = _date(cov.get("listed_through"))
         return CACHE_WORDS["unlisted"].format(symbol=symbol, d=_day(d)) if d is not None else "Earnings dates could not be read."
-    if status == "unconfirmed" and cov.get("reason") == "contested":
-        return CACHE_WORDS["contested"]
+    if status == "unconfirmed" and cov.get("reason") in ("contested", "unchecked"):
+        return CACHE_WORDS[cov["reason"]]
     return CACHE_WORDS[status]
 
 
