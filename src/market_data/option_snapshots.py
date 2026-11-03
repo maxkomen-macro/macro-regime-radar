@@ -186,9 +186,15 @@ class LocalStore:
             raise StorageError("refused: that attempt is already stored; history is never replaced")
         for name, blob in zip(asset_names(session, attempt), (data, manifest)):
             tmp = d / f".{name}.tmp"
-            tmp.write_bytes(blob)
-            os.link(tmp, d / name)  # fails rather than overwrite
-            tmp.unlink()
+            try:
+                tmp.write_bytes(blob)
+                os.link(tmp, d / name)  # fails rather than overwrite
+            except FileExistsError as exc:
+                raise StorageError("refused: that attempt is already stored; history is never replaced") from exc
+            except OSError as exc:
+                raise StorageError(f"the output folder cannot be written ({type(exc).__name__})") from exc
+            finally:
+                tmp.unlink(missing_ok=True)
 
     def manifests(self) -> list[dict]:
         out = []

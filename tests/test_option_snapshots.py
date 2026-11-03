@@ -540,3 +540,17 @@ def test_no_publish_or_artifact_step_can_carry_a_snapshot():
         blob = json.dumps(s)
         if "gh release upload" in blob or "upload-artifact" in blob:
             assert "SPY-options" not in blob and "option_snapshots" not in blob and "jsonl" not in blob, s["name"]
+
+
+def test_an_interrupted_upload_is_kept_and_the_next_attempt_takes_a_new_number(tmp_path):
+    """A data file without its manifest (an upload cut off between the two) was never committed: it reads as
+    no attempt, stays where it is, and the retry is written under the next number."""
+    store = osn.LocalStore(tmp_path)
+    store.check()
+    d = tmp_path / "SPY" / "2026-11"
+    d.mkdir(parents=True)
+    orphan = d / osn.asset_names(SESSION, 1)[0]
+    orphan.write_bytes(b"cut off")
+    assert store.attempts(SESSION) == [] and store.taken(SESSION) == {1}
+    r = go(FakeEodhd(make_chain(SPEC)), store)
+    assert r.state == "stored" and r.attempt == 2 and orphan.read_bytes() == b"cut off"
