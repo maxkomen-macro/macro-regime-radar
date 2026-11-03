@@ -324,8 +324,10 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
         if m is None:
             continue
         nxt = moves[i + 1] if i + 1 < n else None
+        prv = moves[i - 1] if i - 1 in taken else None  # the row before was a bad print: this move may be its way back
+        returning = prv is not None and abs(m + prv) <= 0.5 * abs(m)
         if p.splits and abs(m) >= SPLIT_MIN_LOG and (target := _split_factor(m)) is not None \
-                and (nxt is None or abs(m + nxt) > 0.5 * abs(m)):
+                and (nxt is None or abs(m + nxt) > 0.5 * abs(m)) and not returning:
             flags.append(_flag(s, s.dates[i], "split", f"close {s.closes[i - 1]:g} -> {s.closes[i]:g} on {s.dates[i]}: "
                                                          f"ratio {math.exp(m):.4f}, near {_ratio_label(target)}", tier1))
             taken.add(i)
