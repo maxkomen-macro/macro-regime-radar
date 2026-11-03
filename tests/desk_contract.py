@@ -439,12 +439,18 @@ MACRO = obj(
 
 # ── §12.9 GET /pipeline ─────────────────────────────────────────────────────
 
+PIPELINE_STORED = obj(
+    basis=E("row_provider", "table_writer"), rows=INT, latest=STR,
+    providers=Arr(obj(code=STR, name=STR, rows=INT, first=DATE, last=DATE), min=1),
+)
 PIPELINE = obj(
     last_refresh_utc=null(TS), validation=null(E("pass", "fail")),
     groups=Arr(obj(
         name=STR, status=FEED_STATE,
         series=Arr(obj(
             label=STR, id=STR, key=null(STR), provider=STR, freq=E("daily", "weekly", "monthly"),
+            # D2 (desk-upgrade): the intended fallback policy, apart from the providers of the stored rows
+            policy=STR, stored=null(PIPELINE_STORED),
             first=null(DATE), last=null(DATE), feeds=Arr(STR), status=FEED_STATE, note=null(STR),
         )),
     )),
