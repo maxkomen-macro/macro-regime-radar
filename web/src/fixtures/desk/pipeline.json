@@ -291,7 +291,7 @@
      "id": "^GSPC",
      "key": "spx",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 9249,
@@ -325,7 +325,7 @@
      "id": "^NDX",
      "key": "ndx",
      "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": null,
      "freq": "daily",
      "first": null,
@@ -339,7 +339,7 @@
      "id": "^RUT",
      "key": "rut",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 9249,
@@ -366,7 +366,7 @@
      "id": "^VIX",
      "key": "vix",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 9251,
@@ -405,7 +405,7 @@
      "id": "DX-Y.NYB",
      "key": "dxy",
      "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": null,
      "freq": "daily",
      "first": null,
@@ -423,7 +423,7 @@
      "id": "JPY=X",
      "key": "usdjpy",
      "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": null,
      "freq": "daily",
      "first": null,
@@ -437,7 +437,7 @@
      "id": "GC=F",
      "key": "gold",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "Yahoo (EODHD does not carry this instrument)",
+     "policy": "Yahoo only (EODHD does not carry it)",
      "stored": {
       "basis": "row_provider",
       "rows": 6541,
@@ -624,7 +624,7 @@
      "id": "XLB",
      "key": "xlb",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -654,7 +654,7 @@
      "id": "XLC",
      "key": "xlc",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 2077,
@@ -684,7 +684,7 @@
      "id": "XLE",
      "key": "xle",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -715,7 +715,7 @@
      "id": "XLF",
      "key": "xlf",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -745,7 +745,7 @@
      "id": "XLI",
      "key": "xli",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -775,7 +775,7 @@
      "id": "XLK",
      "key": "xlk",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -805,7 +805,7 @@
      "id": "XLP",
      "key": "xlp",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -835,7 +835,7 @@
      "id": "XLRE",
      "key": "xlre",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 2755,
@@ -865,7 +865,7 @@
      "id": "XLU",
      "key": "xlu",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -895,7 +895,7 @@
      "id": "XLV",
      "key": "xlv",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -925,7 +925,7 @@
      "id": "XLY",
      "key": "xly",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6980,
@@ -961,7 +961,7 @@
      "id": "SPY",
      "key": "spy",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 8470,
@@ -992,7 +992,7 @@
      "id": "RSP",
      "key": "rsp",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 5887,
@@ -1021,7 +1021,7 @@
      "id": "IWM",
      "key": "iwm",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6620,
@@ -1051,7 +1051,7 @@
      "id": "QQQ",
      "key": "qqq",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6928,
@@ -1080,7 +1080,7 @@
      "id": "SMH",
      "key": "smh",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6615,
@@ -1109,7 +1109,7 @@
      "id": "SOXX",
      "key": "soxx",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6336,
@@ -1136,7 +1136,7 @@
      "id": "IGV",
      "key": "igv",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6334,
@@ -1169,7 +1169,7 @@
      "id": "TLT",
      "key": "tlt",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6077,
@@ -1198,7 +1198,7 @@
      "id": "IEF",
      "key": "ief",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6077,
@@ -1227,7 +1227,7 @@
      "id": "HYG",
      "key": "hyg",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 4895,
@@ -1256,7 +1256,7 @@
      "id": "LQD",
      "key": "lqd",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 6077,
@@ -1285,7 +1285,7 @@
      "id": "GLD",
      "key": "gld",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 5495,
@@ -1314,7 +1314,7 @@
      "id": "UUP",
      "key": "uup",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
-     "policy": "EODHD first, Yahoo when EODHD does not serve it",
+     "policy": "EODHD first, Yahoo fallback",
      "stored": {
       "basis": "row_provider",
       "rows": 4923,

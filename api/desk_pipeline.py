@@ -178,8 +178,8 @@ PROVIDER_DESK_MARKET = "EODHD first, Yahoo disclosed fallback (Desk daily histor
 # symbol) and takes Yahoo when EODHD does not answer; with no EODHD code it asks
 # Yahoo alone. FRED rows have one source.
 POLICY_FRED = "FRED"
-POLICY_EODHD_FIRST = "EODHD first, Yahoo when EODHD does not serve it"
-POLICY_YAHOO_ONLY = "Yahoo (EODHD does not carry this instrument)"
+POLICY_EODHD_FIRST = "EODHD first, Yahoo fallback"
+POLICY_YAHOO_ONLY = "Yahoo only (EODHD does not carry it)"
 # The stored provider column's codes in words (api/desk_items_etf.PROVIDER_WORDS, plus FRED);
 # a code outside this table is shown as stored, never renamed.
 PROVIDER_WORDS = {"fred": "FRED", "yfinance": "Yahoo", "eodhd": "EODHD"}

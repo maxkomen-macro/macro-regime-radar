@@ -162,10 +162,9 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-rg-vix": { forms: [], text: "VIX avg is the average VIX close over the sessions of those months." },
   "col-rg-vix-days": { forms: [], text: "VIX days is how many sessions of those months have a stored VIX close; the cell's title gives the sessions due." },
   // Data Pipeline · the series inventory (api/desk_pipeline.py).
-  "col-pl-series": { forms: [], text: "The series by name, with how often it is observed." },
+  // D2 (desk-upgrade): who stored the rows is api/desk_pipeline.py stored_providers; the policy is policy_of.
+  "col-pl-series": { forms: [], text: "The series by name and frequency, the provider recorded on the stored rows the Desk reads, and the policy, the intended order of providers, when it differs." },
   "col-pl-id": { forms: [], text: "ID is the series' code at its source: a FRED series ID or a ticker." },
-  // D2 (desk-upgrade): api/desk_pipeline.py stored_providers and policy_of.
-  "col-pl-stored": { forms: [], text: "Stored by is the provider on the stored rows the Desk reads, with each one's rows and dates when mixed; the policy under it is the intended order of providers." },
   "col-pl-from": { forms: [], text: "From is the first observation stored." },
   "col-pl-asof": { forms: [], text: "As of is the newest observation stored." },
   "col-pl-feeds": { forms: [], text: "Feeds are the Desk tabs whose served values read this series." },

@@ -117,7 +117,7 @@ export interface PipelineSeries {
   key: string | null;
   /** The inventory's declaration, kept for compatibility; the page shows `policy` and `stored` (D2). */
   provider: string;
-  /** D2: the writer's intended fallback rule for this series ("EODHD first, Yahoo when EODHD does not serve it"). */
+  /** D2: the writer's intended fallback rule for this series ("EODHD first, Yahoo fallback"). */
   policy: string;
   /** D2: who supplied the stored observations the Desk reads; null when none is stored. */
   stored: PipelineStored | null;

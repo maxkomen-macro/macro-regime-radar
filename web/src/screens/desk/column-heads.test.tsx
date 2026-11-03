@@ -205,7 +205,6 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
     expectHeads(inv.querySelector("table.pl-table"), [
       ["Series", "col-pl-series"],
       ["ID", "col-pl-id"],
-      ["Stored by", "col-pl-stored"],
       ["From", "col-pl-from"],
       ["As of", "col-pl-asof"],
       ["Feeds", "col-pl-feeds"],

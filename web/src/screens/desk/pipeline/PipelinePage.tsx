@@ -153,7 +153,6 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
                     [
                       ["col-pl-series", "Series"],
                       ["col-pl-id", "ID"],
-                      ["col-pl-stored", "Stored by"],
                       ["col-pl-from", "From"],
                       ["col-pl-asof", "As of"],
                       ["col-pl-feeds", "Feeds"],
@@ -175,16 +174,17 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
                   <tr key={s.id} ref={s.id === hit ? hitRef : undefined} data-hit={s.id === hit || undefined}>
                     <th scope="row">
                       {s.label || s.id}
-                      {/* §11: the frequency beside the series; its provider is in Stored by (D2). */}
+                      {/* §11: the frequency beside the series. */}
                       {s.freq ? <span className="pl-prov"> · {s.freq}</span> : null}
+                      {/* D2: who supplied the stored rows, and apart from it the declared fallback rule (it fits at 601px
+                          inside this cell, where a column of its own would not). */}
+                      <span className="pl-stored" data-mixed={(s.stored?.providers?.length ?? 0) > 1 || undefined}>
+                        {stored ? `stored by ${stored.main}` : "nothing stored"}
+                        {stored?.detail ? ` · ${stored.detail}` : null}
+                      </span>
+                      {policy ? <span className="pl-policy">{policy}</span> : null}
                     </th>
                     <td className="pl-id">{s.id}</td>
-                    {/* D2: who supplied the stored rows, apart from the declared fallback rule. */}
-                    <td className="pl-stored" data-mixed={(s.stored?.providers?.length ?? 0) > 1 || undefined}>
-                      {stored ? stored.main : "—"}
-                      {stored?.detail ? <span className="pl-note"> · {stored.detail}</span> : null}
-                      {policy ? <span className="pl-policy">{policy}</span> : null}
-                    </td>
                     <td>{storedDay(s.first, s.freq) || "—"}</td>
                     <td>{storedDay(s.last, s.freq) || "—"}</td>
                     <td className="pl-feeds">{Array.isArray(s.feeds) && s.feeds.length ? s.feeds.join(", ") : "—"}</td>
