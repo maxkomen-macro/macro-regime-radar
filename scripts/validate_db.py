@@ -68,6 +68,7 @@ sys.path.insert(0, str(ROOT))
 
 from api import freshness as freshness_mod  # noqa: E402  (stdlib-only module)
 from api import provenance  # noqa: E402  (stdlib-only module; Codex R-14)
+from src.market_data import quality  # noqa: E402  (stdlib + api/calendar only; Analyst Desk P0c)
 
 REQUIRED_TABLES = ["regimes", "signals", "raw_series", "market_daily", "market_intraday", "news_feed"]
 DATE_COLUMNS = {
@@ -437,6 +438,10 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
                     sid: int(n) for sid, n in conn.execute(
                         f"SELECT d.series_id, COUNT(*) FROM desk_series d {provenance.COMMITTED_JOIN} "
                         "WHERE r.run_id IS NOT NULL AND d.date > r.as_of AND d.date <= ? GROUP BY d.series_id", (cut,))})
+        # Analyst Desk P0c: the price-quality flags (src/market_data/quality.py), a mandatory check on both
+        # snapshots: the previous snapshot's flags are what tells a new flag from one already published
+        if any(t in out["tables"] for t in PRICE_TABLES):
+            _mandatory(out, "price quality", "price_quality", lambda: quality.run(conn))
     finally:
         conn.close()
     return out
@@ -452,6 +457,65 @@ def _desk_tier_note(series_id: str) -> str:
     if tier == 1:
         return "tier 1"
     return f"tier {tier}, reported, never blocking" if tier else "not in the refresh set, reported, never blocking"
+
+
+PRICE_TABLES = ("asset_prices", "market_daily", "desk_series")  # what src/market_data/quality.py reads
+PRICE_QUALITY_LISTED = 15  # new advisory flags named one by one; the rest are counted (all are in --json)
+
+
+def _quality_label(f: dict) -> str:
+    return f"{f['table']} {f['series']}{'' if f['interval'] == '1d' else ' (' + f['interval'] + ')'} {f['date']}"
+
+
+def _price_quality(cur: dict, prev: dict | None) -> tuple[dict, list[str], list[str]]:
+    """Analyst Desk P0c: the price-quality flags against the previous snapshot's.
+    A flag on a blocking-class check (split, implausible or stale in asset_prices
+    or market_daily, implausible in a tier-1 desk_series series) fails only when
+    it is new: the previous published snapshot does not carry it, so publishing
+    would put a number on screen that is not there now. One the published database
+    already carries is reported and never blocks, since holding the refresh back
+    would not take it off screen. Every other check is advisory: a new one is a
+    warning, a known one is counted. Without a previous snapshot nothing is
+    judged new, so nothing fails, and the blocking-class flags are warnings."""
+    failures: list[str] = []
+    warnings: list[str] = []
+    pq = cur.get("price_quality")
+    if pq is None:  # not stored, or the check did not run (then it fails as "not executed")
+        return {}, failures, warnings
+    judged = quality.compare(pq, (prev or {}).get("price_quality") if prev is not None and "price_quality" in prev else None)
+    flags = judged["flags"]
+    failed = [f for f in flags if f["blocking"] and f["new"]]
+    for f in failed:
+        failures.append(f"price quality: {f['check']} in {_quality_label(f)}: {f['detail']}. New in this snapshot (the published "
+                        "database does not carry it), so publishing would put it on screen; fix the rows at the source, or record "
+                        "the evidence that the move is real in src/market_data/quality.ACCEPTED")
+    if not judged["judged"]:
+        blocking_class = [f for f in flags if f["blocking"]]
+        if blocking_class:
+            warnings.append(f"price quality: {len(blocking_class)} flag(s) on blocking-class checks not judged, because no previous "
+                            "snapshot was given to tell a new flag from a published one (reported, never blocking): "
+                            + "; ".join(f"{f['check']} {_quality_label(f)}" for f in blocking_class[:PRICE_QUALITY_LISTED])
+                            + (f"; and {len(blocking_class) - PRICE_QUALITY_LISTED} more" if len(blocking_class) > PRICE_QUALITY_LISTED else ""))
+    new_advisory = [f for f in flags if f["new"] and not f["blocking"]]
+    for f in new_advisory[:PRICE_QUALITY_LISTED]:
+        warnings.append(f"price quality ({f['check']}, advisory): {_quality_label(f)}: {f['detail']}")
+    if len(new_advisory) > PRICE_QUALITY_LISTED:
+        warnings.append(f"price quality: {len(new_advisory) - PRICE_QUALITY_LISTED} more new advisory flag(s), listed in the --json report")
+    for reason, n in sorted((pq.get("skipped") or {}).items()):
+        warnings.append(f"price quality: {n} row(s) not checked ({reason}); the checks above judge such rows")
+    report = {
+        "judged": judged["judged"],
+        "series": pq.get("series"),
+        "rows": pq.get("rows"),
+        "counts": quality.counts(flags),
+        "failed": failed,
+        "new": [f for f in flags if f["new"]],
+        "known_blocking_class": [f for f in flags if f["blocking"] and f["new"] is False],
+        "accepted": [f for f in flags if f.get("accepted")],
+        "skipped": dict(pq.get("skipped") or {}),
+        "flags": flags,
+    }
+    return report, failures, warnings
 
 
 # verifier V-33: the value sanity checks, each run on its own: (name, report key, table, query)
@@ -668,6 +732,11 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             else:
                 warnings.append(f"desk:{sid}: {noun}; the Desk {verb.format('it' if n == 1 else 'them')} ({_desk_tier_note(sid)})")
 
+    # Analyst Desk P0c: price quality, judged against the previous snapshot's flags
+    price_quality, pq_failures, pq_warnings = _price_quality(cur, prev if prev and not prev.get("error") else None)
+    failures.extend(pq_failures)
+    warnings.extend(pq_warnings)
+
     # review R-02: each tier-1 Desk series on its own, before any table-wide check
     if "desk_series" in cur["tables"] and "desk_series_by_id" in cur:
         failures.extend(_desk_tier1_failures(
@@ -805,6 +874,7 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
             "previous_not_executed": list((prev or {}).get("checks_not_executed") or []),
         },
         "ai_spend": ai_spend,
+        "price_quality": price_quality,
     }
 
 
@@ -859,6 +929,20 @@ def summary_markdown(rep: dict) -> str:
             lines.append(f"- NOT EXECUTED: {name}")
         for name in corr.get("previous_not_executed") or []:
             lines.append(f"- NOT EXECUTED on the previous snapshot: {name}")
+    pq = rep.get("price_quality") or {}
+    if pq:  # Analyst Desk P0c
+        lines += ["", f"**Price quality** · {pq.get('series')} series, {pq.get('rows'):,} rows · "
+                      + ("judged against the previous snapshot" if pq.get("judged") else "no previous snapshot, so nothing judged new"),
+                  "", "| Check | Flags | New | Blocking class |", "|---|---|---|---|"]
+        for check, c in (pq.get("counts") or {}).items():
+            lines.append(f"| {check} | {c['total']} | {c['new'] if pq.get('judged') else '—'} | {c['blocking_class']} |")
+        for f in pq.get("failed") or []:
+            lines.append(f"- FAILED, new {f['check']}: {_quality_label(f)}: {f['detail']}")
+        known = pq.get("known_blocking_class") or []
+        for f in known[:PRICE_QUALITY_LISTED]:
+            lines.append(f"- known, already published (never blocking): {f['check']} {_quality_label(f)}: {f['detail']}")
+        if len(known) > PRICE_QUALITY_LISTED:
+            lines.append(f"- and {len(known) - PRICE_QUALITY_LISTED} more known blocking-class flag(s) in the --json report")
     reg = rep.get("regime") or {}
     if reg:
         lines += ["", f"- Regime month {reg.get('latest_month')} · expected {reg.get('expected_month')}"]
