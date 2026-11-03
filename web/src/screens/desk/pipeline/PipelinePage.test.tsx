@@ -60,6 +60,7 @@ describe("Stored provider (D2)", () => {
   });
   it("nothing stored prints nothing, and a raw_series row names its table's one writer", () => {
     expect(storedWords({ freq: "daily", stored: null })).toBeNull();
+    expect(storedWords({ freq: "daily" } as never)).toBeNull();
     const fred = { code: "fred", name: "FRED", rows: 1, first: "2026-08-01", last: "2026-08-01" };
     expect(storedWords({ freq: "monthly", stored: { basis: "table_writer", rows: 1, latest: "FRED", providers: [fred] } })).toEqual({ main: "FRED · all 1 row", detail: "the table's one writer" });
   });
@@ -74,6 +75,19 @@ describe("Stored provider (D2)", () => {
     for (const g of groups)
       for (const s of g.series)
         if (s.stored && s.policy !== "FRED") expect(s.stored.providers.map((p) => p.name)).toEqual(["Yahoo"]);
+  });
+});
+
+describe("Stored provider against an API without the field (D2)", () => {
+  it("prints no stored line for a dated row, never a wrong 'nothing stored'", async () => {
+    const old = structuredClone(pipeline) as typeof pipeline;
+    for (const g of old.groups) for (const s of g.series as Record<string, unknown>[]) { delete s.stored; delete s.policy; }
+    stubDesk({ "/api/desk/pipeline": () => old });
+    renderTab("/desk/data-pipeline?group=credit");
+    const rows = await screen.findByRole("region", { name: "Credit series" });
+    expect(rows.querySelector(".pl-stored")).toBeNull();
+    expect(rows.querySelector(".pl-policy")).toBeNull();
+    expect(within(rows).getAllByRole("row")[1].textContent).toContain("US HY OAS · dailyBAMLH0A0HYM2Sep 25, 2023");
   });
 });
 

@@ -178,10 +178,14 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
                       {s.freq ? <span className="pl-prov"> · {s.freq}</span> : null}
                       {/* D2: who supplied the stored rows, and apart from it the declared fallback rule (it fits at 601px
                           inside this cell, where a column of its own would not). */}
-                      <span className="pl-stored" data-mixed={(s.stored?.providers?.length ?? 0) > 1 || undefined}>
-                        {stored ? `stored by ${stored.main}` : "nothing stored"}
-                        {stored?.detail ? ` · ${stored.detail}` : null}
-                      </span>
+                      {/* "nothing stored" only when the row has no stored date either: an API without the field
+                          (one not yet deployed) prints no line rather than a wrong one. */}
+                      {stored || s.first == null ? (
+                        <span className="pl-stored" data-mixed={(s.stored?.providers?.length ?? 0) > 1 || undefined}>
+                          {stored ? `stored by ${stored.main}` : "nothing stored"}
+                          {stored?.detail ? ` · ${stored.detail}` : null}
+                        </span>
+                      ) : null}
                       {policy ? <span className="pl-policy">{policy}</span> : null}
                     </th>
                     <td className="pl-id">{s.id}</td>
