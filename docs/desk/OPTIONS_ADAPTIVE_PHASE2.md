@@ -14,15 +14,15 @@ values are "estimated, cross-check pending" until the Phase 3 cross-check exists
   aims its tightened reference at 0.1 of the finest straddling candidate's estimate, not at the floor, and reads
   its reliability against each candidate's own 0.1·E_s; in the held-out run the target is exactly 0.1·E_s, as the
   design says.
-- Attempts: **attempt 1** (freeze `2f7bf07`, engine `adaptive-p2.0`, held-out seed 20261029) met every gate row
-  and is now **historical**: amendment A-2 changed the controller and the bench after it, so its results stand
-  only for the code at `2f7bf07` and are superseded. Its freeze, selection report and scorecards are kept
-  unchanged. **Attempt 2** (engine `adaptive-p2.1`, held-out seed 20261102, fixed before its calibration) is
-  pending: it recalibrates on seed 20261026, freezes to `calibration/phase2-freeze-2.json`, and is evaluated
-  once on the fresh seed. The results sections below are attempt 1's until attempt 2 is scored. The exploratory
-  and provisional calibrations listed below are not attempts and are kept on record.
+- Attempts: **attempt 2** (freeze `ef7d784`, engine `adaptive-p2.1`, held-out seed 20261102, fixed before its
+  calibration) is the evaluation of the final code: **it met every gate row**, on a `--held-out` run of the
+  freeze's own population, so the acceptance prerequisite holds. **Attempt 1** (freeze `2f7bf07`, engine
+  `adaptive-p2.0`, held-out seed 20261029) also met every gate row and is **historical**: amendment A-2 changed
+  the controller and the bench after it, so its results stand only for the code at `2f7bf07` and are
+  superseded. Its freeze, selection report and scorecards are kept unchanged. The exploratory and provisional
+  calibrations listed below are not attempts and are kept on record.
 - Provenance: every run here is **Claude's recorded run**, not reproduced by Codex. Codex reviewed the code, the
-  freeze and the selection report (rounds 1–5); it did not rerun calibration or the held-out evaluation.
+  freezes and the selection reports (rounds 1–9); it did not rerun calibration or either held-out evaluation.
 
 ## What was built
 
@@ -32,7 +32,7 @@ values are "estimated, cross-check pending" until the Phase 3 cross-check exists
 | `src/desk/options_adaptive.py` | Tier 2: routes, the analytic interval, the refinement walk, both estimators, three schedules, the delta gate |
 | `tests/fixtures/options_baseline_golden.json` | Tier 1's served outputs on the named cases, R-1 and a 300-case stratified subset |
 | `scripts/options_bench/{adaptive,phase2,calibrate,score2,routine}.py` | Adapter and verdict protocol, frozen runner, calibration, Phase 2 scorer, routine subset |
-| `scripts/options_bench/calibration/` | Attempt 1's freeze (`phase2-freeze.json`) and selection report, kept byte for byte; attempt 2's go to `phase2-freeze-2.json` and `phase2-selection-2.json` |
+| `scripts/options_bench/calibration/` | Attempt 1's freeze (`phase2-freeze.json`) and selection report, kept byte for byte; attempt 2's are `phase2-freeze-2.json` and `phase2-selection-2.json` |
 
 Tier 2 routes, in order: input failure; intrinsic at expiry; outside the domain; exempt (European, by theorem);
 the analytic interval; the lattice. (Attempt 1's frozen docstring listed exempt before the domain test; the code
@@ -56,7 +56,110 @@ U = European + the early-exercise premium bound.
 - **Positive control.** `force_lattice` skips the exempt and analytic routes and the interval test; its answers
   carry the status "positive control" and are never accepted or usable.
 
-## Calibration and freeze (attempt 1)
+## Calibration and freeze (attempt 2)
+
+The selection rule is attempt 1's (next section). Calibration `cal-4` priced the same 12,707 stored development
+cases (seed 20261026) with the controller and bench at `892edcc`: 12,707 cases, 0 errors. The retained-delta fix
+changed no development result (0 price rows and 0 delta rows differ from `cal-3` across all candidates), so the
+selection is byte-identical to attempt 1's. Frozen at `ef7d784` (`calibration/phase2-freeze-2.json`, reviewed by
+Codex in round 9 with no findings): envelope estimator, multiples schedule, F = 3, F_d = 2, τ = 1; 2,500 per random
+group, T1 1,500, X1 400, G0 300, plus the named cases. The freeze records attempt 1's freeze and selection by
+SHA-256 and refuses a seed that has been used (20261026, 20261029). Nothing was tuned on held-out outcomes.
+
+## Held-out result (attempt 2, seed 20261102, 17,207 cases)
+
+**Gate verdict: met.** Every row passes, and the run is eligible as the Phase 2 acceptance (`--held-out`, the
+freeze's seed, sizes and named cases, every case finished, hashes matching the freeze, references matching the
+manifest's fingerprint).
+
+| Row | Verdict | Evidence |
+|---|---|---|
+| Tier 1 unchanged | pass | golden file matches; Tier 1 equals the bench's own baseline run on all 17,207 cases |
+| Sample counts | pass | 10,611 Tier 2-accepted, reference-resolved lattice prices in G1–G6 (at least 1,000 per group: smallest G1, 1,387); at least 1,513 scored deltas per group |
+| Tier 2 price accuracy | pass | 0 failures, 0 indeterminate; worst error 0.579 tol (G2), p99 0.134 tol |
+| Estimator coverage, price | pass | **0 exceedances**; conditional limits 0.13%–0.22% per group in G1–G6 (T1 0.24%), all at most 1% |
+| Estimator coverage, delta | pass | **0 exceedances**; conditional limits 0.13%–0.20% per group in G1–G6 (T1 0.31%) |
+| Analytic route | pass | 4,027 cases, none outside [L, U], no accuracy failure; 4,016 covered, 11 without a reference |
+| Proved interval (every Tier 2 output) | pass | no usable output outside its own [L, U] (main answer, every sweep target, every dividend scenario), no disjoint band, no proved exceedance, no inconsistent interval |
+| Displayed delta | pass | 0 failures, 0 indeterminate, none served without an estimate; no delta withdrawn by the A-2 rule |
+| Dividend scenario | pass | 2,626 scored, 0 failures; 144 refused, 14 unscored |
+| Reference reliability | pass | 1,727 European controls, none outside u; 94 R0 prices unresolved; 64 tightened references |
+| Named regressions | pass | 7 of 7 for Tier 2 and for Tier 1; R-1 row passes |
+| Determinism and run integrity | pass | 17,207 of 17,207 records, 0 crashes; 351 repeated from scratch, all bit-identical; hashes match the freeze |
+| Work, per context | pass | largest single level 37.8 M units (cap 40 M) |
+
+Estimator coverage by group (lattice prices; one-sided 95% Clopper–Pearson upper limits, per group, under this
+frozen attempt and seed; not a joint statement):
+
+| Group | Accepted | Covered | Confirmed | Unresolved | No reference | Conditional | All-accepted |
+|---|---|---|---|---|---|---|---|
+| G1-nodiv | 1,388 | 1,387 | 0 | 0 | 1 | 0.22% | 0.34% |
+| G2-dividends | 1,756 | 1,754 | 0 | 0 | 2 | 0.17% | 0.36% |
+| G3-carry-itm | 2,054 | 2,043 | 0 | 0 | 11 | 0.15% | 0.88% |
+| G4-negrate | 1,628 | 1,628 | 0 | 0 | 0 | 0.18% | 0.18% |
+| G5-extreme-vol | 1,503 | 1,502 | 0 | 0 | 1 | 0.20% | 0.32% |
+| G6-long | 2,315 | 2,297 | 0 | 0 | 18 | 0.13% | 1.15% |
+| T1-near-boundary (apart) | 1,252 | 1,251 | 0 | 0 | 1 | 0.24% | 0.38% |
+
+- No price or delta estimate was exceeded in any group. The all-accepted limit is above 1% only in G6 (1.15%),
+  because 18 accepted contexts have no reliable reference; it is reported, not gated, as approved.
+- Interval refusals (report only; refusals are not passes): candidates outside [L, U] were refused on the main
+  answer in 4.5% of G1, 1.5% of G2, 1.6% of G3, 15.3% of G4, 4.2% of G5 and 5.4% of G6 cases, none in T1. All
+  1,299 sat below L (numerical undershoots, cause not established as roundoff), the largest 0.034 tol (G1); none
+  above U. In 142 cases no later level was accepted and the price stayed unresolved.
+- Coverage on G1–G6: Tier 2 priced 98.3% (14,746 of 15,000), Tier 1 98.8% (14,814) on the same cases. Work per
+  priced context p50 / p95 / max: 0.52 M / 25.0 M / 95.7 M units; G6's median is 18.1 M. Targets below tol:
+  97.1% priced at 0.5·tol, 95.2% at 0.25·tol, 83.7% at 0.1·tol (random groups). These rows are report only in
+  Phase 2, as in attempt 1.
+- Full scorecards: `docs/desk/options-adaptive-phase2/held-out-2-scorecard2.md` (Tier 2) and
+  `held-out-2-baseline-scorecard.md` (Tier 1, merged scorer).
+
+### What the baseline shows on attempt 2's held-out seed (Tier 1, unchanged)
+
+The merged scorer on the same reference run: prices 15,082 scored in the in-domain groups, 0 failures,
+0 indeterminate; deltas 0 failures; dividend scenario 2,674 scored in domain, **0 failures**, 0 indeterminate;
+early-exercise bound 774 covered, 0 violated; 0 lattice disputes. Its verdict is "not met" only because G0-exempt
+has 300 scored prices, below the merged gate's 1,000, since the freeze sizes G0 at 300. That this seed shows no
+dividend-scenario failure does not clear backlog B-1, which stays the dividend-fix thread's work.
+
+## Reference check: the day-0 defect and the QuantLib convention (diagnostic, kept apart)
+
+On 2026-11-03 the dividend-fix thread found two reference-side issues. The owner asked whether either affects
+Phase 2's acceptance evidence. These checks read the frozen runs' files and the evaluated checkout read-only and
+write only to the project files' `review-loop/options-adaptive/ref-check/`; the frozen evaluation and its
+artifacts are unchanged.
+
+- **QuantLib's escrowed model differs from ours when q ≠ 0.** No Phase 2 gate reads QuantLib: `phase2.py` and
+  `score2.py` never use it, the bench already skips QuantLib for dividend cases with q ≠ 0, and neither held-out
+  reference run had QuantLib installed. It cannot move a Phase 2 verdict. On the development seed's q = 0 dividend
+  cases, QuantLib and the bench reference agree within 0.041 tol (1,000 cases).
+- **The bench FD rang at a day-0 cum close.** Each day-0 case was recomputed independently as max(exercise today,
+  the bench reference of S − D₀ with the day-0 dividend removed), which is exact under the escrowed model and
+  never solves a day-0 close. It reproduces T1-near-boundary/1351 of seed 20261029 at 14.353056, where the stored
+  reference read 14.355342 (unresolved). On attempt 2's 598 day-0 cases the stored references agree with it
+  within 0.005 tol on the main answer and 0.018 tol on the dividend states. Re-judged against it, no price,
+  delta, accuracy or dividend-scenario verdict gets worse; one price moves from no reference to covered.
+  Attempt 1's 586 day-0 cases: likewise none worse, 4 move from no reference to covered.
+- **Every dividend case against corrected references.** The dividend-fix thread's reviewed bench fix
+  (`fd.py` at `07a6f5c` on its branch) reran every stored dividend reference for seeds 20261029 and 20261026:
+  34 of 34,476 interior comparisons shift beyond their uncertainty, and no value or dividend-scenario shift
+  exceeds 0.082 tol. Re-judging attempt 1's 8,390 dividend cases with them, no Tier 2 verdict becomes
+  confirmed or failed; 4 become straddles, and a tightened reference from the fixed FD settles all 4 as covered.
+- **Attempt 2 against corrected references.** The same fixed FD reran all of attempt 2's 8,403 dividend cases
+  (value, delta and both dividend states; a scratch copy of `ef7d784` with only `fd.py` replaced, 0 errors).
+  Interior closes: 16 of 20,718 comparisons shift beyond their uncertainty, no value or dividend-state shift
+  exceeds 0.070 tol, and no delta shift exceeds 0.103 of the delta tolerance. Day-0 closes: 9 of 1,569 beyond u,
+  at most 0.036 tol in value; the largest delta shift (G3-carry-itm/137, 0.25 of the delta tolerance) matches
+  the decomposition above, and that case's delta is withheld (a dividend within 5 days). Re-judged with the
+  corrected references, **no Tier 2 verdict gets worse**: 28 prices, 2 deltas and 12 dividend scenarios move from
+  no reference or unscored to covered or pass, and one price (G6-long/2375) moves from no reference to a
+  straddle, which a tightened reference from the fixed FD settles as covered.
+
+So neither finding changes the attempt 2 verdict, and corrected references only add covered and passing
+outcomes. These are diagnostics: the scorecard of record stays the frozen run's. The fixed FD is the
+dividend-fix thread's change and is not part of this branch.
+
+## Calibration and freeze (attempt 1, historical)
 
 Selection rule (as approved): F is the smallest of {2, 2.5, 3, 4} with no confirmed or unresolved case and a
 needed factor at most F/1.25; F_d the same way; ties go to the highest worst random-group coverage, then the
@@ -81,9 +184,9 @@ on `f5d41bf`, stopped by a container restart at 5,001 of 12,707 cases; `cal-2` o
 the freeze because a bench file changed after pricing (the calibration manifest refuses it). `cal-2`'s provisional
 selection matched the frozen one. Evidence in the project files under `review-loop/options-adaptive/calibration/`.
 
-## Held-out result (attempt 1, seed 20261029, 17,207 cases)
+## Held-out result (attempt 1, historical: seed 20261029, 17,207 cases)
 
-**Gate verdict: met.** Every row passes.
+**Gate verdict: met** for the code at `2f7bf07`. Superseded by attempt 2; kept as recorded.
 
 | Row | Verdict | Evidence |
 |---|---|---|
@@ -158,7 +261,12 @@ The merged scorer, run on the same held-out reference run, scores today's served
 - **Dividend scenario: 1 failure and 1 indeterminate.** G2-dividends/1239 (21-day call, a 2.04 dividend on day
   4, volatility 0.50): the baseline's price change between the ±10% dividend states differs from the reference's
   by 1.13 tol. G2-dividends/1725 straddles the threshold. Tier 2 refuses a scenario price on both cases.
-- One lattice dispute to investigate (T1-near-boundary/1351, a dividend on day 0).
+- One lattice dispute to investigate (T1-near-boundary/1351, a dividend on day 0). The dividend-fix thread
+  traced it to the bench FD's day-0 defect: Tier 1 was right (exercise today, 14.353056).
+- Under that thread's corrected references (diagnostic, outside these frozen artifacts), Tier 1 also fails
+  G4-negrate/54's dividend scenario at 1.353 tol (its +10% reference was unresolved before), G2-dividends/1239
+  still fails (1.144 tol) and G2-dividends/1725 passes. Tier 2 refuses both failing cases. Both belong to
+  backlog B-1.
 - G0-exempt has 300 scored prices, below the merged gate's 1,000, because the freeze sizes G0 at 300.
 
 These are facts about Tier 1 on a new seed. This branch does not change Tier 1 and does not fix them. The
@@ -196,6 +304,24 @@ acceptance: its results are historical and attempt 2 is the evaluation of the fi
   named cases, every case finished), whose seed is not the development seed, can be a Phase 2 acceptance. Any
   other run's gate rows are kept and labelled "diagnostic only, not a Phase 2 acceptance", and never read "met".
 
+## Test environment notes
+
+The full suite at `ef7d784` (round 9) ran 2,703 tests: 2,622 passed, 80 skipped, 1 failed. The failure and two
+other differences from the recorded baseline are environmental; no financial tolerance was changed for any of them.
+
+- `tests/test_no_secret_in_logs.py::test_uvicorns_own_formatters_still_work_with_the_filter` fails only after
+  `tests/test_chat_sql_guard.py::test_get_secret_falls_back_to_env_file`, and only where Streamlit is installed.
+  That test's `st.secrets` access runs Streamlit 1.66's `init_uvicorn_logs()`, which gives `uvicorn.error` its
+  own handler and sets `propagate = False`; the later test's `dictConfig` removes the handler but leaves
+  `propagate`, so the "Uvicorn running on" line is lost. Streamlit is in `requirements.txt`, not in
+  `requirements-api.lock`, so the API image never runs that path; the test passes alone and without Streamlit.
+  It is test isolation, not this branch's code, and is left to the owner (backlog B-2).
+- `tests/test_provider_no_yahoo.py::test_the_profile_makes_its_two_eodhd_calls_concurrently` compares wall time
+  with the two calls' measured sum, so it can miss by a few milliseconds on a machine running bench jobs; it
+  passed in the round-9 run (backlog B-3). It is a timing test, not a financial tolerance.
+- The skip count is 80, not 83, because `web/node_modules` was installed, so the three
+  `test_web_fresh_report` tests ran instead of skipping.
+
 ## Limits of these claims
 
 - Each statement is about one frozen attempt, one seed and one group, on the bench's synthetic distribution; it
@@ -207,10 +333,13 @@ acceptance: its results are historical and attempt 2 is the evaluation of the fi
 
 ## Files
 
-- Scorecards as scored (copies in this repo): `docs/desk/options-adaptive-phase2/held-out-scorecard2.md` (Tier 2)
-  and `held-out-baseline-scorecard.md` (Tier 1, merged scorer).
-- Held-out runs: project files `review-loop/options-adaptive/held-out/` (`refs/` the reference run, `p2/` Tier 2
-  with `scorecard2.md` and `scorecard2.json`, `baseline-score/` the merged scorer on Tier 1).
-- Calibration: `review-loop/options-adaptive/calibration/cal-3/` (candidate file gzipped; its uncompressed SHA-256
-  matches the freeze's `candidates_sha256`).
+- Scorecards as scored (copies in this repo): attempt 2 `docs/desk/options-adaptive-phase2/held-out-2-scorecard2.md`
+  (Tier 2) and `held-out-2-baseline-scorecard.md` (Tier 1, merged scorer); attempt 1 `held-out-scorecard2.md` and
+  `held-out-baseline-scorecard.md`.
+- Held-out runs (project files, `review-loop/options-adaptive/`): attempt 2 in `held-out-2/` (`refs/`, `p2/`,
+  `baseline-score/`, and `RUN-LOG.md`, which records every interruption of the reference run and how it resumed
+  from its intact results file); attempt 1 in `held-out/`.
+- Calibration: `calibration/cal-4/` (attempt 2) and `calibration/cal-3/` (attempt 1); each candidate file is
+  gzipped and its uncompressed SHA-256 matches its freeze's `candidates_sha256`.
+- Reference check: `ref-check/` (scripts, outputs and a README).
 - Loop record: `.loop/` in the build session, with the design, ledger, packets and Codex reviews.

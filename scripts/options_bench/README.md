@@ -90,8 +90,9 @@ python -m scripts.options_bench.routine --out DIR                               
   the development seed, can be a Phase 2 acceptance; any other run's rows are kept and labelled "diagnostic only,
   not a Phase 2 acceptance".
 - Attempts: attempt 1's freeze (`calibration/phase2-freeze.json`, commit 2f7bf07, held-out seed 20261029) and
-  its selection report are kept byte for byte; they no longer match the files at HEAD. Attempt 2 writes
-  `calibration/phase2-freeze-2.json` and draws held-out seed 20261102, fixed before its calibration.
+  its selection report are kept byte for byte; they no longer match the files at HEAD. Attempt 2's freeze is
+  `calibration/phase2-freeze-2.json` (commit ef7d784, held-out seed 20261102, fixed before its calibration); its
+  held-out run is the Phase 2 acceptance run (docs/desk/OPTIONS_ADAPTIVE_PHASE2.md).
 - A delta accepted before the price is held to the accepted price's own test: the exercise-zone and decision
   test for an envelope delta, the deep-exercise rule over every level run for a delta of ±1. One that fails is
   withdrawn, audited (`delta_withdrawn`) and judged afresh at the price's level.
