@@ -369,7 +369,8 @@ def gate(groups: dict, rows: list[dict], integrity: dict, named: dict) -> dict:
                                 "crashes": sum("error" in r for r in rows)}
     comps["run"]["verdict"] = _verdict(comps["run"]["crashes"] > 0 or comps["run"]["repeat_differs"] > 0
                                        or not integrity["hashes_match_freeze"]
-                                       or not integrity.get("refs_match_manifest", False), False,
+                                       or not integrity.get("refs_match_manifest", False)
+                                       or integrity.get("payload_mismatch", 0) > 0, False,
                                        not integrity["complete"] or not rep)
 
     big = max((x["work"]["max_level_units"] for x in every), default=0)
@@ -447,15 +448,18 @@ def score_dirs(dirs: list[Path]) -> dict:
     # the references now are the ones Tier 2 was judged against (Codex S-9); a manifest without the fingerprint
     # (attempt 1's) cannot show it
     refs_now = phase2.refs_fingerprint(Path(first["refs"]))
+    # every Tier 2 record is the case its id names in that population, not only the same id (Codex S-14)
+    foreign = phase2.foreign_cases(recs, pop.get("expected_cases", {}))
     integrity = {"hashes_match_freeze": phase2.sha(Path(first["freeze"])) == first["freeze_sha256"]
                  and all(m["files_sha256"] == freeze["files_sha256"] for m in mans) and not phase2.check_freeze(freeze),
                  "refs_match_manifest": all(m.get("refs_files_sha256") == refs_now for m in mans),
                  "refs_complete": pop["complete"], "refs_why": pop.get("why"), "held_out_mismatch": ho_why,
-                 "complete": bool(pop["complete"] and ho_why is None and set(ids) == expected
+                 "complete": bool(pop["complete"] and ho_why is None and set(ids) == expected and not foreign
                                   and len(ids) == len(set(ids)) and all(m.get("finished_utc") for m in mans)
                                   and len({m["shard"] for m in mans}) == n_shard),
                  "expected": len(expected), "received": len(ids), "duplicates": len(ids) - len(set(ids)),
-                 "missing": len(expected - set(ids)), "golden": golden_check(), "held_out": first["held_out"]}
+                 "missing": len(expected - set(ids)), "payload_mismatch": len(foreign),
+                 "golden": golden_check(), "held_out": first["held_out"]}
     integrity["acceptance"] = acceptance(first["held_out"], phase2.held_out_mismatch(pop, freeze), freeze)
     rows = [classify(r) for r in recs]
     by = defaultdict(list)

@@ -213,6 +213,10 @@ def price_all(refs: Path, out: Path, workers: int) -> None:
         prev, truncated = score.read_results(path)
         if truncated or (path.read_text() and not path.read_text().endswith("\n")):
             path.write_text("".join(json.dumps(r) + "\n" for r in prev))
+        foreign = phase2.foreign_cases(prev, {r["case"]["id"]: phase2.case_key(r["case"]) for r in recs})
+        if foreign:   # a candidate priced for another case under the same id is never adopted (Codex S-14)
+            raise SystemExit(f"{len(foreign)} candidates in {path} are not cases of the reference run "
+                             f"(e.g. {foreign[0]}): use a new --out")
         done = {r["case"]["id"] for r in prev}
     todo = [r for r in sorted(recs, key=lambda r: r["case"]["id"]) if r["case"]["id"] not in done]
     print(f"{len(recs)} cases, {len(done)} done, {len(todo)} to run", flush=True)
@@ -368,11 +372,15 @@ def coverage(recs: list[dict], sel: tuple) -> dict:
 def select(cal_dir: Path) -> dict:
     recs, truncated = score.read_results(cal_dir / "candidates.jsonl")
     man = json.loads((cal_dir / "manifest.json").read_text())
-    want = {c.id for c in cases.suite(man["seed"], man["per_group"], named=man["named"])}
+    want = {c.id: phase2.case_key(c.to_json()) for c in cases.suite(man["seed"], man["per_group"], named=man["named"])}
     got = [r["case"]["id"] for r in recs]
-    if set(got) != want or len(got) != len(set(got)):
+    if set(got) != set(want) or len(got) != len(set(got)):
         raise SystemExit(f"the candidate file is not the development run's population ({len(set(got))} of {len(want)} "
                          f"cases, {len(got) - len(set(got))} duplicates): finish pricing first")
+    foreign = phase2.foreign_cases(recs, want)
+    if foreign:   # the same ids with another seed's or an edited case's inputs (Codex S-14)
+        raise SystemExit(f"the candidate file is not the development run's population: {len(foreign)} candidates are "
+                         f"not the case their id names (e.g. {foreign[0]})")
     errors = [r["case"]["id"] for r in recs if "error" in r]
     good = [r for r in recs if "error" not in r]
     in_dom = [r for r in good if r["case"]["group"] in cases.IN_DOMAIN_GROUPS]

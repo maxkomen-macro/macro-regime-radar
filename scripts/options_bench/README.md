@@ -82,17 +82,23 @@ python -m scripts.options_bench.routine --out DIR                               
   report-only targets 0.5, 0.25 and 0.1 tol, and repeated cases for determinism. It refuses to run when any
   engine or bench file differs from the freeze, and with `--held-out` a reference run that is not the freeze's
   seed and sizes. Its manifest fingerprints the reference run's files: a resume after they changed is refused,
-  and so is a result file found without its manifest.
+  and so is a result file found without its manifest. Every record's case inputs (canonical, through
+  `Case.from_json`) must be the case its id names under the run's seed and sizes, not only the same id: a
+  reference run holding another case is not the population, a resume refuses results for another case, and a
+  reference shard without its own manifest is refused (Codex S-14; calibration's resume and selection likewise).
 - `score2.py`: every exit-gate row, with five populations per group and maturity band, and the conditional,
   resolved-all and all-accepted limits (only the conditional one binds). It refuses result shards without their
-  manifest and fails the run row when the references differ from the fingerprint. Only a run started with
+  manifest and fails the run row when the references differ from the fingerprint or a result is not the case
+  its id names. Only a run started with
   `--held-out` on the freeze's own population (seed, sizes, named cases, every case finished), whose seed is not
   the development seed, can be a Phase 2 acceptance; any other run's rows are kept and labelled "diagnostic only,
   not a Phase 2 acceptance".
 - Attempts: attempt 1's freeze (`calibration/phase2-freeze.json`, commit 2f7bf07, held-out seed 20261029) and
   its selection report are kept byte for byte; they no longer match the files at HEAD. Attempt 2's freeze is
   `calibration/phase2-freeze-2.json` (commit ef7d784, held-out seed 20261102, fixed before its calibration); its
-  held-out run is the Phase 2 acceptance run (docs/desk/OPTIONS_ADAPTIVE_PHASE2.md).
+  held-out run is the Phase 2 acceptance run (docs/desk/OPTIONS_ADAPTIVE_PHASE2.md). The S-14 fix changed
+  `phase2.py`, `score2.py` and `calibrate.py` after that run, so freeze 2 no longer matches HEAD either: the
+  runner (and `routine.py`, whose default is freeze 2) refuses it, and the next run needs a new freeze.
 - A delta accepted before the price is held to the accepted price's own test: the exercise-zone and decision
   test for an envelope delta, the deep-exercise rule over every level run for a delta of ±1. One that fails is
   withdrawn, audited (`delta_withdrawn`) and judged afresh at the price's level.

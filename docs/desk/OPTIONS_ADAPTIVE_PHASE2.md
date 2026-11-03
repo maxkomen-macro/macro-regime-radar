@@ -22,7 +22,7 @@ values are "estimated, cross-check pending" until the Phase 3 cross-check exists
   superseded. Its freeze, selection report and scorecards are kept unchanged. The exploratory and provisional
   calibrations listed below are not attempts and are kept on record.
 - Provenance: every run here is **Claude's recorded run**, not reproduced by Codex. Codex reviewed the code, the
-  freezes and the selection reports (rounds 1–9); it did not rerun calibration or either held-out evaluation.
+  freezes and the selection reports in its code reviews; it did not rerun calibration or either held-out evaluation.
 
 ## What was built
 
@@ -290,6 +290,34 @@ the reference file holds now (0 differ; `review-loop/options-adaptive/held-out/S
 project files). That is Claude's recorded evidence, not reproduced by Codex, and it does not make attempt 1 the
 acceptance: its results are historical and attempt 2 is the evaluation of the final code.
 
+## Review finding S-14 (fixed after attempt 2's run; the recorded run is unaffected)
+
+Codex's final review of attempt 2 (round 11, at `1e20859`) found that the population checks compared case ids,
+not case inputs. Ids repeat across seeds (`G1-nodiv/0` exists under every seed), so a reference run of another
+seed, handed over with a manifest naming the freeze's seed, passed as the frozen population: Codex built such a
+run and the check accepted it. The gap dates from the first bench commit (`b1adadd`) and sits in the runner, the
+scorer and calibration, not in the pricing or scoring math.
+
+- **Fix.** Every record's case is compared, in canonical form (`Case.from_json` and back, so a record written
+  before the `expect_note` field existed compares equal), with the case regenerated from its run's seed and
+  sizes. A reference run holding any other case is incomplete and cannot be the held-out population; a Phase 2
+  or calibration resume, and calibration's selection, refuse results for another case under the same id; the
+  scorer counts such Tier 2 records and fails the run row on any; a reference shard without its own manifest is
+  refused. Four regression tests (the same id from two seeds, an edited input, an orphan reference shard, a
+  Phase 2 resume, and a calibration resume and selection) fail on the code before the fix. The held-out test fixtures now use a real seed-7 reference record,
+  not seed 20261026's stored record under a seed-7 manifest.
+- **Recorded evidence.** Every case in attempt 2's references (17,207 of 17,207) and Tier 2 results (17,207 of
+  17,207), and in calibration's development references (12,707 of 12,707, seed 20261026), is exactly the case
+  regenerated from its seed and sizes, checked with `ef7d784`'s case generator and again with the fixed checks
+  (`review-loop/options-adaptive/s14-proof/` in the project files). Attempt 2's verdict stands. This is Claude's
+  recorded evidence, not reproduced by Codex.
+- **The freeze.** `phase2.py`, `score2.py` and `calibrate.py` on this branch now differ from the hashes freeze 2
+  pins, so the fixed runner (and `routine.py`, whose default is freeze 2) refuses to run under freeze 2. The
+  evaluated code is the immutable checkout at `ef7d784`; any further run needs a new freeze.
+- **Not changed.** `run.py`, the merged reference runner (unchanged since `bbde165`), still adopts a result file
+  without a manifest on resume. With the case check, a wrong-seed file adopted that way can no longer pass as
+  the frozen population.
+
 ## Amendment A-2: the retained delta and the acceptance prerequisite
 
 - **Retained delta.** Before A-2 a delta accepted at a level whose price estimate was still above target was
@@ -306,8 +334,9 @@ acceptance: its results are historical and attempt 2 is the evaluation of the fi
 
 ## Test environment notes
 
-The full suite at `ef7d784` (round 9) ran 2,703 tests: 2,622 passed, 80 skipped, 1 failed. The failure and two
-other differences from the recorded baseline are environmental; no financial tolerance was changed for any of them.
+The full suite at `ef7d784` (round 9) ran 2,703 tests: 2,622 passed, 80 skipped, 1 failed; at `1e20859` (round 10)
+2,621 passed, 80 skipped, 2 failed (the two tests below, both failing in the recorded baseline too). The failures
+and the skip count are environmental; no financial tolerance was changed for any of them.
 
 - `tests/test_no_secret_in_logs.py::test_uvicorns_own_formatters_still_work_with_the_filter` fails only after
   `tests/test_chat_sql_guard.py::test_get_secret_falls_back_to_env_file`, and only where Streamlit is installed.
@@ -317,8 +346,9 @@ other differences from the recorded baseline are environmental; no financial tol
   `requirements-api.lock`, so the API image never runs that path; the test passes alone and without Streamlit.
   It is test isolation, not this branch's code, and is left to the owner (backlog B-2).
 - `tests/test_provider_no_yahoo.py::test_the_profile_makes_its_two_eodhd_calls_concurrently` compares wall time
-  with the two calls' measured sum, so it can miss by a few milliseconds on a machine running bench jobs; it
-  passed in the round-9 run (backlog B-3). It is a timing test, not a financial tolerance.
+  with the two calls' measured sum, so it can miss by a few milliseconds on a loaded machine: it passed in round
+  9, missed by 31 ms in round 10 and passed three runs of three alone at both this branch and `bbde165` (backlog
+  B-3). It is a timing test, not a financial tolerance.
 - The skip count is 80, not 83, because `web/node_modules` was installed, so the three
   `test_web_fresh_report` tests ran instead of skipping.
 
@@ -341,5 +371,5 @@ other differences from the recorded baseline are environmental; no financial tol
   from its intact results file); attempt 1 in `held-out/`.
 - Calibration: `calibration/cal-4/` (attempt 2) and `calibration/cal-3/` (attempt 1); each candidate file is
   gzipped and its uncompressed SHA-256 matches its freeze's `candidates_sha256`.
-- Reference check: `ref-check/` (scripts, outputs and a README).
+- Reference check: `ref-check/` (scripts, outputs and a README). S-14 evidence: `s14-proof/`.
 - Loop record: `.loop/` in the build session, with the design, ledger, packets and Codex reviews.

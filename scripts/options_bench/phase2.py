@@ -158,6 +158,10 @@ def work(job: tuple) -> dict:
 def read_refs(run_dir: Path) -> tuple[list[dict], list[dict]]:
     recs, mans = [], []
     for p in sorted(run_dir.glob("results-*.jsonl")):
+        man = p.name.replace("results-", "manifest-").replace(".jsonl", ".json")
+        if not (run_dir / man).exists():
+            # a reference shard that cannot be traced to its run is never used (Codex S-14, as S-10 for Tier 2)
+            raise SystemExit(f"{p} has reference results but no {man}")
         rs, truncated = score.read_results(p)
         if truncated:
             raise SystemExit(f"{p} ends in a partial record: finish the reference run first")
@@ -175,6 +179,27 @@ def refs_fingerprint(run_dir: Path) -> dict:
     return {p.name: sha(p) for p in sorted(run_dir.glob("results-*.jsonl")) + sorted(run_dir.glob("manifest-*.json"))}
 
 
+def case_key(c_json: dict) -> str | None:
+    """A case's contract inputs in canonical form, through Case.from_json and back: a record written before a
+    field existed (so carrying its default) compares equal, any changed input does not. None if unreadable."""
+    try:
+        return json.dumps(cases.Case.from_json(c_json).to_json(), sort_keys=True)
+    except Exception:
+        return None
+
+
+def foreign_cases(recs: list[dict], want: dict[str, str]) -> list[str]:
+    """The ids of records whose case is not the expected case of that id: another seed's or size's case under the
+    same id, an edited input, an unreadable case, or an id not expected at all. Ids alone never establish the
+    population (Codex S-14)."""
+    out = []
+    for r in recs:
+        k = case_key(r["case"])
+        if k is None or want.get(r["case"].get("id")) != k:
+            out.append(str(r["case"].get("id", "?")))
+    return sorted(out)
+
+
 def refs_population(recs: list[dict], mans: list[dict]) -> dict:
     """The reference run's own case list, regenerated from its manifests (seed, sizes, named), against the
     records received: every shard compatible and present, every case there once and finished. Missing cases are
@@ -187,11 +212,20 @@ def refs_population(recs: list[dict], mans: list[dict]) -> dict:
         return {"complete": False, "why": str(e)}
     comp["duplicates"] = len(ids) - len(set(ids))
     comp["unfinished_shards"] = sorted(m["shard"] for m in mans if not m.get("finished_utc"))
-    comp["complete"] = bool(comp["complete"] and not comp["missing_shards"] and not comp["duplicates"]
-                            and not comp["unfinished_shards"])
     first = mans[0]
     comp["seed"], comp["per_group"], comp["named"] = first["seed"], first["per_group"], first["named"]
-    comp["expected_ids"] = sorted(c.id for c in cases.suite(first["seed"], first["per_group"], named=first["named"]))
+    suite = list(cases.suite(first["seed"], first["per_group"], named=first["named"]))
+    comp["expected_ids"] = sorted(c.id for c in suite)
+    # every record's inputs must be the case regenerated from the manifest's seed and sizes, not only its id:
+    # ids repeat across seeds (Codex S-14)
+    comp["expected_cases"] = {c.id: case_key(c.to_json()) for c in suite}
+    foreign = foreign_cases(recs, comp["expected_cases"])
+    comp["payload_mismatch"] = len(foreign)
+    if foreign:
+        comp["why"] = (f"{len(foreign)} reference records are not the case their id names under seed {first['seed']} "
+                       f"and these sizes (e.g. {foreign[0]})")
+    comp["complete"] = bool(comp["complete"] and not comp["missing_shards"] and not comp["duplicates"]
+                            and not comp["unfinished_shards"] and not foreign)
     return comp
 
 
@@ -200,7 +234,7 @@ def held_out_mismatch(pop: dict, freeze: dict) -> str | None:
     ho = freeze["held_out"]
     if not pop["complete"]:
         return "the reference run is incomplete: " + json.dumps({k: pop.get(k) for k in (
-            "why", "missing", "missing_shards", "duplicates", "unfinished_shards")})
+            "why", "missing", "missing_shards", "duplicates", "unfinished_shards", "payload_mismatch")})
     if pop["seed"] != ho["seed"] or pop["per_group"] != ho["per_group"] or pop["named"] != ho.get("named", True):
         return (f"the reference run is seed {pop['seed']} with sizes {pop['per_group']}; the freeze's held-out run "
                 f"is seed {ho['seed']} with sizes {ho['per_group']}")
@@ -245,6 +279,10 @@ def main(argv=None) -> int:
         prev, truncated = score.read_results(res_path)
         if truncated or (res_path.read_text() and not res_path.read_text().endswith("\n")):
             res_path.write_text("".join(json.dumps(r) + "\n" for r in prev))
+        foreign = foreign_cases(prev, {r["case"]["id"]: case_key(r["case"]) for r in mine})
+        if foreign:
+            raise SystemExit(f"{len(foreign)} results in {res_path} are not cases of this shard's reference run "
+                             f"(e.g. {foreign[0]}): use a new --out")
         done = {r["case"]["id"] for r in prev}
     man = {"runner": "scripts/options_bench/phase2.py", "command": sys.argv, "freeze": str(args.freeze),
            "freeze_sha256": sha(Path(args.freeze)), "config": adaptive.config_json(cfg), "engine_version": oa.VERSION,
@@ -253,7 +291,8 @@ def main(argv=None) -> int:
            "refs_manifests": [{k: m.get(k) for k in ("seed", "per_group", "bench_files_sha256", "engine", "shard",
                                                     "cases_in_shard", "started_utc", "finished_utc")} for m in mans],
            "refs_population": {k: pop.get(k) for k in ("complete", "why", "expected", "received", "missing",
-                                                       "missing_shards", "duplicates", "unfinished_shards")},
+                                                       "missing_shards", "duplicates", "unfinished_shards",
+                                                       "payload_mismatch")},
            "held_out": args.held_out, "shard": args.shard, "cases_in_shard": len(mine),
            "repeat_every": args.repeat_every, "sweep": list(SWEEP),
            "tightening": {"fraction": adaptive.R1_FRACTION, "escalate_max": adaptive.R1_ESCALATE_MAX,

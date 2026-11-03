@@ -5,6 +5,7 @@ bench's own components must score the baseline exactly as before."""
 from __future__ import annotations
 
 import copy
+import functools
 import json
 import math
 from pathlib import Path
@@ -374,10 +375,23 @@ def test_r1_regression_row():
 
 # ── held-out provenance and the acceptance prerequisite (amendment A-2) ──────
 
+@functools.lru_cache(maxsize=None)
+def _real_record_json(seed: int) -> str:
+    """A reference record of the real case G1-nodiv/0 of this seed (reference and Tier 1 answer, as run.py writes
+    them). The stored records are seed 20261026's cases: paired with another seed's manifest they would be another
+    population's cases under the same ids (Codex S-14)."""
+    from scripts.options_bench import run
+    c = next(cases.suite(seed, manifest(seed, {"G1-nodiv": 1})["per_group"], named=False))
+    rec = run.work((c.to_json(), {"engine_root": str(REPO), "lattice_check": False, "quantlib": False,
+                                  "controls": False, "iv": False, "divsens": False, "convention": False}))
+    assert "error" not in rec and rec["case"]["id"] == "G1-nodiv/0"
+    return json.dumps(rec)
+
+
 def _held_out_setup(tmp_path, seed=7):
     refs = tmp_path / "refs"
     refs.mkdir()
-    rec = stored("G1-nodiv/0")
+    rec = json.loads(_real_record_json(seed))
     (refs / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
     (refs / "manifest-0of1.json").write_text(json.dumps(manifest(seed, {"G1-nodiv": 1})))
     fz = json.loads(freeze_now(tmp_path).read_text())
@@ -471,3 +485,72 @@ def test_attempt_two_draws_a_fresh_held_out_seed_and_leaves_attempt_one_alone():
     one = json.loads((REPO / e["freeze"]).read_text())
     assert one["phase"] == "options adaptive Phase 2, attempt 1" and one["held_out"]["seed"] == 20261029
     assert one["engine_version"] == calibrate.EARLIER_ATTEMPTS[0]["engine_version"]
+
+
+# ── the frozen population is its cases' inputs, not only their ids (Codex S-14) ──
+
+def test_another_seeds_cases_under_the_same_ids_are_not_the_frozen_population():
+    rec = stored("G1-nodiv/0")                      # seed 20261026's G1-nodiv/0
+    other = json.loads(_real_record_json(7))        # seed 7's G1-nodiv/0: same id, other inputs
+    assert other["case"]["id"] == rec["case"]["id"] and other["case"] != rec["case"]
+    pop = phase2.refs_population([rec], [manifest(7, {"G1-nodiv": 1})])
+    assert not pop["complete"] and pop["payload_mismatch"] == 1 and "G1-nodiv/0" in pop["why"]
+    fz = {"held_out": {"seed": 7, "per_group": manifest(7, {"G1-nodiv": 1})["per_group"], "named": False}}
+    assert "incomplete" in phase2.held_out_mismatch(pop, fz)
+    assert phase2.refs_population([other], [manifest(7, {"G1-nodiv": 1})])["complete"]
+    # one input changed in place is refused the same way
+    edited = dict(other, case=dict(other["case"], spot=other["case"]["spot"] * 1.01))
+    assert phase2.refs_population([edited], [manifest(7, {"G1-nodiv": 1})])["payload_mismatch"] == 1
+    # an unreadable case is never the expected one, even under an id nobody expects
+    assert phase2.foreign_cases([{"case": {"id": "G9/0"}}], {}) == ["G9/0"]
+    # a record written before a field existed carries that field's default: the same contract
+    old = dict(rec, case={k: v for k, v in rec["case"].items() if k != "expect_note"})
+    assert phase2.refs_population([old], [manifest(20261026, {"G1-nodiv": 1})])["complete"]
+
+
+def test_reference_results_without_their_manifest_are_never_used(tmp_path):
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    rec = stored("G1-nodiv/0")
+    (refs / "results-0of2.jsonl").write_text(json.dumps(rec) + "\n")
+    (refs / "manifest-0of2.json").write_text(json.dumps(manifest(20261026, {"G1-nodiv": 1}, shard="0/2")))
+    assert phase2.read_refs(refs)[0] == [rec]
+    (refs / "results-1of2.jsonl").write_text(json.dumps(rec) + "\n")
+    with pytest.raises(SystemExit, match="no manifest-1of2.json"):
+        phase2.read_refs(refs)
+
+
+def test_a_resume_and_the_scorer_refuse_results_for_other_cases(tmp_path):
+    refs, p, rec = _held_out_setup(tmp_path)
+    out = tmp_path / "p2"
+    assert _run(refs, p, out, "--held-out") == 0
+    res = out / "results-0of1.jsonl"
+    good = res.read_text()
+    assert score2.score_dirs([out])["integrity"]["complete"]
+    t2 = json.loads(good)
+    t2["case"] = stored("G1-nodiv/0")["case"]       # another seed's case under the same id
+    res.write_text(json.dumps(t2) + "\n")
+    with pytest.raises(SystemExit, match="not cases of this shard"):
+        _run(refs, p, out, "--held-out")
+    sc = score2.score_dirs([out])
+    assert sc["integrity"]["payload_mismatch"] == 1 and not sc["integrity"]["complete"]
+    assert sc["gate"]["components"]["run"]["verdict"] == "fail" and not sc["gate"]["met"]
+    res.write_text(good)
+    assert _run(refs, p, out, "--held-out") == 0     # the unchanged resume is still accepted
+
+
+def test_calibration_refuses_candidates_for_other_cases(tmp_path):
+    refs = tmp_path / "refs"
+    refs.mkdir()
+    rec = stored("G1-nodiv/0")
+    (refs / "results-0of1.jsonl").write_text(json.dumps(rec) + "\n")
+    (refs / "manifest-0of1.json").write_text(json.dumps(manifest(calibrate.CAL_SEED, {"G1-nodiv": 1})))
+    out = tmp_path / "cal"
+    out.mkdir()
+    (out / "manifest.json").write_text(json.dumps(calibrate.check_manifest(out, refs)))
+    (out / "candidates.jsonl").write_text(json.dumps({"case": json.loads(_real_record_json(7))["case"]}) + "\n")
+    with pytest.raises(SystemExit, match="not cases of the reference run"):
+        calibrate.price_all(refs, out, workers=1)
+    # selection reads the candidate file itself: the right ids with another case's inputs are refused there too
+    with pytest.raises(SystemExit, match="not the case their id names"):
+        calibrate.select(out)
