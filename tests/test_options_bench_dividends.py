@@ -16,7 +16,7 @@ import math
 
 import pytest
 
-from scripts.options_bench import fd, reference
+from scripts.options_bench import crosscheck, fd, reference, score
 from scripts.options_bench.cases import Case
 
 
@@ -149,3 +149,55 @@ def test_the_frozen_quantlib_values_reproduce():
             got.append(american(a, eng, divs=sched))
         assert math.isclose(got[2] + (got[2] - got[1]) / 3, want, abs_tol=1e-9)
         assert math.isclose(abs(got[2] - got[1]), spread, abs_tol=1e-9)
+
+
+# ── the QuantLib cross-check (design D-3) ────────────────────────────────────
+
+@pytest.mark.skipif(crosscheck.ql is None, reason="QuantLib is test-only and not installed")
+def test_a_day_0_dividend_is_cross_checked_exactly_for_any_q():
+    q = crosscheck.quantlib(_case(**T1_1351))   # q = 0.0536: the escrowed FD is skipped, the day-0 decomposition is not
+    assert q["method"] == "qdfp-day0"
+    assert q["value"] == q["exercise"] == pytest.approx(100.0 - 85.646944, abs=1e-12)
+    assert q["hold"] == pytest.approx(14.332860339, abs=1e-8)
+    assert crosscheck.quantlib(_case(**PUT_0))["value"] == pytest.approx(PUT_0_EXACT, abs=1e-8)
+
+
+@pytest.mark.skipif(crosscheck.ql is None, reason="QuantLib is test-only and not installed")
+def test_the_escrowed_fd_cross_check_runs_three_grids_and_only_when_q_is_0():
+    a, ql_value, _ = QL["cn_put"]
+    q = crosscheck.quantlib(_case(**a))
+    assert q["method"] == "fd-escrowed-3grid" and len(q["grids"]) == len(crosscheck.QL_GRIDS)
+    assert q["spread"] == abs(q["grids"][-1] - q["grids"][-2])
+    assert abs(q["value"] - ql_value) <= 1e-3   # a tenth of the tolerance from the finer frozen study
+    assert crosscheck.quantlib(_case(**(a | {"q": 0.01}))) is None   # r - q escrow convention: not comparable
+
+
+def _ql_rec(ql: dict | None):
+    tol = reference.tolerance(10.0, 100.0)
+    rec = {"case": {"id": "G2-dividends/0", "group": "G2-dividends", "kind": "random"},
+           "engine": {"status": "served", "model": "m", "value": 10.0, "delta": -0.5, "delta_note": None,
+                      "units": 10, "secs": 0.1},
+           "ref": {"value": {"ref": 10.0, "u": 1e-3, "status": "reliable", "tol": tol},
+                   "delta": {"ref": -0.5, "u": 1e-5, "status": "reliable"}}}
+    if ql is not None:
+        rec["quantlib"] = ql
+    return rec, tol
+
+
+def test_an_escrowed_fd_dispute_counts_both_stated_errors_and_half_a_tolerance():
+    tol = reference.tolerance(10.0, 100.0)
+    rec, _ = _ql_rec({"method": "fd-escrowed-3grid", "value": 10.0 + 1e-3 + 2e-4 + 0.5 * tol - 1e-9, "spread": 2e-4})
+    assert score.classify(rec)["quantlib_disputed"] is False
+    rec, tol = _ql_rec({"method": "fd-escrowed-3grid", "value": 10.0 + 1e-3 + 2e-4 + 0.5 * tol + 1e-9, "spread": 2e-4})
+    row = score.classify(rec)
+    assert row["quantlib_disputed"] is True and row["quantlib_spread_tol"] == pytest.approx(2e-4 / tol)
+    assert score._summary([row])["quantlib_dividend_fd"] == {
+        "compared": 1, "disputed": 1, "disputed_ids": ["G2-dividends/0"], "spread_tol_max": pytest.approx(2e-4 / tol)}
+
+
+def test_records_from_before_the_three_grid_check_classify_as_before():
+    # stored runs carry {"method": "fd-escrowed", "value": ...} with no spread: no new keys, so their scoring is unchanged
+    rec, _ = _ql_rec({"method": "fd-escrowed", "value": 10.0})
+    row = score.classify(rec)
+    assert "quantlib_disputed" not in row and "quantlib_spread_tol" not in row
+    assert row["quantlib_method"] == "fd-escrowed"
