@@ -49,7 +49,7 @@ step exits 0 on every end so it cannot fail the refresh; a failure state also pr
     python -m src.market_data.option_snapshots --report [...]      stored history, counts only, no EODHD call
 
 Before the first live run (D3): the secrets, and D1's check of EODHD's retention, storage and call-limit
-terms for the options dataset. Setup: docs/desk/option-snapshots-setup.md.
+terms for the options dataset. Setup: docs/RUNBOOK.md section 9.
 """
 
 from __future__ import annotations

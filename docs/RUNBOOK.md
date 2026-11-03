@@ -125,3 +125,19 @@ The API computes allocation only from the `asset_prices` table, which the `full`
 
 No restart is needed after a refresh: the new database is rebuilt in the background and published to every screen at once.
 
+
+## 9. Private SPY option-chain snapshots (Desk D3)
+
+`python -m src.market_data.option_snapshots` runs as one step of every `full` refresh ("Collect private SPY option snapshot (Desk D3)"). It stores the raw EODHD end-of-day SPY chain as release assets in a separate **private** repository, never in this repository, the database or the `data-latest` release. It does nothing until the owner adds three Actions secrets:
+
+| Secret | Value |
+|---|---|
+| `EODHD_OPTIONS_TOKEN` | the same EODHD token the API host uses, under this name only (`EODHD_API_TOKEN` in Actions would switch the stored price histories to EODHD) |
+| `OPTION_SNAPSHOT_REPO` | `owner/name` of the private archive repository (created with a README, so a release has a commit to tag) |
+| `OPTION_SNAPSHOT_GH_TOKEN` | a fine-grained personal access token: repository access *Only select repositories* → the archive alone; repository permission *Contents: Read and write* (Metadata: Read is added automatically); nothing else |
+
+Each run prints one line: `held` (a secret is missing), `already_stored` (no call, or one probe when the provider has not moved), `stored` / `stored_partial` (attempt number, expiries complete/listed, contracts, requests), or a failure state that also raises a workflow warning (`not_entitled`, `provider_error`, `session_unknown`, `storage_refused`, `storage_failed`, `attempts_exhausted`). At most 200 EODHD requests a run, no retries, and it stops on a 429 or a 402: the options quota (10,000 requests per rolling 24 h) is shared with the API's Options lens and Finder.
+
+History is append-only: every attempt at a session is its own pair of assets (`SPY-options-<session>-aNN.jsonl.gz` and `.manifest.json`, in the monthly release `spy-options-YYYY-MM`), never deleted or replaced. The manifest carries the schema version, provider, quote session, retrieval start and end, per-expiry completeness and the data file's SHA-256. A session with a complete attempt is not collected again; one with only partial attempts is retried, at most four times.
+
+`python -m src.market_data.option_snapshots --report` (with the two archive variables in the environment) prints the complete sessions, the partial-only ones and the NYSE sessions with nothing stored, and makes no EODHD call. If the token expires, runs report `storage_failed` (HTTP 401) until a new one is set.
