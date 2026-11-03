@@ -325,17 +325,50 @@ def test_compare_marks_new_and_known_and_says_when_it_could_not(tmp_path):
                                       "split": {"total": 1, "new": 1, "high": 1}}
 
 
+def _split_run(tmp_path, name, closes, dates=DATES):
+    conn = _db(tmp_path, name)
+    _put(conn, "XLK", dates, closes)
+    return q.run(conn)
+
+
+def test_a_flag_whose_numbers_changed_is_new_and_a_dividend_restatement_is_not(tmp_path):
+    base = _walk(len(DATES))
+    halved = base[:300] + [c / 2 for c in base[300:]]
+    prev = _split_run(tmp_path, "prev.db", halved)
+    # Codex S-01: the same split date with a worse stored price is not the flag already published
+    worse = _split_run(tmp_path, "worse.db", base[:300] + [c / 10 for c in base[300:]])
+    ((f,),) = [[f for f in q.compare(worse, prev)["flags"] if f["check"] == "split"]]
+    assert f["date"] == DATES[300] and f["new"] is True
+    # an adjusted history restated for a distribution: every close before the ex-date scaled by 0.99
+    ex = 350
+    restated = _split_run(tmp_path, "restated.db", [c * 0.99 for c in halved[:ex]] + halved[ex:])
+    assert [(f["check"], f["new"]) for f in q.compare(restated, prev)["flags"]] == [("split", False)]
+    # the same move from a different earlier row (the row before it was dropped) is new
+    gone = DATES[299]
+    moved = _split_run(tmp_path, "moved.db", [c for d, c in zip(DATES, halved) if d != gone], [d for d in DATES if d != gone])
+    assert ("split", True) in [(f["check"], f["new"]) for f in q.compare(moved, prev)["flags"]]
+
+
+def test_observations_match_only_within_the_tolerance():
+    assert q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.69])
+    assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.71])
+    assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-05", -0.693])
+    assert not q._same_observation(["2026-01-02", 3], ["2026-01-02", 4])
+    assert not q._same_observation(["2026-01-02", 0.1], ["2026-01-02", None])
+    assert not q._same_observation(["2026-01-02"], ["2026-01-02", 0.1])
+
+
 # ── the validator ────────────────────────────────────────────────────────────────────────────────────────
 
 
-def _history(path: Path, *, split_on: str | None = None, gap: str | None = None):
+def _history(path: Path, *, split_on: str | None = None, gap: str | None = None, factor: float = 2.0):
     """The validate_db fixture plus a year of SPY closes in asset_prices before its newest row."""
     conn = sqlite3.connect(path)
     dates = _sessions("2026-09-03", 300)
     closes = _walk(len(dates), start=480.0)
     if split_on:
         i = dates.index(split_on)
-        closes = closes[:i] + [c / 2 for c in closes[i:]]
+        closes = closes[:i] + [c / factor for c in closes[i:]]
     rows = [("SPY", "1d", d, c, "yfinance") for d, c in zip(dates, closes) if d != gap]
     conn.executemany("INSERT OR REPLACE INTO asset_prices VALUES (?,?,?,?,?)", rows)
     conn.execute("UPDATE asset_prices SET close = ? WHERE symbol = 'SPY' AND interval = '1d' AND date = '2026-09-04'",
@@ -371,6 +404,18 @@ def test_a_known_split_is_counted_not_warned(tmp_path):
     assert not [w for w in rep["warnings"] if w.startswith("price quality (split")]
     assert rep["price_quality"]["counts"]["split"] == {"total": 1, "new": 0, "high": 1}
     assert "- high severity, known: split asset_prices SPY 2026-08-03" in v.summary_markdown(rep)
+
+
+def test_a_known_split_whose_price_got_worse_warns_again(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03", news="2026-09-05 17:00:00")
+    _history(prev, split_on="2026-08-03")
+    _make(cur, rows_news=60)
+    _history(cur, split_on="2026-08-03", factor=10.0)
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert [w for w in rep["warnings"] if w.startswith("price quality (split, high severity, new): asset_prices SPY 2026-08-03")]
+    assert rep["price_quality"]["counts"]["split"] == {"total": 1, "new": 1, "high": 1}
 
 
 def test_without_a_previous_snapshot_high_severity_flags_are_one_warning(tmp_path):

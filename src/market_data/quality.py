@@ -90,6 +90,7 @@ SPLIT_MIN_LOG = math.log(1.36)  # 3:2 is the smallest factor checked (log 0.405)
 SPLIT_FACTORS = (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 1.5)
 RATIO_STEP = 0.003    # cross_table: 0.3% in log terms
 RATIO_DROP = math.log(1 / 0.9)  # cross_table: a fall in the ratio above 10% is no distribution
+OBSERVED_TOL = 0.01   # a flag is known only if its observation matches within this (log, or pp for a rate)
 
 SCREEN_TABLES = ("asset_prices", "market_daily")  # read on screen as stored
 HIGH_CHECKS = ("split", "implausible")
@@ -314,10 +315,13 @@ def _severity(table: str, series: str, check: str, tier1: set[str]) -> str:
 
 
 def _flag(s: Series, d: str, check: str, detail: str, tier1: set[str], i: int | None = None,
-          move: float | None = None) -> dict:
-    """One flag. A move check (split, implausible) also carries the move and the two closes it runs between."""
+          move: float | None = None, observed: tuple = ()) -> dict:
+    """One flag. `observed` is what the check saw (the earlier date and the move or
+    moves it measured, the run or the gap), which tells a known flag from one whose
+    numbers changed (compare). A move check (split, implausible) also carries the
+    move and the two closes it runs between."""
     out = {"check": check, "table": s.table, "series": s.series, "interval": s.interval, "date": d,
-           "severity": _severity(s.table, s.series, check, tier1), "detail": detail}
+           "severity": _severity(s.table, s.series, check, tier1), "detail": detail, "observed": list(observed)}
     if i is not None:
         out.update(move=move, prev_date=s.dates[i - 1], prev_close=s.closes[i - 1], close=s.closes[i])
     return out
@@ -342,7 +346,8 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
         target = _split_factor(m) if p.splits and abs(m) >= SPLIT_MIN_LOG else None
         if target is not None and nxt is not None and abs(m + nxt) > 0.5 * abs(m) and not returning:
             flags.append(_flag(s, s.dates[i], "split", f"close {s.closes[i - 1]:g} -> {s.closes[i]:g} on {s.dates[i]}: "
-                                                         f"ratio {math.exp(m):.4f}, near {_ratio_label(target)}", tier1, i, m))
+                                                         f"ratio {math.exp(m):.4f}, near {_ratio_label(target)}", tier1, i, m,
+                               (s.dates[i - 1], m)))
             taken.add(i)
             continue
         if p.implausible is not None and abs(m) >= p.implausible:
@@ -351,14 +356,14 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
             flags.append(_flag(s, s.dates[i], "implausible", f"{_fmt(p, m)} from {s.dates[i - 1]} "
                                                                f"({s.closes[i - 1]:g} -> {s.closes[i]:g}), beyond the {p.kind} limit "
                                                                f"of {_fmt(p, p.implausible) if p.transform == 'level' else f'log {p.implausible:.3f}'}"
-                                                               f"{unconfirmed}", tier1, i, m))
+                                                               f"{unconfirmed}", tier1, i, m, (s.dates[i - 1], m)))
             taken.add(i)
     # stale: a repeated bar, and a run of one close
     if s.volumes is not None and any((v or 0) > 0 for v in s.volumes):
         for i in range(1, n):
             if s.closes[i] == s.closes[i - 1] and s.volumes[i] == s.volumes[i - 1] and s.volumes[i] is not None:
                 flags.append(_flag(s, s.dates[i], "stale", f"close {s.closes[i]:g} and volume {s.volumes[i]:g} repeat "
-                                                             f"{s.dates[i - 1]}'s bar", tier1))
+                                                             f"{s.dates[i - 1]}'s bar", tier1, observed=(s.dates[i - 1],)))
                 taken.add(i)
     if p.stale_run:
         run, need = 1, STALE_RUN_MONTHLY if s.interval == "1mo" else STALE_RUN
@@ -368,7 +373,8 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
                 continue
             if run >= need:
                 first, last = s.dates[i - run], s.dates[i - 1]
-                flags.append(_flag(s, last, "stale_run", f"close {s.closes[i - 1]:g} on {run} rows in a row, {first} to {last}", tier1))
+                flags.append(_flag(s, last, "stale_run", f"close {s.closes[i - 1]:g} on {run} rows in a row, {first} to {last}", tier1,
+                                   observed=(first, run)))
             run = 1
     # spike and jump: z-based, daily only
     if s.interval == "1d":
@@ -382,11 +388,13 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
             if (nxt is not None and z >= SPIKE_Z and abs(nxt) / sig >= SPIKE_Z and m * nxt < 0
                     and abs(m + nxt) <= SPIKE_REVERT * min(abs(m), abs(nxt)) and confirmed < p.peer_need):
                 flags.append(_flag(s, s.dates[i], "spike", f"{_fmt(p, m)} on {s.dates[i]} then {_fmt(p, nxt)} on {s.dates[i + 1]} "
-                                                             f"({z:.0f} sigma, {confirmed} peer(s) moved with it): a bad print?", tier1))
+                                                             f"({z:.0f} sigma, {confirmed} peer(s) moved with it): a bad print?", tier1,
+                                   observed=(s.dates[i - 1], m, nxt)))
                 taken.update((i, i + 1))
             elif z >= JUMP_Z:
                 peers = f", {confirmed} peer(s) moved with it" if p.peers else ""
-                flags.append(_flag(s, s.dates[i], "jump", f"{_fmt(p, m)} from {s.dates[i - 1]} ({z:.0f} sigma{peers})", tier1))
+                flags.append(_flag(s, s.dates[i], "jump", f"{_fmt(p, m)} from {s.dates[i - 1]} ({z:.0f} sigma{peers})", tier1,
+                                   observed=(s.dates[i - 1], m)))
     # gaps and off-calendar rows: NYSE-calendar daily series only
     if p.nyse and s.interval == "1d":
         for i in range(n):
@@ -399,7 +407,8 @@ def check_series(s: Series, p: Profile, moves, sigmas, peer_z, tier1: set[str]) 
                 if missing:
                     more = f" ({len(missing)} sessions, first {missing[0]})" if len(missing) > 1 else ""
                     flags.append(_flag(s, s.dates[i], "gap", f"no row for {missing[0] if len(missing) == 1 else 'the NYSE sessions'} "
-                                                           f"between {s.dates[i - 1]} and {s.dates[i]}{more}", tier1))
+                                                           f"between {s.dates[i - 1]} and {s.dates[i]}{more}", tier1,
+                                       observed=(s.dates[i - 1], len(missing))))
     return flags
 
 
@@ -420,7 +429,8 @@ def cross_table(raw: Series, adj: Series, tier1: set[str]) -> list[dict]:
             d = pairs[i][0]
             flags.append(_flag(raw, d, "cross_table", f"{d}: market_daily's close ({pairs[i][1]:g}) and asset_prices' "
                                                        f"({pairs[i][2]:g}) disagree for one session ({s * 100:+.2f}%, back on "
-                                                       f"{pairs[i + 1][0]}): a wrong close in one of the two tables?", tier1))
+                                                       f"{pairs[i + 1][0]}): a wrong close in one of the two tables?", tier1,
+                                observed=(pairs[i - 1][0], s, nxt)))
             i += 2
             continue
         if s > RATIO_STEP or s < -RATIO_DROP:
@@ -428,7 +438,8 @@ def cross_table(raw: Series, adj: Series, tier1: set[str]) -> list[dict]:
             why = "rose, which no distribution explains" if s > 0 else "fell by more than any distribution"
             flags.append(_flag(raw, d, "cross_table", f"{d}: the market_daily/asset_prices close ratio {why} "
                                                        f"({s * 100:+.2f}% from {pairs[i - 1][0]}): sources or adjustment vintages "
-                                                       "spliced, or one table not refreshed?", tier1))
+                                                       "spliced, or one table not refreshed?", tier1,
+                                observed=(pairs[i - 1][0], s)))
         i += 1
     return flags
 
@@ -466,14 +477,35 @@ def run(conn: sqlite3.Connection) -> dict:
     return {"series": len(series), "rows": sum(len(s.dates) for s in series), "skipped": skipped, "flags": flags}
 
 
+def _same_observation(a: list, b: list) -> bool:
+    """Two flags' observations agree: same dates and counts, each move within OBSERVED_TOL."""
+    if len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        if isinstance(x, float) or isinstance(y, float):
+            if x is None or y is None or abs(float(x) - float(y)) > OBSERVED_TOL:
+                return False
+        elif x != y:
+            return False
+    return True
+
+
 def compare(current: dict, previous: dict | None) -> dict:
-    """Current flags against the previous snapshot's, by key (check, table, series, interval,
-    date): each marked new or known. Without a previous snapshot nothing is new or known
-    (`judged` is False)."""
+    """Current flags against the previous snapshot's: a flag is known when the previous
+    snapshot holds one with the same key (check, table, series, interval, date) and the
+    same observation (same earlier date, run or gap, each move within OBSERVED_TOL),
+    and new otherwise, so a stored price that changed under a known flag (a worse bad
+    print, a different move) is new again. A dividend restatement of an adjusted history
+    leaves every move but the ex-date's unchanged within the tolerance. Without a previous
+    snapshot nothing is new or known (`judged` is False)."""
     if previous is None:
         return {"judged": False, "flags": [{**f, "new": None} for f in current.get("flags", [])]}
-    seen = {key(f) for f in previous.get("flags", [])}
-    return {"judged": True, "flags": [{**f, "new": key(f) not in seen} for f in current.get("flags", [])]}
+    seen: dict[tuple, list[list]] = {}
+    for f in previous.get("flags", []):
+        seen.setdefault(key(f), []).append(f.get("observed", []))
+    return {"judged": True, "flags": [{**f, "new": not any(_same_observation(f.get("observed", []), o)
+                                                            for o in seen.get(key(f), []))}
+                                      for f in current.get("flags", [])]}
 
 
 def counts(flags: list[dict]) -> dict[str, dict[str, int]]:
