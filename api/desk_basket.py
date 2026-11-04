@@ -699,10 +699,12 @@ def _study_answer(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], m
     sessions = calendar_for({s: histories[s] for s in symbols})
     priced = _priced(histories, legs, method, 1.0, counts, sessions)
     block = index_block(priced, histories, legs, counts, provider, source, session, sessions)
-    # the first session a w-session move's z exists on is the (Z_MIN_PRESENT + w)th: the window needs
-    # Z_MIN_PRESENT moves, and the first move reads the session w before it
+    # No z-score can exist before the (Z_MIN_PRESENT + w)th session of the index's calendar span (sessions
+    # some name lacks counted): the window needs Z_MIN_PRESENT moves and the first move reads the session w
+    # before it. A span that long goes to the engine, whose own masks decide the rest (spec §2, Codex DR-08).
     need = es.Z_MIN_PRESENT + w
-    if priced["sessions"] < need:
+    span = priced["sessions"] + len(priced["missing_sessions"])
+    if span < need:
         binding = ", ".join(priced["start_binding"])
         if priced["start_kind"] == "first_close":
             whose = f"{binding}'s first close"
@@ -711,7 +713,7 @@ def _study_answer(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], m
         else:
             whose = "the first session every name has a close"
         return {"ok": False, "index": block,
-                "reason": (f"Not enough history yet: the index starts {priced['start']} ({whose}) and has {priced['sessions']} "
+                "reason": (f"Not enough history yet: the index starts {priced['start']} ({whose}) and spans {span} "
                            f"sessions; the first 2σ move over {w} sessions can be judged on its {need}th session "
                            f"({es.Z_MIN_PRESENT} {w}-session moves in a {es.Z_WINDOW}-session window).")}
     level = pd.Series(priced["index"], index=pd.DatetimeIndex(priced["dates"]))

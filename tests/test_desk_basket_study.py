@@ -204,6 +204,7 @@ def served(tmp_path, monkeypatch, install_worker):
         "OLD": (0, 40.0 * np.cumprod(1 + common + rng.normal(0, 0.008, len(sessions)))),
         "MID": (0, 25.0 * np.cumprod(1 + 1.3 * common + rng.normal(0, 0.01, len(sessions)))),
         "YNG": (len(sessions) - 200, 10.0 * np.cumprod(1 + 2.0 * common + rng.normal(0, 0.02, len(sessions)))),
+        "GAP": (len(sessions) - 340, 15.0 * np.cumprod(1 + 1.5 * common + rng.normal(0, 0.015, len(sessions)))),
     }
     asked: list[str] = []
     state = {"delay": 0.0, "gate": None, "late": set(), "drop": {}, "extra": {}}
@@ -285,7 +286,7 @@ def test_a_young_basket_is_not_run_and_says_whose_listing_sets_its_start(served)
     d = study(legs="OLD:50,YNG:50").json()["data"]
     assert d["study"] is None and d["index"]["start"] == first and d["index"]["start_binding"] == ["YNG"]
     assert d["index"]["sessions"] == n and 180 < n < 200
-    assert d["not_run"] == (f"Not enough history yet: the index starts {first} (YNG's first close) and has {n} sessions; "
+    assert d["not_run"] == (f"Not enough history yet: the index starts {first} (YNG's first close) and spans {n} sessions; "
                             "the first 2σ move over 5 sessions can be judged on its 245th session (240 5-session moves in a "
                             "252-session window).")
     # a 20-session window needs more; the answer counts it
@@ -302,7 +303,25 @@ def test_a_start_set_by_a_missing_close_says_which_name_lacked_it(served):
     assert d["study"] is None and d["index"]["start"] == cal[1] and d["index"]["start_kind"] == "gap"
     assert d["index"]["start_binding"] == ["OLD"]
     assert d["not_run"].startswith(f"Not enough history yet: the index starts {cal[1]} (the first session every name has "
-                                   f"a close; OLD had none on {first}) and has {len(cal) - 1} sessions;")
+                                   f"a close; OLD had none on {first}) and spans {len(cal) - 1} sessions;")
+
+
+def test_a_gapped_index_shorter_in_closes_than_the_window_is_still_run_when_its_span_allows(served):
+    """Spec §2 (Codex DR-08): the gate counts the index's calendar span, not its closes. GAP's 300-odd
+    sessions lack 15 closes, three in each 60-session stretch, so it has fewer closes than 240 + 60, yet the
+    last 252-session window holds 240 sixty-session moves and the engine forms a z-score there."""
+    from src.desk import basket as bk
+
+    first = served["sessions"][len(served["sessions"]) - 340]
+    cal = [d.strftime("%Y-%m-%d") for d in es.sessions_between(es.session_calendar(first, SESSION), first, SESSION)]
+    cal = cal[len(cal) - 312:]                    # the index's span: the last 312 sessions
+    served["state"]["drop"] = {"GAP": {d for i, d in enumerate(cal) if i % 60 in (12, 13, 14)}
+                               | set(served["sessions"][len(served["sessions"]) - 340:]) - set(cal)}
+    d = study(legs="OLD:50,GAP:50", window="60").json()["data"]
+    ix = d["index"]
+    assert ix["start"] == cal[0] and ix["sessions"] + ix["missing_sessions"] == 312
+    assert ix["sessions"] == 297 < es.Z_MIN_PRESENT + 60
+    assert d["not_run"] is None and d["study"] is not None
 
 
 def test_a_repeat_is_a_lookup(served):

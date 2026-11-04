@@ -35,12 +35,13 @@ question). The basket is both the shock and the target. There is no co-condition
   every name has a close (the page's rule, `price_basket`). That is usually the youngest name's first
   close (that name binds); when a name lacks a close on that day, the start is the next session every
   name has one (the names without a close the session before bind); when every name starts the same day,
-  it is that day. Names that share no session are refused (422) with the page's words. The first session whose `w`-session move can have a z-score is the index's (240 + `w`)th: its
-  move reads the session `w` before it, and the z window needs 240 moves present (it reaches back 252).
-  An index with fewer sessions is not run, and the answer says why, with the index's start and why it is
-  there (the binding name's first close, or the names that had no close the session before). Nothing is backfilled and no name is dropped. An index long enough is handed to the
-  engine unchanged, which decides the rest by its own masks: a session whose window has zero variance has
-  no z-score, and a question with no event or no evaluable session answers with the engine's own empty
+  it is that day. Names that share no session are refused (422) with the page's words. No `w`-session move can have a z-score before the (240 + `w`)th session of the index's calendar span
+  (sessions some name lacks counted): a move reads the session `w` before it, and the z window needs 240
+  moves present (it reaches back 252). An index whose span is shorter is not run, and the answer says why, with the index's start and why it is
+  there (the binding name's first close, or the names that had no close the session before). Nothing is backfilled and no name is dropped. An index whose span is long enough is handed
+  to the engine unchanged, which decides the rest by its own masks: a span with gaps can still lack 240
+  moves in every window (the engine then refuses, and the answer gives its words), a session whose window
+  has zero variance has no z-score, and a question with no event or no evaluable session answers with the engine's own empty
   state or refusal.
 - **Prices.** Split- and dividend-adjusted closes (total return), as `/basket/price` reads them; a bar
   without an adjusted close is left out, never priced from its raw close, and counted (Codex R-07 of
