@@ -155,7 +155,7 @@ const CALLOUT_P1 = "The index says Normal; the weakest rung says stress. CCC spr
 const CALLOUT_P1_DETAILS = "Both are true: the two readings describe different rungs of the ladder.";
 const CALLOUT_P2 = "What it means: the market is charging default risk only for the marginal borrower. Watch single-B (297 bps today): stress migrating from CCC into B is how a Normal state turns Stressed (HY above 400 bps).";
 const DISCLOSURE_LINE =
-  "ICE BofA option-adjusted spread indices via FRED, monthly observations · classification checks rules top-down (Crisis, then Stressed, then Tight, else Normal) · transition odds are empirical frequencies from stored monthly states · classification and transition odds computed by the same analytics module the memo reads. Source: ICE Data Indices, LLC via FRED®. Copyright, 2023, ICE Data Indices.";
+  "ICE BofA option-adjusted spread indices via FRED, monthly observations · classification checks rules top-down (Crisis, then Stressed, then Tight, else Normal) · transition odds are empirical frequencies from stored monthly states · classification and transition odds computed by the same analytics module the memo reads.";
 const SUMMARY_LABELS = ["HY OAS", "IG OAS", "CCC distress", "HY / IG ratio", "Stays Normal · 3m", "LBO all-in"];
 const IDS_IN_ORDER = ["credit-hero", "credit-summary", "oas", "quality-ladder", "credit-state-odds", "financing"];
 const CARD_NAMES = ["High yield", "Investment grade", "BB", "Single-B", "CCC"];

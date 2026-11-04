@@ -58,17 +58,28 @@ const lineStyle: CSSProperties = {
   color: "var(--text-3)",
 };
 
-/** The site-wide line under every app and Desk page: the FRED API notice, the
- * link to the FRED API Terms of Use, and a link to the full credits. */
+/** The one quiet line at the bottom of every page: the FRED API notice
+ * (Requirements (a)), the link to the FRED API Terms of Use (Requirements (d))
+ * and a link to the full credits. The terms statement, the source credits and
+ * the copyright notices live on Methodology (NOTICES_PATH). */
+export function DataNoticeLine() {
+  return (
+    <>
+      {FRED_API_NOTICE} ·{" "}
+      <a href={FRED_API_TERMS_URL} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
+        FRED® API Terms of Use ↗
+      </a>{" "}
+      · <Link to={NOTICES_PATH} style={{ color: "inherit" }}>Sources</Link>
+    </>
+  );
+}
+
+/** The site-wide footer under every app and Desk page. */
 export function DataNoticeFooter({ style }: { style?: CSSProperties }) {
   return (
     <footer className="mrr-data-notice" data-testid="data-notice" style={{ padding: "16px 0 24px", ...style }}>
       <p style={lineStyle}>
-        {FRED_API_NOTICE} {FRED_API_TERMS_STATEMENT}{" "}
-        <a href={FRED_API_TERMS_URL} target="_blank" rel="noreferrer" style={{ color: "inherit" }}>
-          FRED® API Terms of Use ↗
-        </a>{" "}
-        · <Link to={NOTICES_PATH} style={{ color: "inherit" }}>Data sources and copyright notices</Link>
+        <DataNoticeLine />
       </p>
     </footer>
   );

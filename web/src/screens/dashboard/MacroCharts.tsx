@@ -23,7 +23,6 @@ import { CREDIT_OAS_IDS } from "../shared/fresh-state";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { recessionVintage, vintageOf } from "../shared/recession-vintage";
 import { useFreshReport } from "../shared/useFreshReport";
-import { ICE_CREDIT } from "../shared/DataNotice";
 import LineChart from "./LineChart";
 
 export const MACRO_CHARTS_HASH = "#macro-charts";
@@ -255,8 +254,7 @@ export default function MacroCharts({ recession, credit, onOpenChange }: MacroCh
                       "—"
                     )}
                     , investment-grade at {ig ? fmtBpsLevel(ig.value_bps) : "—"}; spreads widen when credit stress builds. FRED BAML series:{" "}
-                    {basisWords(hy?.history_basis, "high-yield")}, {basisWords(ig?.history_basis, "investment-grade")}.{" "}
-                    {ICE_CREDIT}
+                    {basisWords(hy?.history_basis, "high-yield")}, {basisWords(ig?.history_basis, "investment-grade")}.
                   </Caption>
                   <Stamp block source={SRC.baml} label={report.group(CREDIT_OAS_IDS, credit.data?.freshness)} />
                 </>

@@ -43,7 +43,6 @@ import SpreadMonitor from "./SpreadMonitor";
 import QualityLadder from "./QualityLadder";
 import CreditStateOdds from "./CreditStateOdds";
 import FinancingConditions from "./FinancingConditions";
-import { ICE_CREDIT } from "../shared/DataNotice";
 
 /* ── small shared bits ─────────────────────────────────────────────────── */
 
@@ -350,7 +349,7 @@ export default function CreditScreen() {
       <DisclosureLine>
         ICE BofA option-adjusted spread indices via FRED, monthly observations · classification checks rules top-down (Crisis, then
         Stressed, then Tight, else Normal) · transition odds are empirical frequencies from stored monthly states · classification and
-        transition odds computed by the same analytics module the memo reads. {ICE_CREDIT}
+        transition odds computed by the same analytics module the memo reads.
       </DisclosureLine>
     </div>
   );
