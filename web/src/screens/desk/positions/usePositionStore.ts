@@ -8,10 +8,12 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { useMacro, useTechnicals } from "../data/api";
+import { useQueries } from "@tanstack/react-query";
+import { current, deskGet, retry, useInstruments, useMacro, useTechnicals } from "../data/api";
+import type { TechnicalsResponse } from "../data/types";
 import { eitherFailed, type QueryLike } from "../kit/ui";
-import { levelsFrom, type Levels } from "./monitor";
-import { POSITIONS_KEY, isOpen, loadPositions, writePositions, type PositionStore, type SaveResult } from "./store";
+import { etfLevelFrom, levelsFrom, tenorsFrom, type EtfLevel, type Levels } from "./monitor";
+import { POSITIONS_KEY, familyOf, isOpen, loadPositions, monitoredSeriesOf, parseSeries, writePositions, type PositionStore, type SaveResult } from "./store";
 
 export function usePositionStore(): [PositionStore, (fn: (current: PositionStore) => PositionStore) => SaveResult] {
   const [store, setStore] = useState<PositionStore>(() => loadPositions());
@@ -31,13 +33,45 @@ export function usePositionStore(): [PositionStore, (fn: (current: PositionStore
   return [store, change];
 }
 
-/** Today's levels for the series the open automatic positions read; `always` asks for both (the Promote form's chips). */
-export function useLevels(store: PositionStore, always = false): Levels & { loading: boolean; reads: QueryLike } {
+/**
+ * Today's levels for the series the open automatic positions read; `always` asks for the S&P, the curve and
+ * the stored-instrument list (the Promote form's chips), and `draft` the form's instrument: its ETF level is
+ * asked only once `/instruments` lists it as stored, so typing a ticker never sends a provider lookup (P1c).
+ * Only the reads an open position depends on join `reads`, the card's failed scope: the form's draft does not.
+ */
+export function useLevels(store: PositionStore, always = false, draft = ""): Levels & { loading: boolean; reads: QueryLike } {
   const open = store.positions.filter((p) => isOpen(p) && p.monitoring === "automatic");
-  const tech = useTechnicals({ enabled: always || open.some((p) => p.trigger?.series === "spx") });
-  const macro = useMacro({ enabled: always || open.some((p) => p.trigger?.series === "curve_2s10s") });
-  // desk/usability §14.10, §14.12: whether the levels are still asked, and the two requests as one failed scope.
-  return { ...levelsFrom(tech.data, macro.data), loading: tech.isLoading || macro.isLoading, reads: eitherFailed(tech, macro) };
+  const refs = open.map((p) => parseSeries(p.trigger?.series));
+  const heldEtfs = [...new Set(refs.flatMap((r) => (r?.kind === "etf" ? [r.symbol] : [])))];
+  const tech = useTechnicals({ enabled: always || refs.some((r) => r?.kind === "spx") });
+  const macro = useMacro({ enabled: always || open.some((p) => p.trigger && familyOf(p.trigger.series) === "rate") });
+  const inst = useInstruments({ enabled: always || heldEtfs.length > 0 });
+  // A list that is not served (loading or failed) is null: whether a ticker is stored cannot be told.
+  const stored = inst.data?.instruments ? inst.data.instruments.filter((i) => i.kind === "etf").map((i) => i.symbol) : null;
+  const draftRef = parseSeries(monitoredSeriesOf(draft));
+  const draftEtf = draftRef?.kind === "etf" && stored?.includes(draftRef.symbol) ? draftRef.symbol : null;
+  // A held ETF is asked only while the list names it stored: a record imported for any other ticker never
+  // sends a provider lookup from the monitor (/technicals?symbol= falls back to EODHD for one it does not store).
+  const asked = [...new Set([...heldEtfs.filter((s) => stored?.includes(s)), ...(draftEtf ? [draftEtf] : [])])].sort();
+  const etfQs = useQueries({
+    queries: asked.map((symbol) => ({
+      // The key useTechnicals({ symbol }) uses, so the Technicals page and the monitor share one answer.
+      queryKey: ["desk-v2", "/technicals", { symbol }],
+      queryFn: ({ signal }: { signal: AbortSignal }) => deskGet<TechnicalsResponse>("/technicals", { symbol }, { signal }),
+      staleTime: 60_000,
+      retry,
+    })),
+  }).map((q) => current(q));
+  const etfs: Record<string, EtfLevel> = {};
+  asked.forEach((symbol, i) => {
+    const level = etfLevelFrom(symbol, etfQs[i].data as TechnicalsResponse | undefined);
+    if (level) etfs[symbol] = level;
+  });
+  const held = etfQs.filter((_, i) => heldEtfs.includes(asked[i]));
+  const etfReads: QueryLike[] = heldEtfs.length ? [inst, ...held] : [];
+  const loading = tech.isLoading || macro.isLoading || (heldEtfs.length > 0 && (inst.isLoading || held.some((q) => q.isLoading)));
+  // desk/usability §14.10, §14.12: whether the levels are still asked, and the requests as one failed scope.
+  return { ...levelsFrom(tech.data, macro.data), tenors: tenorsFrom(macro.data), etfs, stored, loading, reads: eitherFailed(tech, macro, ...etfReads) };
 }
 
 /** The message for a write the browser did not keep. */

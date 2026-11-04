@@ -36,7 +36,8 @@ describe("the levels a position reads", () => {
     expect(seriesOf(" s&p  500 ")).toBe("spx");
     expect(seriesOf("spx")).toBe("spx");
     expect(seriesOf("^GSPC")).toBe("spx");
-    expect(seriesOf("SPY")).toBeNull();
+    // P1c: SPY is never the index; a ticker is its own ETF series, monitored only when /instruments stores it.
+    expect(seriesOf("SPY")).toBe("etf:SPY");
     expect(seriesOf("SPX Dec 26 call spread")).toBeNull();
     expect(seriesOf("2s10s")).toBe("curve_2s10s");
     expect(seriesOf("2s10s steepener")).toBeNull();
@@ -62,8 +63,11 @@ describe("the plan Save follows (B-10)", () => {
     expect(planFor("below_50d", "S&P 500", LEVELS, "basket")).toEqual({ kind: "manual" });
     expect(planFor("below_50d", "S&P 500", LEVELS, "study")).toMatchObject({ kind: "automatic" });
   });
-  it("saves every other subject and rule as manual: the 200-day, a custom level, SPY, NDX vs SPX", () => {
-    for (const [id, inst] of [["below_200d", "S&P 500"], [null, "S&P 500"], ["regime_changes", "S&P 500"], ["below_50d", "SPY"], ["below_50d", "NDX vs SPX"]] as const) expect(planFor(id, inst, LEVELS), `${id} ${inst}`).toEqual({ kind: "manual" });
+  it("saves every other subject and rule as manual: the 200-day, a custom level, a ticker the store does not hold, NDX vs SPX", () => {
+    // P1c: SPY was in this list as an unserved subject; it is a stored ETF now (its own block below), so the
+    // unserved ticker here is NVDA, against the served list of stored ETFs.
+    const withList = { ...LEVELS, stored: ["SPY", "GLD"] };
+    for (const [id, inst] of [["below_200d", "S&P 500"], [null, "S&P 500"], ["regime_changes", "S&P 500"], ["below_50d", "NVDA"], ["below_200d", "SPY"], ["below_50d", "NDX vs SPX"]] as const) expect(planFor(id, inst, withList), `${id} ${inst}`).toEqual({ kind: "manual" });
   });
   it("refuses a level already crossed at entry, and one whose series is not served, with a sentence", () => {
     const through = planFor("above_50d", "S&P 500", LEVELS);
