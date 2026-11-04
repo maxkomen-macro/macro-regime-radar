@@ -52,27 +52,7 @@ def load_vintage_labels(path: Path) -> tuple[list[str], dict[str, dict[str, str]
     return sorted(by_v), by_v
 
 
-def snapshot_db(src: Path, dst: Path) -> Path:
-    """A consistent copy of `src` through SQLite's backup API (Codex S-3): it
-    carries every committed transaction, including frames still in a WAL file
-    that a byte copy of the main file would miss. `src` is opened read-only."""
-    src_r, dst_r = Path(src).resolve(), Path(dst).resolve()
-    if src_r == dst_r or dst_r.name.startswith(src_r.name + "-") and dst_r.parent == src_r.parent:
-        # Codex S-6: never write over (or beside the WAL/SHM files of) the source
-        raise ValueError(f"snapshot destination {dst} is the source database or one of its files")
-    if not src_r.is_file():
-        raise FileNotFoundError(f"source database {src} not found")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    if dst.exists():
-        dst.unlink()
-    source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
-    target = sqlite3.connect(dst)
-    try:
-        source.backup(target)
-    finally:
-        target.close()
-        source.close()
-    return dst
+snapshot_db = safeio.snapshot_db  # moved to safeio (shared by all three scripts, Codex S-8)
 
 
 SCRATCH_FILES = ("served.db", "governed_start.db")

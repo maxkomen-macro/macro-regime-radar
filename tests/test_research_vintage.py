@@ -3,6 +3,8 @@
 Research code: nothing served imports it. These pin the real-time
 reconstruction rules the study's counts rest on, on synthetic ALFRED tables.
 """
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -327,3 +329,74 @@ def test_the_studies_run_refuses_an_aliased_output_before_computing(tmp_path):
                               "--out", str(out)])
     assert _labels(src) == [("2024-01-01", "Overheating")]
     assert not (tmp_path / "scratch").exists()
+
+
+# Codex S-8: a refresh during a run cannot pass the replica check on one
+# version of the database and report results from another.
+
+def _refresh(path):
+    import sqlite3
+
+    with sqlite3.connect(path) as c:
+        c.execute("UPDATE regimes SET label = 'Stagflation'")
+
+
+class _Stop(Exception):
+    pass
+
+
+def test_the_regime_run_validates_and_compares_one_snapshot(tmp_path, monkeypatch):
+    from scripts.research import alfred as al, vintage_regime as vr
+
+    src = _db(tmp_path / "store.db")
+    seen = {}
+    monkeypatch.setattr(al, "load", lambda cache, sid: pd.DataFrame())
+    monkeypatch.setattr(vr, "replay_all", lambda ind, cpi: {})
+    monkeypatch.setattr(vr, "enforce_replica", lambda diag: None)
+
+    def check(db, reps, ind_t, cpi_t):
+        seen["checked"] = (Path(db), _labels(db))
+        _refresh(src)  # a refresh lands after validation
+        return {}
+
+    def served(db):
+        seen["compared"] = (Path(db), _labels(db))
+        raise _Stop
+
+    monkeypatch.setattr(vr, "check_replica", check)
+    monkeypatch.setattr(vr, "served_rows", served)
+    with pytest.raises(_Stop):
+        vr.run(tmp_path / "cache", src, tmp_path / "out")
+    (p1, l1), (p2, l2) = seen["checked"], seen["compared"]
+    assert p1 == p2 and p1.resolve() != src.resolve()
+    assert l1 == l2 == [("2024-01-01", "Overheating")]
+    assert _labels(src) == [("2024-01-01", "Stagflation")]  # the refresh happened; the run never saw it
+    assert not p1.exists()  # the snapshot is removed when the run ends
+
+
+def test_the_recession_run_checks_and_fits_on_one_snapshot(tmp_path, monkeypatch):
+    from scripts.research import alfred as al, vintage_recession as vrec
+    from src.analytics import recession as rec
+
+    src = _db(tmp_path / "store.db")
+    seen = {}
+    monkeypatch.setattr(al, "load", lambda cache, sid: pd.DataFrame())
+    monkeypatch.setattr(rec, "_load_raw", lambda sid, conn, scale=1.0: pd.Series(dtype=float))
+    monkeypatch.setattr(al, "store_gap", lambda stored, table: {})
+
+    def store_ok(gaps):
+        _refresh(src)  # a refresh lands after the store check
+
+    def fit():
+        seen["fit"] = (Path(rec.DB_PATH), _labels(rec.DB_PATH))
+        raise _Stop
+
+    original = rec.DB_PATH
+    monkeypatch.setattr(al, "enforce_store_match", store_ok)
+    monkeypatch.setattr(rec, "train_recession_model", fit)
+    with pytest.raises(_Stop):
+        vrec.run(tmp_path / "cache", src, tmp_path / "out")
+    path, labels = seen["fit"]
+    assert path.resolve() != src.resolve() and labels == [("2024-01-01", "Overheating")]
+    assert _labels(src) == [("2024-01-01", "Stagflation")]
+    assert rec.DB_PATH == original  # the module's path is restored

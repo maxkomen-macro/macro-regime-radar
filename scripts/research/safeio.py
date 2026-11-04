@@ -10,10 +10,16 @@ Two rules:
   into place with os.replace, which replaces a symlink rather than writing
   through it, so even an output path created after the check cannot truncate
   the file it points at.
+
+And one read rule (Codex S-3, S-8): a run reads the database only through one
+SQLite backup-API snapshot, so its replica check and its results see the same
+data even when a refresh rewrites the database mid-run.
 """
 from __future__ import annotations
 
+import contextlib
 import os
+import sqlite3
 import tempfile
 from pathlib import Path
 
@@ -68,3 +74,35 @@ def write_bytes(path: Path | str, data: bytes, *, db: Path | str | None = None) 
 
 def write_text(path: Path | str, text: str, *, db: Path | str | None = None) -> None:
     write_bytes(path, text.encode("utf-8"), db=db)
+
+
+def snapshot_db(src: Path | str, dst: Path | str) -> Path:
+    """A consistent copy of `src` through SQLite's backup API (Codex S-3): it
+    carries every committed transaction, including frames still in a WAL file
+    that a byte copy of the main file would miss. `src` is opened read-only."""
+    src, dst = Path(src), Path(dst)
+    src_r, dst_r = src.resolve(), dst.resolve()
+    if src_r == dst_r or dst_r.name.startswith(src_r.name + "-") and dst_r.parent == src_r.parent:
+        # Codex S-6: never write over (or beside the WAL/SHM files of) the source
+        raise ValueError(f"snapshot destination {dst} is the source database or one of its files")
+    if not src_r.is_file():
+        raise FileNotFoundError(f"source database {src} not found")
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        dst.unlink()
+    source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    target = sqlite3.connect(dst)
+    try:
+        source.backup(target)
+    finally:
+        target.close()
+        source.close()
+    return dst
+
+
+@contextlib.contextmanager
+def snapshot(db: Path | str):
+    """A private, temporary backup-API copy of `db` for one run (Codex S-8),
+    deleted on exit. Every read of the run goes through it."""
+    with tempfile.TemporaryDirectory(prefix="vintage-snapshot-") as d:
+        yield snapshot_db(db, Path(d) / "source.db")

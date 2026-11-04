@@ -113,50 +113,55 @@ def run(cache: Path, db: Path, out: Path) -> dict:
     from src.analytics import recession as rec
 
     safeio.guard_outputs(db, [out / f for f in OUTPUTS])  # Codex S-7: before any computation
-    rec.DB_PATH = db  # read-only either way (dbpath.connect_ro)
     tables = {s: alfred.load(cache, s) for s in VINTAGED}
-    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
-    conn.row_factory = sqlite3.Row
-    try:
-        # Codex S-5: the cache must be the store's data before anything is scored
-        store_check = {sid: alfred.store_gap(rec._load_raw(sid, conn), tables[sid]) for sid in VINTAGED}
-        alfred.enforce_store_match(store_check)
-        names = list(rec.FEATURE_NAMES)
-        model, scaler, _ = rec.train_recession_model()
-        served_feat = _frame(rec, conn)
-        X = served_feat[names].shift(3).dropna()
-        served = pd.Series(model.predict_proba(scaler.transform(X.to_numpy()))[:, list(model.classes_).index(1)] * 100.0,
-                           index=X.index)
-        served = served[served.index <= pd.Timestamp.today()]
-        # the served headline as the module computes it, to pin the replica
-        metrics = rec.get_recession_metrics()
-        replica_gap = enforce_replica(metrics["recession_prob_series"], served)
+    original_path = rec.DB_PATH
+    # Codex S-8: the store check, the replica check, every fit and every feature
+    # frame read one snapshot, so a refresh mid-run cannot mix two versions
+    with safeio.snapshot(db) as snap:
+        rec.DB_PATH = snap  # read-only either way (dbpath.connect_ro)
+        conn = sqlite3.connect(f"file:{snap}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            # Codex S-5: the cache must be the store's data before anything is scored
+            store_check = {sid: alfred.store_gap(rec._load_raw(sid, conn), tables[sid]) for sid in VINTAGED}
+            alfred.enforce_store_match(store_check)
+            names = list(rec.FEATURE_NAMES)
+            model, scaler, _ = rec.train_recession_model()
+            served_feat = _frame(rec, conn)
+            X = served_feat[names].shift(3).dropna()
+            served = pd.Series(model.predict_proba(scaler.transform(X.to_numpy()))[:, list(model.classes_).index(1)] * 100.0,
+                               index=X.index)
+            served = served[served.index <= pd.Timestamp.today()]
+            # the served headline as the module computes it, to pin the replica
+            metrics = rec.get_recession_metrics()
+            replica_gap = enforce_replica(metrics["recession_prob_series"], served)
 
-        known = row_known_dates(tables)
-        recs = []
-        for p in served.index:
-            pos = served_feat.index.get_loc(p)
-            r = served_feat.index[pos - 3]  # the row the score reads (recession_provenance's rule)
-            day = known.get(r)
-            if not isinstance(day, str):
-                continue
-            with vintage_loader(rec, tables, day, target_vintage=False):
-                feat_v = _frame(rec, conn)
-            if r not in feat_v.index or feat_v.loc[r, names].isna().any():
-                continue
-            rec_row = {"month": p.strftime("%Y-%m"), "inputs_row": r.strftime("%Y-%m"), "row_known": day,
-                       "served": float(served[p]), "vintage_only": _score(model, scaler, feat_v.loc[r], names),
-                       "unrate_served": float(served_feat.loc[r, "unemployment"]), "unrate_first": float(feat_v.loc[r, "unemployment"]),
-                       "indpro_yoy_served": float(served_feat.loc[r, "indpro_yoy"]), "indpro_yoy_first": float(feat_v.loc[r, "indpro_yoy"])}
-            if day >= alfred.first_release(tables["USREC"])["published"].min():
-                with vintage_loader(rec, tables, day, target_vintage=True):
-                    m2, s2, _ = rec.train_recession_model()
-                    feat_t = _frame(rec, conn)
-                if m2 is not None and r in feat_t.index:
-                    rec_row["point_in_time"] = _score(m2, s2, feat_t.loc[r], names)
-            recs.append(rec_row)
-    finally:
-        conn.close()
+            known = row_known_dates(tables)
+            recs = []
+            for p in served.index:
+                pos = served_feat.index.get_loc(p)
+                r = served_feat.index[pos - 3]  # the row the score reads (recession_provenance's rule)
+                day = known.get(r)
+                if not isinstance(day, str):
+                    continue
+                with vintage_loader(rec, tables, day, target_vintage=False):
+                    feat_v = _frame(rec, conn)
+                if r not in feat_v.index or feat_v.loc[r, names].isna().any():
+                    continue
+                rec_row = {"month": p.strftime("%Y-%m"), "inputs_row": r.strftime("%Y-%m"), "row_known": day,
+                           "served": float(served[p]), "vintage_only": _score(model, scaler, feat_v.loc[r], names),
+                           "unrate_served": float(served_feat.loc[r, "unemployment"]), "unrate_first": float(feat_v.loc[r, "unemployment"]),
+                           "indpro_yoy_served": float(served_feat.loc[r, "indpro_yoy"]), "indpro_yoy_first": float(feat_v.loc[r, "indpro_yoy"])}
+                if day >= alfred.first_release(tables["USREC"])["published"].min():
+                    with vintage_loader(rec, tables, day, target_vintage=True):
+                        m2, s2, _ = rec.train_recession_model()
+                        feat_t = _frame(rec, conn)
+                    if m2 is not None and r in feat_t.index:
+                        rec_row["point_in_time"] = _score(m2, s2, feat_t.loc[r], names)
+                recs.append(rec_row)
+        finally:
+            conn.close()
+            rec.DB_PATH = original_path
 
     df = pd.DataFrame(recs).set_index("month")
     safeio.write_text(out / "recession_histories.csv", df.to_csv(), db=db)

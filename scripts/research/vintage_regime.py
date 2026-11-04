@@ -291,9 +291,12 @@ def run(cache: Path, db: Path, out: Path) -> dict:
     safeio.guard_outputs(db, outputs)  # Codex S-7: before any computation
     ind_t, cpi_t = alfred.load(cache, "INDPRO"), alfred.load(cache, "CPIAUCSL")
     reps = replay_all(ind_t, cpi_t)
-    replica = check_replica(db, reps, ind_t, cpi_t)
-    enforce_replica(replica)
-    stored = served_rows(db)
+    # Codex S-8: the replica check and the served rows compared below read one
+    # snapshot, so a refresh between them cannot pass one version and report another
+    with safeio.snapshot(db) as snap:
+        replica = check_replica(snap, reps, ind_t, cpi_t)
+        enforce_replica(replica)
+        stored = served_rows(snap)
     served = stored[stored["computed_at"] == stored["computed_at"].max()]
     known = first_known_dates(ind_t, cpi_t)
     h = histories(reps, served, known)
