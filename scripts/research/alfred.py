@@ -127,6 +127,36 @@ def latest(table: pd.DataFrame) -> pd.Series:
     return as_of(table, table["rs"].max())
 
 
+class StoreMismatch(RuntimeError):
+    """ALFRED's latest vintage is not the data the store holds (Codex S-5)."""
+
+
+def store_gap(stored: pd.Series, table: pd.DataFrame) -> dict:
+    """Compare a stored series with the table's latest vintage over the stored
+    span (first stored month on): the months on each side, the months in
+    both, and the largest absolute difference over them (inf when none)."""
+    lat = latest(table)
+    if len(stored):
+        lat = lat[lat.index >= stored.index.min()]
+    j = stored.index.intersection(lat.index)
+    err = float((stored.loc[j] - lat.loc[j]).abs().max()) if len(j) else float("inf")
+    return {"stored_months": int(len(stored)), "alfred_months": int(len(lat)), "months": int(len(j)), "max_abs_diff": err}
+
+
+def enforce_store_match(gaps: dict[str, dict], tol: float = 1e-9) -> None:
+    """Raise unless, for every series, the store and ALFRED's latest vintage
+    hold the same months with the same values: a stale or partial cache, or a
+    store refreshed after the cache, stops the run before any result."""
+    problems = []
+    for sid, g in gaps.items():
+        if g["stored_months"] == 0 or g["months"] != g["stored_months"] or g["months"] != g["alfred_months"]:
+            problems.append(f"{sid}: {g['stored_months']} stored months, {g['alfred_months']} ALFRED months, {g['months']} in both")
+        if not g["max_abs_diff"] <= tol:
+            problems.append(f"{sid}: ALFRED's latest vintage differs from the store by up to {g['max_abs_diff']}")
+    if problems:
+        raise StoreMismatch("ALFRED cache does not match the store: " + "; ".join(problems))
+
+
 def vintage_dates(table: pd.DataFrame) -> list[str]:
     """Every date on which ALFRED records a change to the series."""
     return sorted(table["rs"].unique().tolist())

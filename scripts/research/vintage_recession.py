@@ -116,6 +116,9 @@ def run(cache: Path, db: Path, out: Path) -> dict:
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     conn.row_factory = sqlite3.Row
     try:
+        # Codex S-5: the cache must be the store's data before anything is scored
+        store_check = {sid: alfred.store_gap(rec._load_raw(sid, conn), tables[sid]) for sid in VINTAGED}
+        alfred.enforce_store_match(store_check)
         names = list(rec.FEATURE_NAMES)
         model, scaler, _ = rec.train_recession_model()
         served_feat = _frame(rec, conn)
@@ -172,6 +175,7 @@ def run(cache: Path, db: Path, out: Path) -> dict:
 
     res = {
         "replica_max_abs_gap_pp": replica_gap,
+        "alfred_latest_vs_stored": store_check,
         "served_training": {"n": int(metrics["training_n"]), "window": metrics["training_window"],
                             "recessions": metrics["training_recessions"]},
         "vintage_only_vs_served": cmp("vintage_only"),
