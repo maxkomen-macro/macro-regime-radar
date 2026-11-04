@@ -292,6 +292,19 @@ def test_a_young_basket_is_not_run_and_says_whose_listing_sets_its_start(served)
     assert "judged on its 260th session" in study(legs="OLD:50,YNG:50", window="20").json()["data"]["not_run"]
 
 
+def test_a_start_set_by_a_missing_close_says_which_name_lacked_it(served):
+    """Spec §2 (Codex DR-07): the start is the first session every name has a close; when YNG's first close
+    falls on a session OLD lacks, the index starts on the next one and names OLD."""
+    first = served["sessions"][len(served["sessions"]) - 200]
+    cal = [d.strftime("%Y-%m-%d") for d in es.sessions_between(es.session_calendar(first, SESSION), first, SESSION)]
+    served["state"]["drop"] = {"OLD": {first}}
+    d = study(legs="OLD:50,YNG:50").json()["data"]
+    assert d["study"] is None and d["index"]["start"] == cal[1] and d["index"]["start_kind"] == "gap"
+    assert d["index"]["start_binding"] == ["OLD"]
+    assert d["not_run"].startswith(f"Not enough history yet: the index starts {cal[1]} (the first session every name has "
+                                   f"a close; OLD had none on {first}) and has {len(cal) - 1} sessions;")
+
+
 def test_a_repeat_is_a_lookup(served):
     a = study(legs="OLD:60,MID:40").json()["data"]
     n = len(served["asked"])

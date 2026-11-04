@@ -704,7 +704,12 @@ def _study_answer(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], m
     need = es.Z_MIN_PRESENT + w
     if priced["sessions"] < need:
         binding = ", ".join(priced["start_binding"])
-        whose = f"{binding}'s first close" if priced["start_kind"] == "first_close" else "the first session every name has a close"
+        if priced["start_kind"] == "first_close":
+            whose = f"{binding}'s first close"
+        elif priced["start_kind"] == "gap":
+            whose = f"the first session every name has a close; {binding} had none on {priced['start_gap_session']}"
+        else:
+            whose = "the first session every name has a close"
         return {"ok": False, "index": block,
                 "reason": (f"Not enough history yet: the index starts {priced['start']} ({whose}) and has {priced['sessions']} "
                            f"sessions; the first 2σ move over {w} sessions can be judged on its {need}th session "
