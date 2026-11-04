@@ -257,12 +257,20 @@ def test_early_dividends_converge_to_quantlib_within_tolerance(case):
 
 
 def test_an_early_dividend_is_refined_and_charged():
+    # Before design S this context needed the (2N, 4N) pair; with the step into each dividend close smoothed, its
+    # (N, 2N) pair agrees and is charged as such. The value is still checked against QuantLib.
     c = om.Context(True, 100.0, 128.90, 187, 0.074, 0.0, 0.804, ((3, 1.70), (94, 1.70), (185, 1.70)))
     charges = []
     values, _, ok = om.american([c], charges.append)
     n = om.steps_for(c.days)
-    assert ok[0] and len(charges) >= 3 and charges[:3] == [n * n // 2, (2 * n) ** 2 // 2, (4 * n) ** 2 // 2]
+    assert ok[0] and charges == [n * n // 2, (2 * n) ** 2 // 2]
     assert abs(values[0] - 13.10291) <= om.tolerance(13.10291, 100.0)  # QuantLib FD, grids 4,000 and 8,000
+    # a refinement is charged lattice by lattice: B8 (dividend on day 2) still refines to (2N, 4N) on its delta test
+    b8 = om.Context(True, 100.0, 87.03281448090632, 341, 0.02436936153335026, 0.0, 0.12057305288130349, ((2, 2.5),))
+    charges = []
+    _, _, ok = om.american([b8], charges.append)
+    n = om.steps_for(b8.days)
+    assert ok[0] and charges == [n * n // 2, (2 * n) ** 2 // 2, (4 * n) ** 2 // 2]
 
 
 def test_a_context_that_does_not_converge_is_flagged():

@@ -1,0 +1,354 @@
+{
+ "about": "Independent references for the dividend-fix named regressions (design S): the bench's Crank-Nicolson FD (scripts/options_bench/fd.py with the D-2 fix, commit 07a6f5c) at three space and time levels, from the corrected-reference reruns of seeds 20261029 and 20261026 (2026-11-03). u is the reference's stated uncertainty. divsens holds the same case with every owed dividend scaled by 1.1 (up) and 0.9 (down).",
+ "div_bump": 0.1,
+ "rows": [
+  {
+   "id": "named/S29-G2-1239",
+   "seed": 20261029,
+   "case": "G2-dividends/1239",
+   "value": {
+    "ref": 6.434389925605536,
+    "u": 3.1259173779073854e-05,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.6906586449265902,
+    "u": 4.72351787679498e-06,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 6.363021615590457,
+     "u": 5.083376862442784e-05,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 6.511565477010467,
+     "u": 0.0001874652787402415,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S29-G4-54",
+   "seed": 20261029,
+   "case": "G4-negrate/54",
+   "value": {
+    "ref": 5.084199461664478,
+    "u": 0.00016848139079124778,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.6907560954971087,
+    "u": 2.976646258270509e-05,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 5.031080648972027,
+     "u": 0.0004823586777965814,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 5.142908207951601,
+     "u": 0.00014636673990541644,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S29-G2-1725",
+   "seed": 20261029,
+   "case": "G2-dividends/1725",
+   "value": {
+    "ref": 16.301823497578553,
+    "u": 0.00014164164303761848,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.6302543462936101,
+    "u": 6.867629197848586e-06,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 16.01564963205823,
+     "u": 0.0003901611267038613,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 16.592895029272018,
+     "u": 0.0003531352319949749,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S29-G2-224",
+   "seed": 20261029,
+   "case": "G2-dividends/224",
+   "value": {
+    "ref": 15.531773814415606,
+    "u": 0.0001524835997250757,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.7685479851779111,
+    "u": 1.1857339556992003e-05,
+    "status": "reliable"
+   }
+  },
+  {
+   "id": "named/S29-G2-963",
+   "seed": 20261029,
+   "case": "G2-dividends/963",
+   "value": {
+    "ref": 13.420559660592135,
+    "u": 5.6691951046064557e-05,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.6367561960967324,
+    "u": 4.845806459567464e-06,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 13.400160444319559,
+     "u": 4.324724620951298e-05,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 13.44165485739467,
+     "u": 0.0002279823268236309,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S29-G2-1780",
+   "seed": 20261029,
+   "case": "G2-dividends/1780",
+   "value": {
+    "ref": 7.050274258549044,
+    "u": 0.00010461059796028909,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.5348856404847884,
+    "u": 2.557681949396487e-06,
+    "status": "reliable"
+   }
+  },
+  {
+   "id": "named/S29-G2-2025",
+   "seed": 20261029,
+   "case": "G2-dividends/2025",
+   "value": {
+    "ref": 13.290722373623517,
+    "u": 5.5057328577126694e-05,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.7468414033240702,
+    "u": 1.199835722533341e-06,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 12.896434922608595,
+     "u": 9.794671815742955e-05,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 13.772547621534398,
+     "u": 0.00020020512910138967,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S29-G2-2199",
+   "seed": 20261029,
+   "case": "G2-dividends/2199",
+   "value": {
+    "ref": 5.169637755626953,
+    "u": 0.0001740420073987809,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.41706045776391676,
+    "u": 1.1756151792336102e-05,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 5.146940318423936,
+     "u": 0.000156574371116261,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 5.1932994493050835,
+     "u": 0.00017038029631465674,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S29-G2-1949",
+   "seed": 20261029,
+   "case": "G2-dividends/1949",
+   "value": {
+    "ref": 21.073640282109043,
+    "u": 0.00022882401963929743,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.5731427282552284,
+    "u": 5.726803354868522e-06,
+    "status": "reliable"
+   }
+  },
+  {
+   "id": "named/S29-T1-57",
+   "seed": 20261029,
+   "case": "T1-near-boundary/57",
+   "value": {
+    "ref": 14.319398656711801,
+    "u": 0.00012539912303176134,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.8723961896228772,
+    "u": 4.919856182770769e-06,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 14.270414452248875,
+     "u": 0.000348324662114638,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 14.374583095594518,
+     "u": 0.0003840204331389015,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S29-T1-1351",
+   "seed": 20261029,
+   "case": "T1-near-boundary/1351",
+   "value": {
+    "ref": 14.353055999999967,
+    "u": 3e-10,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.9999860452283615,
+    "u": 0.008913840817973966,
+    "status": "unresolved: delta high-order in space; delta uncertainty above 0.1 of its tolerance"
+   }
+  },
+  {
+   "id": "named/S26-G2-1158",
+   "seed": 20261026,
+   "case": "G2-dividends/1158",
+   "value": {
+    "ref": 10.439273773193609,
+    "u": 8.175285598398812e-05,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.6733559076552027,
+    "u": 2.548180923095306e-06,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 10.419964425897414,
+     "u": 0.00020114129017788924,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 10.459418161928394,
+     "u": 0.00013076279832978938,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S26-G2-880",
+   "seed": 20261026,
+   "case": "G2-dividends/880",
+   "value": {
+    "ref": 21.292527880590967,
+    "u": 0.0002588094042657732,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.6556556751971597,
+    "u": 3.5035037654655594e-06,
+    "status": "reliable"
+   }
+  },
+  {
+   "id": "named/S26-G2-375",
+   "seed": 20261026,
+   "case": "G2-dividends/375",
+   "value": {
+    "ref": 6.222069052246397,
+    "u": 0.00015189200894315808,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.48703968534614045,
+    "u": 6.467750483827186e-06,
+    "status": "reliable"
+   },
+   "divsens": {
+    "up": {
+     "ref": 6.197180857648404,
+     "u": 0.00016741043112532833,
+     "status": "reliable"
+    },
+    "down": {
+     "ref": 6.2480370455052645,
+     "u": 0.00020741230597164656,
+     "status": "reliable"
+    }
+   }
+  },
+  {
+   "id": "named/S26-G2-175",
+   "seed": 20261026,
+   "case": "G2-dividends/175",
+   "value": {
+    "ref": 15.49168178259024,
+    "u": 0.00016818571882625539,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.764802508906801,
+    "u": 6.488569147305918e-06,
+    "status": "reliable"
+   }
+  },
+  {
+   "id": "named/S26-T1-1295",
+   "seed": 20261026,
+   "case": "T1-near-boundary/1295",
+   "value": {
+    "ref": 15.491929801154466,
+    "u": 0.00013075934987042396,
+    "status": "reliable"
+   },
+   "delta": {
+    "ref": 0.9233833225391429,
+    "u": 1.8353061851178007e-05,
+    "status": "reliable"
+   }
+  }
+ ]
+}

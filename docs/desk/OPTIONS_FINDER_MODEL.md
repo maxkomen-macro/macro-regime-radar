@@ -95,12 +95,25 @@ yield q, a volatility σ and the dividends owed.
   the largest normal probability over each piece, refined until tight). When B ≤ tol/5 the European value
   stands, and its error is at most B. The row says "below $B".
 - **The lattice** (every other context): a binomial lattice on ln S* with a step on every calendar day (so
-  every cum close is a step), Black-Scholes smoothing on the last step, N = max(1, ceil(150/n))·n steps.
+  every cum close is a step), Black-Scholes smoothing on the last step, N = max(1, ceil(150/n))·n steps,
+  and the same kind of smoothing on the step into each cum-dividend close (below).
   Each context is valued on N and 2N steps. The pair is accepted when the two root continuation values
   (before the maximum with the exercise value) agree within half the tolerance and the two step-1 deltas
   within 1.25e-3; otherwise (2N, 4N), then (4N, 8N), within a work limit. The value served is the larger of
   the exercise value and the Richardson extrapolation of the continuation value. A context with no accepted
   pair is not valued, and its row is dropped as unpriceable with the reason.
+- **Dividend closes** (design S, approved 2026-11-04): at a cum close the node value is max(hold, exercise),
+  whose kink falls between nodes at a place that moves erratically with N, so the lattice error does not
+  shrink regularly and the Richardson pair can add errors instead of cancelling them. On the step into each
+  close on day 1 or later, every parent within two nodes of the hold/exercise crossing takes the expectation
+  of max(hold, exercise) over the one-step lognormal of S*, with the hold value taken linear in S* between that
+  parent's two children: the lattice's own expectation of the (linear) exercise value plus β⁺·C + β⁻·P, Black
+  values struck where the line crosses zero. That is exact for this local model, not a bound on the lattice's
+  error; what makes the error regular again is shown against the references below and in
+  `tests/test_options_dividend_smoothing.py`. A close on day 0 has no parent step and is not smoothed. Only this
+  pricer turns the smoothing on (`_lattice(..., smooth_divs=True)`); the default is off, so the adaptive
+  engine's lattice (Tier 2) is unchanged. The work charged is unchanged: the smoothing touches a handful of
+  nodes per close against N²/2 for the lattice.
 - **Tolerance**: tol(V; S) = max(1e-4·S, 5e-4·V) per share, S the context's own spot. About a cent per $100
   share.
 - **Domain** (checked before every lattice valuation): σ 0.001 to 5, 1 to 1,464 days, ρ within ±0.75,
@@ -120,6 +133,14 @@ long-dated contexts with a smaller dividend on day 0 or day 1 whose served price
 missed the stated accuracy (by 3.03e-3 and 2.73e-3): both lattices shared the step-1 slope's error. Prices and
 deltas are validated separately: such a price stays served, and no lattice delta is served while a dividend
 falls on days 0 to 4 (below).
+
+**Dividend closes, before and after design S** (development evidence, not acceptance: the stored contexts of
+bench seeds 20261029 and 20261026 with an owed dividend, 13,907 in all, against the bench's corrected
+Crank-Nicolson references): the worst served value error fell from 0.74 and 0.80 of the tolerance to 0.22 and
+0.25, its 99th percentile from 0.26 and 0.28 to 0.05, and no dividend-scenario check failed (two failed before,
+at 1.14 and 1.35 tolerances). No context was more than 0.2 tolerances worse, none newly refused, and the worst
+served delta error was at or below the earlier one. These contexts were used to develop the change, so the
+acceptance figures are the fresh held-out run's, reported with the change.
 
 ## Implied volatility and Greeks
 
@@ -222,6 +243,10 @@ capped before any processing.
   `scripts/options_reference_golden.py` with QuantLib, a test-only tool never installed in the API) and live
   against QuantLib when it is importable; the exemption theorems at their edges; the bound above the premium;
   refinement, non-convergence and the domain edges; the review cases that shaped the design.
+- `tests/test_options_dividend_smoothing.py`: the smoothed step against numerical integration, the flag-off
+  lattice bit-identical to before, the error regular in N at a dividend close, a close on the first layer the
+  lattice builds, and the dividend named regressions against stored independent references
+  (`tests/fixtures/options_dividend_references.json`).
 - `tests/test_desk_options_finder.py`, on synthetic chains (`tests/options_synth.py`): forwards and
   volatilities recovered from unrounded quotes (1e-9·S0 and 1e-6), every screen and arbitrage rule (the
   envelope against brute force), carry fallbacks and the ±10% refusal, dividends, sizing and the exit rule

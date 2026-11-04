@@ -193,7 +193,9 @@ def test_work_prices_tier2_checks_tier1_and_repeats_bit_for_bit():
     for cid in ("G1-nodiv/1", "G2-dividends/3", "named/B8", "named/DR-47", "X1-outside/0"):
         out = phase2.work((stored(cid), cfg, {"repeat": True}))
         assert "error" not in out, out.get("traceback")
-        assert out["tier1_matches"] is True and out["repeat_identical"] is True, cid
+        # the stored records are Phase 2's run (Tier 1 before design S). Design S changed Tier 1 on purpose where a
+        # dividend close is smoothed: B8 (dividend on day 2) no longer matches, and the check must say so
+        assert out["tier1_matches"] is (cid != "named/B8") and out["repeat_identical"] is True, cid
         t = out["tier2"]
         if t["value"] is not None and t["route"] in (oe.ROUTE_LATTICE, oe.ROUTE_ANALYTIC):
             assert out["inside_interval"] is True
