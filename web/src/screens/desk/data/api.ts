@@ -33,7 +33,7 @@ import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } 
 import { checkAnswer, schemaFor } from "./schema";
 import type { BasketParams } from "../basket/weights";
 import { finderRows } from "./finder-rows";
-import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OptionsFinderParams, OptionsFinderResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, BasketStudyResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OptionsFinderParams, OptionsFinderResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 // `import.meta.env` is Vite's; the e2e specs load this module in Node through the kit (kit/ui reads DeskApiError
 // here since desk/usability §14.12), where it is undefined, so the read is guarded.
@@ -319,6 +319,21 @@ export function useBasketHedge(params: BasketParams | null) {
     useQuery<BasketHedgeResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/hedge", params],
       queryFn: ({ signal: s }) => deskGet<BasketHedgeResponse>("/basket/hedge", params ?? undefined, { signal: s }),
+      staleTime: 5 * 60_000,
+      retry,
+      enabled: !!params,
+    }),
+  );
+}
+
+/** §12.19 (desk P1a): the event-study engine on the saved basket's own index, computed on request (a `computing`
+ * answer is asked again until it comes). `legs`, `method` and `weighting` are /basket/price's, without the notional;
+ * the question is the route's default. Asked only for a basket /basket/price would price. */
+export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null) {
+  return current(
+    useQuery<BasketStudyResponse, DeskApiError>({
+      queryKey: ["desk-v2", "/basket/study", params],
+      queryFn: ({ signal: s }) => deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, { signal: s }),
       staleTime: 5 * 60_000,
       retry,
       enabled: !!params,

@@ -94,7 +94,7 @@ function IndexDetail({ a }: { a: BasketStudyResponse }) {
   const ix = a.index;
   const off = Object.entries(ix.off_session).filter(([, n]) => (n ?? 0) > 0);
   const lines = [
-    `Sessions: ${ix.sessions ?? "—"} from ${dayLong(ix.start)} to ${dayLong(ix.end)}; ${ix.missing_sessions ?? "—"} inside the span without every name's close, left out, never filled.`,
+    `Sessions: ${ix.sessions ?? "—"} from ${dayLong(ix.start)} to ${dayLong(ix.end)}; ${ix.missing_sessions ?? "—"} inside the span without every name's close, left out, not filled in.`,
     `Closes asked from ${dayLong(ix.requested_from)} through ${dayLong(ix.session)}; each name's first close: ${Object.entries(ix.first_close).map(([s, d]) => `${s} ${dayLong(d)}`).join(", ")}.`,
     off.length ? `Bars dated off the NYSE calendar, left out: ${off.map(([s, n]) => `${s} ${n}`).join(", ")}.` : null,
     ix.excluded.length ? `Closes without an adjusted value, left out: ${ix.excluded.map((e) => `${e.symbol} ${e.n ?? "—"}`).join(", ")}.` : null,

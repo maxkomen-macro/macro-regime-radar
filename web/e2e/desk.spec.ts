@@ -740,16 +740,19 @@ test.describe("desk v2", () => {
     await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
-    // §1.0.3: Positioning and the event study are drawn for the AI Infrastructure 10 preset; this basket is another,
-    // so each keeps its labels and prints one line (step 3, below the options slot).
+    // §1.0.3: Positioning is drawn for the AI Infrastructure 10 preset; this basket is another, so it keeps its labels
+    // and prints one line (step 3, below the options slot).
     const positions = step3.getByRole("region", { name: /^Positioning/ });
     await expect(positions).toHaveAttribute("data-prototype", "positioning");
     await expect(positions).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
     await expect(positions.getByRole("table")).toHaveCount(0);
+    // §12.19 (desk P1a): the event study is served, not a PROTOTYPE. The fixtures carry no study for this basket (the
+    // stored closes answer ETF baskets only), so the card says it couldn't load and prints no number.
     const study = step3.getByRole("region", { name: /^Event study on this basket/ });
-    await expect(study).toHaveAttribute("data-prototype", "basket-study");
-    await expect(study).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    await expect(study).not.toHaveAttribute("data-prototype");
+    await expect(study.getByTestId("dk-failed")).toContainText("Couldn't load");
     await expect(study.getByRole("img")).toHaveCount(0);
+    await expect(study).not.toContainText("%");
     // Weights as typed, saved in this browser.
     await basket.getByLabel("Weight of SMCI, percent").fill("8");
     await expect(basket).toContainText("total 96%");
@@ -788,10 +791,11 @@ test.describe("desk v2", () => {
     await page.emulateMedia({ reducedMotion: "reduce" });
     await open(page, "/desk/basket-hedge");
     expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
-    // Only the stored share counts (desk/cap-weight) and the saved basket's price and hedge are asked, as GETs: the
-    // fixture's legs, then the normalized ones.
+    // Only the stored share counts (desk/cap-weight) and the saved basket's price, hedge and event study (§12.19) are
+    // asked, as GETs: the fixture's legs, then the normalized ones.
     expect(asked).toContain("GET /api/desk/basket/shares");
-    expect(asked.filter((a) => a !== "GET /api/desk/basket/shares").every((a) => /^GET \/api\/desk\/basket\/(price|hedge)\?legs=/.test(a))).toBe(true);
+    expect(asked.filter((a) => a !== "GET /api/desk/basket/shares").every((a) => /^GET \/api\/desk\/basket\/(price|hedge|study)\?legs=/.test(a))).toBe(true);
+    expect(asked).toContain("GET /api/desk/basket/study?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold");
     expect(asked).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
   });
@@ -816,12 +820,16 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("Up 155.8% since Mar 28, 2025");
     await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best (R² 0.83 over a year): short $847,384 of it");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&notional=1000000&weighting=cap");
-    // §1.0.3: the prototypes are drawn for this basket: Positioning lists all ten names, the event study names it.
+    // §1.0.3: Positioning, a PROTOTYPE, is drawn for this basket and lists all ten names. The event study is served
+    // (§12.19): it asks for this basket cap-weighted, and the fixtures carry no study for single names, so it says it
+    // couldn't load rather than print a number.
     const positions = page.getByRole("region", { name: /^Positioning/ });
     await expect(positions.getByRole("table").getByRole("row")).toHaveCount(11);
     await expect(positions).not.toContainText("no data");
     await expect(positions.getByRole("columnheader", { name: "Short int. (illustrative)" })).toHaveCount(1);
-    await expect(page.getByRole("region", { name: /^Event study on this basket/ })).toContainText("After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.");
+    const presetStudy = page.getByRole("region", { name: /^Event study on this basket/ });
+    await expect(presetStudy.getByTestId("dk-failed")).toContainText("Couldn't load");
+    await expect(presetStudy).not.toContainText("64%");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     // Equal weight is one click away: the typed weights at 10% each, priced once saved; and back.
@@ -842,6 +850,28 @@ test.describe("desk v2", () => {
     await expect(basket).toContainText("ORCL added; the 11 names are at equal weight. ORCL has no stored share count, so cap weight is unavailable for this basket.");
     await expect(basket.getByRole("button", { name: "Cap-weight" })).toBeDisabled();
     await expect(page).toHaveURL(/\/desk\/basket-hedge\?basket=local-1$/);
+  });
+  test("basket & hedge: an ETF basket's event study is served (§12.19): the question, the chart, the index as the page defines it, the caveats; Advanced; every width", async ({ page }) => {
+    const chips = [{ id: "local-1", name: "Chip ETFs", legs: [{ symbol: "SMH", name: null, weight: "40" }, { symbol: "SOXX", name: null, weight: "30" }, { symbol: "XLK", name: null, weight: "30" }], saved_at: "2026-09-28T00:00:00Z" }];
+    await page.addInitScript(([key, text]) => localStorage.setItem(key, text), [SAVED_BASKETS_KEY, JSON.stringify(chips)] as const);
+    await open(page, "/desk/basket-hedge");
+    const study = page.getByRole("region", { name: /^Event study on this basket/ });
+    await expect(study).toHaveAttribute("data-basket-study", "ready");
+    await expect(study).not.toHaveAttribute("data-prototype");
+    await expect(study).toContainText(/^.*After Chip ETFs falls 2σ over 5 days, it was higher a month later \d+% of the time\./);
+    await expect(study.getByRole("img")).toHaveCount(1);
+    await expect(study).toContainText("The index: SMH 40%, SOXX 30%, XLK 30%, at the saved weights;");
+    await expect(study.getByRole("list", { name: "What this history cannot claim" })).toContainText("Regime labels are revised regime history");
+    await study.getByTestId("dk-advanced").click();
+    await expect(study.getByRole("region", { name: "By regime, revised regime history" })).toBeVisible();
+    await expect(study.getByRole("region", { name: "Every horizon" }).getByRole("row")).toHaveCount(5);
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
+    for (const width of [1440, 1101, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await expect(study.getByRole("img")).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
+    }
   });
 
   test("data pipeline: Sync to Snowflake, a PROTOTYPE, replays connect → stage → merge → verify beside the real DDL and CSV (§11, §1.0.3)", async ({ page }) => {

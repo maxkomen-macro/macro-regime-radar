@@ -13,7 +13,6 @@ import type { BasketPriceResponse } from "../data/types";
 import { capAvailability, heldBasket, priceParams } from "../basket/weights";
 import { grouped, ordinal, signed } from "../kit/format";
 import { inputsFrom, type HedgeAnswer } from "./basket-inputs";
-import { basketStudy } from "./basket-study";
 import { DRAWN_FOR } from "./drawn-for";
 import { hedge, usd } from "./options";
 import { CROWDING_WORDS, positioning } from "./positioning";
@@ -48,12 +47,6 @@ function positioningMarkers(): string[] {
   return [CROWDING_WORDS.short, CROWDING_WORDS.long, ...p.rows.filter((r) => r.flag === "short").map((r) => `${r.si.toFixed(1)}%`)];
 }
 
-/** The study's question and its why. */
-function studyMarkers(): string[] {
-  const st = basketStudy();
-  return [`After ${DRAWN_FOR.name} falls 2σ over ${st.window} days`, `${st.month.n} completed outcomes in ${st.month.n_blocks} overlap blocks`];
-}
-
 /** The sync's target, and its largest tables' row counts. */
 function syncMarkers(): string[] {
   const s = sync();
@@ -64,6 +57,5 @@ export const PROTOTYPE_MARKERS: Readonly<Record<string, readonly string[]>> = {
   protection: protectionMarkers(),
   "options-hedge": [...new Set(optionsMarkers())],
   positioning: positioningMarkers(),
-  "basket-study": studyMarkers(),
   "snowflake-sync": syncMarkers(),
 };
