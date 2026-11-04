@@ -354,6 +354,33 @@ def test_the_item_reads_the_stored_regimes(tmp_path, monkeypatch):
         conn.close()
 
 
+def test_a_regimes_table_that_cannot_be_read_nulls_only_the_by_regime_views(tmp_path, monkeypatch):
+    """Codex V-1: a malformed regimes date must not take the whole item down (main serves every
+    block from such a file); the by-regime views say why, everything else is served."""
+    from api import db
+    from tests.test_event_study import _synthetic_db
+
+    path = hs.add_etfs(_synthetic_db(tmp_path / "macro_radar.db"))
+    good = (monkeypatch.setattr(db, "DB_PATH", path), etf.desk_etf({}))[1]
+    conn = sqlite3.connect(path)
+    try:
+        conn.execute("CREATE TEMP TABLE bad AS SELECT * FROM regimes LIMIT 1")
+        conn.execute("UPDATE bad SET date = 'not-a-date', id = NULL")
+        conn.execute("INSERT INTO regimes SELECT * FROM bad")
+        conn.commit()
+    finally:
+        conn.close()
+    item = etf.desk_etf({})
+    for key in ("sectors", "breadth", "stock_bond", "matrix"):
+        assert item[key] == good[key], key
+    rows = item["correlations"]["data"]
+    assert [{k: v for k, v in r.items() if k != "by_regime"} for r in rows] == \
+        [{k: v for k, v in r.items() if k != "by_regime"} for r in good["correlations"]["data"]]
+    served = [r["by_regime"] for r in rows if r["by_regime"] is not None]
+    assert served and all(b["reason"].startswith("the stored regime history could not be read (") for b in served)
+    assert all(b["regimes"] == [] and b["all"] is None and b["current"] is None for b in served)
+
+
 # ── the published copy ──────────────────────────────────────────────────────
 
 DB = Path(os.environ.get("DESK_DB", Path(__file__).resolve().parents[1] / "data" / "macro_radar.db"))

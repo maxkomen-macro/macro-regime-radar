@@ -69,10 +69,13 @@ use. The connection is closed in a `finally` (verifier V-54).
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any
 
 from api import desk_envelope as env
+
+log = logging.getLogger("mrr.desk")
 
 WINDOW_SESSIONS = 60   # v3 A-18: t − 60 XNYS sessions, "3 months"
 WINDOW_MONTHS = 3
@@ -108,6 +111,7 @@ class Store:
         self.missing: list[str] = []
         self.regimes: Any = None   # the stored regime rows by month (event_study.load_regimes), set by desk_etf
         self._labels: Any = None
+        self.regimes_error: str | None = None  # why the stored regime rows could not be read (Codex V-1)
         for k in keys:
             try:
                 raw[k] = es.load_level(conn, registry.get(k), cutoff)
@@ -551,8 +555,7 @@ NOISE_Z = 1.6448536269514722      # §3: the standard normal's 95th percentile, 
 NOISE_RULE = "fisher-z-90-iid"
 MIN_REGIME_RETURNS = 60           # §4: a regime needs the default window's count of returns
 REGIME_HISTORY = "revised"
-AS_KNOWN_REASON = ("As known at the time is not available yet: it needs the point-in-time regime history "
-                   "(the approved point-in-time plan), which is not built.")
+AS_KNOWN_REASON = "As known at the time: not available yet (needs the point-in-time regime history)."  # spec §7
 
 
 def noise_band(w: int) -> float:
@@ -603,6 +606,9 @@ def by_regime(store: Store, x, y, t: int) -> dict:
                            "as_known": None, "as_known_reason": AS_KNOWN_REASON, "min_n": MIN_REGIME_RETURNS,
                            "current": None, "current_row": None, "sample": None, "unlabeled_n": None, "incomplete_n": None,
                            "regimes": [], "all": None, "reason": None}
+    if store.regimes_error:
+        out["reason"] = store.regimes_error
+        return out
     labels = store.labels()
     if labels is None:
         out["reason"] = "no regime history is stored in this database"
@@ -714,8 +720,8 @@ def why_no_window(store: Store, key: str, x, t: int, w: int = CORR_WINDOW) -> st
             i = lo + int(np.flatnonzero(~np.isfinite(x[lo:t + 1]))[0])
             first = store.gap_reason(key, i) or store.gap_reason(key, i - 1)
         return f"only {have} of {w} daily returns in the window to {store.iso[t]}: {first}"
-    w = x[lo:t + 1]
-    if float(((w - w.mean()) ** 2).sum()) == 0:
+    win = x[lo:t + 1]
+    if float(((win - win.mean()) ** 2).sum()) == 0:
         return f"no variation in the window to {store.iso[t]}"
     return None
 
@@ -861,7 +867,11 @@ def desk_etf(ctx: dict) -> dict:
     conn = _connect()
     try:
         store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm", *(k for k, _ in CORR_ASSETS), VIX[0], "smh"], cutoff)
-        store.regimes = _regimes(conn)
+        try:
+            store.regimes = _regimes(conn)
+        except Exception as e:  # Codex V-1: a regimes table that cannot be read nulls only the by-regime views, with why
+            store.regimes_error = f"the stored regime history could not be read ({type(e).__name__})"
+            log.warning("desk_etf: regimes not read: %s", e)
     finally:
         conn.close()
     return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store)),

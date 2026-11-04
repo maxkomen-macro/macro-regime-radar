@@ -26,7 +26,7 @@ function byRegime(base: number, current: string | null = "Overheating"): ByRegim
     rule: "A daily return dated in month K takes the regimes row stamped K−2 months, the first month that row could govern (the event study's rule); returns without a row are Unlabeled and left out.",
     lag_months: 2,
     as_known: null,
-    as_known_reason: "As known at the time is not available yet: it needs the point-in-time regime history (the approved point-in-time plan), which is not built.",
+    as_known_reason: "As known at the time: not available yet (needs the point-in-time regime history).",
     min_n: 60,
     current,
     current_row: current ? "2026-07" : null,
@@ -234,7 +234,7 @@ describe("the correlation-by-regime card", () => {
     const card = await screen.findByRole("region", { name: /^Correlation by regime/ });
     expect(card).toHaveTextContent("Revised regime history");
     expect(card).toHaveTextContent("stamped K−2 months");
-    expect(card).toHaveTextContent("As known at the time is not available yet");
+    expect(card).toHaveTextContent("As known at the time: not available yet (needs the point-in-time regime history).");
     expect(card).toHaveTextContent("No interval is served");
     expect(card).toHaveTextContent("“At sample end” is the regime the rule gives each row's last session (the newest is Sep 23): the row stamped Jul 2026. It is not today's regime");
     expect(card).toHaveTextContent("a regime with fewer than 60 is not served");
