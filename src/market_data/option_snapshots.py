@@ -145,7 +145,7 @@ class Store(Protocol):
     def attempts(self, session: str) -> list[dict]: ...
     def taken(self, session: str) -> set[int]: ...
     def add(self, session: str, attempt: int, data: bytes, manifest: bytes) -> None: ...
-    def manifests(self) -> list[dict]: ...
+    def inventory(self) -> tuple[list[dict], list[tuple[str, int]]]: ...
 
 
 class LocalStore:
@@ -202,14 +202,12 @@ class LocalStore:
             finally:
                 tmp.unlink(missing_ok=True)
 
-    def manifests(self) -> list[dict]:
-        out = []
-        for p in sorted((self.root / UNDERLYING).glob("*/*.manifest.json")):
-            try:
-                out.append(json.loads(p.read_text()))
-            except (OSError, ValueError):
-                continue
-        return out
+    def inventory(self) -> tuple[list[dict], list[tuple[str, int]]]:
+        """Every readable manifest, and every attempt with no readable manifest (S-4)."""
+        found = _Found()
+        for p in sorted((self.root / UNDERLYING).glob("*/*")):
+            found.add(p.name, lambda p=p: p.read_bytes())
+        return found.result()
 
 
 _REPO_RE = re.compile(r"^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$")
@@ -334,8 +332,9 @@ class GitHubReleaseStore:
             if name not in after or int(after[name].get("size", -1)) != len(blob):
                 raise StorageError("an uploaded asset is missing or the wrong size after upload")
 
-    def manifests(self) -> list[dict]:
-        out = []
+    def inventory(self) -> tuple[list[dict], list[tuple[str, int]]]:
+        """Every readable manifest, and every attempt with no readable manifest (S-4)."""
+        found = _Found()
         for page in range(1, 20):
             r = self._req("GET", f"{self.API}/repos/{self.repo}/releases", ok=(200,), params={"per_page": 100, "page": page})
             batch = r.json()
@@ -343,14 +342,39 @@ class GitHubReleaseStore:
                 if not str(rel.get("tag_name", "")).startswith("spy-options-"):
                     continue
                 for name, asset in sorted(self._assets(rel).items()):
-                    if _ASSET_RE.match(name) and name.endswith(".manifest.json"):
-                        try:
-                            out.append(json.loads(self._download(asset)))
-                        except (ValueError, StorageError):
-                            continue
+                    found.add(name, lambda asset=asset: self._download(asset))
             if len(batch) < 100:
                 break
-        return out
+        return found.result()
+
+
+class _Found:
+    """A store's assets as attempts: the readable manifests, and the attempts that have none (a data file
+    whose upload was cut off before its manifest, or a manifest that cannot be read)."""
+
+    def __init__(self) -> None:
+        self.manifests: list[dict] = []
+        self.attempts: set[tuple[str, int]] = set()
+        self.committed: set[tuple[str, int]] = set()
+
+    def add(self, name: str, read: Callable[[], bytes]) -> None:
+        m = _ASSET_RE.match(name)
+        if not m:
+            return
+        key = (m.group(1), int(m.group(2)))
+        self.attempts.add(key)
+        if m.group(3) != "manifest.json":
+            return
+        try:
+            man = json.loads(read())
+        except (OSError, ValueError, StorageError):
+            return
+        if isinstance(man, dict):
+            self.manifests.append(man)
+            self.committed.add(key)
+
+    def result(self) -> tuple[list[dict], list[tuple[str, int]]]:
+        return self.manifests, sorted(self.attempts - self.committed)
 
 
 # ── the collection ────────────────────────────────────────────────────────────
@@ -407,14 +431,16 @@ class Fetcher:
 
 
 def list_expiries(fetch: Fetcher, start: date) -> tuple[list[str], bool]:
-    """Every expiry on or after `start` that any row shows. Seek pages sorted by expiry; the next page starts
-    at the newest expiry seen (right whether the provider's filter includes its own date or not), or a day
-    later when a page got no further, so the anchor always advances. Returns (expiries, listing complete)."""
+    """Every expiry on or after `start` that any row shows. Seek pages sorted by expiry. The first page asks
+    from the day before `start` and anything earlier than `start` is dropped, so `start`'s own expiry is
+    listed whether the provider's from filter includes its own date or not (S-3). Each next page starts at
+    the newest expiry seen, or a day later when a page got no further, so the anchor always advances.
+    Returns (expiries, listing complete)."""
     seen: set[date] = set()
-    anchor = start
+    anchor = start - timedelta(days=1)
 
     def listed() -> list[str]:
-        return sorted(d.isoformat() for d in seen)
+        return sorted(d.isoformat() for d in seen if d >= start)
 
     while True:
         try:
@@ -711,13 +737,18 @@ def _word(exc: Exception) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", str(exc).lower()).strip("_")[:80] or type(exc).__name__
 
 
-def history(manifests: list[dict], now: datetime) -> dict:
-    """Stored history by NYSE session: complete, partial only, and missing (a session between the first
-    stored one and the last completed session with nothing stored). Counts and session dates only."""
+def history(manifests: list[dict], now: datetime, interrupted: list[tuple[str, int]] | None = None) -> dict:
+    """Stored history by NYSE session: complete, partial only (no complete attempt, including a session whose
+    only attempts were interrupted before their manifest), interrupted attempts, and missing (a session
+    between the first stored one and the last completed session with nothing stored). Counts and session
+    dates only."""
     by: dict[str, list[dict]] = {}
     for m in manifests:
         if m.get("underlying") == UNDERLYING and isinstance(m.get("session"), str):
             by.setdefault(m["session"], []).append(m)
+    interrupted = interrupted or []
+    for s, n in interrupted:  # an attempt without its manifest is never complete (S-4)
+        by.setdefault(s, []).append({"underlying": UNDERLYING, "session": s, "attempt": n, "complete": False})
     complete = sorted(s for s, ms in by.items() if _complete(ms))
     partial = sorted(s for s in by if s not in complete)
     missing: list[str] = []
@@ -729,16 +760,19 @@ def history(manifests: list[dict], now: datetime) -> dict:
                 missing.append(d.isoformat())
             d += timedelta(days=1)
     return {"sessions": len(by), "complete": complete, "partial_only": partial, "missing": missing,
-            "attempts": sum(len(ms) for ms in by.values())}
+            "attempts": sum(len(ms) for ms in by.values()),
+            "interrupted": [f"{s}-a{n:02d}" for s, n in sorted(interrupted)]}
 
 
 def report_line(store: Store, now: datetime | None = None) -> str:
-    h = history(store.manifests(), now or _utcnow())
+    manifests, interrupted = store.inventory()
+    h = history(manifests, now or _utcnow(), interrupted)
     c = h["complete"]
     return (f"option_snapshots report: underlying={UNDERLYING} sessions={h['sessions']} attempts={h['attempts']} "
             f"complete={len(c)} first_complete={c[0] if c else '-'} last_complete={c[-1] if c else '-'} "
             f"partial_only={len(h['partial_only'])}{(' [' + ','.join(h['partial_only'][-10:]) + ']') if h['partial_only'] else ''} "
-            f"missing={len(h['missing'])}{(' [' + ','.join(h['missing'][-10:]) + ']') if h['missing'] else ''}")
+            f"missing={len(h['missing'])}{(' [' + ','.join(h['missing'][-10:]) + ']') if h['missing'] else ''} "
+            f"interrupted={len(h['interrupted'])}{(' [' + ','.join(h['interrupted'][-10:]) + ']') if h['interrupted'] else ''}")
 
 
 def main(argv: list[str] | None = None) -> int:

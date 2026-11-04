@@ -202,14 +202,24 @@ def test_the_expiry_listing_is_complete_whichever_way_the_from_filter_reads(tmp_
     monkeypatch.setattr(osn, "PAGE_LIMIT", 50)  # many listing pages, several expiries larger than a page
     fake = FakeEodhd(make_chain(SPEC), inclusive=inclusive)
     r = go(fake, osn.LocalStore(tmp_path))
-    if not inclusive:
-        # an exclusive filter hides the session's own expiry from a listing that starts on it: the snapshot
-        # names what it saw, and every expiry it lists is whole
-        assert r.manifest["expiries_listed"] == len(SPEC) - 1
-    else:
-        assert r.manifest["expiries_listed"] == len(SPEC)
-    assert r.manifest["expiries_complete"] == r.manifest["expiries_listed"]
-    assert r.state == "stored"
+    # the session's own expiry is listed either way (S-3): an exclusive filter must not hide it
+    assert [e["exp_date"] for e in r.manifest["expiries"]] == sorted(SPEC)
+    assert r.manifest["expiries_listed"] == r.manifest["expiries_complete"] == len(SPEC)
+    assert r.state == "stored" and r.manifest["complete"] is True
+
+
+@pytest.mark.parametrize("inclusive", [True, False])
+def test_s3_the_session_expiry_is_listed_and_older_expiries_are_not(tmp_path, monkeypatch, inclusive):
+    # an expiry before the session that the provider still lists, with more rows than one listing page, and
+    # the session's own expiry: the listing keeps the session's and never fetches the older one
+    monkeypatch.setattr(osn, "PAGE_LIMIT", 50)
+    spec = {"2026-10-30": 60, "2026-11-01": 30, **SPEC}
+    fake = FakeEodhd(make_chain(spec), inclusive=inclusive)
+    exps, listed_all = osn.list_expiries(osn.Fetcher(client_for(fake), sleep=lambda s: None), date(2026, 11, 2))
+    assert exps == sorted(SPEC) and listed_all is True
+    r = go(FakeEodhd(make_chain(spec), inclusive=inclusive), osn.LocalStore(tmp_path))
+    assert [e["exp_date"] for e in r.manifest["expiries"]] == sorted(SPEC)
+    assert r.state == "stored" and r.manifest["complete"] is True
 
 
 def test_an_expiry_over_one_page_is_split_by_type_and_paged(tmp_path, monkeypatch):
@@ -349,7 +359,51 @@ def test_history_names_complete_partial_and_missing_sessions(tmp_path, monkeypat
     h = osn.history(ms, NOW)
     assert h["complete"] == ["2026-10-27", "2026-10-30"] and h["partial_only"] == ["2026-10-28"]
     assert h["missing"] == ["2026-10-29", "2026-11-02"]  # weekends are not sessions
-    assert h["attempts"] == 4
+    assert h["attempts"] == 4 and h["interrupted"] == []
+
+
+def _orphan_store(kind, tmp_path):
+    """A store holding only SPY-options-2026-11-02-a01.jsonl.gz: an upload cut off before its manifest.
+    Returns a factory, so every use reads the store afresh as a later process would."""
+    name = osn.asset_names(SESSION, 1)[0]
+    if kind == "local":
+        d = tmp_path / "SPY" / "2026-11"
+        d.mkdir(parents=True)
+        (d / name).write_bytes(b"cut off")
+        return lambda: osn.LocalStore(tmp_path)
+    gh = FakeGitHub()
+    gh.releases["spy-options-2026-11"] = {"id": 1, "tag_name": "spy-options-2026-11"}
+    gh.assets[2] = {"id": 2, "name": name, "size": 7, "release": 1}
+    gh.blobs[2] = b"cut off"
+    return lambda: gh_store(gh)
+
+
+@pytest.mark.parametrize("kind", ["local", "github"])
+def test_s4_an_attempt_interrupted_before_its_manifest_is_reported(tmp_path, kind):
+    store = _orphan_store(kind, tmp_path)
+    manifests, interrupted = store().inventory()
+    assert manifests == [] and interrupted == [(SESSION, 1)]
+    h = osn.history(manifests, NOW, interrupted)
+    assert h["sessions"] == 1 and h["attempts"] == 1 and h["complete"] == []
+    assert h["partial_only"] == [SESSION] and h["interrupted"] == [f"{SESSION}-a01"] and h["missing"] == []
+    line = osn.report_line(store(), NOW)
+    assert "sessions=1 attempts=1 complete=0" in line and f"partial_only=1 [{SESSION}]" in line
+    assert f"interrupted=1 [{SESSION}-a01]" in line
+    # the retry takes the next number; afterwards the session is complete and the cut-off attempt still shows
+    r = go(FakeEodhd(make_chain(SPEC)), store())
+    assert r.state == "stored" and r.attempt == 2
+    manifests, interrupted = store().inventory()
+    after = osn.history(manifests, NOW, interrupted)
+    assert after["complete"] == [SESSION] and after["interrupted"] == [f"{SESSION}-a01"] and after["attempts"] == 2
+
+
+def test_s4_an_unreadable_manifest_counts_as_interrupted(tmp_path):
+    store = osn.LocalStore(tmp_path)
+    go(FakeEodhd(make_chain(SPEC)), store)
+    (tmp_path / "SPY" / "2026-11" / osn.asset_names(SESSION, 1)[1]).write_text("[not a manifest")
+    manifests, interrupted = store.inventory()
+    assert manifests == [] and interrupted == [(SESSION, 1)]
+    assert "complete=0" in osn.report_line(store, NOW) and "interrupted=1" in osn.report_line(store, NOW)
 
 
 def test_the_report_cli_makes_no_eodhd_call(tmp_path, monkeypatch, capsys):
