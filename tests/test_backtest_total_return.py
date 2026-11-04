@@ -108,7 +108,7 @@ def test_a_distribution_is_counted_once(tmp_path, run_on):
     path = tmp_path / "t.db"
     _db(
         path,
-        asset_rows=[("SPY", "1d", d, p, "eodhd") for d, p in zip(days, adj)],
+        asset_rows=[("SPY", "1d", d, p, "yfinance") for d, p in zip(days, adj)],
         market_rows=[("SPY", d, p) for d, p in zip(days, raw)],
         signals=[(days[0], "vix_spike", 1)],
     )
@@ -314,3 +314,40 @@ def test_api_backtests_never_claim_a_basis_the_rows_do_not_record(tmp_path, monk
         [row] = _api_rows(monkeypatch, path)
         assert row["return_basis"] is None, kw
         assert set(row) == {"test_name", "cohort", "horizon", "avg_return", "median_return", "hit_rate", "n", "computed_at", "return_basis"}
+
+
+# ── Codex design pass 2: DR-01 verified provider only, DR-05 calendar years, DR-06 finite returns ──
+
+def test_an_unverified_provider_is_not_scored(tmp_path, run_on, caplog):
+    """DR-01: EODHD's layer can fall back to a raw close row by row, so one
+    provider is not one basis there; the stored results stay as they were."""
+    days = _sessions(date(2020, 1, 2), 300)
+    path = tmp_path / "t.db"
+    _db(path, asset_rows=[("SPY", "1d", d, 100.0 + i, "eodhd") for i, d in enumerate(days)], regimes=[(days[0], "Goldilocks")])
+    assert run_on(path).empty
+    assert "comes from eodhd" in caplog.text and "not scored" in caplog.text
+    assert bt.VERIFIED_PROVIDERS == ("yfinance",)
+
+
+def test_rows_in_a_year_without_a_holiday_table_are_dropped(tmp_path, caplog, monkeypatch):
+    """DR-05: a year api/calendar does not know is never aligned to a
+    weekends-only guess (2028-07-04 would read as a missing session)."""
+    known = dict(cal.HOLIDAYS)
+    monkeypatch.setattr(cal, "HOLIDAYS", {y: v for y, v in known.items() if y <= 2027})
+    days = _sessions(date(2027, 12, 20), 14)   # runs into 2028 (weekdays: 2028 is unknown)
+    path = tmp_path / "t.db"
+    _db(path, asset_rows=[("SPY", "1d", d, 100.0, "yfinance") for d in days])
+    c = sqlite3.connect(path)
+    try:
+        s = bt.load_spy_total_return(c)
+    finally:
+        c.close()
+    assert all(d.year == 2027 for d in s.index) and len(s) == sum(d.startswith("2027") for d in days)
+    assert "no holiday table" in caplog.text and "2028-01-03" in caplog.text
+
+
+def test_an_unrepresentable_ratio_is_unscored():
+    """DR-06: finite endpoints whose ratio overflows never store inf."""
+    idx = pd.DatetimeIndex([pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")])
+    assert bt.compute_forward_return(pd.Series([1e-308, 1e308], index=idx), idx[0], 1) is None
+    assert bt.compute_forward_return(pd.Series([100.0, 110.0], index=idx), idx[0], 1) == pytest.approx(0.10)

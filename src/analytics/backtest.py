@@ -12,8 +12,14 @@ Writes: backtest_results
 Return basis: TOTAL RETURN (Max, 2026-11-04, option A). Every forward return
 is the ratio of two SPY closes from asset_prices, which the full refresh
 (src/market_data/asset_history.py) refetches whole on every run from one
-provider, split- and dividend-adjusted (Yahoo auto_adjust=True in Actions,
-EODHD adjusted_close where a token exists). The provider adjusts each close
+provider, split- and dividend-adjusted. Only the Yahoo series is scored
+(VERIFIED_PROVIDERS): auto_adjust=True, the path the publishing workflow
+takes (it carries no EODHD token), verified against SPY's published
+distributions. An EODHD series (a machine with a token) is not scored: its
+provider layer falls back row by row to the raw close where a row lacks
+adjusted_close (api/providers/market.py), so one provider does not
+guarantee one basis there (Codex DR-01); the step logs an error and keeps
+the stored results. The provider adjusts each close
 before an ex-dividend date by the factor (1 - D / prior close), so a return
 read off these closes reinvests each distribution in SPY on its ex-dividend
 date, at the prior session's close less the distribution. No taxes, no
@@ -34,8 +40,12 @@ The series is aligned to the NYSE session calendar (api/calendar) before it
 is scored, so a horizon always counts real sessions: a stored row on a
 non-session date is dropped, and a missing session or a close that is not
 a finite positive number leaves every window that would start or end on it
-unscored (both logged). On the published series today none of this fires:
-asset_prices SPY holds exactly one row per NYSE session.
+unscored (both logged). Rows in a year api/calendar has no holiday table
+for are dropped (logged), never aligned to a weekends-only guess (Codex
+DR-05); extend the calendar when the exchange publishes the year. A return
+that is not a finite number (an unrepresentable ratio) is unscored (DR-06).
+On the published series today none of this fires: asset_prices SPY holds
+exactly one row per NYSE session.
 
 Before this change the backtest read market_daily SPY closes, a splice of a
 dividend-adjusted Yahoo backfill (1993-01-29 to 2024-02-26) and unadjusted
@@ -89,6 +99,7 @@ TARGET_SYMBOL = "SPY"
 SOURCE_TABLE = "asset_prices"   # split- and dividend-adjusted closes: total return
 SOURCE_INTERVAL = "1d"
 RETURN_BASIS = "total return"
+VERIFIED_PROVIDERS = ("yfinance",)  # Codex DR-01: the only provider whose adjustment basis is verified whole
 RETURN_BASIS_KEY = "total_return"  # stored in backtest_results.return_basis on every row this step writes
 
 
@@ -115,7 +126,8 @@ def load_spy_total_return(conn: sqlite3.Connection) -> pd.Series:
     market_daily, whose bars are unadjusted (a fallback would silently switch
     the basis to price return). Raises when the series holds more than one
     provider: two adjustment bases spliced together, which asset_history
-    never writes (it replaces a series whole)."""
+    never writes (it replaces a series whole). Empty, with an error logged,
+    when the one provider is not in VERIFIED_PROVIDERS (Codex DR-01)."""
     has_table = conn.execute(
         "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (SOURCE_TABLE,)
     ).fetchone()
@@ -132,6 +144,13 @@ def load_spy_total_return(conn: sqlite3.Connection) -> pd.Series:
             f"{SOURCE_TABLE} {TARGET_SYMBOL} ({SOURCE_INTERVAL}) mixes providers {sorted(providers)}: "
             "two adjustment bases, refusing to score a spliced total-return series"
         )
+    if providers and providers[0] not in VERIFIED_PROVIDERS:
+        logger.error(
+            "[backtest] %s %s comes from %s, whose adjusted closes are not verified as one total-return basis "
+            "(it can fall back to a raw close row by row); not scored, backtest_results left as stored. "
+            "Verified: %s", SOURCE_TABLE, TARGET_SYMBOL, providers[0], ", ".join(VERIFIED_PROVIDERS),
+        )
+        return pd.Series(dtype=float, name=TARGET_SYMBOL)
     rows = conn.execute(
         f"SELECT date, close FROM {SOURCE_TABLE} WHERE symbol = ? AND interval = ? ORDER BY date",
         (TARGET_SYMBOL, SOURCE_INTERVAL),
@@ -156,6 +175,14 @@ def align_to_sessions(closes: pd.Series) -> pd.Series:
         logger.warning("[backtest] %d %s closes are not finite positive numbers; windows on them are unscored: %s",
                        int(bad.sum()), TARGET_SYMBOL, [d.date().isoformat() for d in closes.index[bad]][:10])
         closes = closes.mask(bad)
+    known = np.array([cal.calendar_known(d.date()) for d in closes.index])
+    if not known.all():
+        logger.error("[backtest] %d %s rows fall in years api/calendar has no holiday table for (%s → %s); dropped, "
+                     "windows needing them are unscored. Extend api/calendar.HOLIDAYS.", int((~known).sum()), TARGET_SYMBOL,
+                     closes.index[~known][0].date().isoformat(), closes.index[~known][-1].date().isoformat())
+        closes = closes[known]
+        if closes.empty:
+            return closes
     first, last = closes.index[0].date(), closes.index[-1].date()
     sessions, d = [], first
     while d <= last:
@@ -199,7 +226,9 @@ def compute_forward_return(
     exit_price = float(spy.iloc[pos + horizon_days])
     if not (np.isfinite(entry_price) and np.isfinite(exit_price)) or entry_price <= 0:
         return None
-    return float(exit_price / entry_price - 1)
+    with np.errstate(over="ignore"):
+        ret = float(np.float64(exit_price) / np.float64(entry_price) - 1)
+    return ret if np.isfinite(ret) else None  # an unrepresentable ratio is unscored (Codex DR-06)
 
 
 def compute_metrics(returns: list) -> dict:
