@@ -183,7 +183,13 @@ export function viewOf(p: PositionRecord, levels: Levels, now: Date): PositionVi
   }
   const d = signedDistance(served.value, { operator: t.operator, threshold });
   const toLevel = d > 0 ? toLevelOf(t.series, d, served.value) : null;
-  return { ...base, room_pct: d / room, to_level: toLevel, now: served, level_now: threshold, note };
+  const roomPct = d / room;
+  // Design review DR-05: on a series P1c added, a distance, room or distance-to-level that does not come out a
+  // finite number is not shown as one; the S&P and 2s10s keep their arithmetic unchanged.
+  const added = t.series !== "spx" && t.series !== "curve_2s10s";
+  if (added && (!Number.isFinite(d) || !Number.isFinite(roomPct) || (toLevel && !Number.isFinite(toLevel.value))))
+    return { ...base, room_pct: null, to_level: null, now: served, note: "Room not computed: the distance to the level is not a usable number." };
+  return { ...base, room_pct: roomPct, to_level: toLevel, now: served, level_now: threshold, note };
 }
 
 /** FALSIFIES AT: "2s10s below +38 bp · now +41 bp", or the typed rule for a manual row. */

@@ -214,6 +214,13 @@ describe("P1c: the monitor's view of the new series", () => {
       expect(v.note).toMatch(/^Room not computed: /);
     }
   });
+  it("never shows a room whose final arithmetic overflows (design review DR-05)", () => {
+    const r = saved("GLD", "short", "above_50d", LEVELS);
+    const tiny = { ...r, direction: "long" as const, entry_value: 1e-300, original_room: 5e-301, trigger: { ...r.trigger!, operator: "below" as const, threshold: 5e-301 } };
+    const v = viewOf(tiny, { ...LEVELS, etfs: { GLD: { ...GLD, value: 1e100, closes: { ...GLD.closes, "2026-09-23": 1e-300 } } } }, NOW);
+    expect([v.room_pct, v.to_level, v.level_now]).toEqual([null, null, null]);
+    expect(v.note).toBe("Room not computed: the distance to the level is not a usable number.");
+  });
 });
 
 describe("P1c: §9's rule on the new records (validation on Save, Import and load)", () => {
