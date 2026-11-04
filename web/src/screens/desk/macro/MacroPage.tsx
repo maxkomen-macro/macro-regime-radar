@@ -655,7 +655,8 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
   const unserved = useBlockUnserved(m, "correlations");
   const rows = (Array.isArray(m?.correlations) ? m.correlations : []) as RowWithViews[];
   const table = regimeTable(rows);
-  if (unserved || !table.rows.length || !table.regimes.length) return null;
+  // Codex S-2: a block whose rows serve no regime column (no regime history stored) still shows each row's reason.
+  if (unserved || !table.rows.length) return null;
   const head = table.rows[0].by_regime;
   const title = "Correlation by regime";
   const sub = "each asset against SPY, daily returns pooled within each regime";
@@ -741,7 +742,7 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
             “At sample end” is the regime the rule gives each row&apos;s last session (the newest is {dayShort(lastEnd(table.rows))}): the row stamped {monthYear(table.currentRow)}. It is not today&apos;s regime; the sidebar and the Regime tab show the newest row, which can differ.
           </li>
         ) : table.rows.some((r) => r.by_regime.current) ? (
-          <li>The rows end on different sessions, so each row&apos;s outlined cell is the regime at its own sample end (the row stamped two months before that session&apos;s month).</li>
+          <li>The rows&apos; sample ends do not all take the same regime row, so each row&apos;s outlined cell is the regime at its own sample end (the row stamped two months before that session&apos;s month).</li>
         ) : null}
         {head.as_known_reason ? <li>{head.as_known_reason}</li> : null}
       </ul>

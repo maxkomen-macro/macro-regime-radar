@@ -137,6 +137,19 @@ describe("P1b helpers", () => {
     expect(regimeTable(split).current).toBeNull();
     expect(regimeTable(plain().correlations as RowWithViews[]).rows).toEqual([]);
   });
+
+  it("Codex S-1: an Unlabeled sample end or another governing month is not agreement", () => {
+    const rows = (withViews().correlations as RowWithViews[]).filter((r) => r.by_regime);
+    expect(regimeTable(rows)).toMatchObject({ current: "Overheating", currentRow: "2026-07" });
+    const with_ = (i: number, patch: Partial<ByRegime>) => rows.map((r, j) => (j === i ? { ...r, by_regime: { ...(r.by_regime as ByRegime), ...patch } } : r));
+    const unlabeled = regimeTable(with_(0, { current: null, current_row: null }));
+    expect([unlabeled.current, unlabeled.currentRow]).toEqual([null, null]);
+    const otherMonth = regimeTable(with_(0, { current_row: "2026-04" }));
+    expect([otherMonth.current, otherMonth.currentRow]).toEqual([null, null]);
+    // A row with no sample (its reason across the row) has no end to agree on and is left out.
+    const noSample = regimeTable(with_(0, { reason: "no daily return both series hold through 2026-09-23", current: null, current_row: null, regimes: [], all: null }));
+    expect([noSample.current, noSample.currentRow]).toEqual(["Overheating", "2026-07"]);
+  });
 });
 
 describe("the correlation window control", () => {
@@ -260,7 +273,7 @@ describe("the correlation-by-regime card", () => {
     expect(tltCells[2]).toHaveAttribute("title", expect.stringContaining("the regime at this row's sample end, Jun 30 (the row stamped Apr 2026)"));
     expect(tltCells[1]).not.toHaveAttribute("data-current");
     expect(within(ief).getAllByRole("cell")[1]).toHaveAttribute("data-current");
-    expect(card).toHaveTextContent("The rows end on different sessions, so each row's outlined cell is the regime at its own sample end");
+    expect(card).toHaveTextContent("The rows' sample ends do not all take the same regime row, so each row's outlined cell is the regime at its own sample end");
     expect(card).not.toHaveTextContent("“At sample end” is the regime");
     expect(card).not.toHaveTextContent(/\bnow\b/i);
   });
@@ -273,5 +286,19 @@ describe("the correlation-by-regime card", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Correlation by regime/ });
     expect(card).toHaveTextContent("not available · no regime history is stored in this database");
+  });
+
+  it("Codex S-2: with no regime history stored, the card still shows, with each row's reason and no regime column", async () => {
+    const m = withViews();
+    for (const r of m.correlations as Any[]) if (r.by_regime) r.by_regime = { ...r.by_regime, reason: "no regime history is stored in this database", regimes: [], all: null, current: null, current_row: null, sample: null };
+    stubDesk({ "/api/desk/macro": () => m });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Correlation by regime/ });
+    expect(card).toHaveTextContent("Revised regime history");
+    const table = within(card).getByRole("table");
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Asset", "All labelled", "Sample"]);
+    const served = (m.correlations as Any[]).filter((r) => r.by_regime).length;
+    expect(within(table).getAllByText("not available · no regime history is stored in this database")).toHaveLength(served);
+    expect(card).not.toHaveTextContent("at sample end");
   });
 });

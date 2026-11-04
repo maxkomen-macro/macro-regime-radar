@@ -158,10 +158,13 @@ export function historyLabel(h: string | null | undefined): string {
 export function regimeTable(rows: readonly RowWithViews[]): { rows: (RowWithViews & { by_regime: ByRegime })[]; regimes: string[]; current: string | null; currentRow: string | null } {
   const served = rows.filter((r): r is RowWithViews & { by_regime: ByRegime } => !!r.by_regime && Array.isArray(r.by_regime.regimes));
   const regimes = served.find((r) => r.by_regime.regimes.length)?.by_regime.regimes.map((g) => g.regime) ?? [];
-  const currents = new Set(served.map((r) => r.by_regime.current).filter((c): c is string => typeof c === "string"));
-  // One current regime only when every row agrees (they end on their own sessions, normally the same month).
-  const current = currents.size === 1 ? [...currents][0] : null;
-  const rowsOf = new Set(served.map((r) => r.by_regime.current_row).filter((c): c is string => typeof c === "string" && /^\d{4}-\d{2}$/.test(c)));
-  const currentRow = current && rowsOf.size === 1 ? [...rowsOf][0] : null;
+  // One column only when every row with a sample takes the same label from the same regime row
+  // (Codex S-1): an Unlabeled end or another governing month means the rows do not agree.
+  const sampled = served.filter((r) => !r.by_regime.reason);
+  const ok = (b: ByRegime) => typeof b.current === "string" && typeof b.current_row === "string" && /^\d{4}-\d{2}$/.test(b.current_row);
+  const first = sampled[0]?.by_regime;
+  const agree = !!first && sampled.every((r) => ok(r.by_regime) && r.by_regime.current === first.current && r.by_regime.current_row === first.current_row);
+  const current = agree ? (first.current as string) : null;
+  const currentRow = agree ? (first.current_row as string) : null;
   return { rows: served, regimes, current, currentRow };
 }
