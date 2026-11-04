@@ -232,13 +232,21 @@ def _released(meta: dict, when: date | datetime, releases: dict | None = None) -
 
 
 def awaiting_refresh(sid: str, exp_month: date, now: datetime | None, releases: dict | None,
-                     watermark: dict | None = None) -> dict | None:
+                     watermark: dict | None = None, attempts: dict | None = None,
+                     newest_check: datetime | None = None) -> dict | None:
     """The neutral wait (design F) for a monthly input whose newest print due is `exp_month` and whose store
     holds the month before it: {"released_at", "due_at", "grace_until"} when the print's dated release R (the
     event calendar's row in New York month exp_month + 1) has passed by RELEASE_BUFFER and `now` is before
     close_grace_until(R's New York date); else None. None, too, for a series outside MONTHLY_INPUTS, a month
     the calendar does not date (Codex DR-02: an approximate day is no evidence of a release), a `now` with no
-    clock, and a watermark whose status records a failed check (anything but ok or revised)."""
+    clock, and a watermark whose status records a failed check (anything but ok or revised).
+
+    F-3 (design F3): inside that window the refresh-attempt status decides (api/refresh_status.decide,
+    `attempts` = api/bootstrap.refresh_attempts(), `newest_check` = the store's newest fred:<id>
+    `checked_at`). The result's "outcome" is "waiting" (the neutral word) or "failed" (a relevant refresh
+    failed, was cancelled or stopped reporting: stale, with that said); a status that cannot vouch for
+    the time since the release (missing, unreadable, not read recently, older than the store, not
+    covering it, overdue) returns None, so the caller keeps today's stale state."""
     meta = MONTHLY_INPUTS.get(sid)
     if meta is None or not meta.get("event") or not isinstance(now, datetime) or now.tzinfo is None:
         return None
@@ -253,7 +261,21 @@ def awaiting_refresh(sid: str, exp_month: date, now: datetime | None, releases: 
     grace = close_grace_until(released.astimezone(cal.NY).date())
     if not (due <= now < grace):
         return None
-    return {"released_at": released, "due_at": due, "grace_until": grace}
+    from api import refresh_status as rs
+
+    verdict = rs.decide(attempts, released_at=released, now=now, newest_check=newest_check)
+    if verdict["outcome"] not in ("waiting", "failed"):
+        return None
+    return {"released_at": released, "due_at": due, "grace_until": grace, "outcome": verdict["outcome"],
+            "why": verdict["why"], "attempt": verdict["attempt"]}
+
+
+def newest_fred_check(watermarks: dict | None) -> datetime | None:
+    """The newest `checked_at` among the store's fred:<id> watermarks: when the full refresh behind the
+    served database last read FRED (F-3: a refresh status older than this has lost a run)."""
+    stamps = [_parse_dt((w or {}).get("checked_at")) for k, w in (watermarks or {}).items() if str(k).startswith("fred:")]
+    stamps = [t for t in stamps if t is not None]
+    return max(stamps) if stamps else None
 
 
 def _day(t: datetime) -> str:
@@ -265,7 +287,19 @@ def _awaiting_reason(label: str, exp_month: date, wait: dict) -> str:
     g = wait["grace_until"].astimezone(timezone.utc)
     return (f"{label} for {exp_month.strftime('%b %Y')} was scheduled for release {_day(r)} at {r.strftime('%H:%M')} ET "
             f"(official calendar) and is not stored yet; the full refresh has until 06:00 UTC {_day(g)} to store it, "
-            "after which it reads stale. A refresh that fails before then is not visible here.")
+            "after which it reads stale. A failed refresh normally shows here within about 10 minutes; one that stops "
+            "reporting turns this stale within an hour of starting, and one whose status never arrives is caught at "
+            "the 06:00 UTC deadline.")
+
+
+def _failed_reason(label: str, exp_month: date, stored_month: date, wait: dict) -> str:
+    r = wait["released_at"].astimezone(cal.NY)
+    started = _parse_dt((wait.get("attempt") or {}).get("started_at"))
+    run = (f"the full refresh that started {_day(started.astimezone(cal.NY))} {started.astimezone(cal.NY).strftime('%H:%M')} ET "
+           if started else "the full refresh ")
+    return (f"{label} for {exp_month.strftime('%b %Y')} was scheduled for release {_day(r)} at {r.strftime('%H:%M')} ET "
+            f"(official calendar) and is not stored: {run}{wait['why']}. The newest stored print is "
+            f"{stored_month.strftime('%b %Y')}.")
 
 
 def _expected_month_for(meta: dict, when: date | datetime, releases: dict | None = None) -> date:
@@ -282,7 +316,8 @@ def _daily_expected_and_lag(d: date, today_ny: date, rates: bool) -> tuple[date,
 
 
 def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, watermark: dict | None,
-                      now: datetime | None = None, releases: dict | None = None, awaiting: bool = False) -> dict:
+                      now: datetime | None = None, releases: dict | None = None, awaiting: bool = False,
+                      attempts: dict | None = None, newest_check: datetime | None = None) -> dict:
     """State of one FRED series. Daily series need a watermark (their stored
     rows are month-stamped); monthly prints are dated by month either way.
     `awaiting` (design F) opts in to the neutral wait for a monthly input one
@@ -315,10 +350,13 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     exp = _expected_month_for(meta, now or today_ny, releases)
     cycles = max(0, (exp.year - month.year) * 12 + exp.month - month.month)
     if awaiting and cycles == 1:
-        wait = awaiting_refresh(sid, exp, now, releases, watermark)
-        if wait is not None:
+        wait = awaiting_refresh(sid, exp, now, releases, watermark, attempts, newest_check)
+        if wait is not None and wait["outcome"] == "waiting":
             return _state(sid, label, "fred", cadence, month.isoformat(), "delayed", cycles_behind=1, late=False,
                           word=AWAITING_WORD, reason=_awaiting_reason(label, exp, wait))
+        if wait is not None and wait["outcome"] == "failed":
+            return _state(sid, label, "fred", cadence, month.isoformat(), "stale", cycles_behind=1,
+                          reason=_failed_reason(label, exp, month, wait))
     reason = (f"{label} for {month.strftime('%b %Y')} is the newest print due." if cycles == 0
               else f"{label}: {cycles} release(s) behind; {exp.strftime('%b %Y')} is due.")
     return _state(sid, label, "fred", cadence, month.isoformat(), "close" if cycles == 0 else "stale", cycles_behind=cycles, reason=reason)
@@ -509,8 +547,10 @@ def assess(
     bootstrap: dict | None,
     now: datetime | None = None,
     watermarks: dict | None = None,
+    attempts: dict | None = None,
 ) -> dict:
-    """`watermarks` (B6, 2026-09-18) maps source → the source_watermarks row
+    """`attempts` (F-3) is api/bootstrap.refresh_attempts(); without it a monthly print one release
+    behind keeps today's stale state (no neutral wait). `watermarks` (B6, 2026-09-18) maps source → the source_watermarks row
     (true last observation, advanced_at, checked_at). raw_series stores daily
     FRED series month-stamped, so without watermarks the FRED daily verdicts
     measure lag from the 1st of the month (the legacy path, kept for older
@@ -699,7 +739,8 @@ def assess(
         # design F: within the neutral wait the verdict stays "delayed" (overall, validate_db, the smoke check) and the
         # drawer prints the word in the neutral tone in its place, as GRACE_WORD does for the daily closes.
         if (not ok and delayed_ok and latest_month == cal.month_add(exp, -1)
-                and awaiting_refresh(sid, exp, now, releases, (watermarks or {}).get(f"fred:{sid}")) is not None):
+                and ((awaiting_refresh(sid, exp, now, releases, (watermarks or {}).get(f"fred:{sid}"), attempts,
+                                       newest_fred_check(watermarks)) or {}).get("outcome") == "waiting")):
             row["word"] = AWAITING_WORD
         rows.append(row)
         inputs.append({"series": sid, "label": meta["label"], "latest_month": latest_month.isoformat() if latest_month else None, "expected_month": exp.isoformat(), "verdict": row["verdict"]})
@@ -782,7 +823,7 @@ def assess(
         stored = by_series.get(sid)
         series.append(fred_series_state(sid, today_ny=today_ny, stored_date=stored.get("date") if stored else None,
                                         watermark=(watermarks or {}).get(f"fred:{sid}"), now=now, releases=releases,
-                                        awaiting=True))
+                                        awaiting=True, attempts=attempts, newest_check=newest_fred_check(watermarks)))
     md_str = md.isoformat() if md else None
     md_cycles = cal.business_days_between(md, exp_md) if md else None
     # D7 follow-up: within the D4 grace (the previous session's close, before the full refresh's deadline) the

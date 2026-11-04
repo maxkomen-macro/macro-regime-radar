@@ -19,6 +19,7 @@ import pytest
 
 from api import desk_items_macro as items
 from api import freshness
+from api import refresh_status as rs
 
 CPI, NFP, G17 = "CPI Release", "Jobs Report (NFP)", "Industrial Production (G.17)"
 RELEASES = {
@@ -29,21 +30,37 @@ RELEASES = {
 WORD = "Released, awaiting refresh"
 
 
+def _attempts(fetched="2026-12-31T00:00:00Z", records=(), covers="2026-09-01T00:00:00Z", updated=None, error=None):
+    """A healthy refresh-attempt status (F-3) unless told otherwise; `fetched` defaults to "now" per test via _held."""
+    doc = {"schema": 1, "workflow": "refresh-data", "updated_at": updated or "2026-09-01T00:00:00Z", "covers_since": covers,
+           "attempts": list(records)}
+    return {"doc": doc if error is None else None, "fetched_at": _utc(fetched), "error": error}
+
+
+def _held(now: str, **kw):
+    """The status as the API holds it a minute after its last check at `now`, listing no attempt since
+    the release (none finished: the neutral wait)."""
+    t = _utc(now)
+    return _attempts(fetched=rs.stamp(t - __import__("datetime").timedelta(minutes=1)), **kw)
+
+
 def _utc(s: str) -> datetime:
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def _state(sid, stored, now, releases=RELEASES, watermark=None, awaiting=True):
+def _state(sid, stored, now, releases=RELEASES, watermark=None, awaiting=True, attempts="healthy"):
+    held = _held(now) if attempts == "healthy" else attempts
     return freshness.fred_series_state(sid, today_ny=_utc(now).astimezone(freshness.cal.NY).date(), stored_date=stored,
-                                       watermark=watermark, now=_utc(now), releases=releases, awaiting=awaiting)
+                                       watermark=watermark, now=_utc(now), releases=releases, awaiting=awaiting,
+                                       attempts=held)
 
 
-def _assess(stored: dict[str, str], now: str, releases=RELEASES, watermarks=None):
+def _assess(stored: dict[str, str], now: str, releases=RELEASES, watermarks=None, attempts="healthy"):
     latest = [{"series_id": s, "date": d, "value": 1.0} for s, d in stored.items()]
     fresh = {"regimes_date": "2026-08-01", "signals_date": "2026-08-01", "market_daily_date": "2026-10-13",
              "news_published_at": "2026-10-14 14:00:00", "raw_series_date": "2026-10-01", "release_times": releases}
     return freshness.assess(db_fresh=fresh, series_latest=latest, relay=None, bootstrap=None, now=_utc(now),
-                            watermarks=watermarks)
+                            watermarks=watermarks, attempts=_held(now) if attempts == "healthy" else attempts)
 
 
 # ── F-2: INDPRO on its G.17 dates ───────────────────────────────────────────
@@ -120,7 +137,7 @@ def test_the_neutral_reason_names_the_scheduled_release_and_the_deadline_and_nev
     s = _state("CPIAUCSL", "2026-08-01", "2026-10-14T14:30:00Z")
     assert "CPI (all items) for Sep 2026" in s["reason"]
     assert "Oct 14 at 08:30 ET" in s["reason"] and "06:00 UTC Oct 15" in s["reason"]
-    assert "not visible here" in s["reason"]  # the failure limit, stated (design F, DR-01)
+    assert "within about 10 minutes" in s["reason"] and "caught at the 06:00 UTC deadline" in s["reason"]  # F-3, DR-07
     assert "FRED" not in s["reason"]  # DR-03/DR-04: no "FRED has not posted" sentence
     est = _state("INDPRO", "2026-09-01", "2026-11-17T16:00:00Z")
     assert "Nov 17 at 09:15 ET" in est["reason"] and "06:00 UTC Nov 18" in est["reason"]

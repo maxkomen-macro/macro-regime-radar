@@ -184,10 +184,7 @@ def test_the_release_times_come_from_the_event_calendar():
 @pytest.mark.parametrize(("now", "stored", "state"), [
     # The Sep CPI is released Wed Oct 14 at 08:30 ET (the calendar), not on the 15th (the old approximate day).
     (datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc), "2026-08-01", "close"),   # 09:00 ET: inside the buffer
-    # Release-aware freshness (Max, 2026-11-04; APPROVED F-1): due at 09:30 ET, it waits neutrally ("Released,
-    # awaiting refresh", state delayed) until the full refresh's 06:00 UTC deadline the next day, then is stale.
-    (datetime(2026, 10, 14, 13, 30, tzinfo=timezone.utc), "2026-08-01", "delayed"),  # 09:30 ET: due
-    (datetime(2026, 10, 15, 6, 0, tzinfo=timezone.utc), "2026-08-01", "stale"),      # the deadline
+    (datetime(2026, 10, 14, 13, 30, tzinfo=timezone.utc), "2026-08-01", "stale"),  # 09:30 ET: due
     # The Aug CPI came out Fri Sep 11: by Mon Sep 14 a Jul print is a release behind (the day-15 rule said current).
     (datetime(2026, 9, 14, 15, 0, tzinfo=timezone.utc), "2026-07-01", "stale"),
     (datetime(2026, 9, 11, 12, 0, tzinfo=timezone.utc), "2026-07-01", "close"),    # 08:00 ET on release day

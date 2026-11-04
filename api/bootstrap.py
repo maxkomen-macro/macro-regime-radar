@@ -293,6 +293,50 @@ def _verify_published(client: httpx.Client, auth: dict, assets: list[dict], path
         return None
 
 
+# Release-aware freshness F-3 (api/refresh_status.py): the refresh-attempt status the full refresh
+# publishes beside the database, read on every release check, apart from the database's own check and
+# swap (a failure here never touches them). None until a check has run (no token: never), so
+# api/freshness reads it as unknown and keeps today's states.
+_refresh_status: dict | None = None
+
+
+def refresh_attempts() -> dict | None:
+    """{"doc": the parsed refresh-status.json or None, "fetched_at": datetime of this check,
+    "error": None | "missing" | "unreadable" | "fetch failed"}; None before any check."""
+    return dict(_refresh_status) if _refresh_status is not None else None
+
+
+def reset_refresh_status_for_tests() -> None:
+    global _refresh_status
+    _refresh_status = None
+
+
+def _read_refresh_status(client: httpx.Client | None, auth: dict, assets: list[dict] | None) -> None:
+    """Hold this check's view of refresh-status.json. A failed listing, a missing asset, a failed
+    download or an invalid document holds no document (never the last one's), with the reason."""
+    from api import refresh_status as rs
+
+    global _refresh_status
+    now = datetime.now(timezone.utc)
+    doc, error = None, None
+    if client is None or assets is None:
+        error = "fetch failed"
+    else:
+        asset = next((a for a in assets if a.get("name") == rs.ASSET_NAME), None)
+        if asset is None:
+            error = "missing"
+        else:
+            try:
+                resp = client.get(asset["url"], headers={**auth, "Accept": "application/octet-stream"}, timeout=30.0)
+                resp.raise_for_status()
+                doc = rs.parse_doc(resp.content)
+                error = None if doc is not None else "unreadable"
+            except Exception as exc:  # noqa: BLE001 - this read must never affect the database check
+                log.warning("refresh-status.json could not be read (%s); monthly prints read conservatively", public_error(exc))
+                error = "fetch failed"
+    _refresh_status = {"doc": doc, "fetched_at": now, "error": error}
+
+
 def _poke_worker() -> None:
     from api import worker as worker_mod
 
@@ -329,7 +373,9 @@ def refresh_db(force: bool = False) -> bool:
             # a failed check is this attempt's result, never the last one's
             _state["last_result"] = "error"
             _state["last_error"] = public_error(exc)
+            _read_refresh_status(None, auth, None)
             raise
+        _read_refresh_status(client, auth, assets)
         asset = next(
             (a for a in assets if a["name"] == _DB_ASSET_NAME),
             None,
