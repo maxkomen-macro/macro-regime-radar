@@ -526,6 +526,34 @@ def test_the_studys_closes_are_one_eodhd_request_since_1995_completed_sessions_o
     assert len(market._study_cache._data) == 0
 
 
+def test_codex_s04_a_session_posted_without_its_adjusted_close_is_asked_again(up, monkeypatch):
+    """Codex S-04: EODHD posts the session's bar before its adjusted close. The study leaves that bar out, so the
+    name's usable history still ends the session before; the cache must ask again after DAILY_RETRY_S (it read
+    the newest bar's date, so it kept the incomplete answer for the day). A complete answer is not asked again."""
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")
+    market.clear_caches()
+    first = [{"date": "2026-09-24", "close": 101.0, "adjusted_close": 101.0},
+             {"date": "2026-09-25", "close": 102.0, "adjusted_close": None}]
+    full = [{"date": "2026-09-24", "close": 101.0, "adjusted_close": 101.0},
+            {"date": "2026-09-25", "close": 102.0, "adjusted_close": 102.0}]
+    up.script["/api/eod/NVDA.US"] = [(200, first), (200, full)]
+    h = desk_basket.study_history(market.daily_closes_since_1995("NVDA"), "NVDA")
+    assert h.dates[-1] == "2026-09-24" and h.unadjusted == 1
+    market.daily_closes_since_1995("NVDA")  # within the retry wait: the stored answer
+    assert up.paths().count("/api/eod/NVDA.US") == 1
+    key = "NVDA:since:1995-01-01:2026-09-25"
+    stamp, value = market._study_cache._data[key]
+    market._study_cache._data[key] = (stamp - market.DAILY_RETRY_S - 60, value)  # older than the retry wait
+    h = desk_basket.study_history(market.daily_closes_since_1995("NVDA"), "NVDA")
+    assert up.paths().count("/api/eod/NVDA.US") == 2
+    assert h.dates[-1] == "2026-09-25" and h.unadjusted == 0
+    stamp, value = market._study_cache._data[key]
+    market._study_cache._data[key] = (stamp - market.DAILY_RETRY_S - 60, value)
+    market.daily_closes_since_1995("NVDA")  # complete through the session: kept
+    assert up.paths().count("/api/eod/NVDA.US") == 2
+    market.clear_caches()
+
+
 def test_the_studys_closes_refuse_an_unknown_name_and_an_empty_answer(up, monkeypatch):
     _at(monkeypatch, "2026-09-25T21:00:00+00:00")
     market.clear_caches()

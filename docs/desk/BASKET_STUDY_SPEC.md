@@ -60,9 +60,11 @@ question). The basket is both the shock and the target. There is no co-condition
   dated after the request's generation's as-of (review R-06), the same cutoff a stored study uses, and
   counts what it leaves out. The regime labels are read from that generation's copy.
 - **A close not published yet.** Asked just after the close, EODHD may not have published that session
-  for every name. The answer then states the session asked for, each name's newest close and the index's
-  last session, and says the newest session is missing. The name's history is asked again after the
-  provider's retry interval (15 minutes, as the two-year bars are), and so is the study built on it.
+  for every name, or may post a session's bar before its adjusted close (a bar without one is left out, so
+  the name's newest usable close is the session before). The answer then states the session asked for, each
+  name's newest close and the index's last session, and says the newest session is missing. The name's
+  history is asked again after the provider's retry interval (15 minutes, as the two-year bars are) while
+  its newest adjusted close precedes the session, and so is the study built on it (review S-04).
 - **Timing.** The index is fixed and known at the session close (every input is an exchange close), so
   an event enters the basket at the event session's close, as an S&P 500 study on itself does; the
   baseline takes the same entry. One exception is the page's monthly rule, kept unchanged: it rebalances

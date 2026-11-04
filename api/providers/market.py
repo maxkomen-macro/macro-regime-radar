@@ -352,9 +352,12 @@ def _study_compute(inst: Instrument, session: str) -> dict:
         raw.append(close)
     if not dates:
         raise EmptyResult(eod.PROVIDER, f"EODHD holds no completed daily bars for {inst.canonical} since {STUDY_HISTORY_FROM}.")
+    # The newest session with an adjusted close: the last one the basket can price (Codex S-04). EODHD can post a
+    # session's bar before its adjusted close, so the newest bar's date alone does not say the answer is complete.
+    usable = next((d for d, a in zip(reversed(dates), reversed(adjusted)) if a == a), None)
     return {"symbol": inst.canonical, "provider": eod.PROVIDER, "session": session, "from": STUDY_HISTORY_FROM,
             "dates": np.array(dates, dtype="datetime64[D]"), "adjusted": np.array(adjusted, dtype=float),
-            "close_raw": np.array(raw, dtype=float)}
+            "close_raw": np.array(raw, dtype=float), "last_adjusted": usable}
 
 
 def daily_closes_since_1995(symbol: str) -> dict:
@@ -368,8 +371,10 @@ def daily_closes_since_1995(symbol: str) -> dict:
         raise UnknownSymbol("api", str(exc)) from exc
     session = last_session()
     key = f"{inst.canonical}:since:{STUDY_HISTORY_FROM}:{session}"
+    # An answer whose newest adjusted close precedes the session (the close, or its adjustment, not posted yet) is
+    # asked again after DAILY_RETRY_S, under the key's single-flight lock as daily_bars.
     return _study_cache.get(key, lambda: _study_compute(inst, session),
-                            stale=lambda v, age: str(v["dates"][-1]) < session and age > DAILY_RETRY_S)
+                            stale=lambda v, age: (v.get("last_adjusted") or "") < session and age > DAILY_RETRY_S)
 
 
 def refresh_candles(symbol: str, range_key: str, margin_s: float) -> bool:
