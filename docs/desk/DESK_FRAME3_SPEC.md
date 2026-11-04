@@ -93,7 +93,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
-- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged.
+- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged; an event study on the basket's own index.
 - Data Pipeline: the series inventory, generated from the registry.
 - Client view: the current study in plain words, a month out.
 
