@@ -225,8 +225,13 @@ def restate(db_path: Path, dates: list[str], symbols: list[str], client, *, rang
         raise SystemExit(f"refusing, nothing written: {wal} holds uncheckpointed writes; checkpoint the database first")
     stamp = now.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     snap = Path(snapshot) if snapshot else db_path.with_name(f"{db_path.stem}.pre-restate-{stamp}{db_path.suffix}")
-    if snap.exists():
+    if snap.exists() or snap.is_symlink():
         raise SystemExit(f"refusing, nothing written: snapshot {snap} already exists")
+    sidecars = [db_path] + [db_path.with_name(db_path.name + x) for x in ("-wal", "-shm", "-journal")]
+    if any(snap.resolve() == k.resolve() for k in sidecars):
+        raise SystemExit(f"refusing, nothing written: snapshot {snap} names the database or a SQLite sidecar")
+    if not snap.resolve().parent.is_dir():
+        raise SystemExit(f"refusing, nothing written: snapshot {snap}: its folder does not exist")
     shutil.copyfile(db_path, snap)
     if _sha256(snap) != report["db_sha256"]:
         raise SystemExit(f"refusing, nothing written: snapshot {snap} does not match the database")

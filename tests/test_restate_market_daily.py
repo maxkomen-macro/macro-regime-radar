@@ -138,6 +138,7 @@ def test_apply_overwrites_only_the_named_rows_that_exist(db):
     assert (got["open"], got["high"], got["low"], got["close"], got["volume"]) == (773.11, 773.11, 773.11, 773.11, 10.0)
     assert got["fetched_at"] == "2026-09-19T00:30:00"
     assert _close(db, "QQQ", "2026-09-03") == 638.0  # not named
+    assert _close(db, "SPY", "2026-09-04") == 770.0  # not named
     assert _row(db, "SPY", "2026-09-04")["fetched_at"] == "2026-09-05T04:00:00"  # an anchor is read, never written
     assert _close(db, "SPY", "2026-09-02") is None  # never inserted: restating is not backfilling
 
@@ -555,3 +556,15 @@ def test_a_report_in_a_missing_folder_is_refused_before_anything_is_written(monk
     assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply", "--report", str(missing)]) == 2
     assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
     assert ri.main(["--before", str(db), "--after", str(db), "--report", str(missing)]) == 2
+
+
+@pytest.mark.parametrize("name", ["md.db-wal", "md.db-shm", "md.db-journal", "md.db", "no-such-dir/s.db"])
+def test_a_snapshot_path_that_is_the_database_or_a_sidecar_is_refused(db, tmp_path, name):
+    before = _sha(db)
+    with pytest.raises(SystemExit, match="refusing, nothing written"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE,
+                   snapshot=tmp_path / name)
+    assert _sha(db) == before and _close(db, "SPY", "2026-09-03") == 768.66
+    for x in ("-wal", "-shm", "-journal"):
+        p = db.with_name(db.name + x)
+        assert not p.exists() or p.stat().st_size == 0
