@@ -90,6 +90,7 @@ Each file loads automatically when you read or edit a file matching its `paths`.
 | `streamlit.md` | Legacy Streamlit constraints and its own palette | `dashboard/`, `.streamlit/` |
 | `web.md` | React app notes and where the design contract lives | `web/` |
 | `surprises.md` | Surprise metrics: daily-store sources, session calendars, observation dates, CPI YoY, VIX alerts | `src/analytics/surprise*.py`, alerts, playbook, memo, `src/utils/format.py`, `api/db.py`, surprise tests |
+| `test-data.md` | New committed test data uses invented prices, never real third-party market data | `web/src/fixtures/`, `tests/fixtures/`, `docs/desk/shots/`, `web/e2e/` |
 
 ## Keeping this file useful
 
