@@ -635,6 +635,11 @@ function WindowControl({ m, horizons, w, setW }: { m: MacroResponse | undefined;
   );
 }
 
+/** The newest sample end among the regime rows (ISO dates sort as text). */
+function lastEnd(rows: readonly RowWithViews[]): string {
+  return rows.map((r) => r.by_regime?.sample?.end ?? "").reduce((a, b) => (b > a ? b : a), "");
+}
+
 /** "+0.31" / "−0.24", or "—" with the served reason as its title. */
 function RegimeValue({ corr, reason }: { corr: number | null | undefined; reason: string | null | undefined }) {
   return fin(corr) ? <span className="mc-rg-val">{corrText(corr)}</span> : <span className="mc-rg-val dk-stat-await" title={reason ?? undefined}>—</span>;
@@ -669,7 +674,7 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
                 <th key={r} scope="col" data-current={r === table.current || undefined}>
                   <span className="mc-rg-dot" data-tone={REGIME_TONE[r] ?? "gray"} aria-hidden="true" />
                   {r}
-                  {r === table.current ? <span className="mc-rg-now"> · now</span> : null}
+                  {r === table.current ? <span className="mc-rg-now"> · at sample end</span> : null}
                 </th>
               ))}
               <th scope="col">All labelled</th>
@@ -733,7 +738,7 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
         <li>Each value pools every daily return the revised history assigns to that regime since the pair's first common return, so it mixes decades; volatile days weigh more, and one episode can dominate (the share in one spell is shown when it holds a third or more). n is the returns used; a regime with fewer than {fin(head.min_n) ? head.min_n : "the minimum"} is not served. No interval is served, and a gap between two regimes is not a tested difference.</li>
         {table.current && table.currentRow ? (
           <li>
-            “Now” is the regime the rule gives the latest session: the row stamped {monthYear(table.currentRow)}. The sidebar and the Regime tab show the newest row, which can differ.
+            “At sample end” is the regime the rule gives each row&apos;s last session (the newest is {dayShort(lastEnd(table.rows))}): the row stamped {monthYear(table.currentRow)}. It is not today&apos;s regime; the sidebar and the Regime tab show the newest row, which can differ.
           </li>
         ) : table.rows.some((r) => r.by_regime.current) ? (
           <li>The rows end on different sessions, so each row&apos;s outlined cell is the regime at its own sample end (the row stamped two months before that session&apos;s month).</li>

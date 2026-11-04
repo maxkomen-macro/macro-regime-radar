@@ -136,7 +136,10 @@ reason.
 under the same lag rule. `current_row` is the month of the row it comes from (`YYYY-MM`, two months
 before `t`'s month). Both are null when `t` is Unlabeled.
 - **Per row:** each row ends on its own session, so the page marks each row's own cell. It marks a
-  column as "now" only when every row's end session takes the same row.
+  column "at sample end" only when every row's end session takes the same row, and prints the newest
+  end session and that row's month beside it.
+- **Never "now":** the sample ends on the last stored session, which can be days or weeks before the
+  page is read, so the page never calls this regime "now" or today's.
 - **Against the newest row:** this can differ from the newest stored row, which the sidebar and the
   Regime tab show, and the page says so.
 
@@ -194,13 +197,15 @@ The Macro tab gets one control, "Correlation window: 20 · 60 · 120 sessions", 
 correlation cards, set to 60.
 - **What it switches:** "Do bonds still hedge stocks?", "What moves with the S&P" and the matrix
   all switch to the chosen horizon. Each card's subtitle names the horizon it shows.
+- **Definitions:** the shared hover definition of "correlation" names no window ("over the window or
+  sample the card names"), so it reads true at 20, 60 and 120 and on the regime card.
 - **Noise note:** under the line, the served noise band is printed as a sentence: "With 20 daily
   returns, a true correlation of zero reads beyond about ±0.38 one time in ten if returns were
   independent and normal; real returns can be more or less noisy than that."
 - **New card, "Correlation by regime":** full width. It is a table of the nine assets against SPY,
   one column per regime plus All.
   - **Marking:** each row's regime at its sample end is marked in that row. A column is marked
-    "now" only when every row agrees.
+    "at sample end" only when every row agrees (§4).
   - **Cells:** each regime cell shows the served value with its n and spells; the All cell shows
     its value and n. A null cell shows its reason.
 - **Labels on the card:**

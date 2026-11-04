@@ -186,6 +186,24 @@ describe("the correlation window control", () => {
     expect(mx).toHaveTextContent("Awaiting refresh: the matrix as served could not be read");
   });
 
+  it("defines correlation without a fixed window, so the 20- and 120-day cards and the regime card read true (DR-08)", async () => {
+    renderTab();
+    const group = await screen.findByRole("group", { name: "Correlation window" });
+    for (const h of ["20 days", "120 days"]) {
+      fireEvent.click(within(group).getByRole("button", { name: h }));
+      const n = h.split(" ")[0];
+      for (const name of [new RegExp(`^Do bonds still hedge stocks\\? ${n}-day`), new RegExp(`^What moves with the S&P ${n}-day`), new RegExp(`^Correlation matrix ${n}-day`)]) {
+        const defs = [...screen.getByRole("region", { name }).querySelectorAll(".dk-card-head .dk-term")].map((t) => t.getAttribute("data-def") ?? "");
+        expect(defs.some((d) => d.startsWith("Correlation runs from −1 to +1"))).toBe(true);
+        for (const d of defs) expect(d).not.toMatch(/\b60 sessions\b/);
+      }
+    }
+    const rg = screen.getByRole("region", { name: /^Correlation by regime/ });
+    const defs = [...rg.querySelectorAll(".dk-card-head .dk-term")].map((t) => t.getAttribute("data-def") ?? "");
+    expect(defs.some((d) => d.includes("over the window or sample the card names"))).toBe(true);
+    for (const d of defs) expect(d).not.toMatch(/\b60 sessions\b/);
+  });
+
   it("drops the served windows and by-regime items from the stock–bond Advanced list", async () => {
     renderTab();
     const sb = await screen.findByRole("region", { name: /^Do bonds still hedge stocks\?/ });
@@ -205,7 +223,7 @@ describe("the correlation-by-regime card", () => {
     expect(card).toHaveTextContent("stamped K−2 months");
     expect(card).toHaveTextContent("As known at the time is not available yet");
     expect(card).toHaveTextContent("No interval is served");
-    expect(card).toHaveTextContent("“Now” is the regime the rule gives the latest session: the row stamped Jul 2026.");
+    expect(card).toHaveTextContent("“At sample end” is the regime the rule gives each row's last session (the newest is Sep 23): the row stamped Jul 2026. It is not today's regime");
     expect(card).toHaveTextContent("a regime with fewer than 60 is not served");
   });
 
@@ -214,7 +232,7 @@ describe("the correlation-by-regime card", () => {
     const card = await screen.findByRole("region", { name: /^Correlation by regime/ });
     const table = within(card).getByRole("table");
     const heads = within(table).getAllByRole("columnheader").map((h) => h.textContent);
-    expect(heads).toEqual(["Asset", "Goldilocks", "Overheating · now", "Stagflation", "Recession Risk", "All labelled", "Sample"]);
+    expect(heads).toEqual(["Asset", "Goldilocks", "Overheating · at sample end", "Stagflation", "Recession Risk", "All labelled", "Sample"]);
     const tltRow = within(table).getAllByRole("row").find((r) => within(r).queryByText("TLT"))!;
     const cells = within(tltRow).getAllByRole("cell");
     expect(cells[0]).toHaveTextContent("−0.30");
@@ -227,7 +245,7 @@ describe("the correlation-by-regime card", () => {
     expect(cells[5]).toHaveTextContent("2002 to Sep 23");
   });
 
-  it("marks each row's own regime at its sample end, and no column as now when the rows disagree (DR-05)", async () => {
+  it("marks each row's own regime at its sample end, and no column when the rows disagree (DR-05)", async () => {
     const m = withViews();
     const rows = m.correlations as Any[];
     rows[0].by_regime = { ...rows[0].by_regime, current: "Stagflation", current_row: "2026-04", sample: { start: "2002-07-31", end: "2026-06-30" } };
@@ -235,7 +253,7 @@ describe("the correlation-by-regime card", () => {
     renderTab();
     const card = await screen.findByRole("region", { name: /^Correlation by regime/ });
     const table = within(card).getByRole("table");
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).not.toContain("Overheating · now");
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).not.toContain("Overheating · at sample end");
     const [tlt, ief] = within(table).getAllByRole("row").slice(1);
     const tltCells = within(tlt).getAllByRole("cell");
     expect(tltCells[2]).toHaveAttribute("data-current");
@@ -243,7 +261,8 @@ describe("the correlation-by-regime card", () => {
     expect(tltCells[1]).not.toHaveAttribute("data-current");
     expect(within(ief).getAllByRole("cell")[1]).toHaveAttribute("data-current");
     expect(card).toHaveTextContent("The rows end on different sessions, so each row's outlined cell is the regime at its own sample end");
-    expect(card).not.toHaveTextContent("“Now” is the regime");
+    expect(card).not.toHaveTextContent("“At sample end” is the regime");
+    expect(card).not.toHaveTextContent(/\bnow\b/i);
   });
 
   it("prints a row's reason across the row when its regime history is not stored", async () => {
