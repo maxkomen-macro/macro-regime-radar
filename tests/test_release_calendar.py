@@ -13,7 +13,12 @@ the macro events the News calendar and the Options Finder list.
   on 2026-11-03 (fred/release/dates, releases 10, 50 and 13), pinned here so
   the suite catches an edit without the network. The live comparison is
   `python scripts/check_calendar.py` (FRED_API_KEY).
-- **The online check's rules** on a fake FRED.
+- **The 2027 dates** of the Fed, BEA and Census families equal the agencies'
+  own published schedules as read on 2026-11-04 (FRED listed no 2027 dates
+  then), pinned the same way. The BLS families (CPI, the jobs report) have
+  no 2027 rows yet: bls.gov refused this environment's requests.
+- **The online check's rules** on a fake FRED, including rows after FRED's
+  last listed date (reported, not failed, until FRED lists that far).
 - **The loader** keeps the store to the file: a manual_csv row the file no
   longer lists is deleted; other sources' rows are untouched; an empty file
   deletes nothing.
@@ -47,6 +52,29 @@ FRED_2026 = {
             "2026-08-18", "2026-09-18", "2026-10-16", "2026-11-17", "2026-12-16"],
 }
 
+
+# The agencies' own schedules, read 2026-11-04 ~20:05 UTC (FRED listed no 2027 dates for these releases then):
+#   g17    https://www.federalreserve.gov/releases/g17/release_dates.htm (page last updated 2026-08-18)
+#   retail https://www.census.gov/economic-indicators/calendar-listview.html (2027 calendar,
+#          "Advance Monthly Sales for Retail and Food Services")
+#   gdp    https://www.bea.gov/news/schedule/next-year (GDP Advance, Second and Third Estimate)
+#   pce    https://www.bea.gov/news/schedule/next-year ("Personal Income and Outlays")
+#   fomc   https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm (2027 meetings, statement on the
+#          second day; "each meeting date is tentative until confirmed at the meeting immediately preceding it")
+AGENCY_2027 = {
+    "g17": ["2027-01-15", "2027-02-17", "2027-03-15", "2027-04-15", "2027-05-17", "2027-06-16", "2027-07-16",
+            "2027-08-17", "2027-09-16", "2027-10-18", "2027-11-17", "2027-12-16"],
+    "retail": ["2027-01-15", "2027-02-17", "2027-03-16", "2027-04-16", "2027-05-14", "2027-06-16", "2027-07-16",
+               "2027-08-16", "2027-09-16", "2027-10-15", "2027-11-16", "2027-12-15"],
+    "gdp": ["2027-01-28", "2027-02-25", "2027-03-31", "2027-04-29", "2027-05-27", "2027-06-25", "2027-07-29",
+            "2027-08-25", "2027-09-30", "2027-10-28", "2027-11-24", "2027-12-22"],
+    "pce": ["2027-01-28", "2027-02-25", "2027-03-31", "2027-04-29", "2027-05-27", "2027-06-25", "2027-07-29",
+            "2027-08-25", "2027-09-30", "2027-10-28", "2027-11-24", "2027-12-22"],
+    "fomc": ["2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09", "2027-07-28", "2027-09-15", "2027-10-27",
+             "2027-12-08"],
+    "cpi": [],    # bls.gov answered 403 to this environment; no row without the agency's schedule or FRED
+    "jobs": [],
+}
 
 def _rows(path: Path = CSV_PATH) -> tuple[list[cc.Row], cc.Report]:
     rep = cc.Report()
@@ -85,6 +113,23 @@ def test_the_2026_dates_are_freds(fam):
     rows, _ = _rows()
     mine = [r.ny_date.isoformat() for r in rows if r.family is not None and r.family.key == fam and r.at.year == 2026]
     assert mine == FRED_2026[fam]
+
+
+@pytest.mark.parametrize("fam", sorted(AGENCY_2027))
+def test_the_2027_dates_are_the_agencies(fam):
+    rows, _ = _rows()
+    mine = [r.ny_date.isoformat() for r in rows if r.family is not None and r.family.key == fam and r.at.year == 2027]
+    assert mine == AGENCY_2027[fam]
+
+
+def test_the_2027_gdp_rows_name_their_quarter_and_estimate():
+    rows, _ = _rows()
+    gdp = [(r.ny_date.isoformat(), r.name, r.importance) for r in rows
+           if r.family is not None and r.family.key == "gdp" and r.at.year == 2027]
+    assert gdp[:3] == [("2027-01-28", "GDP Advance Q4 2026", "high"),
+                       ("2027-02-25", "GDP Second Estimate Q4 2026", "medium"),
+                       ("2027-03-31", "GDP Third Estimate Q4 2026", "medium")]
+    assert gdp[-1] == ("2027-12-22", "GDP Third Estimate Q3 2027", "medium")
 
 
 def test_the_g17_rows_are_at_0915_new_york_through_both_clocks():
@@ -137,6 +182,23 @@ def test_fred_dates_after_the_last_row_fail_and_a_short_horizon_warns(tmp_path):
                   {13: ["2026-11-17", "2026-12-16"]}, tmp_path)
     assert any("g17: FRED dates after the last row (2026-11-17): 2026-12-16; extend the file" in e for e in rep.errors)
     assert any(w.startswith("g17: the last row is 2026-11-17") for w in rep.warnings)
+
+
+def test_rows_after_freds_last_date_are_reported_not_failed_until_fred_lists_them(tmp_path):
+    lines = ["Industrial Production (G.17),2026-12-16T14:15:00Z,medium",
+             "Industrial Production (G.17),2027-01-15T14:15:00Z,medium",
+             "Industrial Production (G.17),2027-02-17T14:15:00Z,medium"]
+    rep = _online(lines, {13: ["2026-12-16"]}, tmp_path)
+    assert rep.errors == []
+    assert any(n.startswith("g17: 2 rows after FRED's last listed date (2026-12-16), 2027-01-15 to 2027-02-17")
+               and "federalreserve.gov/releases/g17" in n for n in rep.notes)
+    # once FRED lists that far, the rows are held to it again
+    rep = _online(lines, {13: ["2026-12-16", "2027-01-14", "2027-02-17"]}, tmp_path)
+    assert any("g17: a row on 2027-01-15 is not a FRED release date" in e for e in rep.errors)
+    assert any("g17: FRED dates without a row: 2027-01-14" in e for e in rep.errors)
+    # a FRED that lists nothing checks nothing, and says so
+    rep = _online(lines, {}, tmp_path)
+    assert rep.errors == [] and any("3 rows after FRED's last listed date (none)" in n for n in rep.notes)
 
 
 def test_a_revision_only_fred_date_is_advisory_for_retail(tmp_path):
