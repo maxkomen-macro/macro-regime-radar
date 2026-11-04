@@ -697,7 +697,8 @@ def test_the_lens_chain_and_expiry_list_read_the_same_before_and_after_a_finder_
 
 
 def test_the_live_route_count_is_fifteen_and_the_web_mirror_agrees():
-    assert env.LIVE_ROUTES == 15 and env.ENVELOPED_ROUTES[env.LIVE_ROUTES - 1] == "/options/finder"
+    # fifteen when the Finder was added; desk/basket-study's /basket/study (§12.19) is the sixteenth, after it
+    assert env.LIVE_ROUTES == 16 and env.ENVELOPED_ROUTES[14] == "/options/finder"
     assert "/options/finder" in dc.ROUTES and env.route_of("/options/finder") == "/options/finder"
 
 

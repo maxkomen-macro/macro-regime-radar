@@ -316,6 +316,60 @@ def daily_bars(symbol: str) -> dict:
                             stale=lambda v, age: v["bars"][-1]["ts"][:10] < session and age > DAILY_RETRY_S)
 
 
+# desk/basket-study (P1a): the basket event study reads each name's daily closes from this date, the same
+# end-of-day request as the two-year range (one API call per request, whatever the span), kept apart from
+# the two-year cache and compact (arrays, never bar dicts): a name's thirty years are ~8,000 rows.
+STUDY_HISTORY_FROM = "1995-01-01"
+_study_cache = KeyedTTLCache(DAILY_TTL, 64)
+
+
+def _study_compute(inst: Instrument, session: str) -> dict:
+    import numpy as np
+
+    blocked = entitlements.is_blocked("historical")
+    if blocked is not None:
+        raise Unauthorized(eod.PROVIDER, blocked.reason, status=blocked.status)
+    try:
+        rows = _with_slot(lambda: client().eod(inst.eodhd, from_=STUDY_HISTORY_FROM, to=session, period="d"))
+    except ProviderError as exc:
+        if exc.kind in ("unauthorized", "missing_token"):
+            entitlements.record_live("historical", False, exc.status, f"{exc.kind}: {exc.public}")
+        if exc.kind == "unknown_symbol":
+            raise UnknownSymbol("api", f"No listing found for '{inst.canonical}' on EODHD.", status=exc.status, detail=repr(exc)) from exc
+        raise
+    entitlements.record_live("historical", True, 200, "ok")
+    dates, adjusted, raw = [], [], []
+    for r in rows:
+        d, close = r.get("date"), _f(r.get("close"))
+        if not d or close is None or str(d)[:10] > session:  # completed sessions only (the B6 rule)
+            continue
+        adj = _f(r.get("adjusted_close"))
+        dates.append(str(d)[:10])
+        # the two-year bars' arithmetic exactly (close × adjusted/close, to six places), so the two indices agree
+        adjusted.append(round(close * (adj / close), 6) if adj is not None and adj > 0 and close else np.nan)
+        raw.append(close)
+    if not dates:
+        raise EmptyResult(eod.PROVIDER, f"EODHD holds no completed daily bars for {inst.canonical} since {STUDY_HISTORY_FROM}.")
+    return {"symbol": inst.canonical, "provider": eod.PROVIDER, "session": session, "from": STUDY_HISTORY_FROM,
+            "dates": np.array(dates, dtype="datetime64[D]"), "adjusted": np.array(adjusted, dtype=float),
+            "close_raw": np.array(raw, dtype=float)}
+
+
+def daily_closes_since_1995(symbol: str) -> dict:
+    """desk/basket-study (P1a): one name's daily closes from STUDY_HISTORY_FROM through the last completed
+    New York session, from EODHD, cached per ticker per session like daily_bars: `dates` (datetime64[D],
+    ascending as served), `adjusted` (split- and dividend-adjusted close, NaN where EODHD served none) and
+    `close_raw` (EODHD's own close). Never Yahoo."""
+    try:
+        inst = parse(symbol)
+    except SymbolError as exc:
+        raise UnknownSymbol("api", str(exc)) from exc
+    session = last_session()
+    key = f"{inst.canonical}:since:{STUDY_HISTORY_FROM}:{session}"
+    return _study_cache.get(key, lambda: _study_compute(inst, session),
+                            stale=lambda v, age: str(v["dates"][-1]) < session and age > DAILY_RETRY_S)
+
+
 def refresh_candles(symbol: str, range_key: str, margin_s: float) -> bool:
     """Prefetch (fix/prelaunch-1, 4d): fetch one candle series into the cache
     when it is missing or within margin_s of expiring, so a visitor's request

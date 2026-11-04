@@ -152,7 +152,7 @@ export function errorEnvelope(code: string, message: string, meta: EnvelopeMeta,
 /** The routes that answer the envelope (§12.0): the live ones (the nine of §12.1–§12.9, /sectors of §12.14
  * since desk/fill-etf, then Basket & Hedge's two, desk/books, then
  * /instruments of §12.17, desk/usability, then /basket/shares of §12.18, desk/cap-weight, then the Options
- * Finder's /options/finder) and the deferred
+ * Finder's /options/finder, then /basket/study of §12.19, desk/basket-study) and the deferred
  * stubs. The existing endpoints under /api/desk (the frame-2 engine's `/event-study`, `/pipeline/inventory`)
  * keep their own contracts. */
 export const ENVELOPED_ROUTES: readonly string[] = [
@@ -161,11 +161,12 @@ export const ENVELOPED_ROUTES: readonly string[] = [
   "/instruments",
   "/basket/shares",
   "/options/finder",
+  "/basket/study",
   "/vol", "/positions", "/basket", "/hedge",
 ];
 
-/** Basket & Hedge's live routes (§12.15, §12.16, §12.18): never read as a basket's id. */
-const BASKET_ROUTES = ["/basket/price", "/basket/hedge", "/basket/shares"];
+/** Basket & Hedge's live routes (§12.15, §12.16, §12.18, §12.19): never read as a basket's id. */
+const BASKET_ROUTES = ["/basket/price", "/basket/hedge", "/basket/shares", "/basket/study"];
 
 /** The route an /api/desk URL path answers for (`/basket/ai-infra` reads as `/basket`). */
 export function routeOf(path: string): string {
