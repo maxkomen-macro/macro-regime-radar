@@ -441,6 +441,38 @@ def test_cap_weight_without_stored_counts_is_awaiting(served, install_worker):
     assert body["status"] == "awaiting" and "share counts" in body["unavailable"]["reason"]
 
 
+def test_cap_weight_with_stored_counts_is_the_engines_on_the_cap_weighted_index(served, monkeypatch):
+    """Codex S-01 round 1 note: a cap-weighted basket with every count stored is studied on price_basket's
+    cap-weighted index (traded closes, today's counts at the start), and another count is another job."""
+    from src.desk import basket as bk
+
+    counts = {"OLD": {"shares_outstanding": 3.0e9, "as_of": "2026-09-24", "source": "eodhd_fundamentals"},
+              "MID": {"shares_outstanding": 1.5e9, "as_of": "2026-09-24", "source": "eodhd_fundamentals"}}
+    monkeypatch.setattr(desk_basket, "stored_counts", lambda: {"stored": True, "reason": None, "counts": counts, "excluded": []})
+    body = study(legs="OLD,MID", weighting="cap", method="monthly")
+    assert body.status_code == 200, body.text
+    d = body.json()["data"]
+    assert d["basket"]["weighting"] == "cap" and d["index"]["weighting"] == "cap" and d["index"]["cap_weights"]
+    hist = {s: desk_basket.study_history(market.daily_closes_since_1995(s), s) for s in ("OLD", "MID")}
+    priced = bk.price_basket(hist, None, "monthly", 1.0, sessions=desk_basket.calendar_for(hist),
+                             shares_outstanding={s: c["shares_outstanding"] for s, c in counts.items()})
+    lvl = pd.Series(priced["index"], index=pd.DatetimeIndex(priced["dates"]))
+    conn = dbpath.connect_ro(db.DB_PATH)
+    try:
+        native = es.run_on_supplied_traced(conn, es.Query(shock="basket", target="basket", w=5, z=2.0, sign="-"),
+                                           _supplied_from(lvl), generation="g", as_of=AS_OF)[0]
+    finally:
+        conn.close()
+    s = d["study"]
+    assert s["matched_n"] == native["provenance"]["n_events"]
+    for row, H in zip(s["horizons"], native["horizons"]):
+        assert row["n"] == H["n"] and row["median"] == H["median"] and row["baseline_median"] == H["baseline_median"]
+    n = len(served["asked"])
+    counts["MID"] = {**counts["MID"], "shares_outstanding": 2.0e9}
+    e = study(legs="OLD,MID", weighting="cap", method="monthly").json()["data"]
+    assert len(served["asked"]) == n + 2 and e["study"]["inputs_hash"] != s["inputs_hash"]
+
+
 def test_monthly_the_studys_index_returns_are_the_charts_after_both_rebalance(served):
     """Spec §2: with monthly rebalancing the long-history index and the two-year chart's agree on every
     session's return once both have rebalanced (the chart's start month aside)."""
