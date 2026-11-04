@@ -179,22 +179,59 @@ def check_replica(db: Path, reps: dict[str, pd.DataFrame], ind_t: pd.DataFrame, 
     rep = classify(ind_db, cpi_db, OBS_START)
     common = run_rows.index.intersection(rep.index)
     lab_eq = int((run_rows.loc[common, "label"] == rep.loc[common, "label"]).sum())
-    prob_err = float(np.abs(run_rows.loc[common, list(PROB_COLS)].to_numpy() - rep.loc[common, list(PROB_COLS)].to_numpy()).max())
+    prob_err = (float(np.abs(run_rows.loc[common, list(PROB_COLS)].to_numpy() - rep.loc[common, list(PROB_COLS)].to_numpy()).max())
+                if len(common) else float("inf"))
     li, lc = alfred.latest(ind_t), alfred.latest(cpi_t)
-    def gap(a: pd.Series, b: pd.Series) -> tuple[int, float]:
+    def gap(a: pd.Series, b: pd.Series) -> dict:
+        """Stored months from the window start, ALFRED months, months in both
+        and the largest absolute difference over them (inf when none)."""
+        a = a[a.index >= pd.Timestamp(OBS_START)]
+        b = b[b.index >= pd.Timestamp(OBS_START)]
         j = a.index.intersection(b.index)
-        j = j[j >= pd.Timestamp(OBS_START)]
-        return int(len(j)), float(np.abs(a.loc[j].to_numpy() - b.loc[j].to_numpy()).max())
-    ni, ei = gap(ind_db, li)
-    nc, ec = gap(cpi_db, lc)
+        err = float(np.abs(a.loc[j].to_numpy() - b.loc[j].to_numpy()).max()) if len(j) else float("inf")
+        return {"stored_months": int(len(a)), "alfred_months": int(len(b)), "months": int(len(j)), "max_abs_diff": err}
     return {
         "newest_run_computed_at": newest_run, "newest_run_rows": int(len(run_rows)),
         "newest_run_first": str(run_rows.index.min()), "newest_run_last": str(run_rows.index.max()),
         "older_rows_left_from_earlier_runs": int(len(stored) - len(run_rows)),
         "replica_rows_compared": int(len(common)), "replica_labels_equal": lab_eq, "replica_max_prob_abs_err": prob_err,
-        "alfred_latest_vs_stored": {"INDPRO": {"months": ni, "max_abs_diff": ei}, "CPIAUCSL": {"months": nc, "max_abs_diff": ec}},
+        "alfred_latest_vs_stored": {"INDPRO": gap(ind_db, li), "CPIAUCSL": gap(cpi_db, lc)},
         "alfred_fetched_at_utc": {"INDPRO": ind_t.attrs.get("fetched_at_utc"), "CPIAUCSL": cpi_t.attrs.get("fetched_at_utc")},
     }
+
+
+# Replica tolerances: the stored odds are rounded to 4 places by src/regime.py
+# and recomputed by the same code here, and ALFRED serves the same decimals the
+# store holds, so both gaps must be zero up to float noise.
+REPLICA_TOL = 1e-9
+
+
+class ReplicaMismatch(RuntimeError):
+    """The replay does not reproduce the served rows, or ALFRED's latest
+    vintage is not the stored data: no result may be reported (Codex S-1)."""
+
+
+def enforce_replica(diag: dict, tol: float = REPLICA_TOL) -> None:
+    """Raise unless the replica covers every row of the newest stored run with
+    equal labels and odds, and ALFRED's latest vintage covers every stored
+    input month with equal values."""
+    problems = []
+    n = diag["newest_run_rows"]
+    if n == 0:
+        problems.append("the newest stored run has no rows")
+    if diag["replica_rows_compared"] != n:
+        problems.append(f"replica covers {diag['replica_rows_compared']} of {n} stored rows")
+    if diag["replica_labels_equal"] != diag["replica_rows_compared"]:
+        problems.append(f"labels equal on {diag['replica_labels_equal']} of {diag['replica_rows_compared']} rows")
+    if not diag["replica_max_prob_abs_err"] <= tol:
+        problems.append(f"odds differ by up to {diag['replica_max_prob_abs_err']}")
+    for sid, g in diag["alfred_latest_vs_stored"].items():
+        if g["months"] != g["stored_months"] or g["months"] != g["alfred_months"]:
+            problems.append(f"{sid}: {g['stored_months']} stored months, {g['alfred_months']} ALFRED months, {g['months']} in both")
+        if not g["max_abs_diff"] <= tol:
+            problems.append(f"{sid}: ALFRED's latest vintage differs from the store by up to {g['max_abs_diff']}")
+    if problems:
+        raise ReplicaMismatch("replica check failed: " + "; ".join(problems))
 
 
 def timing(known: pd.DataFrame, months: pd.PeriodIndex) -> dict:
@@ -251,6 +288,7 @@ def run(cache: Path, db: Path, out: Path) -> dict:
     ind_t, cpi_t = alfred.load(cache, "INDPRO"), alfred.load(cache, "CPIAUCSL")
     reps = replay_all(ind_t, cpi_t)
     replica = check_replica(db, reps, ind_t, cpi_t)
+    enforce_replica(replica)
     stored = served_rows(db)
     served = stored[stored["computed_at"] == stored["computed_at"].max()]
     known = first_known_dates(ind_t, cpi_t)

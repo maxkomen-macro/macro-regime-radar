@@ -81,6 +81,25 @@ def _score(model, scaler, row: pd.Series, names: list[str]) -> float:
     return float(model.predict_proba(x)[0, k] * 100.0)
 
 
+REPLICA_TOL_PP = 1e-9
+
+
+class ReplicaMismatch(RuntimeError):
+    """The study's served series is not the module's (Codex S-1)."""
+
+
+def enforce_replica(module: pd.Series, study: pd.Series, tol: float = REPLICA_TOL_PP) -> float:
+    """Raise unless the study's served probability series has exactly the
+    module's months and equals it within `tol`; return the largest gap."""
+    if len(module) == 0 or not module.index.equals(study.index):
+        raise ReplicaMismatch(f"served series covers {len(study)} months, the module's {len(module)}, "
+                              f"{len(module.index.intersection(study.index))} in both")
+    gap = float(np.abs(module.to_numpy(dtype=float) - study.to_numpy(dtype=float)).max())
+    if not gap <= tol:  # also catches NaN
+        raise ReplicaMismatch(f"served series differs from the module's by up to {gap} pp")
+    return gap
+
+
 def row_known_dates(tables: dict[str, pd.DataFrame]) -> pd.Series:
     """Per month-end row: the later of UNRATE's and INDPRO's first publication."""
     fu, fi = alfred.first_release(tables["UNRATE"]), alfred.first_release(tables["INDPRO"])
@@ -106,7 +125,7 @@ def run(cache: Path, db: Path, out: Path) -> dict:
         served = served[served.index <= pd.Timestamp.today()]
         # the served headline as the module computes it, to pin the replica
         metrics = rec.get_recession_metrics()
-        replica_gap = float(np.abs(metrics["recession_prob_series"].reindex(served.index) - served).max())
+        replica_gap = enforce_replica(metrics["recession_prob_series"], served)
 
         known = row_known_dates(tables)
         recs = []
