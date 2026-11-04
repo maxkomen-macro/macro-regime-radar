@@ -201,7 +201,7 @@ describe("P1c: the monitor's view of the new series", () => {
     const v = viewOf(r, { ...LEVELS, etfs: { GLD: { ...GLD, closes: rest } } }, NOW);
     expect([v.room_pct, v.to_level, v.level_now]).toEqual([null, null, null]);
     expect(v.now).toMatchObject({ value: 392.8800048828125 });
-    expect(v.note).toBe("Room not computed: the stored close of 2026-09-23 is not served, so the level cannot be checked against today's closes.");
+    expect(v.note).toBe("Room not computed: the close of 2026-09-23 is not among the served closes (through 2026-09-23), so the level cannot be checked against them.");
     expect(viewOf(r, { ...LEVELS, etfs: {} }, NOW)).toMatchObject({ room_pct: null, now: null, note: null });
   });
   it("never turns an unusable entry value or close into a room (design review DR-03)", () => {

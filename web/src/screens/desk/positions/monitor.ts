@@ -156,7 +156,7 @@ export function positionName(p: Pick<PositionRecord, "direction" | "instrument">
  */
 export function restatement(t: Trigger, entryValue: number, etf: EtfLevel): { factor: number } | { why: string } {
   const close = etf.closes[t.observed_on];
-  if (!isFiniteNumber(close)) return { why: `the stored close of ${t.observed_on} is not served, so the level cannot be checked against today's closes` };
+  if (!isFiniteNumber(close)) return { why: `the close of ${t.observed_on} is not among the served closes (through ${etf.date}), so the level cannot be checked against them` };
   // A price is positive: a record (an import) whose entry value is not, or a factor that does not come out a
   // finite positive number, is not restated into a room (design review DR-03).
   const factor = close / entryValue;
