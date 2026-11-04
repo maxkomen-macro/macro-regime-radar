@@ -802,9 +802,6 @@ export interface ByRegime {
   reason: string | null;
 }
 
-/** One horizon of the matrix. */
-
-
 export interface CorrelationRow {
   asset: string;
   symbol?: string;
