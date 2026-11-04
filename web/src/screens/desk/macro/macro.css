@@ -311,7 +311,8 @@
 .mc-rg tbody th .mc-mx-name {
   margin-left: 8px;
 }
-.mc-rg [data-current] {
+.mc-rg th[data-current],
+.mc-rg td[data-current] {
   box-shadow: inset 1px 0 0 var(--dk-box), inset -1px 0 0 var(--dk-box);
 }
 .mc-rg-dot {

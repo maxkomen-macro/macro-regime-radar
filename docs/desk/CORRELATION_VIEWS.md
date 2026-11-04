@@ -36,6 +36,15 @@ a client can read every horizon one way. The existing top-level fields are untou
 - **Return:** the daily log return `ln(P(i) / P(i−1))` on return date `i`, where `i−1` is the
   previous XNYS session. It exists only when both closes are stored. ^VIX uses the daily log change
   of the level. Nothing is forward-filled or interpolated, and a return is never formed across a gap.
+  - The return is computed exactly as the 60-session blocks compute it today (`daily_returns`, the
+    ratio, then the log), so the three horizons share one return series and the 60-session values
+    stay unchanged.
+  - A return that comes out non-finite counts as missing, like a gap. Only a ratio that overflows or
+    underflows can do that, which needs prices near the float limits; validated ETF closes never come
+    close.
+- **Pearson:** the centred form `Σ dx·dy / √(Σ dx² · Σ dy²)` over the window, with means taken over
+  the window. A window where either sum of squares is zero has no variation. A non-finite result is
+  null.
 - **Pairs:** a correlation uses only return dates on which both series hold a return.
 
 ## 3. Rolling windows: 20, 60 and 120 sessions
@@ -48,10 +57,22 @@ a client can read every horizon one way. The existing top-level fields are untou
   - `matrix` uses the newest session on which every asset with a valid close holds one.
   - The three horizons of one block share `t`, so they can be read side by side.
 - **Missing data:** a window is served only when all `w` return dates hold a return for both
-  series. Otherwise the value is null with the reason: how many of the `w` returns are held, and the
-  first missing one. A window with no variation in either series is null with that reason. In the
-  matrix, an asset without a complete window at that horizon is "no data" at that horizon only.
-  It can be served at 20 and not at 120.
+  series. Otherwise the value is null with the same reason each block already gives at 60, with
+  `w` in place of 60:
+  - `stock_bond` and the `correlations` rows: "fewer than `w` complete daily return pairs in the
+    window to `<date>`".
+  - the matrix: "only `<coverage>` of `w` daily returns in the window to `<date>`: `<first gap>`".
+
+  A window with no variation in either series is null with that reason. In the matrix, an asset
+  without a complete window at that horizon is "no data" at that horizon only. It can be served at
+  20 and not at 120.
+- **Unavailable paths:** these keep the block-level behaviour each block has today.
+  - `stock_bond` awaits while SPY or TLT is not stored, or no session holds both. The views live
+    inside the block, so they await with it.
+  - The `correlations` block awaits while SPY is not stored, or every listed asset is not.
+  - A row the store cannot compute has `date` null: the asset is not stored, or no session holds
+    both. Its `by_horizon` and `by_regime` are null, and its own `reason` says why.
+  - The matrix awaits as it does today.
 - **Overlap:** the windows on consecutive days share `w − 1` of their `w` returns. The one-year
   line is therefore smooth by construction, and neighbouring points are not independent
   observations. The returns inside one window do not overlap: each is one session's move. This
@@ -62,11 +83,14 @@ a client can read every horizon one way. The existing top-level fields are untou
   more often than a 120-session one, and the page says so.
 - **Noise reference (`noise_band`):** each horizon's entry serves
   `noise_band = tanh(1.6448536 / sqrt(w − 3))`, rule `fisher-z-90-iid`. That gives 0.38 for 20,
-  0.21 for 60 and 0.15 for 120. It is how far from zero a sample correlation lands one time in ten
-  when the true correlation is zero and the daily returns are independent and normal. Real daily
-  returns cluster in volatility and have fat tails, so the real noise is larger. The band is a
-  floor on the noise, served so the page can say how noisy a short window is. It is not a
-  confidence interval for the served value, and nothing is tested against it.
+  0.21 for 60 and 0.15 for 120.
+  - **What it is:** Fisher's approximation to how far from zero a sample correlation lands one time
+    in ten, when the true correlation is zero and the returns are independent, identically
+    distributed and normal. It is an approximate reference under those assumptions.
+  - **Its calibration:** real returns have fat tails, volatility clustering and serial dependence,
+    and these can make the true spread wider or narrower. It is neither a floor nor a ceiling.
+  - **Its use:** it is served so the page can say roughly how noisy a short window is. It is not a
+    confidence interval for the served value, and nothing is tested against it.
 
 ## 4. Correlation by regime
 
@@ -102,10 +126,21 @@ out. A regime with fewer than 60 returns (`MIN_REGIME_RETURNS`, the default wind
 with the reason "only n daily returns in <regime>". A regime with no variation is null with that
 reason.
 
-**Current regime.** `current` is the label governing the row's end session `t` under the same lag
-rule, so the page can mark the column that applies now. `current_row` is the month of the row it
-comes from (`YYYY-MM`, two months before `t`'s month). Both are null when `t` is Unlabeled. This can
-differ from the newest stored row, which the sidebar and the Regime tab show, and the page says so.
+**Regime at the sample's end.** `current` is the label governing the row's own end session `t`
+under the same lag rule. `current_row` is the month of the row it comes from (`YYYY-MM`, two months
+before `t`'s month). Both are null when `t` is Unlabeled.
+- **Per row:** each row ends on its own session, so the page marks each row's own cell. It marks a
+  column as "now" only when every row's end session takes the same row.
+- **Against the newest row:** this can differ from the newest stored row, which the sidebar and the
+  Regime tab show, and the page says so.
+
+**Empty samples.** These keep the block's shape:
+- **No regime rows stored:** `reason` says so, `regimes` is `[]`, and `all`, `current`,
+  `current_row`, `sample` and the counts are null.
+- **No common return through `t`:** for example, each series holds a single close. The same, with
+  the reason "no daily return both series hold through `<date>`".
+- **A regime with no return used:** `n` 0, `first` and `last` null, `spells` 0,
+  `largest_spell_share` null, and the minimum's reason.
 
 **What a regime number means, and what it does not.**
 - It describes how the two assets co-moved on the days the revised history assigns to that regime.
@@ -152,12 +187,14 @@ The Macro tab gets one control, "Correlation window: 20 · 60 · 120 sessions", 
 correlation cards, set to 60.
 - **What it switches:** "Do bonds still hedge stocks?", "What moves with the S&P" and the matrix
   all switch to the chosen horizon. Each card's subtitle names the horizon it shows.
-- **Noise note:** under the line, the served noise band is printed as a sentence: "With 20
-  returns, a true correlation of zero reads beyond ±0.38 one time in ten; real returns are
-  noisier."
+- **Noise note:** under the line, the served noise band is printed as a sentence: "With 20 daily
+  returns, a true correlation of zero reads beyond about ±0.38 one time in ten if returns were
+  independent and normal; real returns can be more or less noisy than that."
 - **New card, "Correlation by regime":** full width. It is a table of the nine assets against SPY,
-  one column per regime plus All, with the column for the current regime marked. Each cell shows the
-  served value and its n and spells. A null cell shows its reason.
+  one column per regime plus All.
+  - **Marking:** each row's regime at its sample end is marked in that row. A column is marked
+    "now" only when every row agrees.
+  - **Cells:** each cell shows the served value with its n and spells. A null cell shows its reason.
 - **Labels on the card:**
   - It is headed "Revised regime history".
   - It states the K − 2 rule in one line.

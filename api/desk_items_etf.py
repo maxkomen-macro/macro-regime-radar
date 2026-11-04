@@ -556,9 +556,11 @@ AS_KNOWN_REASON = ("As known at the time is not available yet: it needs the poin
 
 
 def noise_band(w: int) -> float:
-    """§3: how far from zero a sample correlation of w independent normal
-    return pairs lands one time in ten when the true correlation is zero,
-    tanh(z₀.₉₅ / √(w − 3)). A floor on the noise, not an interval."""
+    """§3: Fisher's approximation to how far from zero a sample correlation of
+    w independent, identically distributed normal return pairs lands one time
+    in ten when the true correlation is zero, tanh(z₀.₉₅ / √(w − 3)). An
+    approximate reference under those assumptions (real returns can be more or
+    less noisy), never an interval for a served value."""
     return math.tanh(NOISE_Z / math.sqrt(w - 3))
 
 

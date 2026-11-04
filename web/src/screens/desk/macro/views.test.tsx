@@ -123,7 +123,7 @@ describe("P1b helpers", () => {
   });
 
   it("words the noise floor and a regime cell's note", () => {
-    expect(noiseSentence(20, 0.37898)).toBe("With 20 daily returns, a true correlation of zero reads beyond ±0.38 one time in ten if returns were independent; real returns are noisier, so treat smaller moves as noise.");
+    expect(noiseSentence(20, 0.37898)).toBe("With 20 daily returns, a true correlation of zero reads beyond about ±0.38 one time in ten if returns were independent and normal; real returns can be more or less noisy than that.");
     expect(noiseSentence(20, null)).toBe("");
     expect([horizonWords(20), horizonWords(60), horizonWords(120)]).toEqual(["about a month", "about a quarter", "about six months"]);
     expect(regimeNote({ regime: "Goldilocks", corr: 0.1, n: 540, first: null, last: null, reason: null, spells: 17, largest_spell_share: 0.15 })).toBe("n 540 · 17 spells");
@@ -164,7 +164,7 @@ describe("the correlation window control", () => {
 
     fireEvent.click(within(group).getByRole("button", { name: "20 days" }));
     expect(within(group).getByRole("button", { name: "20 days" })).toHaveAttribute("aria-pressed", "true");
-    expect(group).toHaveTextContent("With 20 daily returns, a true correlation of zero reads beyond ±0.38 one time in ten");
+    expect(group).toHaveTextContent("With 20 daily returns, a true correlation of zero reads beyond about ±0.38 one time in ten if returns were independent and normal; real returns can be more or less noisy than that.");
     const sb20 = screen.getByRole("region", { name: /^Do bonds still hedge stocks\? 20-day correlation of daily returns, one year/ });
     expect(within(sb20).getByText("−0.33")).toBeInTheDocument();
     expect(sb20).toHaveTextContent("20 daily log returns to");
@@ -225,6 +225,25 @@ describe("the correlation-by-regime card", () => {
     expect(cells[3]).toHaveAttribute("title", expect.stringContaining("only 41 daily returns in Recession Risk; a correlation needs 60"));
     expect(cells[4]).toHaveTextContent("n 6,000");
     expect(cells[5]).toHaveTextContent("2002 to Sep 23");
+  });
+
+  it("marks each row's own regime at its sample end, and no column as now when the rows disagree (DR-05)", async () => {
+    const m = withViews();
+    const rows = m.correlations as Any[];
+    rows[0].by_regime = { ...rows[0].by_regime, current: "Stagflation", current_row: "2026-04", sample: { start: "2002-07-31", end: "2026-06-30" } };
+    stubDesk({ "/api/desk/macro": () => m });
+    renderTab();
+    const card = await screen.findByRole("region", { name: /^Correlation by regime/ });
+    const table = within(card).getByRole("table");
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).not.toContain("Overheating · now");
+    const [tlt, ief] = within(table).getAllByRole("row").slice(1);
+    const tltCells = within(tlt).getAllByRole("cell");
+    expect(tltCells[2]).toHaveAttribute("data-current");
+    expect(tltCells[2]).toHaveAttribute("title", expect.stringContaining("the regime at this row's sample end, Jun 30 (the row stamped Apr 2026)"));
+    expect(tltCells[1]).not.toHaveAttribute("data-current");
+    expect(within(ief).getAllByRole("cell")[1]).toHaveAttribute("data-current");
+    expect(card).toHaveTextContent("The rows end on different sessions, so each row's outlined cell is the regime at its own sample end");
+    expect(card).not.toHaveTextContent("“Now” is the regime");
   });
 
   it("prints a row's reason across the row when its regime history is not stored", async () => {

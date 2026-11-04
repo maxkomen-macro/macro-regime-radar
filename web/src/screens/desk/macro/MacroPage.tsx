@@ -615,7 +615,7 @@ function Matrix({ m, state, w = DEFAULT_HORIZON }: { m: MacroResponse | undefine
 
 /**
  * Desk P1b: the window control, offered only for the horizons every correlation
- * block serves, and the served noise floor of the chosen one in words (§3).
+ * block serves, and the served noise reference of the chosen one in words (§3).
  */
 function WindowControl({ m, horizons, w, setW }: { m: MacroResponse | undefined; horizons: number[]; w: number; setW: (w: number) => void }) {
   const note = noiseSentence(w, noiseBandOf(m, w));
@@ -696,7 +696,21 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
                         const g = by.get(r);
                         const v = g?.corr;
                         return (
-                          <td key={r} data-current={r === table.current || undefined} style={{ background: fin(v) ? matrixTint(v) : undefined }} title={g ? [g.reason, g.first && g.last ? `${dayShort(g.first)} ${g.first.slice(0, 4)} to ${dayShort(g.last)} ${g.last.slice(0, 4)}` : null].filter(Boolean).join(" · ") || undefined : undefined}>
+                          // P1b §4 (DR-05): each row marks the regime at its own sample end.
+                          <td
+                            key={r}
+                            data-current={r === br.current || undefined}
+                            style={{ background: fin(v) ? matrixTint(v) : undefined }}
+                            title={
+                              [
+                                r === br.current && br.current_row && br.sample ? `the regime at this row's sample end, ${dayShort(br.sample.end)} (the row stamped ${monthYear(br.current_row)})` : null,
+                                g?.reason ?? null,
+                                g?.first && g?.last ? `${dayShort(g.first)} ${g.first.slice(0, 4)} to ${dayShort(g.last)} ${g.last.slice(0, 4)}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ") || undefined
+                            }
+                          >
                             <RegimeValue corr={v} reason={g?.reason} />
                             {g ? <span className="mc-rg-n">{regimeNote(g)}</span> : null}
                           </td>
@@ -721,6 +735,8 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
           <li>
             “Now” is the regime the rule gives the latest session: the row stamped {monthYear(table.currentRow)}. The sidebar and the Regime tab show the newest row, which can differ.
           </li>
+        ) : table.rows.some((r) => r.by_regime.current) ? (
+          <li>The rows end on different sessions, so each row&apos;s outlined cell is the regime at its own sample end (the row stamped two months before that session&apos;s month).</li>
         ) : null}
         {head.as_known_reason ? <li>{head.as_known_reason}</li> : null}
       </ul>

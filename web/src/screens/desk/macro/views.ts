@@ -121,7 +121,7 @@ export function matrixAt(mx: MatrixWithViews, w: number): MatrixWithViews {
   return h ? { ...mx, values: h.values, no_data: h.no_data, window: h.window, coverage: h.coverage, lead: h.lead, horizon: h.horizon } : mx;
 }
 
-/** The served noise floor of horizon w (§3), or null. */
+/** The served noise reference of horizon w (§3, an approximation under independent normal returns), or null. */
 export function noiseBandOf(m: MacroResponse | undefined, w: number): number | null {
   const sb = m?.stock_bond as StockBondWithViews | undefined;
   const mx = m?.matrix as MatrixWithViews | undefined;
@@ -129,10 +129,10 @@ export function noiseBandOf(m: MacroResponse | undefined, w: number): number | n
   return fin(v) ? v : null;
 }
 
-/** §3, in words: "With 20 daily returns, a true correlation of zero reads beyond ±0.38 one time in ten …". */
+/** §3, in words: "With 20 daily returns, a true correlation of zero reads beyond about ±0.38 one time in ten …". */
 export function noiseSentence(w: number, band: number | null): string {
   if (!fin(band)) return "";
-  return `With ${w} daily returns, a true correlation of zero reads beyond ±${num(band, 2)} one time in ten if returns were independent; real returns are noisier, so treat smaller moves as noise.`;
+  return `With ${w} daily returns, a true correlation of zero reads beyond about ±${num(band, 2)} one time in ten if returns were independent and normal; real returns can be more or less noisy than that.`;
 }
 
 /** "about a month" / "about a quarter" / "about six months" of sessions. */

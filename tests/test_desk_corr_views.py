@@ -373,3 +373,17 @@ def test_on_the_published_copy_the_views_hold_their_rules():
         assert (g["corr"] is None and r is None) or g["corr"] == pytest.approx(r, abs=1e-12)
     mx = etf.matrix(st, True)
     assert mx["by_horizon"]["60"]["values"] == mx["values"]
+
+
+def test_a_row_without_a_common_return_keeps_the_by_regime_shape_with_its_reason(tmp_path):
+    """§4 empty samples: TLT holds one close, on the last session, so the row has an end
+    session and no daily return: by_regime keeps its keys, with the reason and nulls."""
+    days = hs.sessions()
+    st = _store(tmp_path, _cycling(), starts={"TLT": days[-1]})
+    row = next(r for r in etf.correlations(st, True) if r["symbol"] == "TLT")
+    assert row["date"] == days[-1] and row["corr"] is None
+    br = row["by_regime"]
+    assert br["reason"] == f"no daily return both series hold through {days[-1]}"
+    assert (br["regimes"], br["all"], br["current"], br["current_row"], br["sample"]) == ([], None, None, None, None)
+    assert (br["unlabeled_n"], br["incomplete_n"]) == (None, None)
+    assert all(h["corr"] is None and h["reason"].startswith("fewer than") for h in row["by_horizon"].values())
