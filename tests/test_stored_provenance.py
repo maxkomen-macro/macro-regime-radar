@@ -181,3 +181,44 @@ def test_methodology_lists_polygon_with_the_stored_dates():
     assert ('["Polygon.io", null, "Stored daily candles for the 23-ETF universe dated Feb 27, 2024 to May 26, 2026 '
             "(from Feb 18, 2026 for 14 of them; SPY's Mar 12, 2026 bar is yfinance)") in text
     assert "all of them from May 27, 2026, plus SPY's history before Feb 27, 2024 and its Mar 12, 2026 bar" in text
+
+
+# ── The weekly memo ─────────────────────────────────────────────────────────
+
+
+def test_memo_describes_rows_by_their_own_source_with_counts_and_date_runs():
+    import pandas as pd
+
+    from src import memo
+
+    rows = pd.DataFrame({
+        "symbol": ["SPY", "SPY", "SPY", "TLT", "SPY", "SPY"],
+        "date": pd.to_datetime(["2026-03-11", "2026-03-12", "2026-03-13", "2026-03-12", "2026-05-27", "2026-05-28"]),
+        "source": ["polygon", "yfinance", "polygon", "polygon", "yfinance", "yfinance"],
+    })
+    assert memo.describe_market_sources(rows) == (
+        "Polygon.io (3 rows, Mar 11, 2026 to Mar 13, 2026) and "
+        "yfinance (3 rows: Mar 12, 2026; May 27, 2026 to May 28, 2026)")
+    assert memo.describe_market_sources(rows[rows["source"] == "yfinance"].iloc[:1]) == "yfinance (1 row, Mar 12, 2026)"
+    assert memo.describe_market_sources(pd.DataFrame()) == ""
+
+
+@needs_db
+def test_the_memo_chart_names_both_providers_of_the_rows_it_plots():
+    import pandas as pd
+
+    from src import memo
+
+    market = memo.load_market_daily_memo()
+    assert "source" in market.columns
+    words = memo.market_chart_sources(market, pd.Timestamp("2026-09-01"))
+    plotted = pd.concat(memo._market_chart_rows(market, pd.Timestamp("2026-09-01")).values())
+    n_polygon = int((plotted["source"] == "polygon").sum())
+    assert words.startswith(f"Polygon.io ({n_polygon:,} rows, Sep 02, 2025 to May 26, 2026) and yfinance ("), words
+
+
+def test_the_memo_template_no_longer_says_its_market_data_is_all_yfinance():
+    text = (ROOT / "templates/memo.html").read_text()
+    assert "Source: yfinance market data" not in text
+    assert "from yfinance (daily OHLCV)" not in text
+    assert "{{ market_chart_src }}" in text and "{{ market_sources }}" in text
