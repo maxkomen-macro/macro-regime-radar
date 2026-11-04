@@ -50,6 +50,13 @@ die() { echo "publish_artifacts: $2" >&2; exit "$1"; }
 MSG="$1"; shift
 [ -n "$MSG" ] || die 2 "empty commit message"
 
+# Only a run of main's own workflow may write to main: a run dispatched from
+# another branch would otherwise publish that branch's output (the old step's
+# push went to the run's own branch and was rejected).
+if [ -n "${GITHUB_REF:-}" ] && [ "$GITHUB_REF" != "refs/heads/$BRANCH" ]; then
+  die 2 "this run is on $GITHUB_REF, not refs/heads/$BRANCH; nothing published"
+fi
+
 SRC=$(git rev-parse --show-toplevel 2>/dev/null) || die 2 "not inside a git checkout"
 cd "$SRC" || die 2 "cannot enter $SRC"
 

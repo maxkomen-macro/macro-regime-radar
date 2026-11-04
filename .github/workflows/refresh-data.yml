@@ -396,7 +396,7 @@ jobs:
           fi
 
       - name: Commit playbook.json if it changed
-        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'
+        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass' && github.ref == 'refs/heads/main'
         timeout-minutes: 15
         run: |
           git config user.name "github-actions[bot]"

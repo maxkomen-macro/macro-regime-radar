@@ -81,6 +81,7 @@ def _env(tmp: Path, extra: dict | None = None) -> dict:
         PUBLISH_ARTIFACTS_NO_BACKOFF="1",
     )
     env.pop("RUNNER_TEMP", None)
+    env.pop("GITHUB_REF", None)   # the branch guard is tested explicitly
     if extra:
         env.update(extra)
     return env
@@ -436,6 +437,23 @@ def test_a_hung_push_is_cut_off_and_retried(tmp_path):
     assert race.changed(merge, race.tip()) == ["output/playbook.json"]
 
 
+def test_a_run_on_another_branch_publishes_nothing(tmp_path):
+    """A workflow dispatched from a feature branch must not write its output to main."""
+    race = Race(tmp_path)
+    race.checkout_runner()
+    before = race.tip()
+    _write(race.runner, "output/playbook.json", "generated on a branch\n")
+    res = race.run(_publish_cmd(["Update playbook [skip ci]", "output/playbook.json"]),
+                   env=_env(tmp_path, {"GITHUB_REF": "refs/heads/feature-x"}))
+    assert res.returncode == 2, res.stdout + res.stderr
+    assert "refs/heads/feature-x" in res.stderr
+    assert race.tip() == before
+    ok = race.run(_publish_cmd(["Update playbook [skip ci]", "output/playbook.json"]),
+                  env=_env(tmp_path, {"GITHUB_REF": "refs/heads/main"}))
+    assert ok.returncode == 0, ok.stderr
+    assert race.changed(before, race.tip()) == ["output/playbook.json"]
+
+
 # --------------------------------------------------------------------------- the workflows use it
 
 def test_every_git_writer_uses_the_fresh_checkout_publisher():
@@ -447,6 +465,8 @@ def test_every_git_writer_uses_the_fresh_checkout_publisher():
             assert banned not in run, f"{workflow}: {banned!r} in the commit step"
         assert _workflow_publish_args(workflow, step_name) == [message, artifact]
         assert step.get("timeout-minutes") == 15, f"{workflow}: the commit step has a deadline"
+        # a run dispatched from another branch never writes to main
+        assert "github.ref == 'refs/heads/main'" in step["if"], workflow
     # no other workflow step writes to git, and nothing turns the backoff off
     for path in sorted(WF.glob("*.yml")):
         text = path.read_text()
