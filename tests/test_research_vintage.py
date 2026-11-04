@@ -142,3 +142,33 @@ def test_the_recession_replica_needs_the_same_months_and_values():
         enforce_replica(s, shifted)
     with pytest.raises(ReplicaMismatch):
         enforce_replica(pd.Series(dtype=float), pd.Series(dtype=float))
+
+
+# Codex S-3: the scratch copy must carry committed transactions still in a WAL file.
+
+def test_the_scratch_copy_carries_frames_still_in_the_wal(tmp_path):
+    import sqlite3
+
+    from scripts.research.vintage_studies import make_scratch_db, snapshot_db
+
+    src = tmp_path / "store.db"
+    writer = sqlite3.connect(src)
+    writer.execute("PRAGMA journal_mode=WAL")
+    writer.execute("PRAGMA wal_autocheckpoint=0")
+    writer.execute("CREATE TABLE regimes (date TEXT PRIMARY KEY, label TEXT)")
+    writer.commit()
+    writer.executemany("INSERT INTO regimes VALUES (?, ?)", [("2024-01-01", "Overheating"), ("2024-02-01", "Goldilocks")])
+    writer.commit()  # committed, but only in store.db-wal while this connection stays open
+    try:
+        assert (tmp_path / "store.db-wal").stat().st_size > 0
+        snap = snapshot_db(src, tmp_path / "snap.db")
+        alt = make_scratch_db(src, tmp_path / "alt.db", {"2024-01": "Stagflation", "2024-02": None})
+        with sqlite3.connect(snap) as c:
+            assert c.execute("SELECT date, label FROM regimes ORDER BY date").fetchall() == [
+                ("2024-01-01", "Overheating"), ("2024-02-01", "Goldilocks")]
+        with sqlite3.connect(alt) as c:
+            assert c.execute("SELECT date, label FROM regimes ORDER BY date").fetchall() == [("2024-01-01", "Stagflation")]
+        # the source is untouched
+        assert writer.execute("SELECT count(*) FROM regimes").fetchone()[0] == 2
+    finally:
+        writer.close()

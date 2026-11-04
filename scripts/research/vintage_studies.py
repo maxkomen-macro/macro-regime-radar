@@ -9,7 +9,8 @@ labels as they were known at the time and counts what changes.
 
 Three label sources, all from `vintage_regime.py`'s replay:
 
-* `served`: the stored table, unchanged (the baseline run).
+* `served`: the stored table, unchanged (the baseline run), read from a
+  backup-API snapshot like the other two, so all three see the same data.
 * `governed_start`: row M carries its label from the vintage of the last day
   of month M+1, the eve of the month it governs. A table swap on a scratch
   copy of the database; the engine runs unmodified.
@@ -31,7 +32,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -50,11 +50,27 @@ def load_vintage_labels(path: Path) -> tuple[list[str], dict[str, dict[str, str]
     return sorted(by_v), by_v
 
 
-def make_scratch_db(src: Path, dst: Path, labels: dict[str, str | None]) -> Path:
-    """A copy of `src` whose regimes rows for the months in `labels` carry the
-    given label (None deletes the row: the label was not known yet)."""
+def snapshot_db(src: Path, dst: Path) -> Path:
+    """A consistent copy of `src` through SQLite's backup API (Codex S-3): it
+    carries every committed transaction, including frames still in a WAL file
+    that a byte copy of the main file would miss. `src` is opened read-only."""
     dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(src, dst)
+    if dst.exists():
+        dst.unlink()
+    source = sqlite3.connect(f"file:{src}?mode=ro", uri=True)
+    target = sqlite3.connect(dst)
+    try:
+        source.backup(target)
+    finally:
+        target.close()
+        source.close()
+    return dst
+
+
+def make_scratch_db(src: Path, dst: Path, labels: dict[str, str | None]) -> Path:
+    """A snapshot of `src` whose regimes rows for the months in `labels` carry
+    the given label (None deletes the row: the label was not known yet)."""
+    snapshot_db(src, dst)
     conn = sqlite3.connect(dst)
     try:
         for month, lab in labels.items():
@@ -201,21 +217,23 @@ def main(argv: list[str] | None = None) -> int:
     gov = {m: (lab if isinstance(lab, str) else None) for m, lab in h["at_governed_start"].items()}
     vdates, by_v = load_vintage_labels(a.labels)
 
-    served = run_catalog(a.db)
-    gov_db = make_scratch_db(a.db, a.scratch / "governed_start.db", gov)
+    # every run reads one snapshot of the database (Codex S-3), never the live file
+    base = snapshot_db(a.db, a.scratch / "served.db")
+    served = run_catalog(base)
+    gov_db = make_scratch_db(base, a.scratch / "governed_start.db", gov)
     governed = run_catalog(gov_db)
 
     original = es.regime_at
     es.regime_at = point_in_time_regime_at(vdates, by_v, es.REGIME_LAG_MONTHS)
     try:
-        pit = run_catalog(a.db)
+        pit = run_catalog(base)
     finally:
         es.regime_at = original
 
     res = {
         "governed_start_vs_served": compare(served, governed),
         "point_in_time_vs_served": compare(served, pit),
-        "regime_stats": {"served": regime_stats_for(a.db, None), "governed_start": regime_stats_for(a.db, gov)},
+        "regime_stats": {"served": regime_stats_for(base, None), "governed_start": regime_stats_for(base, gov)},
     }
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out / "studies_summary.json").write_text(json.dumps(res, indent=2, default=str))
