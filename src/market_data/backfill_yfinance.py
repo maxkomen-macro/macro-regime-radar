@@ -46,7 +46,10 @@ def _get_conn() -> sqlite3.Connection:
 def fetch_and_insert(symbol: str, start: str, conn: sqlite3.Connection) -> int:
     logger.info("Fetching %s from %s via yfinance...", symbol, start)
     ticker = yf.Ticker(symbol)
-    df = ticker.history(start=start, auto_adjust=True)
+    # unadjusted for distributions, like every other market_daily row (owner decision
+    # 2026-11-04): the 2026-03-13 SPY backfill used auto_adjust=True and spliced a
+    # dividend-adjusted 1993-2024 history onto Polygon's traded closes (+2.66% false day)
+    df = ticker.history(start=start, auto_adjust=False)
     if df.empty:
         logger.warning("No data returned for %s", symbol)
         return 0
