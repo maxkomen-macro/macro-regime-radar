@@ -26,6 +26,7 @@ import { matrixProblem } from "./matrix";
 import { GLOSSARY } from "../kit/glossary";
 import "./macro.css";
 import { Term, defineTerms } from "../kit/Term";
+import { ICE_CREDIT } from "../../shared/DataNotice";
 
 type State = "loading" | "awaiting" | "ready";
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -394,6 +395,7 @@ function Credit({ m, state }: { m: MacroResponse | undefined; state: State }) {
             <Awaiting />
           )}
           <ServedRead read={m?.reads?.credit} />
+          <p className="dk-stat-label">{ICE_CREDIT}</p>
         </>
       ) : (
         <AwaitingStats labels={["HY spread", "3-year range", "Investment grade"]} quiet={quiet} />
