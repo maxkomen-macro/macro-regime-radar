@@ -45,10 +45,11 @@ REGIME_TABLE: dict[tuple[bool, bool], str] = {
 }
 
 # The two prints that decide the next regime row (§12.6): key, FRED id, axis,
-# and the event_calendar name of its release (none is stored for INDPRO).
+# and the event_calendar name of its release (events/calendar.csv; desk upgrade
+# P0d added the Fed's G.17 dates, so INDPRO's is dated too).
 NEXT_PRINTS: tuple[tuple[str, str, str, str | None], ...] = (
     ("cpi", "CPIAUCSL", "inflation", "CPI Release"),
-    ("indpro", "INDPRO", "growth", None),
+    ("indpro", "INDPRO", "growth", "Industrial Production (G.17)"),
 )
 
 # §12.6 recession.data and plan R4: `_classify_prob`'s own edges
