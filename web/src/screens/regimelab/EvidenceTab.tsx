@@ -100,6 +100,12 @@ const BACKTEST_COLUMNS = [
   },
 ];
 
+/** The stored rows' return basis: total return only when every row says so
+ * (rows computed before the switch carry none, and are never labelled). */
+export function backtestBasis(rows: BacktestRow[] | undefined): "total_return" | "unrecorded" {
+  return rows && rows.length > 0 && rows.every((r) => r.return_basis === "total_return") ? "total_return" : "unrecorded";
+}
+
 const KIND_OPTIONS = [
   { id: "regime", label: "By regime" },
   { id: "signal", label: "By signal" },
@@ -125,6 +131,7 @@ export default function EvidenceTab() {
     return out;
   }, [q.data, kind]);
   const computedAt = q.data?.[0]?.computed_at?.slice(0, 10) ?? null;
+  const totalReturn = backtestBasis(q.data) === "total_return";
 
   const factorNames = useMemo(
     () => (alloc.data ? [...new Set(Object.values(alloc.data.regime_factors).flatMap((f) => Object.keys(f)))] : []),
@@ -151,7 +158,7 @@ export default function EvidenceTab() {
         title="Backtests & factor attribution"
         right={
           <MetaWithStamp
-            meta="Stored empirical analysis · SPY total return"
+            meta={`Stored empirical analysis · ${totalReturn ? "SPY total return" : "SPY forward returns · basis not recorded"}`}
             stamp={<Stamp source={SRC.backtests} asOf={computedAt ? `computed ${fmtDate(computedAt)}` : null} />}
           />
         }
@@ -165,8 +172,8 @@ export default function EvidenceTab() {
             <DataTable compact zebra={false} caption="Backtests" columns={BACKTEST_COLUMNS} groups={groups} style={{ minWidth: isNarrow ? 674 : undefined }} />
           </ScrollTable>
           <Caption>
-            SPY total returns, dividends reinvested, after each {kind === "regime" ? "regime began" : "signal fired"}, measured over
-            trading-day horizons (1M=21d … 12M=252d). ▪ flags fragile cells: four or fewer samples, or a perfect 100%/0%{" "}
+            {totalReturn ? "SPY total returns, dividends reinvested," : "SPY forward returns"} after
+            each {kind === "regime" ? "regime began" : "signal fired"}, measured over trading-day horizons (1M=21d … 12M=252d). ▪ flags fragile cells: four or fewer samples, or a perfect 100%/0%{" "}
             <Jargon term="hit rate">hit rate</Jargon>, which is a small base, not a guarantee. 50% is a coin flip; read hit rates
             against that line, not zero.
           </Caption>

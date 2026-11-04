@@ -319,7 +319,7 @@ const tab = (label: string) => screen.getByRole("tab", { name: new RegExp(`^${la
 const LABELS = ["Current regime", "Classifier odds", "Model confidence", "Next 3 months", "Next 6 months", "Spell length", "Market read", "Takeaway conviction", "Takeaway divergences", "Model vs market"];
 const OVERVIEW_IDS = ["takeaway", "regime-outlook", "cycle", "transitions", "regime-history-teaser"];
 const DISCLOSURE_LINE =
-  "Regime odds, durations and transitions from the stored monthly classifier · playbooks, analogue corpus and scenario definitions are labeled reference content · backtests computed from stored SPY total-return history.";
+  "Regime odds, durations and transitions from the stored monthly classifier · playbooks, analogue corpus and scenario definitions are labeled reference content · backtests computed from stored SPY history.";
 
 beforeEach(() => {
   window.history.replaceState(null, "", window.location.pathname);

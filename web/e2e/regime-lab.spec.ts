@@ -423,7 +423,7 @@ test.describe("regime lab (checklist 04 E.3)", () => {
       return all[all.length - 1] === line;
     });
     expect(lastIsLine).toBe(true);
-    await expect(page.locator("main p.mrr-disclosure-line")).toContainText("backtests computed from stored SPY total-return history.");
+    await expect(page.locator("main p.mrr-disclosure-line")).toContainText("backtests computed from stored SPY history.");
   });
 
   test("15. at 390 px the hero stacks over the summary, the sub-tabs wrap without hints, tiles are one column, the wells scroll and nothing scrolls sideways", async ({ page }) => {

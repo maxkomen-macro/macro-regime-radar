@@ -25,6 +25,18 @@ and no two adjustment bases are spliced. A price return (dividends
 excluded) is a different number; the outputs that print these results say
 "total return".
 
+Every row written carries return_basis = 'total_return' (RETURN_BASIS_KEY), a
+column this step adds in place to a published table that predates it, so a
+reader can tell recomputed rows from rows stored before this change (NULL:
+basis not recorded) and labels only the former "total return".
+
+The series is aligned to the NYSE session calendar (api/calendar) before it
+is scored, so a horizon always counts real sessions: a stored row on a
+non-session date is dropped, and a missing session or a close that is not
+a finite positive number leaves every window that would start or end on it
+unscored (both logged). On the published series today none of this fires:
+asset_prices SPY holds exactly one row per NYSE session.
+
 Before this change the backtest read market_daily SPY closes, a splice of a
 dividend-adjusted Yahoo backfill (1993-01-29 to 2024-02-26) and unadjusted
 bars after it, so its returns were neither basis.
@@ -42,18 +54,24 @@ Cohorts:
 Metrics stored:
     avg_return, median_return, hit_rate (fraction > 0), n (sample count)
     An entry is unscored (left out of n, never truncated) when it predates
-    the first stored close or fewer than `horizon` sessions follow it.
+    the first stored close, fewer than `horizon` sessions follow it, or its
+    entry or exit session has no valid close.
 
 Note: backtest_results has no UNIQUE constraint. Full delete-then-reinsert each run.
 """
 import logging
 import math
 import sqlite3
-from datetime import datetime, timezone
+import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+if str(Path(__file__).resolve().parents[2]) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from api import calendar as cal  # noqa: E402  (pure functions, no network, no src.config)
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
@@ -71,6 +89,7 @@ TARGET_SYMBOL = "SPY"
 SOURCE_TABLE = "asset_prices"   # split- and dividend-adjusted closes: total return
 SOURCE_INTERVAL = "1d"
 RETURN_BASIS = "total return"
+RETURN_BASIS_KEY = "total_return"  # stored in backtest_results.return_basis on every row this step writes
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -121,7 +140,38 @@ def load_spy_total_return(conn: sqlite3.Connection) -> pd.Series:
         return pd.Series(dtype=float, name=TARGET_SYMBOL)
     df = pd.DataFrame([tuple(r) for r in rows], columns=["date", "close"])
     df = df.assign(date=pd.to_datetime(df["date"])).set_index("date").sort_index()
-    return df["close"].rename(TARGET_SYMBOL)
+    return align_to_sessions(df["close"].astype(float).rename(TARGET_SYMBOL))
+
+
+def align_to_sessions(closes: pd.Series) -> pd.Series:
+    """`closes` on exactly the NYSE sessions from its first to its last date:
+    a row on a non-session date is dropped, a missing session is NaN, and so
+    is a close that is not a finite positive number. compute_forward_return
+    counts positions on this index, so a horizon is always that many real
+    sessions, and a window whose entry or exit close is NaN is unscored."""
+    if closes.empty:
+        return closes
+    bad = ~np.isfinite(closes.to_numpy(dtype=float)) | ~(closes.to_numpy(dtype=float) > 0)
+    if bad.any():
+        logger.warning("[backtest] %d %s closes are not finite positive numbers; windows on them are unscored: %s",
+                       int(bad.sum()), TARGET_SYMBOL, [d.date().isoformat() for d in closes.index[bad]][:10])
+        closes = closes.mask(bad)
+    first, last = closes.index[0].date(), closes.index[-1].date()
+    sessions, d = [], first
+    while d <= last:
+        if cal.is_trading_day(d):
+            sessions.append(pd.Timestamp(d))
+        d += timedelta(days=1)
+    index = pd.DatetimeIndex(sessions)
+    extra = closes.index.difference(index)
+    missing = index.difference(closes.index)
+    if len(extra):
+        logger.warning("[backtest] %d %s rows on non-session dates dropped: %s",
+                       len(extra), TARGET_SYMBOL, [x.date().isoformat() for x in extra][:10])
+    if len(missing):
+        logger.warning("[backtest] %d NYSE sessions have no %s close; windows on them are unscored: %s",
+                       len(missing), TARGET_SYMBOL, [x.date().isoformat() for x in missing][:10])
+    return closes.reindex(index).rename(closes.name)
 
 
 # ── Core computation ──────────────────────────────────────────────────────────
@@ -137,15 +187,18 @@ def compute_forward_return(
     adjusted closes load_spy_total_return serves, this is the total return.
     Returns None if insufficient future data or entry price unavailable.
     """
-    entry_price = spy.asof(entry_date)
-    if entry_price is None or (isinstance(entry_price, float) and np.isnan(entry_price)):
+    # Positional on the series' own index: the entry is the last row on or
+    # before entry_date, the exit the row `horizon_days` after it (the same
+    # rows `asof` and `future.iloc[h - 1]` picked). A NaN entry or exit (a
+    # session with no valid close, align_to_sessions) is unscored, never
+    # replaced by an earlier close.
+    pos = int(spy.index.searchsorted(entry_date, side="right")) - 1
+    if pos < 0 or pos + horizon_days >= len(spy):
         return None
-
-    future = spy[spy.index > entry_date]
-    if len(future) < horizon_days:
+    entry_price = float(spy.iloc[pos])
+    exit_price = float(spy.iloc[pos + horizon_days])
+    if not (np.isfinite(entry_price) and np.isfinite(exit_price)) or entry_price <= 0:
         return None
-
-    exit_price = future.iloc[horizon_days - 1]
     return float(exit_price / entry_price - 1)
 
 
@@ -257,6 +310,14 @@ def backtest_regimes(conn: sqlite3.Connection, spy: pd.Series) -> list:
 
 # ── DB writer ─────────────────────────────────────────────────────────────────
 
+def ensure_basis_column(conn: sqlite3.Connection) -> None:
+    """Add the nullable return_basis column to a backtest_results that
+    predates it. Rows stored before keep NULL: basis not recorded."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(backtest_results)")}
+    if "return_basis" not in cols:
+        conn.execute("ALTER TABLE backtest_results ADD COLUMN return_basis TEXT")
+
+
 def upsert_backtest_results(conn: sqlite3.Connection, rows: list) -> int:
     """
     Full delete-then-insert. backtest_results has no UNIQUE constraint
@@ -272,14 +333,15 @@ def upsert_backtest_results(conn: sqlite3.Connection, rows: list) -> int:
     rows = [r for r in rows if not (isinstance(r[4], float) and math.isnan(r[4]))]
     if not rows:
         return 0
+    ensure_basis_column(conn)
     conn.execute("DELETE FROM backtest_results")
     conn.executemany(
         """
         INSERT INTO backtest_results
-            (test_name, cohort, horizon, metric, value, computed_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (test_name, cohort, horizon, metric, value, computed_at, return_basis)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        rows,
+        [(*r, RETURN_BASIS_KEY) for r in rows],
     )
     conn.commit()
     return len(rows)

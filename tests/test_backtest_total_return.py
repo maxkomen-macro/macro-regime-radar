@@ -18,6 +18,7 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
+from api import calendar as cal
 from src.analytics import backtest as bt
 from src.market_data.asset_history import DDL as ASSET_PRICES_DDL
 
@@ -25,7 +26,7 @@ from src.market_data.asset_history import DDL as ASSET_PRICES_DDL
 def _sessions(start: date, n: int) -> list[str]:
     out, d = [], start
     while len(out) < n:
-        if d.weekday() < 5:
+        if cal.is_trading_day(d):
             out.append(d.isoformat())
         d += timedelta(days=1)
     return out
@@ -182,3 +183,134 @@ def test_a_spliced_multi_provider_series_is_refused(tmp_path):
 def test_the_basis_is_declared_in_the_module():
     assert (bt.SOURCE_TABLE, bt.SOURCE_INTERVAL, bt.TARGET_SYMBOL, bt.RETURN_BASIS) == ("asset_prices", "1d", "SPY", "total return")
     assert "TOTAL RETURN" in bt.__doc__ and "reinvests each distribution" in bt.__doc__
+
+
+# ── Codex design pass 1: DR-02 basis column, DR-03 session calendar, DR-04 finite closes ──
+
+def test_every_written_row_records_the_total_return_basis(tmp_path, run_on):
+    """DR-02: a table that predates the column gains it; every row this step
+    writes says total_return, so readers label only recomputed rows."""
+    days = _sessions(date(2020, 1, 2), 300)
+    path = tmp_path / "t.db"
+    _db(path, asset_rows=[("SPY", "1d", d, 100.0 + i, "yfinance") for i, d in enumerate(days)], regimes=[(days[0], "Goldilocks")])
+    run_on(path)
+    c = sqlite3.connect(path)
+    try:
+        assert "return_basis" in {r[1] for r in c.execute("PRAGMA table_info(backtest_results)")}
+        assert c.execute("SELECT DISTINCT return_basis FROM backtest_results").fetchall() == [("total_return",)]
+    finally:
+        c.close()
+
+
+def test_a_missing_session_never_stretches_a_horizon(tmp_path, run_on, caplog):
+    """DR-03: 2026-01-05 (a Monday session) is absent. A 21-session window
+    still exits 21 sessions later, and one that would start or end on the
+    missing session is unscored instead of borrowing a neighbour's close."""
+    days = _sessions(date(2025, 10, 1), 120)
+    gone = "2026-01-05"
+    assert gone in days
+    closes = {d: 100.0 * (1.001 ** i) for i, d in enumerate(days)}
+    i_gone = days.index(gone)
+    entry_ok, entry_hit = days[i_gone - 30], days[i_gone - 21]   # exits 9 sessions before / exactly on the gap
+    path = tmp_path / "t.db"
+    _db(path, asset_rows=[("SPY", "1d", d, p, "yfinance") for d, p in closes.items() if d != gone],
+        signals=[(entry_ok, "cpi_hot", 1), (entry_hit, "vix_spike", 1), (gone, "cpi_cold", 1)])
+    df = run_on(path)
+    exit_ok = days[days.index(entry_ok) + 21]
+    assert _metric(df, "SPY_signal_cpi_hot", "1M", "avg_return") == pytest.approx(closes[exit_ok] / closes[entry_ok] - 1, rel=1e-12)
+    assert _metric(df, "SPY_signal_vix_spike", "1M", "n") == 0   # exit session missing
+    assert _metric(df, "SPY_signal_cpi_cold", "1M", "n") == 0    # entry session missing
+    assert f"NYSE sessions have no SPY close" in caplog.text and gone in caplog.text
+
+
+def test_a_row_on_a_non_session_date_is_dropped(tmp_path, caplog):
+    """DR-03: a Saturday row would shorten every horizon that spans it."""
+    days = _sessions(date(2024, 3, 1), 30)
+    path = tmp_path / "t.db"
+    _db(path, asset_rows=[("SPY", "1d", d, 100.0, "yfinance") for d in days] + [("SPY", "1d", "2024-03-09", 999.0, "yfinance")])
+    c = sqlite3.connect(path)
+    try:
+        s = bt.load_spy_total_return(c)
+    finally:
+        c.close()
+    assert list(s.index.strftime("%Y-%m-%d")) == days and (s == 100.0).all()
+    assert "rows on non-session dates dropped" in caplog.text and "2024-03-09" in caplog.text
+
+
+@pytest.mark.parametrize("bad", [float("inf"), float("-inf"), 0.0, -5.0])
+def test_a_close_that_is_not_finite_and_positive_is_unscored(tmp_path, run_on, bad):
+    """DR-04: an infinite, zero or negative stored close scores nothing,
+    never an infinite return or a 100% hit rate."""
+    days = _sessions(date(2022, 1, 3), 60)
+    closes = [100.0] * len(days)
+    closes[21] = bad
+    path = tmp_path / "t.db"
+    _db(path, asset_rows=[("SPY", "1d", d, p, "yfinance") for d, p in zip(days, closes)],
+        signals=[(days[0], "vix_spike", 1), (days[1], "cpi_hot", 1)])
+    df = run_on(path)
+    assert _metric(df, "SPY_signal_vix_spike", "1M", "n") == 0          # exit on the bad close
+    assert _metric(df, "SPY_signal_cpi_hot", "1M", "avg_return") == 0.0  # the next window is clean
+
+
+def test_positional_scoring_matches_the_old_rule_on_a_clean_series():
+    """compute_forward_return picks the same rows `asof` + `future.iloc[h-1]`
+    picked, including entries on non-session dates and before the series."""
+    idx = pd.DatetimeIndex([pd.Timestamp(d) for d in _sessions(date(2023, 1, 3), 40)])
+    s = pd.Series([100.0 + i * 1.5 for i in range(len(idx))], index=idx)
+
+    def old(spy, entry, h):
+        p = spy.asof(entry)
+        if p is None or (isinstance(p, float) and pd.isna(p)):
+            return None
+        fut = spy[spy.index > entry]
+        return None if len(fut) < h else float(fut.iloc[h - 1] / p - 1)
+
+    for entry in pd.date_range("2022-12-25", "2023-03-10", freq="D"):
+        for h in (1, 5, 21, 39, 40):
+            assert bt.compute_forward_return(s, entry, h) == old(s, entry, h), (entry, h)
+
+
+# ── DR-02: /api/backtests carries the stored basis, additively ──
+
+def _api_rows(monkeypatch, path):
+    from api import db as api_db
+
+    def conn():
+        c = sqlite3.connect(path)
+        c.row_factory = sqlite3.Row
+        return c
+
+    monkeypatch.setattr(api_db, "_connect", conn)
+    return api_db.backtests()
+
+
+def _bt_table(path, *, with_basis: bool, bases=("total_return", "total_return")):
+    c = sqlite3.connect(path)
+    extra = ", return_basis TEXT" if with_basis else ""
+    c.execute(f"CREATE TABLE backtest_results (id INTEGER PRIMARY KEY, test_name TEXT, cohort TEXT, horizon TEXT, metric TEXT, value REAL, computed_at TEXT{extra})")
+    for metric, value, basis in (("avg_return", 0.01, bases[0]), ("n", 5.0, bases[1])):
+        cols, vals = "test_name, cohort, horizon, metric, value, computed_at", ["SPY_regime_Goldilocks", "Goldilocks", "1M", metric, value, "2026-11-04T00:00:00"]
+        if with_basis:
+            cols, vals = cols + ", return_basis", vals + [basis]
+        c.execute(f"INSERT INTO backtest_results ({cols}) VALUES ({', '.join('?' * len(vals))})", vals)
+    c.commit()
+    c.close()
+
+
+def test_api_backtests_serve_the_stored_basis(tmp_path, monkeypatch):
+    path = tmp_path / "a.db"
+    _bt_table(path, with_basis=True)
+    [row] = _api_rows(monkeypatch, path)
+    assert row["return_basis"] == "total_return" and row["avg_return"] == 0.01 and row["n"] == 5.0
+
+
+def test_api_backtests_never_claim_a_basis_the_rows_do_not_record(tmp_path, monkeypatch):
+    """A published table that predates the column, a NULL row, or a cell whose
+    rows disagree all serve None (the web then says basis not recorded)."""
+    for i, kw in enumerate(({"with_basis": False}, {"with_basis": True, "bases": (None, None)},
+                            {"with_basis": True, "bases": ("total_return", None)}, {"with_basis": True, "bases": (None, "total_return")})):
+        path = tmp_path / f"b{i}.db"
+        _bt_table(path, **kw)
+        [row] = _api_rows(monkeypatch, path)
+        assert row["return_basis"] is None, kw
+        assert set(row) == {"test_name", "cohort", "horizon", "avg_return", "median_return", "hit_rate", "n", "computed_at", "return_basis"}

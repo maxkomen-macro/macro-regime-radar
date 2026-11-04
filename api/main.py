@@ -643,6 +643,9 @@ class BacktestRow(BaseModel):
     hit_rate: float | None
     n: float | None
     computed_at: str | None
+    # Additive (backtest total return, 2026-11-04): "total_return" on rows src/analytics/backtest.py
+    # computed from asset_prices' adjusted closes; None on rows stored before it (basis not recorded).
+    return_basis: str | None = None
 
 
 class DatedValue(BaseModel):

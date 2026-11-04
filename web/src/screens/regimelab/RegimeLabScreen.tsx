@@ -349,7 +349,7 @@ export default function RegimeLabScreen() {
 
       <DisclosureLine>
         Regime odds, durations and transitions from the stored monthly classifier · playbooks, analogue corpus and scenario definitions are
-        labeled reference content · backtests computed from stored SPY total-return history.
+        labeled reference content · backtests computed from stored SPY history.
       </DisclosureLine>
     </div>
   );
