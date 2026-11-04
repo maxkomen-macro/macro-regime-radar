@@ -9,7 +9,7 @@ Run date: 2026-11-03. Inputs: the `data-latest` database as published that day (
 - **Regime labels.** 78 of 356 monthly labels (21.9%) differ from the served label when each month is labelled with the data available the day its two prints were first out. Growth (INDPRO revisions) causes 51 of the flips and inflation (CPI revisions) 27; no month flips on both. The effect is steady across the sample: 23 of 120 months in 1997–2006, 32 of 120 in 2007–2016, 23 of 116 since 2017, and 5 of the last 24.
 - **The served odds don't flag revision risk.** Flipped months had a median served top-regime odds of 63%, against 66% for months that kept their label. 26 of the 126 months with odds of 75% or more still flipped. The odds measure how far the trends are from zero, not how likely a revision is to change the sign.
 - **The history shifts towards Stagflation.** Real-time labelling has 219 Overheating, 80 Stagflation, 33 Goldilocks and 24 Recession Risk months, against 206, 102, 27 and 21 served. The largest single transition is Overheating at the time becoming Stagflation after revision (33 months).
-- **Desk event studies.** Under point-in-time labels, 151 of the 632 events across the 15 catalog studies (23.9%) carry a different regime. Every study's all-events statistics are unchanged. The regime split changes in 13 of 15 studies, and in 5 of them it changes which regimes reach the n ≥ 10 bar the verdict needs. No served verdict names a strongest or weakest regime, so none is overturned, but the split rows printed beside each study change.
+- **Desk event studies.** Under point-in-time labels, 151 of the 632 events across the 15 catalog studies (23.9%) carry a different regime. Every study's all-events statistics are unchanged, but the regime split moves in 14 of 15, and the verdict's regime sentence reaches a different conclusion in 7. Six served verdicts name a strongest and weakest regime. Two of them reverse (spx-2sigma-10y and rsi-above-70), two lose the claim (dollar-2sigma-20d drops to one eligible regime; spx-5d-2sigma becomes a tie), and two stand (10y-2sigma-20d and rsi-below-30). Two studies that served a tie now name a strongest regime (vix-spike-2sigma-5d and 2s10s-2sigma-steepening), and death-cross loses its only eligible regime.
 - **`/regime` stats.** Under real-time labels the regimes table governs 79 Stagflation months instead of 102, and Goldilocks' share of up months for the S&P rises from 63% to 73%.
 - **Recession score, data revisions only.** With today's model applied to first-published UNRATE and INDPRO, scores move by a median of 0.24 pp (maximum 4.0 pp) and change band in 5 of 282 months.
 - **Recession score, point in time.** Refitting the model each month on only what was knowable then (including NBER's real-time recession dating) moves scores by a median of 3.0 pp and a maximum of 72 pp, and changes the band in 27 of 183 months since mid-2011. That gap comes mostly from the fit and the target, not from data revisions.
@@ -66,28 +66,28 @@ All 15 catalog studies were run through the engine at their defaults (default se
 - **`governed_start`:** a scratch copy of the database with the regimes labels swapped for the `at_governed_start` view. The engine runs unmodified.
 - **`point_in_time`:** each session reads row K−2's label from the vintage in force on the session's own date. This uses an in-process replacement of `event_study.regime_at`, the one function the engine reads labels through; no file is edited.
 
-Point-in-time results against served, at the 20-session primary horizon:
+Point-in-time results against served, at the 20-session primary horizon. "Regime sentence" is the verdict's ranking: strongest and weakest regime, a tie between the two leaders (within 0.5 pp, or 5 bp for yields), a single regime with n ≥ 10, or none.
 
-| Study | Events | Relabelled | What the regime split says |
-|---|---|---|---|
-| gold-2sigma-spx-weak | 18 | 8 | n<10 counts move (Stagflation 9→6, Recession Risk 1→3) |
-| golden-cross | 14 | 6 | n<10 counts move |
-| death-cross | 14 | 6 | **Stagflation drops below n = 10** (10→5): "Only Stagflation reaches n ≥ 10 (median −0.4%)" becomes "No regime reaches n = 10" |
-| vix-spike-2sigma-5d | 120 | 29 | **Goldilocks drops below 10**: the "two leading regimes within 0.5 pp" sentence disappears |
-| hy-2sigma-20d | 3 | 0 | unchanged |
-| 10y-2sigma-20d | 37 | 6 | Stagflation n 12→10, median +2.4% → +2.8%; Overheating n 19→21 |
-| dollar-2sigma-20d | 40 | 5 | **Overheating becomes eligible** (n = 24, median +0.4%) |
-| oil-2sigma-gold | 17 | 7 | n<10 counts move (Overheating 6→9, Stagflation 4→1) |
-| spx-2sigma-10y | 56 | 16 | n<10 counts move |
-| spx-20d-2sigma | 34 | 5 | **Overheating median −0.1% → +0.8%** (n 19→22) |
-| spx-5d-2sigma | 78 | 17 | **Stagflation becomes eligible** (n = 14): a "within 0.5 pp" sentence appears |
-| 2s10s-2sigma-steepening | 50 | 10 | **The tie sentence (Stagflation n = 17 vs Overheating n = 28) disappears** |
-| oil-2sigma-20d | 17 | 7 | n<10 counts move (Overheating 6→9, Stagflation 4→1) |
-| rsi-above-70 | 89 | 17 | n<10 counts move |
-| rsi-below-30 | 45 | 12 | n<10 counts move |
+| Study | Events | Relabelled | Regime sentence, served → point in time | Split (n at 20 sessions, served → point in time) |
+|---|---|---|---|---|
+| gold-2sigma-spx-weak | 18 | 8 | none → none | Stagflation 9→6, Recession Risk 1→3, Goldilocks 2→3 |
+| golden-cross | 14 | 6 | none → none | Overheating 5→4, Recession Risk 2→3 |
+| death-cross | 14 | 6 | **only Stagflation (n = 10, −0.4%) → none** | Stagflation 10→5, Overheating 3→7 |
+| vix-spike-2sigma-5d | 120 | 29 | **tie, Overheating +1.7% vs Goldilocks +1.5% → strongest Goldilocks (n = 10, +2.5%), weakest Stagflation (+0.9%)** | Goldilocks 11→10, Overheating 69→72 (+1.7%→+1.1%), Stagflation 36→34 (+0.2%→+0.9%) |
+| hy-2sigma-20d | 3 | 0 | none → none | unchanged |
+| 10y-2sigma-20d | 37 | 6 | strongest Stagflation, weakest Overheating → same | Stagflation 12→10 (+2.4%→+2.8%), Overheating 19→21 |
+| dollar-2sigma-20d | 40 | 5 | **strongest Overheating (+1.5%), weakest Stagflation (+0.4%) → only Overheating (n = 24, +0.4%)** | Stagflation 10→8, Overheating 22→24 (+1.5%→+0.4%) |
+| oil-2sigma-gold | 17 | 7 | none → none | Overheating 6→9, Stagflation 4→1 |
+| spx-2sigma-10y | 56 | 16 | **strongest Stagflation (+3 bp), weakest Overheating (−9 bp) → reversed: strongest Overheating (+1 bp), weakest Stagflation (−7 bp)** | Overheating 36→34, Stagflation 17→14 |
+| spx-20d-2sigma | 34 | 5 | only Overheating → same | Overheating 19→22 (−0.1%→+0.8%), Stagflation 9→5 |
+| spx-5d-2sigma | 78 | 17 | **strongest Stagflation (+2.8%), weakest Overheating (+1.4%) → tie, Overheating +1.9% vs Stagflation +1.6%** | Stagflation 24→14, Overheating 47→51, Goldilocks 3→8 |
+| 2s10s-2sigma-steepening | 50 | 10 | **tie, Stagflation +1.8% vs Overheating +1.4% → strongest Stagflation (+2.1%), weakest Overheating (+0.7%)** | Overheating 28→27 (+1.4%→+0.7%) |
+| oil-2sigma-20d | 17 | 7 | none → none | Overheating 6→9, Stagflation 4→1 |
+| rsi-above-70 | 89 | 17 | **strongest Overheating (+1.8%), weakest Stagflation (+0.9%) → reversed: strongest Stagflation (+1.9%), weakest Overheating (+1.4%)** | Overheating 51→55, Stagflation 26→23 |
+| rsi-below-30 | 45 | 12 | strongest Overheating, weakest Stagflation → same | Stagflation 15→14 (+1.6%→+1.1%) |
 
-- **Totals:** 151 of 632 events are relabelled. The all-events n and medians are identical in all 15 studies.
-- **`governed_start` gives nearly the same picture:** 161 events relabelled, and the same 13 studies with a changed split. Mid-month releases account for the small difference.
+- **Totals:** 151 of 632 events are relabelled. The all-events n and medians are identical in all 15 studies. The split moves in 14 studies (all but hy-2sigma-20d), the set of regimes with n ≥ 10 changes in 2 (death-cross and dollar-2sigma-20d), and the regime sentence's conclusion changes in 7 (bold). `studies_summary.json` records each study's regime sentence served and point in time, and its parsed outcome.
+- **`governed_start` gives nearly the same picture:** 161 events relabelled, the split moves in the same 14 studies, and the regime sentence changes in the same 7. The one difference in kind is vix-spike-2sigma-5d, which stays a tie but between Goldilocks and Stagflation. Mid-month releases account for the differences.
 
 `/regime` stats (the S&P's return in the month each label governed), served against `governed_start`:
 

@@ -156,17 +156,61 @@ def summarize(res: dict) -> dict:
     for row in res.get("regimes", []):
         cell = next((c for c in row.get("horizons", []) if c.get("h") == PRIMARY_H), {})
         split[row["regime"]] = {"n_events": row.get("n_events"), "n": cell.get("n"), "median": cell.get("median"),
-                                "baseline_median": cell.get("baseline_median"), "hit_rate": cell.get("hit_rate")}
+                                "baseline_median": cell.get("baseline_median"), "hit_rate": cell.get("hit_rate"),
+                                "note": cell.get("note")}
     overall = next((h for h in res.get("horizons", []) if h.get("h") == PRIMARY_H), {})
     verdict = res.get("verdict") or {}
     return {"overall_n": overall.get("n"), "overall_median": overall.get("median"),
             "split": split, "verdict": list(verdict.get("sentences", []))}
 
 
+# The engine's regime-split sentences (src/desk/event_study.py, the verdict's
+# regime block): the ranking claim or why there is none, then the n<10 list.
+# Matched by the engine's fixed wording; "concentrated in" carries no "regime"
+# (verifier finding: the old keyword filter dropped every ranking claim).
+REGIME_SENTENCE_STARTS = ("The two leading regimes at ", "Only ", "No regime reaches ", "n<10: ")
+REGIME_CLAIM_MARK = " sessions the response is concentrated in "
+
+
 def _regime_sentences(sentences: list[str]) -> list[str]:
-    """The verdict's sentences about the regime split (the ranking, or why
-    there is none, and the n<10 list of regimes)."""
-    return [s for s in sentences if "regime" in s.lower() or s.startswith("n<10")]
+    """The verdict's sentences about the regime split, in order."""
+    return [s for s in sentences if s.startswith(REGIME_SENTENCE_STARTS) or (s.startswith("At ") and REGIME_CLAIM_MARK in s)]
+
+
+def regime_claim(sentences: list[str]) -> str | None:
+    """The verdict's ranking sentence (strongest/weakest, tie, single
+    eligible regime or none eligible), without the n<10 list."""
+    return next((s for s in _regime_sentences(sentences) if not s.startswith("n<10: ")), None)
+
+
+def claim_outcome(sentence: str | None) -> dict:
+    """What the ranking sentence decides, without its numbers: `ranked`
+    (strongest, weakest), `tie` (the two leading regimes), `single` (the one
+    eligible regime), `none` (no eligible regime) or `missing`."""
+    import re
+
+    if sentence is None:
+        return {"kind": "missing"}
+    m = re.search(r"concentrated in (.+?) \(n = .*; weakest in (.+?) \(n = ", sentence)
+    if m:
+        return {"kind": "ranked", "strongest": m.group(1), "weakest": m.group(2)}
+    m = re.search(r"of each other \((.+?) n = .*; (.+?) n = ", sentence)
+    if m:
+        return {"kind": "tie", "regimes": sorted([m.group(1), m.group(2)])}
+    m = re.match(r"Only (.+?) reaches n ", sentence)
+    if m:
+        return {"kind": "single", "regime": m.group(1)}
+    if sentence.startswith("No regime reaches "):
+        return {"kind": "none"}
+    raise ValueError(f"unrecognised regime sentence: {sentence}")
+
+
+def eligible(split: dict) -> list[str]:
+    """Regimes the verdict may rank: n >= MIN_REGIME_N at the primary
+    horizon (the engine's "n<10" note absent), Unlabeled excluded."""
+    from src.desk import event_study as es
+
+    return sorted(r for r, c in split.items() if r != es.UNLABELED and c.get("n") and c.get("note") != "n<10")
 
 
 def compare(base: dict[str, dict], alt: dict[str, dict]) -> dict:
@@ -185,12 +229,20 @@ def compare(base: dict[str, dict], alt: dict[str, dict]) -> dict:
             cells[r] = {"n_served": cb.get("n"), "n_alt": ca.get("n"),
                         "median_served": cb.get("median"), "median_alt": ca.get("median"),
                         "baseline_median_served": cb.get("baseline_median"), "baseline_median_alt": ca.get("baseline_median")}
+        split_changed = any(c["n_served"] != c["n_alt"] or c["median_served"] != c["median_alt"] for c in cells.values())
+        claim_b, claim_a = regime_claim(sb["verdict"]), regime_claim(sa["verdict"])
         out[slug] = {
             "events": len(eb), "events_alt": len(ea), "events_relabelled": len(relabelled),
             "relabelled_share": round(len(relabelled) / len(common), 4) if common else None,
             "overall_n_20": (sb["overall_n"], sa["overall_n"]),
             "overall_median_20": (sb["overall_median"], sa["overall_median"]),
             "regime_cells_20": cells,
+            "split_changed": split_changed,
+            "eligible_served": eligible(sb["split"]), "eligible_alt": eligible(sa["split"]),
+            "regime_claim_served": claim_b, "regime_claim_alt": claim_a,
+            "regime_claim_changed": claim_b != claim_a,
+            "regime_outcome_served": claim_outcome(claim_b), "regime_outcome_alt": claim_outcome(claim_a),
+            "regime_outcome_changed": claim_outcome(claim_b) != claim_outcome(claim_a),
             "regime_verdict_changed": regime_sentence_b != regime_sentence_a,
             "regime_verdict_served": regime_sentence_b, "regime_verdict_alt": regime_sentence_a,
             "any_verdict_changed": sb["verdict"] != sa["verdict"],
@@ -311,7 +363,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"\n== {name}")
         for slug, c in res[name].items():
             print(f"{slug:28s} events {c['events']:4d} relabelled {c['events_relabelled']:4d} ({c['relabelled_share']}) "
-                  f"overall n20 {c['overall_n_20']} regime verdict changed {c['regime_verdict_changed']} any {c['any_verdict_changed']}")
+                  f"overall n20 {c['overall_n_20']} split changed {c['split_changed']} outcome changed {c['regime_outcome_changed']}")
     return 0
 
 

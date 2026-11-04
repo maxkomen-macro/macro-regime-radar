@@ -536,3 +536,59 @@ def test_the_replay_digest_covers_exactly_the_bytes_the_studies_parse(tmp_path):
     (tmp_path / "t.csv.gz").write_bytes(gzip.compress(_table_csv(by_v), mtime=0))
     digest, vdates, parsed = read_replay(tmp_path / "t.csv.gz")
     assert digest == _digest(by_v) and vdates == ["2024-05-15", "2024-06-14"] and parsed == by_v
+
+
+# Verifier finding: the study's regime-sentence filter dropped the engine's
+# ranking claim ("... concentrated in X ...; weakest in Y ..."), so reversed
+# and withdrawn strongest/weakest claims were never counted. Sentences below
+# are the engine's own output for catalog studies on 2026-11-03 data.
+
+_RANKED = "At 20 sessions the response is concentrated in Overheating (n = 51, median +1.8%); weakest in Stagflation (n = 26, median +0.9%)."
+_TIE = ("The two leading regimes at 20 sessions are within 0.5 percentage points of each other (Overheating n = 69, median +1.7%; "
+        "Goldilocks n = 11, median +1.5%); no strongest or weakest claim.")
+_SINGLE = "Only Overheating reaches n ≥ 10 at 20 sessions (n = 24, median +0.4%); no ranking across regimes."
+_NONE = "No regime reaches n = 10 at 20 sessions, so the split is not informative."
+_SMALL = "n<10: Goldilocks (9), Recession Risk (3), Unlabeled (23, outside the totals)."
+_OTHER = ["Insufficient data at 120 sessions (n = 0 completed windows).",
+          "Sample since 1996 (data from 1996-03-01; events evaluable 1996-06-03 to 2026-09-30); 89 events after a 20-session cooldown."]
+
+
+@pytest.mark.parametrize("claim", [_RANKED, _TIE, _SINGLE, _NONE])
+def test_the_regime_sentences_keep_every_kind_of_ranking_claim(claim):
+    from scripts.research.vintage_studies import _regime_sentences, regime_claim
+
+    sentences = [_OTHER[0], claim, _SMALL, _OTHER[1]]
+    assert _regime_sentences(sentences) == [claim, _SMALL]
+    assert regime_claim(sentences) == claim
+
+
+def test_claim_outcomes_ignore_numbers_and_see_reversals():
+    from scripts.research.vintage_studies import claim_outcome
+
+    assert claim_outcome(_RANKED) == {"kind": "ranked", "strongest": "Overheating", "weakest": "Stagflation"}
+    assert claim_outcome(_TIE) == {"kind": "tie", "regimes": ["Goldilocks", "Overheating"]}
+    assert claim_outcome(_SINGLE) == {"kind": "single", "regime": "Overheating"}
+    assert claim_outcome(_NONE) == {"kind": "none"} and claim_outcome(None) == {"kind": "missing"}
+    reversed_ = _RANKED.replace("Overheating", "X").replace("Stagflation", "Overheating").replace("X", "Stagflation")
+    assert claim_outcome(reversed_) != claim_outcome(_RANKED)
+    assert claim_outcome(_RANKED.replace("+1.8%", "+2.0%")) == claim_outcome(_RANKED)
+    with pytest.raises(ValueError):
+        claim_outcome("At 20 sessions something new.")
+
+
+def _res(claim, cells):
+    return {"result": {"regimes": [{"regime": r, "horizons": [{"h": 20, "n": n, "median": m, "note": "n<10" if n < 10 else None}]}
+                                   for r, (n, m) in cells.items()],
+                       "horizons": [{"h": 20, "n": 89, "median": 0.01}], "verdict": {"sentences": [claim, _OTHER[1]]}},
+            "events": [("2020-01-02", "Overheating")]}
+
+
+def test_compare_counts_a_reversed_ranking_as_a_changed_outcome():
+    from scripts.research.vintage_studies import compare
+
+    reversed_ = "At 20 sessions the response is concentrated in Stagflation (n = 23, median +1.9%); weakest in Overheating (n = 55, median +1.4%)."
+    c = compare({"s": _res(_RANKED, {"Overheating": (51, .018), "Stagflation": (26, .009)})},
+                {"s": _res(reversed_, {"Overheating": (55, .014), "Stagflation": (23, .019)})})["s"]
+    assert c["regime_outcome_changed"] and c["regime_verdict_changed"] and c["split_changed"]
+    assert c["eligible_served"] == c["eligible_alt"] == ["Overheating", "Stagflation"]
+    assert c["regime_outcome_alt"] == {"kind": "ranked", "strongest": "Stagflation", "weakest": "Overheating"}
