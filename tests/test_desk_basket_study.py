@@ -30,6 +30,7 @@ from api.providers.errors import UnknownSymbol
 from src.analytics import dbpath
 from src.desk import event_study as es
 from src.desk import series as registry
+from tests import desk_contract as dc
 from tests.test_event_study import _synthetic_db
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -234,7 +235,10 @@ def served(tmp_path, monkeypatch, install_worker):
 
 
 def study(**q):
-    return client.get("/api/desk/basket/study", params=q)
+    """The route's answer, checked against §12.19 and §12.0 (tests/desk_contract.py) whatever its status."""
+    r = client.get("/api/desk/basket/study", params=q)
+    dc.check_response("/basket/study", r)
+    return r
 
 
 def test_a_long_basket_is_studied_and_the_answer_names_its_index(served):

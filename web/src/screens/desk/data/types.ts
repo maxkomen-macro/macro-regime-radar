@@ -1318,3 +1318,77 @@ export interface OptionsFinderResponse extends Envelope {
   provider?: string;
   sources?: string[];
 }
+
+// ── §12.19 /basket/study (desk P1a) ─────────────────────────────────────────
+
+/** §12.19: the basket's index as the study read it, the page's rule over EODHD's daily closes since 1995. */
+export interface BasketStudyIndex {
+  provider: string;
+  source: string;
+  /** The first date the closes were asked from. */
+  requested_from: string;
+  /** Each name's first close in that history. */
+  first_close: Record<string, string>;
+  /** The completed New York session the closes were asked through, and each name's newest close as served. */
+  session: string;
+  last_close: Record<string, string>;
+  method: "hold" | "monthly";
+  weighting: BasketWeighting;
+  /** The rebalancing rule in words. */
+  rule: string;
+  /** The first session every name has a close, why it is there (as §12.15), and the index's last session. */
+  start: string;
+  start_kind: "first_close" | "history" | "gap";
+  start_binding: string[];
+  end: string;
+  sessions: number | null;
+  /** Sessions inside the span on which some name lacks a close (a count). */
+  missing_sessions: number | null;
+  /** Each name's bars dated off the XNYS calendar, left out before the index is formed. */
+  off_session: Record<string, number | null>;
+  /** A monthly basket's rebalances held before a month-end some name had no close on. */
+  moved_rebalances: string[];
+  excluded: { symbol: string; n: number | null; reason: string }[];
+  cap_weights: CapWeights | null;
+}
+
+/** §12.19: the engine's answer for the one question, in §12.2's shape where it applies. */
+export interface BasketStudyRun {
+  slug: string;
+  label: string;
+  selected_horizon: number | null;
+  matched_n: number | null;
+  data_start: string | null;
+  sample_start: string | null;
+  sample_end: string | null;
+  first_event: string | null;
+  last_event: string | null;
+  verdict?: Verdict;
+  verdict_rule: string;
+  verdict_confidence: number | null;
+  headline: string;
+  why: string;
+  horizons: StudyHorizon[];
+  by_regime: { h: number | null; regime: string; n: number | null; up_pct: number | null; median: number | null }[];
+  /** P-1: the by-regime rows read the regimes table's revised history. */
+  regime_history: string;
+  unlabeled_n: number | null;
+  last_events: { event_date: string; entry_date: string | null; regime?: RegimeLabel; value_20: number | null }[];
+  provenance: { entry_rule: string; cooldown: number | null; seed: number | null; engine_version: string; as_of_cutoff: string | null; regimes_last: string | null; calendar: string };
+  warnings: string[];
+  empty_state: { horizon: number | null; sentence: string; fixes: string[] } | null;
+  inputs_hash: string;
+}
+
+/** §12.19 GET /basket/study: the basket and the question, its index, and the study, or why it was not run. */
+export interface BasketStudyResponse extends Envelope {
+  basket: { legs: { symbol: string; weight: number | null }[]; method: "hold" | "monthly"; weighting: BasketWeighting };
+  question: { shock: string; window: number | null; move: "down2s" | "up2s"; while: string; target: string; horizon: number; target_unit?: TargetUnit; display_unit?: DisplayUnit };
+  index: BasketStudyIndex;
+  study: BasketStudyRun | null;
+  /** Why the study was not run (too little history for the question, or the engine's refusal), with the index's start. */
+  not_run: string | null;
+  /** The hindsight and revised-regime sentences, then a late close or a moved rebalance when they apply. */
+  caveats: string[];
+  elapsed_ms: number | null;
+}
