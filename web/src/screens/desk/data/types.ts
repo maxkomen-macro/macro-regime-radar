@@ -115,7 +115,12 @@ export interface PipelineSeries {
   id: string;
   /** The Desk registry key; null for a series the Desk does not read. */
   key: string | null;
+  /** The inventory's declaration, kept for compatibility; the page shows `policy` and `stored` (D2). */
   provider: string;
+  /** D2: the writer's intended fallback rule for this series ("EODHD first, Yahoo fallback"). */
+  policy: string;
+  /** D2: who supplied the stored observations the Desk reads; null when none is stored. */
+  stored: PipelineStored | null;
   freq: "daily" | "weekly" | "monthly";
   /** The first and last stored observation; null when nothing is stored. */
   first: string | null;
@@ -123,6 +128,27 @@ export interface PipelineSeries {
   feeds: string[];
   status: FreshState;
   note: string | null;
+}
+
+/** §12.9 (D2): one provider's share of a series' stored rows. */
+export interface PipelineProvider {
+  /** The stored code: fred, yfinance, eodhd (an unknown code as stored). */
+  code: string;
+  /** In words: FRED, Yahoo, EODHD. */
+  name: string;
+  rows: number;
+  first: string;
+  last: string;
+}
+
+/** §12.9 (D2): the providers of the stored rows. More than one entry is mixed-source coverage. */
+export interface PipelineStored {
+  /** row_provider: each row's own provider column; table_writer: raw_series, whose one writer is FRED. */
+  basis: "row_provider" | "table_writer";
+  rows: number;
+  /** The provider of the newest stored row, in words. */
+  latest: string;
+  providers: PipelineProvider[];
 }
 
 export interface PipelineGroup {
