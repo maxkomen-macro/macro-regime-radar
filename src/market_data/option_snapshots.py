@@ -12,8 +12,8 @@ What one run does, in order, and where it stops:
      .env. Setting this secret therefore cannot switch asset_history or desk_history from Yahoo to EODHD,
      which read EODHD_API_TOKEN (api/providers/market._load_token). No token: "held", no call made.
   2. Needs a private store: OPTION_SNAPSHOT_REPO and OPTION_SNAPSHOT_GH_TOKEN (the archive repository and a
-     token for it), or --out-dir PATH (a folder outside the repository) for a manual run. No store: "held",
-     no call. The GitHub store refuses any repository the API does not report as private, and this one.
+     token for it). No store: "held", no call. The store refuses any repository the API does not report as
+     private, and this one. It is the only store: there is no local-folder mode (round-4 review, S-6).
   3. If the store already holds a complete snapshot of the last completed NYSE session: "already_stored",
      no call made.
   4. One probe request names the session the provider's end-of-day marks describe (the Options Finder's
@@ -49,7 +49,6 @@ One summary line of counts and a state word; never a price, a contract, the stor
 step exits 0 on every end so it cannot fail the refresh; a failure state also prints a workflow warning.
 
     python -m src.market_data.option_snapshots                     the refresh step (GitHub store from env)
-    python -m src.market_data.option_snapshots --out-dir PATH      a manual run into a local folder
     python -m src.market_data.option_snapshots --report [...]      stored history, counts only, no EODHD call
 
 Before the first live run (D3): the secrets, and D1's check of EODHD's retention, storage and call-limit
@@ -146,73 +145,6 @@ class Store(Protocol):
     def taken(self, session: str) -> set[int]: ...
     def add(self, session: str, attempt: int, data: bytes, manifest: bytes) -> None: ...
     def inventory(self) -> tuple[list[dict], list[tuple[str, int]]]: ...
-
-
-class LocalStore:
-    """A folder outside the repository: <root>/SPY/<YYYY-MM>/<asset>. The manifest is written last, so an
-    attempt without one was never committed; an existing file is never overwritten."""
-
-    def __init__(self, root: Path) -> None:
-        self.root = Path(root).expanduser().resolve()
-
-    def check(self) -> None:
-        repo = ROOT.resolve()
-        if self.root == repo or repo in self.root.parents:
-            raise StorageError("refused: the output folder is inside the repository, which is public")
-        try:
-            self.root.mkdir(parents=True, exist_ok=True)
-        except OSError as exc:
-            raise StorageError(f"the output folder cannot be created ({type(exc).__name__})") from exc
-
-    def _dir(self, session: str) -> Path:
-        return self.root / UNDERLYING / session[:7]
-
-    def _names(self, session: str) -> set[str]:
-        d = self._dir(session)
-        return {p.name for p in d.iterdir()} if d.is_dir() else set()
-
-    def _read(self, path: Path) -> bytes:
-        try:
-            return path.read_bytes()
-        except OSError as exc:
-            raise StorageError(f"a stored file cannot be read ({type(exc).__name__})") from exc
-
-    def attempts(self, session: str) -> list[dict]:
-        """The session's readable manifests. One that cannot be parsed is an interrupted attempt, the same as
-        the report reads it: it keeps its number and the session can be collected again (S-5)."""
-        found = _Found()
-        for name in sorted(self._names(session)):
-            m = _ASSET_RE.match(name)
-            if m and m.group(1) == session:
-                found.add(name, lambda name=name: self._read(self._dir(session) / name))
-        return found.manifests
-
-    def taken(self, session: str) -> set[int]:
-        return {int(m.group(2)) for n in self._names(session) if (m := _ASSET_RE.match(n)) and m.group(1) == session}
-
-    def add(self, session: str, attempt: int, data: bytes, manifest: bytes) -> None:
-        d = self._dir(session)
-        d.mkdir(parents=True, exist_ok=True)
-        if attempt in self.taken(session):
-            raise StorageError("refused: that attempt is already stored; history is never replaced")
-        for name, blob in zip(asset_names(session, attempt), (data, manifest)):
-            tmp = d / f".{name}.tmp"
-            try:
-                tmp.write_bytes(blob)
-                os.link(tmp, d / name)  # fails rather than overwrite
-            except FileExistsError as exc:
-                raise StorageError("refused: that attempt is already stored; history is never replaced") from exc
-            except OSError as exc:
-                raise StorageError(f"the output folder cannot be written ({type(exc).__name__})") from exc
-            finally:
-                tmp.unlink(missing_ok=True)
-
-    def inventory(self) -> tuple[list[dict], list[tuple[str, int]]]:
-        """Every readable manifest, and every attempt with no readable manifest (S-4)."""
-        found = _Found()
-        for p in sorted((self.root / UNDERLYING).glob("*/*")):
-            found.add(p.name, lambda p=p: self._read(p))
-        return found.result()
 
 
 _REPO_RE = re.compile(r"^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$")
@@ -782,10 +714,9 @@ def report_line(store: Store, now: datetime | None = None) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Private SPY option-chain snapshots (Desk D3).")
-    ap.add_argument("--out-dir", type=Path, help="a local folder outside the repository, instead of the GitHub store")
     ap.add_argument("--report", action="store_true", help="counts of stored sessions; makes no EODHD call")
     args = ap.parse_args(argv)
-    store: Store | None = LocalStore(args.out_dir) if args.out_dir else store_from_env()
+    store: Store | None = store_from_env()
     if args.report:
         if store is None:
             print("option_snapshots report: no private store configured")

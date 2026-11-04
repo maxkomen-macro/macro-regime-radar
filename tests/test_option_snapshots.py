@@ -12,7 +12,7 @@ import hashlib
 import json
 import re
 import sys
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -111,6 +111,51 @@ def go(fake, store, now=NOW):
     return osn.run(token=TOKEN, store=store, now=now, client=client_for(fake), sleep=lambda s: None, clock=lambda: now)
 
 
+class DirStore:
+    """A test double for the private store: a temporary folder, <root>/SPY/<YYYY-MM>/<asset>, with the same
+    asset names and the same manifest classification as the shipped GitHub store. It is not shipped: the
+    collector's only store is the private GitHub repository (round-4 review, S-6)."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root)
+
+    def check(self) -> None:
+        self.root.mkdir(parents=True, exist_ok=True)
+
+    def _dir(self, session: str) -> Path:
+        return self.root / "SPY" / session[:7]
+
+    def _names(self, session: str) -> list[str]:
+        d = self._dir(session)
+        if not d.is_dir():
+            return []
+        return sorted(n for n in (p.name for p in d.iterdir()) if (m := osn._ASSET_RE.match(n)) and m.group(1) == session)
+
+    def attempts(self, session: str) -> list[dict]:
+        found = osn._Found()
+        for n in self._names(session):
+            found.add(n, lambda n=n: (self._dir(session) / n).read_bytes())
+        return found.manifests
+
+    def taken(self, session: str) -> set[int]:
+        return {int(osn._ASSET_RE.match(n).group(2)) for n in self._names(session)}
+
+    def add(self, session: str, attempt: int, data: bytes, manifest: bytes) -> None:
+        d = self._dir(session)
+        d.mkdir(parents=True, exist_ok=True)
+        if attempt in self.taken(session):
+            raise osn.StorageError("refused: that attempt is already stored; history is never replaced")
+        for name, blob in zip(osn.asset_names(session, attempt), (data, manifest)):
+            with open(d / name, "xb") as fh:
+                fh.write(blob)
+
+    def inventory(self) -> tuple[list[dict], list[tuple[str, int]]]:
+        found = osn._Found()
+        for p in sorted((self.root / "SPY").glob("*/*")):
+            found.add(p.name, lambda p=p: p.read_bytes())
+        return found.result()
+
+
 SPEC = {"2026-11-02": 30, "2026-11-03": 40, "2026-11-04": 40, "2026-11-06": 60, "2026-12-18": 600, "2027-01-15": 80}
 
 
@@ -127,7 +172,7 @@ def read_stored(root: Path, session: str, attempt: int = 1) -> tuple[list[dict],
 
 def test_no_token_holds_without_a_call(tmp_path):
     fake = FakeEodhd(make_chain(SPEC))
-    r = osn.run(token=None, store=osn.LocalStore(tmp_path / "out"), now=NOW, client=client_for(fake))
+    r = osn.run(token=None, store=DirStore(tmp_path / "out"), now=NOW, client=client_for(fake))
     assert (r.state, r.detail, r.requests, fake.calls) == ("held", "no_options_token", 0, [])
 
 
@@ -164,11 +209,12 @@ def test_the_provider_loader_ignores_the_collector_token(monkeypatch, tmp_path):
     assert market._load_token() is None
 
 
-def test_a_local_store_inside_the_repository_is_refused():
-    fake = FakeEodhd(make_chain(SPEC))
-    r = go(fake, osn.LocalStore(ROOT / "data" / "snapshots"))
-    assert r.state == "storage_refused" and fake.calls == []
-    assert not (ROOT / "data" / "snapshots").exists()
+def test_the_only_store_is_the_private_github_repository(tmp_path):
+    """No local-folder mode ships (S-6): the CLI takes no --out-dir and the module has no folder store."""
+    assert not hasattr(osn, "LocalStore")
+    with pytest.raises(SystemExit):
+        osn.main(["--out-dir", str(tmp_path)])
+    assert list(tmp_path.iterdir()) == []
 
 
 # ── collection ──
@@ -177,7 +223,7 @@ def test_a_local_store_inside_the_repository_is_refused():
 def test_a_whole_chain_is_stored_raw_complete_and_deterministic(tmp_path):
     chain = make_chain(SPEC)
     fake = FakeEodhd(chain)
-    r = go(fake, osn.LocalStore(tmp_path / "a"))
+    r = go(fake, DirStore(tmp_path / "a"))
     assert r.state == "stored" and r.session == SESSION and r.attempt == 1
     rows, man, raw = read_stored(tmp_path / "a", SESSION)
     # raw provider rows, unmodified, every one of them
@@ -193,7 +239,7 @@ def test_a_whole_chain_is_stored_raw_complete_and_deterministic(tmp_path):
     assert man["requests"] == len(fake.calls) == r.requests and man["marketplace_units"] == 10 * r.requests
     assert man["attempt"] == 1 and man["data_file"] == osn.asset_names(SESSION, 1)[0] and man["private"] is True
     # the same chain gives byte-identical data
-    r2 = go(FakeEodhd(list(reversed(chain))), osn.LocalStore(tmp_path / "b"))
+    r2 = go(FakeEodhd(list(reversed(chain))), DirStore(tmp_path / "b"))
     assert r2.state == "stored" and read_stored(tmp_path / "b", SESSION)[2] == raw
 
 
@@ -201,7 +247,7 @@ def test_a_whole_chain_is_stored_raw_complete_and_deterministic(tmp_path):
 def test_the_expiry_listing_is_complete_whichever_way_the_from_filter_reads(tmp_path, monkeypatch, inclusive):
     monkeypatch.setattr(osn, "PAGE_LIMIT", 50)  # many listing pages, several expiries larger than a page
     fake = FakeEodhd(make_chain(SPEC), inclusive=inclusive)
-    r = go(fake, osn.LocalStore(tmp_path))
+    r = go(fake, DirStore(tmp_path))
     # the session's own expiry is listed either way (S-3): an exclusive filter must not hide it
     assert [e["exp_date"] for e in r.manifest["expiries"]] == sorted(SPEC)
     assert r.manifest["expiries_listed"] == r.manifest["expiries_complete"] == len(SPEC)
@@ -217,7 +263,7 @@ def test_s3_the_session_expiry_is_listed_and_older_expiries_are_not(tmp_path, mo
     fake = FakeEodhd(make_chain(spec), inclusive=inclusive)
     exps, listed_all = osn.list_expiries(osn.Fetcher(client_for(fake), sleep=lambda s: None), date(2026, 11, 2))
     assert exps == sorted(SPEC) and listed_all is True
-    r = go(FakeEodhd(make_chain(spec), inclusive=inclusive), osn.LocalStore(tmp_path))
+    r = go(FakeEodhd(make_chain(spec), inclusive=inclusive), DirStore(tmp_path))
     assert [e["exp_date"] for e in r.manifest["expiries"]] == sorted(SPEC)
     assert r.state == "stored" and r.manifest["complete"] is True
 
@@ -225,7 +271,7 @@ def test_s3_the_session_expiry_is_listed_and_older_expiries_are_not(tmp_path, mo
 def test_an_expiry_over_one_page_is_split_by_type_and_paged(tmp_path, monkeypatch):
     monkeypatch.setattr(osn, "PAGE_LIMIT", 100)
     fake = FakeEodhd(make_chain(SPEC))
-    r = go(fake, osn.LocalStore(tmp_path))
+    r = go(fake, DirStore(tmp_path))
     rec = {e["exp_date"]: e for e in r.manifest["expiries"]}
     big = rec["2026-12-18"]
     assert big["complete"] and big["calls"] == big["puts"] == 600
@@ -235,7 +281,7 @@ def test_an_expiry_over_one_page_is_split_by_type_and_paged(tmp_path, monkeypatc
 
 
 def test_a_complete_session_is_never_fetched_again(tmp_path):
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     assert go(FakeEodhd(make_chain(SPEC)), store).state == "stored"
     fake = FakeEodhd(make_chain(SPEC))
     r = go(fake, store)
@@ -243,7 +289,7 @@ def test_a_complete_session_is_never_fetched_again(tmp_path):
 
 
 def test_a_provider_that_has_not_moved_costs_one_probe(tmp_path):
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     assert go(FakeEodhd(make_chain(SPEC)), store).state == "stored"
     later = datetime(2026, 11, 4, 3, 0, tzinfo=timezone.utc)  # 2026-11-03 has closed; the provider still has 11-02
     fake = FakeEodhd(make_chain(SPEC))
@@ -252,7 +298,7 @@ def test_a_provider_that_has_not_moved_costs_one_probe(tmp_path):
 
 
 def test_the_request_cap_stores_a_flagged_partial_and_a_retry_appends(tmp_path, monkeypatch):
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     monkeypatch.setattr(osn, "MAX_REQUESTS", 6)  # probe, three listing pages, two expiries
     first = go(FakeEodhd(make_chain(SPEC)), store)
     assert first.state == "stored_partial" and first.attempt == 1 and first.requests == 6
@@ -271,7 +317,7 @@ def test_the_request_cap_stores_a_flagged_partial_and_a_retry_appends(tmp_path, 
 
 
 def test_attempts_are_bounded(tmp_path, monkeypatch):
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     monkeypatch.setattr(osn, "MAX_REQUESTS", 6)
     for i in range(osn.MAX_ATTEMPTS):
         assert go(FakeEodhd(make_chain(SPEC)), store).state == "stored_partial"
@@ -281,7 +327,7 @@ def test_attempts_are_bounded(tmp_path, monkeypatch):
 
 
 def test_a_stored_attempt_is_never_overwritten(tmp_path):
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     store.check()
     store.add(SESSION, 1, b"data", b"{}")
     with pytest.raises(osn.StorageError):
@@ -293,7 +339,7 @@ def test_a_session_that_moves_mid_run_is_not_complete(tmp_path):
     now = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)  # 11-02 and 11-03 have both closed
     # the probe reads expiries from 11-03 on: its 100 rows are all 11-03 expiry rows carrying 11-02 marks
     chain = make_chain({"2026-11-02": 30, "2026-11-03": 60}) + make_chain({"2026-11-20": 30}, stamp="2026-11-03 21:30:00")
-    r = go(FakeEodhd(chain), osn.LocalStore(tmp_path), now=now)
+    r = go(FakeEodhd(chain), DirStore(tmp_path), now=now)
     assert r.session == SESSION and r.state == "stored_partial"
     assert "session_moved" in r.manifest["incomplete_reasons"]
     assert r.manifest["rows_by_quote_session"] == {SESSION: 180, "2026-11-03": 60}
@@ -301,7 +347,7 @@ def test_a_session_that_moves_mid_run_is_not_complete(tmp_path):
 
 def test_duplicate_rows_leave_the_expiry_incomplete(tmp_path):
     fake = FakeEodhd(make_chain(SPEC), dup_exp="2026-11-04")
-    r = go(fake, osn.LocalStore(tmp_path))
+    r = go(fake, DirStore(tmp_path))
     rec = {e["exp_date"]: e for e in r.manifest["expiries"]}
     assert not rec["2026-11-04"]["complete"] and rec["2026-11-04"]["reason"] == "rows_inconsistent"
     assert r.state == "stored_partial" and "expiry_incomplete" in r.manifest["incomplete_reasons"]
@@ -309,7 +355,7 @@ def test_duplicate_rows_leave_the_expiry_incomplete(tmp_path):
 
 def test_an_unentitled_token_stores_nothing(tmp_path):
     fake = FakeEodhd(make_chain(SPEC), fail_after=0, fail_status=403)
-    r = go(fake, osn.LocalStore(tmp_path))
+    r = go(fake, DirStore(tmp_path))
     assert r.state == "not_entitled" and len(fake.calls) == 1
     assert not list(tmp_path.rglob("*.json"))
 
@@ -317,20 +363,20 @@ def test_an_unentitled_token_stores_nothing(tmp_path):
 @pytest.mark.parametrize("status, reason", [(402, "provider_quota_exhausted"), (429, "provider_rate_limited")])
 def test_quota_or_rate_limit_stops_the_run_without_a_retry(tmp_path, status, reason):
     fake = FakeEodhd(make_chain(SPEC), fail_after=6, fail_status=status)
-    r = go(fake, osn.LocalStore(tmp_path))
+    r = go(fake, DirStore(tmp_path))
     assert len(fake.calls) == 7  # the failing request is not retried and nothing follows it
     assert r.state == "stored_partial" and reason in r.manifest["incomplete_reasons"]
 
 
 def test_marks_that_name_no_session_store_nothing(tmp_path):
     fake = FakeEodhd(make_chain(SPEC, stamp="2026-11-02 18:00:00"))  # an intraday mark
-    r = go(fake, osn.LocalStore(tmp_path))
+    r = go(fake, DirStore(tmp_path))
     assert r.state == "session_unknown" and len(fake.calls) == 1
 
 
 def test_the_summary_line_carries_counts_only(tmp_path):
     chain = make_chain(SPEC)
-    r = go(FakeEodhd(chain), osn.LocalStore(tmp_path))
+    r = go(FakeEodhd(chain), DirStore(tmp_path))
     line = r.line()
     assert line.startswith("option_snapshots: stored underlying=SPY session=2026-11-02 ")
     assert TOKEN not in line and str(tmp_path) not in line
@@ -370,7 +416,7 @@ def _orphan_store(kind, tmp_path):
         d = tmp_path / "SPY" / "2026-11"
         d.mkdir(parents=True)
         (d / name).write_bytes(b"cut off")
-        return lambda: osn.LocalStore(tmp_path)
+        return lambda: DirStore(tmp_path)
     gh = FakeGitHub()
     gh.releases["spy-options-2026-11"] = {"id": 1, "tag_name": "spy-options-2026-11"}
     gh.assets[2] = {"id": 2, "name": name, "size": 7, "release": 1}
@@ -403,7 +449,7 @@ def test_s5_an_unreadable_manifest_is_reported_interrupted_and_the_session_is_co
     """The report and the collector read a manifest the same way: one that does not parse as an object is an
     interrupted attempt. It stays, keeps its number, and the next run collects the session under the next."""
     gh = FakeGitHub()
-    store = (lambda: osn.LocalStore(tmp_path)) if kind == "local" else (lambda: gh_store(gh))
+    store = (lambda: DirStore(tmp_path)) if kind == "local" else (lambda: gh_store(gh))
     assert go(FakeEodhd(make_chain(SPEC)), store()).state == "stored"
     man_name = osn.asset_names(SESSION, 1)[1]
     if kind == "local":
@@ -448,14 +494,15 @@ def test_s5_a_store_that_cannot_be_read_is_a_storage_failure_not_a_retry(tmp_pat
 
 
 def test_the_report_cli_makes_no_eodhd_call(tmp_path, monkeypatch, capsys):
-    store = osn.LocalStore(tmp_path)
-    go(FakeEodhd(make_chain(SPEC)), store)
+    gh = FakeGitHub()
+    go(FakeEodhd(make_chain(SPEC)), gh_store(gh))
     monkeypatch.setenv("EODHD_OPTIONS_TOKEN", TOKEN)
+    monkeypatch.setattr(osn, "store_from_env", lambda env=None, transport=None: gh_store(gh))
 
     def boom(*a, **k):
         raise AssertionError("no EODHD call in --report")
     monkeypatch.setattr(eod.EodhdClient, "options_contracts", boom)
-    assert osn.main(["--report", "--out-dir", str(tmp_path)]) == 0
+    assert osn.main(["--report"]) == 0
     out = capsys.readouterr().out
     assert "sessions=1 attempts=1 complete=1 first_complete=2026-11-02" in out
 
@@ -644,7 +691,7 @@ def test_no_publish_or_artifact_step_can_carry_a_snapshot():
 def test_an_interrupted_upload_is_kept_and_the_next_attempt_takes_a_new_number(tmp_path):
     """A data file without its manifest (an upload cut off between the two) was never committed: it reads as
     no attempt, stays where it is, and the retry is written under the next number."""
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     store.check()
     d = tmp_path / "SPY" / "2026-11"
     d.mkdir(parents=True)
@@ -669,7 +716,7 @@ def _empty_for(exp: str, type_: str | None = None):
 def test_a2_case1_a_listed_expiry_answering_no_rows_is_never_complete(tmp_path):
     """Reproduced at 5301606: the listing saw 2026-11-04, the exact fetch answered no rows and no next link,
     and the expiry was recorded complete with 0 contracts, so the whole snapshot read complete."""
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     r = go(FakeEodhd(make_chain(SPEC), tamper=_empty_for("2026-11-04")), store)
     rec = {e["exp_date"]: e for e in r.manifest["expiries"]}
     assert rec["2026-11-04"] == {"exp_date": "2026-11-04", "contracts": 0, "calls": 0, "puts": 0, "requests": 1,
@@ -689,7 +736,7 @@ def test_a2_case1_a_listed_expiry_with_one_side_missing_is_never_complete(tmp_pa
     monkeypatch.setattr(osn, "PAGE_LIMIT", 100)
     for exp in ("2026-12-18", "2026-11-03"):
         chain = [r for r in make_chain(SPEC) if not (r["exp_date"] == exp and r["type"] == "put")]
-        r = go(FakeEodhd(chain), osn.LocalStore(tmp_path / exp))
+        r = go(FakeEodhd(chain), DirStore(tmp_path / exp))
         rec = {e["exp_date"]: e for e in r.manifest["expiries"]}[exp]
         assert rec["complete"] is False and rec["reason"] == "type_missing" and rec["puts"] == 0 and rec["calls"] == SPEC[exp]
         assert r.state == "stored_partial" and r.manifest["expiries_complete"] == len(SPEC) - 1
@@ -713,7 +760,7 @@ def test_a2_case2_a_row_not_naming_spy_never_passes(tmp_path, drop, value):
     """Reproduced at 5301606: a QQQ contract with no underlying_symbol, served inside a SPY expiry, passed
     the expiry check and was stored in a complete snapshot."""
     chain = make_chain(SPEC)
-    r = go(FakeEodhd(chain, tamper=_strip_symbol("2026-11-06", value=value, drop=drop)), osn.LocalStore(tmp_path))
+    r = go(FakeEodhd(chain, tamper=_strip_symbol("2026-11-06", value=value, drop=drop)), DirStore(tmp_path))
     assert r.state == "stored_partial" and "provider_contradiction" in r.manifest["incomplete_reasons"]
     rows, man, _ = read_stored(tmp_path, SESSION)
     assert not any(x["contract"].startswith("QQQ") for x in rows)
@@ -727,7 +774,7 @@ def test_a2_case2_the_probe_and_listing_must_name_spy_too(tmp_path):
     def probe_tamper(q, page):
         return [{k: v for k, v in r.items() if k != "underlying_symbol"} for r in page] if q.get("page[limit]") == str(osn.PROBE_LIMIT) else page
     fake = FakeEodhd(make_chain(SPEC), tamper=probe_tamper)
-    r = go(fake, osn.LocalStore(tmp_path))
+    r = go(fake, DirStore(tmp_path))
     assert (r.state, r.detail, len(fake.calls)) == ("provider_error", "contradiction", 1)
     assert fake.calls[0]["fields[options-contracts]"] == osn.PROBE_FIELDS and "underlying_symbol" in osn.PROBE_FIELDS
 
@@ -736,7 +783,7 @@ def test_a2_case2_the_probe_and_listing_must_name_spy_too(tmp_path):
             return [dict(x, underlying_symbol="QQQ") for x in page]
         return page
     fake = FakeEodhd(make_chain(SPEC), tamper=list_tamper)
-    r = go(fake, osn.LocalStore(tmp_path / "b"))
+    r = go(fake, DirStore(tmp_path / "b"))
     assert r.state == "provider_error" and r.detail == "no_rows"  # nothing collected, nothing stored
     assert "provider_contradiction" in r.manifest["incomplete_reasons"]
     assert not list((tmp_path / "b").rglob("*.json"))
@@ -758,7 +805,7 @@ def test_s1_rows_whose_marks_name_no_session_are_never_complete_and_are_retried(
         if "filter[exp_date_eq]" in q:
             return [dict(r, bid_date=None, ask_date=None) for r in page]
         return page
-    store = osn.LocalStore(tmp_path)
+    store = DirStore(tmp_path)
     r = go(FakeEodhd(make_chain(SPEC), tamper=tamper), store)
     assert r.state == "stored_partial" and "session_unknown" in r.manifest["incomplete_reasons"]
     assert r.manifest["rows_by_quote_session"] == {"unnamed": sum(2 * v for v in SPEC.values())}
@@ -771,22 +818,6 @@ def test_s2_the_row_histogram_uses_the_shared_session_rule(tmp_path):
     chain_session; at bbe39b0 the histogram filed it under the bid's session."""
     now = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
     chain = [dict(r, ask_date="2026-11-03 21:30:00") for r in make_chain({"2026-11-04": 20, "2026-11-06": 20})]
-    r = go(FakeEodhd(chain), osn.LocalStore(tmp_path), now=now)
+    r = go(FakeEodhd(chain), DirStore(tmp_path), now=now)
     assert r.session == "2026-11-03" and r.state == "stored"
     assert r.manifest["rows_by_quote_session"] == {"2026-11-03": len(chain)}
-
-
-def test_local_store_link_failures_are_storage_errors_and_leave_no_temp(tmp_path, monkeypatch):
-    store = osn.LocalStore(tmp_path)
-    store.check()
-    monkeypatch.setattr(osn.LocalStore, "taken", lambda self, session: set())  # past the attempt check
-    store.add(SESSION, 1, b"data", b"{}")
-    with pytest.raises(osn.StorageError, match="never replaced"):
-        store.add(SESSION, 1, b"other", b"{}")  # os.link refuses the existing name
-    def deny(src, dst):
-        raise PermissionError("read-only")
-    monkeypatch.setattr(osn.os, "link", deny)
-    with pytest.raises(osn.StorageError, match="cannot be written"):
-        store.add(SESSION, 2, b"d", b"{}")
-    d = tmp_path / "SPY" / "2026-11"
-    assert not list(d.glob(".*.tmp")) and (d / osn.asset_names(SESSION, 1)[0]).read_bytes() == b"data"
