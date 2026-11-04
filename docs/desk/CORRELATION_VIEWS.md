@@ -79,8 +79,9 @@ a client can read every horizon one way. The existing top-level fields are untou
   differs from the event study's forward windows, which do overlap and are block-resampled.
 - **Year ago and flipped:** these are computed per horizon with the existing rules. "Year ago" is
   the last session on or before `t` minus 12 calendar months. "Flipped" is the newest change of sign
-  among sessions with a complete window, skipping zeros. A 20-session correlation changes sign far
-  more often than a 120-session one, and the page says so.
+  among sessions with a complete window, skipping zeros. A shorter window can change sign more
+  often than a longer one; the noise note under the window control (§7) says how noisy each window
+  is.
 - **Noise reference (`noise_band`):** each horizon's entry serves
   `noise_band = tanh(1.6448536 / sqrt(w − 3))`, rule `fisher-z-90-iid`. That gives 0.38 for 20,
   0.21 for 60 and 0.15 for 120.
@@ -113,11 +114,16 @@ each of Goldilocks, Overheating, Stagflation and Recession Risk:
 - **Correlation:** Pearson's correlation of the pooled daily returns of every labelled return date
   with that label, from the pair's first common return date through `t`. `t` is the row's own end
   session (§3). The returns are demeaned with the regime's own pooled means.
-- **All:** the same statistic over every labelled return date, for comparison.
-- **What is served:** `n` (return dates used), `first` and `last` (the first and last dates used),
-  `spells`, `largest_spell_share` and the reason when the value is null.
-- **`spells`:** the number of separate runs of consecutive calendar months with that label among
-  the months the sample covers. A missing regime row breaks a run.
+- **All:** the same statistic over every labelled return date, for comparison. It serves `n`,
+  `first`, `last` and the reason, and no spell fields: it pools every regime, so its runs are not
+  spells of one label.
+- **What is served per regime:** `n` (return dates used), `first` and `last` (the first and last
+  dates used), `spells`, `largest_spell_share` and the reason when the value is null.
+- **`spells`:** the number of runs that contribute at least one return date used. A run is a
+  stretch of consecutive calendar months with that label among the months the sample covers; a
+  missing regime row, or a month with another label, ends it. A run with no complete pair (for
+  example, one asset holds no close in it) is not a spell, and it still separates the runs on
+  either side.
 - **`largest_spell_share`:** the share of `n` that falls in the largest spell.
 
 **Missing data and minimums.** A return date counts only when both returns exist (§2). Return
@@ -173,7 +179,8 @@ These pins hold on synthetic stores (no database needed):
 - Unlabeled dates, including a missing row, are counted and excluded.
 - The regime minimum nulls a regime with its reason.
 - Pooled Pearson matches a hand computation.
-- `spells` and `largest_spell_share` are counted correctly.
+- `spells` and `largest_spell_share` are counted correctly, including a run with no complete pair
+  between two runs that hold pairs (two spells, not three or one).
 - `current` is correct, and null when Unlabeled.
 - `regime_history` is `"revised"` and `as_known` is null with its reason.
 
@@ -194,7 +201,8 @@ correlation cards, set to 60.
   one column per regime plus All.
   - **Marking:** each row's regime at its sample end is marked in that row. A column is marked
     "now" only when every row agrees.
-  - **Cells:** each cell shows the served value with its n and spells. A null cell shows its reason.
+  - **Cells:** each regime cell shows the served value with its n and spells; the All cell shows
+    its value and n. A null cell shows its reason.
 - **Labels on the card:**
   - It is headed "Revised regime history".
   - It states the K − 2 rule in one line.

@@ -289,6 +289,25 @@ def test_spells_are_runs_of_months_and_the_largest_share_is_counted(tmp_path):
     assert g["largest_spell_share"] == pytest.approx(first / g["n"], abs=1e-15)
 
 
+def test_a_spell_without_a_complete_pair_is_not_counted_and_all_serves_no_spells(tmp_path):
+    """§4 (Codex DR-06): Stagflation governs three calendar runs; TLT holds no close in the
+    middle one, so it contributes no pair and is not a spell. All carries no spell fields."""
+    governs = {"2015-01", "2015-02", "2015-03", "2017-01", "2017-02", "2017-03", "2019-01", "2019-02", "2019-03"}
+    months = _months("2013-01", "2026-07", lambda p: "Stagflation" if str(p + 2) in governs else "Overheating")
+    st = _store(tmp_path, months)
+    hole = np.array([d.strftime("%Y-%m") in {"2017-01", "2017-02", "2017-03"} for d in st.sessions])
+    st.px["tlt"] = np.where(hole, np.nan, st.px["tlt"])
+    br = next(r for r in etf.correlations(st, True) if r["symbol"] == "TLT")["by_regime"]
+    g = next(x for x in br["regimes"] if x["regime"] == "Stagflation")
+    days = hs.sessions()
+    a, c = (sum(1 for d in days if d[:7] in {f"{y}-01", f"{y}-02", f"{y}-03"}) for y in (2015, 2019))
+    assert g["n"] == a + c and g["first"][:7] == "2015-01" and g["last"][:7] == "2019-03"
+    assert g["spells"] == 2
+    assert g["largest_spell_share"] == pytest.approx(max(a, c) / g["n"], abs=1e-15)
+    assert br["incomplete_n"] == int(hole.sum()) + 1  # the session after the hole has no previous close
+    assert "spells" not in br["all"] and "largest_spell_share" not in br["all"]
+
+
 def test_the_current_regime_is_the_row_governing_the_end_session(tmp_path):
     """§4: the store ends 2026-09-18, governed by the row stamped 2026-07; rows that
     end at 2026-06 leave the end session Unlabeled, so `current` is null."""
