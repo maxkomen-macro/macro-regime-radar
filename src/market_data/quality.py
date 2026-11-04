@@ -90,7 +90,11 @@ SPLIT_MIN_LOG = math.log(1.36)  # 3:2 is the smallest factor checked (log 0.405)
 SPLIT_FACTORS = (2.0, 3.0, 4.0, 5.0, 8.0, 10.0, 20.0, 1.5)
 RATIO_STEP = 0.003    # cross_table: 0.3% in log terms
 RATIO_DROP = math.log(1 / 0.9)  # cross_table: a fall in the ratio above 10% is no distribution
-OBSERVED_TOL = 1e-6   # a flag is known only if its observation is unchanged: float noise, never a price change
+# A flag is known only if its observation is unchanged to this (log, or pp for a rate). Two
+# published snapshots a day apart (2026-11-03 and 11-04) differ by up to 1.5e-6 on the same
+# flags: the provider's restated adjusted history is not an exact rescale. 2e-5 holds that
+# noise with room and stays 150x below cross_table's 0.3% step, so a real change is new.
+OBSERVED_TOL = 2e-5
 
 SCREEN_TABLES = ("asset_prices", "market_daily")  # read on screen as stored
 HIGH_CHECKS = ("split", "implausible")
@@ -499,10 +503,11 @@ def compare(current: dict, previous: dict | None) -> dict:
     snapshot holds one with the same key (check, table, series, interval, date) and the
     same observation (same earlier date, run or gap, each move within OBSERVED_TOL),
     and new otherwise, so a stored price that changed under a known flag (a worse bad
-    print, a different move, a wider cross-table gap) is new again, however small the
-    change. A dividend restatement of an adjusted history scales every close before the
-    ex-date by one factor, so it leaves every move and cross-table step unchanged except
-    the one across the ex-date (that flag, if any, is new once). Without a previous
+    print, a different move, a wider cross-table gap) is new again once the change
+    exceeds the provider's rounding noise. A dividend restatement of an adjusted history
+    scales every close before the ex-date by one factor, so it leaves every move and
+    cross-table step unchanged, to that noise, except the one across the ex-date (that
+    flag, if any, is new once). Without a previous
     snapshot nothing is new or known (`judged` is False)."""
     if previous is None:
         return {"judged": False, "flags": [{**f, "new": None} for f in current.get("flags", [])]}

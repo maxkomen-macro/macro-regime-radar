@@ -392,8 +392,21 @@ def test_a_restated_history_keeps_its_moves_to_float_noise(tmp_path):
         assert abs(a["observed"][1] - b["observed"][1]) < 1e-9
 
 
+def test_a_restatement_with_the_providers_rounding_noise_is_known(tmp_path):
+    # two published snapshots a day apart (2026-11-03, 2026-11-04) moved the same 330 flags'
+    # observations by up to 1.5e-6 (HYG 2008-09-29: -0.0844418 -> -0.0844405), because the
+    # restated adjusted closes carry rounding noise; a 1e-6 tolerance called three of them new
+    base = _walk(len(DATES))
+    halved = base[:300] + [c / 2 for c in base[300:]]
+    prev = _split_run(tmp_path, "p.db", halved)
+    rng = random.Random(11)
+    noisy = [c * 1.0044 * (1 + rng.uniform(-2e-6, 2e-6)) for c in halved]
+    assert [(f["check"], f["new"]) for f in q.compare(_split_run(tmp_path, "n.db", noisy), prev)["flags"]] == [("split", False)]
+
+
 def test_observations_match_only_within_the_tolerance():
     assert q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.693 + 1e-9])
+    assert q._same_observation(["2026-01-02", -0.0844418], ["2026-01-02", -0.0844405])  # the real 11-04 restatement
     assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.6929])
     assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-02", -0.71])
     assert not q._same_observation(["2026-01-02", -0.693], ["2026-01-05", -0.693])
