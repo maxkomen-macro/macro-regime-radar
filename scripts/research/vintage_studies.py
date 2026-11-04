@@ -54,6 +54,12 @@ def snapshot_db(src: Path, dst: Path) -> Path:
     """A consistent copy of `src` through SQLite's backup API (Codex S-3): it
     carries every committed transaction, including frames still in a WAL file
     that a byte copy of the main file would miss. `src` is opened read-only."""
+    src_r, dst_r = Path(src).resolve(), Path(dst).resolve()
+    if src_r == dst_r or dst_r.name.startswith(src_r.name + "-") and dst_r.parent == src_r.parent:
+        # Codex S-6: never write over (or beside the WAL/SHM files of) the source
+        raise ValueError(f"snapshot destination {dst} is the source database or one of its files")
+    if not src_r.is_file():
+        raise FileNotFoundError(f"source database {src} not found")
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists():
         dst.unlink()
@@ -65,6 +71,21 @@ def snapshot_db(src: Path, dst: Path) -> Path:
         target.close()
         source.close()
     return dst
+
+
+SCRATCH_FILES = ("served.db", "governed_start.db")
+
+
+def check_paths(db: Path, scratch: Path) -> None:
+    """Codex S-6: the source database must not be, or sit beside as, any file
+    this run writes in the scratch directory, so no run can delete or
+    overwrite it. Raises before anything is written."""
+    src = Path(db).resolve()
+    outs = [(Path(scratch) / f).resolve() for f in SCRATCH_FILES]
+    for out in outs:
+        if src == out or (src.parent == out.parent and src.name.startswith(out.name + "-")):
+            raise ValueError(f"--db {db} is a file this run writes in --scratch {scratch}; use a scratch directory "
+                             f"that does not hold the source database")
 
 
 def make_scratch_db(src: Path, dst: Path, labels: dict[str, str | None]) -> Path:
@@ -210,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--scratch", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
     a = ap.parse_args(argv)
+
+    check_paths(a.db, a.scratch)
 
     from src.desk import event_study as es
 
