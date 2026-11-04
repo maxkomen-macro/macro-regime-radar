@@ -651,3 +651,47 @@ def test_a2_case2_rows_belong_rejects_a_missing_symbol():
     row = make_chain({"2026-11-03": 1})[0]
     assert osn._rows_belong([row], "2026-11-03", None)
     assert not osn._rows_belong([{k: v for k, v in row.items() if k != "underlying_symbol"}], "2026-11-03", None)
+
+
+# ── Codex round 1 (S-1, S-2) ──
+
+
+def test_s1_rows_whose_marks_name_no_session_are_never_complete_and_are_retried(tmp_path):
+    """S-1: the probe names 2026-11-02, then every expiry page comes back with no bid or ask stamp. At bbe39b0
+    the snapshot read complete with every row 'unnamed', and the session was never collected again."""
+    def tamper(q, page):
+        if "filter[exp_date_eq]" in q:
+            return [dict(r, bid_date=None, ask_date=None) for r in page]
+        return page
+    store = osn.LocalStore(tmp_path)
+    r = go(FakeEodhd(make_chain(SPEC), tamper=tamper), store)
+    assert r.state == "stored_partial" and "session_unknown" in r.manifest["incomplete_reasons"]
+    assert r.manifest["rows_by_quote_session"] == {"unnamed": sum(2 * v for v in SPEC.values())}
+    r2 = go(FakeEodhd(make_chain(SPEC)), store)
+    assert (r2.state, r2.attempt) == ("stored", 2)
+
+
+def test_s2_the_row_histogram_uses_the_shared_session_rule(tmp_path):
+    """S-2: a row whose bid names 2026-11-02 and whose ask names 2026-11-03 is a 2026-11-03 row under
+    chain_session; at bbe39b0 the histogram filed it under the bid's session."""
+    now = datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc)
+    chain = [dict(r, ask_date="2026-11-03 21:30:00") for r in make_chain({"2026-11-04": 20, "2026-11-06": 20})]
+    r = go(FakeEodhd(chain), osn.LocalStore(tmp_path), now=now)
+    assert r.session == "2026-11-03" and r.state == "stored"
+    assert r.manifest["rows_by_quote_session"] == {"2026-11-03": len(chain)}
+
+
+def test_local_store_link_failures_are_storage_errors_and_leave_no_temp(tmp_path, monkeypatch):
+    store = osn.LocalStore(tmp_path)
+    store.check()
+    monkeypatch.setattr(osn.LocalStore, "taken", lambda self, session: set())  # past the attempt check
+    store.add(SESSION, 1, b"data", b"{}")
+    with pytest.raises(osn.StorageError, match="never replaced"):
+        store.add(SESSION, 1, b"other", b"{}")  # os.link refuses the existing name
+    def deny(src, dst):
+        raise PermissionError("read-only")
+    monkeypatch.setattr(osn.os, "link", deny)
+    with pytest.raises(osn.StorageError, match="cannot be written"):
+        store.add(SESSION, 2, b"d", b"{}")
+    d = tmp_path / "SPY" / "2026-11"
+    assert not list(d.glob(".*.tmp")) and (d / osn.asset_names(SESSION, 1)[0]).read_bytes() == b"data"

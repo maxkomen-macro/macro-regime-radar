@@ -28,8 +28,9 @@ What one run does, in order, and where it stops:
   6. Writes the raw provider rows, unmodified, as gzip JSON lines (sorted, deterministic) plus a manifest:
      schema version, provider, the quote session, the retrieval start and end, per-expiry counts and
      completeness, the session each row's marks describe, the request count and the data file's SHA-256. A
-     snapshot is complete only when the listing and every expiry are complete and no row's marks name a newer
-     session than the probe did (the provider did not move mid-run).
+     snapshot is complete only when the listing and every expiry are complete and the collected rows, read by
+     the same session rule, name the probe's session: a newer one is "session_moved", none at all
+     "session_unknown". Each row's histogram session is that rule applied to the row alone.
 
 History is append-only. Each attempt at a session is its own pair of assets, numbered a01, a02, ...; nothing
 stored is ever deleted, overwritten or replaced. A session with a complete attempt is never collected again;
@@ -80,7 +81,7 @@ from api import calendar as cal  # noqa: E402
 from api.providers import eodhd as eod  # noqa: E402
 from api.providers import quota  # noqa: E402
 from api.providers.errors import ProviderError  # noqa: E402
-from api.providers.market import chain_session, eod_session  # noqa: E402
+from api.providers.market import chain_session  # noqa: E402
 
 UNDERLYING = "SPY"
 TOKEN_ENV = "EODHD_OPTIONS_TOKEN"
@@ -532,7 +533,7 @@ def build_snapshot(session: str, rows: list[dict], expiries: list[dict], listing
                    requests: int, cap: int, started: datetime, finished: datetime, now: datetime, stop: str | None) -> Snapshot:
     by_session: dict[str, int] = {}
     for r in rows:
-        s = eod_session(r.get("bid_date"), now) or eod_session(r.get("ask_date"), now) or "unnamed"
+        s = chain_session([r], now) or "unnamed"  # the shared rule, row by row: its newest nameable mark (S-2)
         by_session[s] = by_session.get(s, 0) + 1
     newest = chain_session(rows, now) if rows else None
     reasons = [stop] if stop else []
@@ -540,7 +541,9 @@ def build_snapshot(session: str, rows: list[dict], expiries: list[dict], listing
         reasons.append("expiry_listing_incomplete")
     if any(not e["complete"] for e in expiries):
         reasons.append("expiry_incomplete")
-    if newest is not None and newest != session:
+    if newest is None:
+        reasons.append("session_unknown")  # no row's marks name a session: nothing ties the rows to the probe's (S-1)
+    elif newest != session:
         reasons.append("session_moved")  # the provider published a newer session while this run read it
     if not rows:
         reasons.append("no_rows")
