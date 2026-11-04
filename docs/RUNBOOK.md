@@ -42,7 +42,7 @@ Observed on 2026-09-05 (Saturday, Labor Day weekend): regime month July 2026 is 
 
 ## 4. Memos
 
-`Refresh Data` dispatches the memo workflows itself — only after a **validated morning full** refresh, on weekdays (daily) and Mondays (weekly) — passing its run id. Each memo workflow downloads that run's `validated-db` artifact and refuses to produce a memo unless the artifact says `mode=full`. A manual dispatch without a run id uses the current Release asset. The memo commit uses the retry / `git reset --soft origin/main` loop; stash/rebase is gone. (Hourly news runs never wake the memo workflows.)
+`Refresh Data` dispatches the memo workflows itself — only after a **validated morning full** refresh, on weekdays (daily) and Mondays (weekly) — passing its run id. Each memo workflow downloads that run's `validated-db` artifact and refuses to produce a memo unless the artifact says `mode=full`. A manual dispatch without a run id uses the current Release asset. The memo commit goes through `scripts/publish_artifacts.sh`, which builds it in a fresh worktree of the current `main` with only the memo staged (the old `git reset --soft origin/main` loop reverted PRs merged during a run); stash/rebase is gone. (Hourly news runs never wake the memo workflows.)
 
 ## 5. Rolling back data
 

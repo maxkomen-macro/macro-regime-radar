@@ -13,6 +13,8 @@
      "id": "DGS3MO",
      "key": "us3m",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": null,
      "freq": "daily",
      "first": null,
      "last": null,
@@ -27,6 +29,21 @@
      "id": "DGS2",
      "key": "us2y",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 12574,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 12574,
+        "first": "1976-06-01",
+        "last": "2026-09-22"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1976-06-01",
      "last": "2026-09-22",
@@ -44,6 +61,21 @@
      "id": "T10Y2Y",
      "key": "curve_2s10s",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 12575,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 12575,
+        "first": "1976-06-01",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1976-06-01",
      "last": "2026-09-23",
@@ -60,6 +92,8 @@
      "id": "DGS5",
      "key": "us5y",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": null,
      "freq": "daily",
      "first": null,
      "last": null,
@@ -74,6 +108,21 @@
      "id": "DGS10",
      "key": "us10y",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 16166,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 16166,
+        "first": "1962-01-02",
+        "last": "2026-09-22"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1962-01-02",
      "last": "2026-09-22",
@@ -92,6 +141,8 @@
      "id": "DGS30",
      "key": "us30y",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": null,
      "freq": "daily",
      "first": null,
      "last": null,
@@ -106,6 +157,21 @@
      "id": "T10YIE",
      "key": null,
      "provider": "FRED",
+     "policy": "FRED",
+     "stored": {
+      "basis": "table_writer",
+      "rows": 285,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 285,
+        "first": "2003-01-01",
+        "last": "2026-09-01"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2003-01-01",
      "last": "2026-09-23",
@@ -121,6 +187,21 @@
      "id": "T5YIE",
      "key": null,
      "provider": "FRED",
+     "policy": "FRED",
+     "stored": {
+      "basis": "table_writer",
+      "rows": 285,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 285,
+        "first": "2003-01-01",
+        "last": "2026-09-01"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2003-01-01",
      "last": "2026-09-23",
@@ -142,6 +223,21 @@
      "id": "BAMLH0A0HYM2",
      "key": "hy_oas",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 787,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 787,
+        "first": "2023-09-25",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2023-09-25",
      "last": "2026-09-23",
@@ -160,6 +256,21 @@
      "id": "BAMLC0A0CM",
      "key": null,
      "provider": "FRED",
+     "policy": "FRED",
+     "stored": {
+      "basis": "table_writer",
+      "rows": 358,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 358,
+        "first": "1996-12-01",
+        "last": "2026-09-01"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1996-12-01",
      "last": "2026-09-23",
@@ -180,6 +291,21 @@
      "id": "^GSPC",
      "key": "spx",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 9249,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 9249,
+        "first": "1990-01-02",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1990-01-02",
      "last": "2026-09-23",
@@ -199,6 +325,8 @@
      "id": "^NDX",
      "key": "ndx",
      "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": null,
      "freq": "daily",
      "first": null,
      "last": null,
@@ -211,6 +339,21 @@
      "id": "^RUT",
      "key": "rut",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 9249,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 9249,
+        "first": "1990-01-02",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1990-01-02",
      "last": "2026-09-23",
@@ -223,6 +366,21 @@
      "id": "^VIX",
      "key": "vix",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 9251,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 9251,
+        "first": "1990-01-02",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1990-01-02",
      "last": "2026-09-23",
@@ -247,6 +405,8 @@
      "id": "DX-Y.NYB",
      "key": "dxy",
      "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": null,
      "freq": "daily",
      "first": null,
      "last": null,
@@ -263,6 +423,8 @@
      "id": "JPY=X",
      "key": "usdjpy",
      "provider": "EODHD first, Yahoo disclosed fallback (Desk daily history)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": null,
      "freq": "daily",
      "first": null,
      "last": null,
@@ -275,6 +437,21 @@
      "id": "GC=F",
      "key": "gold",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "Yahoo only (EODHD does not carry it)",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6541,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6541,
+        "first": "2000-08-30",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2000-08-30",
      "last": "2026-09-23",
@@ -291,6 +468,8 @@
      "id": "DCOILWTICO",
      "key": "wti",
      "provider": "FRED (Desk daily history)",
+     "policy": "FRED",
+     "stored": null,
      "freq": "daily",
      "first": null,
      "last": null,
@@ -313,6 +492,21 @@
      "id": "CPIAUCSL",
      "key": null,
      "provider": "FRED",
+     "policy": "FRED",
+     "stored": {
+      "basis": "table_writer",
+      "rows": 365,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 365,
+        "first": "1996-03-01",
+        "last": "2026-08-01"
+       }
+      ]
+     },
      "freq": "monthly",
      "first": "1996-03-01",
      "last": "2026-08-01",
@@ -331,6 +525,21 @@
      "id": "INDPRO",
      "key": null,
      "provider": "FRED",
+     "policy": "FRED",
+     "stored": {
+      "basis": "table_writer",
+      "rows": 366,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 366,
+        "first": "1996-03-01",
+        "last": "2026-08-01"
+       }
+      ]
+     },
      "freq": "monthly",
      "first": "1996-03-01",
      "last": "2026-08-01",
@@ -349,6 +558,21 @@
      "id": "UNRATE",
      "key": null,
      "provider": "FRED",
+     "policy": "FRED",
+     "stored": {
+      "basis": "table_writer",
+      "rows": 365,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 365,
+        "first": "1996-03-01",
+        "last": "2026-08-01"
+       }
+      ]
+     },
      "freq": "monthly",
      "first": "1996-03-01",
      "last": "2026-08-01",
@@ -364,6 +588,21 @@
      "id": "USREC",
      "key": null,
      "provider": "FRED",
+     "policy": "FRED",
+     "stored": {
+      "basis": "table_writer",
+      "rows": 366,
+      "latest": "FRED",
+      "providers": [
+       {
+        "code": "fred",
+        "name": "FRED",
+        "rows": 366,
+        "first": "1996-03-01",
+        "last": "2026-08-01"
+       }
+      ]
+     },
      "freq": "monthly",
      "first": "1996-03-01",
      "last": "2026-08-01",
@@ -385,6 +624,21 @@
      "id": "XLB",
      "key": "xlb",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -400,6 +654,21 @@
      "id": "XLC",
      "key": "xlc",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 2077,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 2077,
+        "first": "2018-06-19",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2018-06-19",
      "last": "2026-09-23",
@@ -415,6 +684,21 @@
      "id": "XLE",
      "key": "xle",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -431,6 +715,21 @@
      "id": "XLF",
      "key": "xlf",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -446,6 +745,21 @@
      "id": "XLI",
      "key": "xli",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -461,6 +775,21 @@
      "id": "XLK",
      "key": "xlk",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -476,6 +805,21 @@
      "id": "XLP",
      "key": "xlp",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -491,6 +835,21 @@
      "id": "XLRE",
      "key": "xlre",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 2755,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 2755,
+        "first": "2015-10-08",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2015-10-08",
      "last": "2026-09-23",
@@ -506,6 +865,21 @@
      "id": "XLU",
      "key": "xlu",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -521,6 +895,21 @@
      "id": "XLV",
      "key": "xlv",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -536,6 +925,21 @@
      "id": "XLY",
      "key": "xly",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6980,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6980,
+        "first": "1998-12-22",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1998-12-22",
      "last": "2026-09-23",
@@ -557,6 +961,21 @@
      "id": "SPY",
      "key": "spy",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 8470,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 8470,
+        "first": "1993-01-29",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1993-01-29",
      "last": "2026-09-23",
@@ -573,6 +992,21 @@
      "id": "RSP",
      "key": "rsp",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 5887,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 5887,
+        "first": "2003-05-01",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2003-05-01",
      "last": "2026-09-23",
@@ -587,6 +1021,21 @@
      "id": "IWM",
      "key": "iwm",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6620,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6620,
+        "first": "2000-05-26",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2000-05-26",
      "last": "2026-09-23",
@@ -602,6 +1051,21 @@
      "id": "QQQ",
      "key": "qqq",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6928,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6928,
+        "first": "1999-03-10",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "1999-03-10",
      "last": "2026-09-23",
@@ -616,6 +1080,21 @@
      "id": "SMH",
      "key": "smh",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6615,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6615,
+        "first": "2000-06-05",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2000-06-05",
      "last": "2026-09-23",
@@ -630,6 +1109,21 @@
      "id": "SOXX",
      "key": "soxx",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6336,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6336,
+        "first": "2001-07-13",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2001-07-13",
      "last": "2026-09-23",
@@ -642,6 +1136,21 @@
      "id": "IGV",
      "key": "igv",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6334,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6334,
+        "first": "2001-07-17",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2001-07-17",
      "last": "2026-09-23",
@@ -660,6 +1169,21 @@
      "id": "TLT",
      "key": "tlt",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6077,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6077,
+        "first": "2002-07-30",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2002-07-30",
      "last": "2026-09-23",
@@ -674,6 +1198,21 @@
      "id": "IEF",
      "key": "ief",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6077,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6077,
+        "first": "2002-07-30",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2002-07-30",
      "last": "2026-09-23",
@@ -688,6 +1227,21 @@
      "id": "HYG",
      "key": "hyg",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 4895,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 4895,
+        "first": "2007-04-11",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2007-04-11",
      "last": "2026-09-23",
@@ -702,6 +1256,21 @@
      "id": "LQD",
      "key": "lqd",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 6077,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 6077,
+        "first": "2002-07-30",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2002-07-30",
      "last": "2026-09-23",
@@ -716,6 +1285,21 @@
      "id": "GLD",
      "key": "gld",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 5495,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 5495,
+        "first": "2004-11-18",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2004-11-18",
      "last": "2026-09-23",
@@ -730,6 +1314,21 @@
      "id": "UUP",
      "key": "uup",
      "provider": "EODHD first, Yahoo disclosed fallback (stored)",
+     "policy": "EODHD first, Yahoo fallback",
+     "stored": {
+      "basis": "row_provider",
+      "rows": 4923,
+      "latest": "Yahoo",
+      "providers": [
+       {
+        "code": "yfinance",
+        "name": "Yahoo",
+        "rows": 4923,
+        "first": "2007-03-01",
+        "last": "2026-09-23"
+       }
+      ]
+     },
      "freq": "daily",
      "first": "2007-03-01",
      "last": "2026-09-23",

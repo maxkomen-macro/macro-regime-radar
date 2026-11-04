@@ -143,7 +143,7 @@ def current_block(rows: list[dict], classifier: dict | None = None) -> dict:
 # api/desk_items_macro.NEXT_PRINTS, by key (stdlib here: the module is imported lazily).
 NEXT_PRINT_KEYS: tuple[tuple[str, str, str, str | None], ...] = (
     ("cpi", "CPIAUCSL", "inflation", "CPI Release"),
-    ("indpro", "INDPRO", "growth", None),
+    ("indpro", "INDPRO", "growth", "Industrial Production (G.17)"),
 )
 
 def _utc(stamp: str) -> datetime | None:
