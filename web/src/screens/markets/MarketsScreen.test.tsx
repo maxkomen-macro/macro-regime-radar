@@ -317,7 +317,7 @@ const EMPTY_PROMPT =
 // CP4: the hero names the missing closes; "The tape keeps its live quotes." follows only while the stream is up.
 const ERROR_HEADLINE = "Stored closes unavailable: the data service did not answer.";
 const DISCLOSURE_LINE =
-  "Live prices via EODHD WebSocket (crypto & FX stream around the clock, US equities during NYSE hours, 15-min-delayed quotes fill the gaps) · stored candles and returns via the yfinance pipeline · macro metrics via FRED.";
+  "Live prices via EODHD WebSocket (crypto & FX stream around the clock, US equities during NYSE hours, 15-min-delayed quotes fill the gaps) · stored daily candles and returns via the refresh pipeline: yfinance, except the bars dated Feb 27, 2024 to May 26, 2026, which are Polygon.io bars kept from the earlier pipeline (SPY's Mar 12, 2026 bar is yfinance) · stored 5-minute bars via yfinance · macro metrics via FRED.";
 const OFF_HOURS_LEDE = "Outside the regular session, trades the feed marks extended-hours or closed are held, and delayed quotes timestamped outside the session do not replace a regular-session quote. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
 const LIVE_LEDE = "Day moves are measured against each name's previous regular-session close. Stored candles feed the 1W / 1M columns and sparklines; the pricing block and the surprise ranking update on their own cadence.";
 const BASIS = "Headline and pill read the one-day moves of the four stored sector ETFs at the Sep 18, 2026 close; the session sentence is the live tape.";

@@ -390,8 +390,21 @@ def _guarded(fn: Callable[[], T]) -> T:
 # Provider per source. FRED series carry their own id as the source id; the
 # stored market tables name the pipeline client that wrote them (CLAUDE.md,
 # Data Source Rules); the relay names EODHD.
+# market_daily's `source` column splits by date: the rows dated 2024-02-27
+# to 2026-05-26 are Polygon.io bars the earlier pipeline wrote (the 23 stored
+# ETFs; nothing writes Polygon rows now, and the yfinance writer starts after
+# each symbol's newest stored date), except one yfinance bar, SPY's
+# 2026-03-12 close, where that run stored none; every other row is yfinance.
+# tests/test_stored_provenance.py checks this against the database, and the
+# web's copy (web/src/screens/shared/stored-provenance.ts) against this one.
+POLYGON_DAILY_FIRST = "2024-02-27"
+POLYGON_DAILY_LAST = "2026-05-26"
+YFINANCE_DAILY_INSIDE: tuple[tuple[str, str], ...] = (("SPY", "2026-03-12"),)
 SOURCE_BY_ID: dict[str, str] = {
-    "market_daily": "yfinance (stored daily bars)",
+    "market_daily": (f"yfinance, except Polygon.io bars dated {POLYGON_DAILY_FIRST} to {POLYGON_DAILY_LAST} "
+                     "kept from the earlier pipeline; "
+                     + " and ".join(f"{sym}'s {d}" for sym, d in YFINANCE_DAILY_INSIDE)
+                     + " bar in that span is yfinance (stored daily bars)"),
     "market_intraday": "yfinance (stored 5-min bars)",
     "asset_prices": "EODHD first, Yahoo disclosed fallback (stored)",
     "live_quotes": "EODHD relay",

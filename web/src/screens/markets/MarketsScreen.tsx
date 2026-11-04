@@ -47,6 +47,7 @@ import { useFreshReport } from "../shared/useFreshReport";
 import { Metric, SRC, Stamp } from "../shared/Stamp";
 import { Caption, MISSING, StateNote, metaStyle, missingNote, useHashScroll, useSnapshotMode } from "../shared/screen-ui";
 import { DisclosureLine } from "../shared/Disclosure";
+import { STORED_DAILY_SOURCE } from "../shared/stored-provenance";
 import TabHero, { type TabHeroAction } from "../shared/TabHero";
 import SummaryCard, { type StatusStripProps, type StatusTone, type SummaryRow } from "../shared/SummaryCard";
 import type { FreshnessTag } from "../shared/DeskRead";
@@ -923,7 +924,7 @@ export default function MarketsScreen() {
       {/* ── source line ──────────────────────────────────────────────── */}
       <DisclosureLine>
         Live prices via EODHD WebSocket (crypto &amp; FX stream around the clock, US equities during NYSE hours, 15-min-delayed
-        quotes fill the gaps) · stored candles and returns via the yfinance pipeline · macro metrics via FRED.
+        quotes fill the gaps) · {STORED_DAILY_SOURCE} · stored 5-minute bars via yfinance · macro metrics via FRED.
       </DisclosureLine>
     </div>
   );
