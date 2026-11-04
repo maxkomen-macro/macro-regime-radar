@@ -127,7 +127,7 @@ describe("EvidenceTab (checklist 04 B.10)", () => {
     expect(section().tagName).toBe("SECTION");
     expect(within(section()).getByRole("heading", { level: 2 })).toHaveTextContent(/^Backtests & factor attribution$/);
     // Iteration 1 step 6 (A1): the computed date is the section's stamp.
-    expect(text(section())).toContain("Stored empirical analysis · SPY forward returns");
+    expect(text(section())).toContain("Stored empirical analysis · SPY total return");
     expect(section().querySelector("[data-stamp]")?.textContent).toBe("Backtests · computed Sep 12, 2026");
     expect(within(cohorts()).getAllByRole("button").map((b) => text(b))).toEqual(["By regime", "By signal"]);
     expect(option("By regime")).toHaveAttribute("aria-pressed", "true");
@@ -169,7 +169,7 @@ describe("EvidenceTab (checklist 04 B.10)", () => {
     }
     const clean = dataRows()[0];
     expect(within(clean).getByText("64%").style.color).toBe("var(--text)");
-    expect(text(section())).toContain("SPY forward returns after each regime began, measured over trading-day horizons (1M=21d … 12M=252d). ▪ flags fragile cells: four or fewer samples, or a perfect 100%/0% hit rate, which is a small base, not a guarantee. 50% is a coin flip; read hit rates against that line, not zero.");
+    expect(text(section())).toContain("SPY total returns, dividends reinvested, after each regime began, measured over trading-day horizons (1M=21d … 12M=252d). ▪ flags fragile cells: four or fewer samples, or a perfect 100%/0% hit rate, which is a small base, not a guarantee. 50% is a coin flip; read hit rates against that line, not zero.");
     expect(within(section()).getByRole("button", { name: "hit rate" })).toHaveClass("jargon");
   });
 
@@ -181,7 +181,7 @@ describe("EvidenceTab (checklist 04 B.10)", () => {
     await waitFor(() => expect(groupRows()).toHaveLength(5));
     expect(groupRows().map((r) => text(r))).toEqual([COHORT_NAMES.cpi_cold, COHORT_NAMES.cpi_hot, COHORT_NAMES.unemployment_spike, COHORT_NAMES.vix_spike, COHORT_NAMES.yield_curve_inversion]);
     expect(dataRows()).toHaveLength(10);
-    expect(text(section())).toContain("SPY forward returns after each signal fired");
+    expect(text(section())).toContain("SPY total returns, dividends reinvested, after each signal fired");
     expect(text(section())).not.toContain("Goldilocks1M");
     fireEvent.click(option("By regime"));
     await waitFor(() => expect(groupRows().map((r) => text(r))).toEqual(REGIMES));
@@ -248,7 +248,7 @@ describe("EvidenceTab (checklist 04 B.10)", () => {
     const pending = renderWithProviders(<EvidenceTab />, { route: "/app/regime-lab#backtests" });
     await waitFor(() => expect(byId("backtests")).not.toBeNull());
     expect(await within(section()).findByText("Reading stored data…")).toBeInTheDocument();
-    expect(text(section())).toContain("Stored empirical analysis · SPY forward returns");
+    expect(text(section())).toContain("Stored empirical analysis · SPY total return");
     expect(text(section())).not.toContain("computed");
     expect(within(section()).queryByRole("table", { name: "Backtests" })).toBeNull();
     pending.unmount();

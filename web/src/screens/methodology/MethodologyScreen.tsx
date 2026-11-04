@@ -482,8 +482,10 @@ export default function MethodologyScreen() {
           <Stamp block source="Model rules" label={RULES_LABEL} style={STAMP_UNDER_HEAD} />
           <Card>
             <p style={prose}>
-              Backtests measure SPY forward returns over trading-day horizons (1M = 21 days … 12M = 252 days) after
-              each regime began or each signal fired, from the stored monthly classifier history. Fragile cells (four
+              Backtests measure SPY total returns over trading-day horizons (1M = 21 days … 12M = 252 days) after
+              each regime began or each signal fired, from the stored monthly classifier history. Total return reads
+              split- and dividend-adjusted closes, so each dividend is reinvested in SPY on its ex-dividend date
+              (no taxes or trading costs). They are not price returns, which leave dividends out. Fragile cells (four
               or fewer samples, or a perfect 100% / 0% hit rate) are flagged in the table; a 50% hit rate is a coin
               flip. Factor returns by regime use long/short ETF proxies for Value, Momentum, Quality, Size and Low
               Volatility, labeled as proxies. Historical analogues score regime match (40), HY-spread percentile

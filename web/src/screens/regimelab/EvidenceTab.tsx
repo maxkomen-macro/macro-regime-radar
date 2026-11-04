@@ -151,7 +151,7 @@ export default function EvidenceTab() {
         title="Backtests & factor attribution"
         right={
           <MetaWithStamp
-            meta="Stored empirical analysis · SPY forward returns"
+            meta="Stored empirical analysis · SPY total return"
             stamp={<Stamp source={SRC.backtests} asOf={computedAt ? `computed ${fmtDate(computedAt)}` : null} />}
           />
         }
@@ -165,8 +165,8 @@ export default function EvidenceTab() {
             <DataTable compact zebra={false} caption="Backtests" columns={BACKTEST_COLUMNS} groups={groups} style={{ minWidth: isNarrow ? 674 : undefined }} />
           </ScrollTable>
           <Caption>
-            SPY forward returns after each {kind === "regime" ? "regime began" : "signal fired"}, measured over trading-day horizons
-            (1M=21d … 12M=252d). ▪ flags fragile cells: four or fewer samples, or a perfect 100%/0%{" "}
+            SPY total returns, dividends reinvested, after each {kind === "regime" ? "regime began" : "signal fired"}, measured over
+            trading-day horizons (1M=21d … 12M=252d). ▪ flags fragile cells: four or fewer samples, or a perfect 100%/0%{" "}
             <Jargon term="hit rate">hit rate</Jargon>, which is a small base, not a guarantee. 50% is a coin flip; read hit rates
             against that line, not zero.
           </Caption>

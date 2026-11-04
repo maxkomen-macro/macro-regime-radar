@@ -1,13 +1,33 @@
 """
-src/analytics/backtest.py — Historical backtest: signals/regimes → forward SPY returns.
+src/analytics/backtest.py — Historical backtest: signals/regimes → forward SPY total returns.
 
 Does NOT import src.config (avoids FRED_API_KEY EnvironmentError).
 
 Run:
     python -m src.analytics.backtest
 
-Reads:  market_daily (SPY closes), signals, regimes
+Reads:  asset_prices (SPY, interval '1d': split- and dividend-adjusted closes), signals, regimes
 Writes: backtest_results
+
+Return basis: TOTAL RETURN (Max, 2026-11-04, option A). Every forward return
+is the ratio of two SPY closes from asset_prices, which the full refresh
+(src/market_data/asset_history.py) refetches whole on every run from one
+provider, split- and dividend-adjusted (Yahoo auto_adjust=True in Actions,
+EODHD adjusted_close where a token exists). The provider adjusts each close
+before an ex-dividend date by the factor (1 - D / prior close), so a return
+read off these closes reinvests each distribution in SPY on its ex-dividend
+date, at the prior session's close less the distribution. No taxes, no
+trading costs; the fund's expense ratio is already in its price.
+Distributions enter only through those adjusted closes: nothing here adds a
+dividend, and market_daily (the canonical bars, which the approved
+correction plan keeps unadjusted) is not read, so no distribution is counted twice
+and no two adjustment bases are spliced. A price return (dividends
+excluded) is a different number; the outputs that print these results say
+"total return".
+
+Before this change the backtest read market_daily SPY closes, a splice of a
+dividend-adjusted Yahoo backfill (1993-01-29 to 2024-02-26) and unadjusted
+bars after it, so its returns were neither basis.
 
 Horizons (trading days):
     1M  ≈  21 days
@@ -21,6 +41,8 @@ Cohorts:
 
 Metrics stored:
     avg_return, median_return, hit_rate (fraction > 0), n (sample count)
+    An entry is unscored (left out of n, never truncated) when it predates
+    the first stored close or fewer than `horizon` sessions follow it.
 
 Note: backtest_results has no UNIQUE constraint. Full delete-then-reinsert each run.
 """
@@ -46,6 +68,9 @@ HORIZONS = {
     "12M": 252,
 }
 TARGET_SYMBOL = "SPY"
+SOURCE_TABLE = "asset_prices"   # split- and dividend-adjusted closes: total return
+SOURCE_INTERVAL = "1d"
+RETURN_BASIS = "total return"
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -61,16 +86,42 @@ def _get_conn() -> sqlite3.Connection:
 
 # ── Data loaders ──────────────────────────────────────────────────────────────
 
-def load_spy_daily(conn: sqlite3.Connection) -> pd.Series:
-    """Load SPY daily closes as pd.Series indexed by pd.Timestamp, sorted ascending."""
+def load_spy_total_return(conn: sqlite3.Connection) -> pd.Series:
+    """SPY's daily split- and dividend-adjusted closes from asset_prices
+    (interval '1d') as pd.Series indexed by pd.Timestamp, sorted ascending:
+    a total-return index, the only series the backtest scores (see the
+    module docstring for the reinvestment assumption).
+
+    Empty when the table or the series is absent; never falls back to
+    market_daily, whose bars are unadjusted (a fallback would silently switch
+    the basis to price return). Raises when the series holds more than one
+    provider: two adjustment bases spliced together, which asset_history
+    never writes (it replaces a series whole)."""
+    has_table = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", (SOURCE_TABLE,)
+    ).fetchone()
+    if not has_table:
+        return pd.Series(dtype=float, name=TARGET_SYMBOL)
+    providers = [
+        r[0] for r in conn.execute(
+            f"SELECT DISTINCT provider FROM {SOURCE_TABLE} WHERE symbol = ? AND interval = ?",
+            (TARGET_SYMBOL, SOURCE_INTERVAL),
+        ).fetchall()
+    ]
+    if len(providers) > 1:
+        raise RuntimeError(
+            f"{SOURCE_TABLE} {TARGET_SYMBOL} ({SOURCE_INTERVAL}) mixes providers {sorted(providers)}: "
+            "two adjustment bases, refusing to score a spliced total-return series"
+        )
     rows = conn.execute(
-        "SELECT date, close FROM market_daily WHERE symbol='SPY' ORDER BY date"
+        f"SELECT date, close FROM {SOURCE_TABLE} WHERE symbol = ? AND interval = ? ORDER BY date",
+        (TARGET_SYMBOL, SOURCE_INTERVAL),
     ).fetchall()
     if not rows:
-        return pd.Series(dtype=float, name="SPY")
-    df = pd.DataFrame(rows, columns=["date", "close"])
+        return pd.Series(dtype=float, name=TARGET_SYMBOL)
+    df = pd.DataFrame([tuple(r) for r in rows], columns=["date", "close"])
     df = df.assign(date=pd.to_datetime(df["date"])).set_index("date").sort_index()
-    return df["close"]
+    return df["close"].rename(TARGET_SYMBOL)
 
 
 # ── Core computation ──────────────────────────────────────────────────────────
@@ -82,7 +133,8 @@ def compute_forward_return(
 ) -> float | None:
     """
     Compute simple forward return from entry_date over the next horizon_days trading days.
-    Uses the close price on entry_date (or nearest prior) as the entry price.
+    Uses the close on entry_date (or nearest prior) as the entry price. With the
+    adjusted closes load_spy_total_return serves, this is the total return.
     Returns None if insufficient future data or entry price unavailable.
     """
     entry_price = spy.asof(entry_date)
@@ -258,16 +310,17 @@ def print_summary(conn: sqlite3.Connection) -> None:
 def run() -> None:
     conn = _get_conn()
     try:
-        spy = load_spy_daily(conn)
+        spy = load_spy_total_return(conn)
         if spy.empty:
             logger.warning(
-                "[backtest] No SPY data in market_daily. "
-                "Run: python src/market_data/fetch_market.py --mode backfill"
+                "[backtest] No SPY total-return closes in %s (interval %s); backtest_results left as stored. "
+                "Run: python -m src.market_data.asset_history",
+                SOURCE_TABLE, SOURCE_INTERVAL,
             )
             return
 
-        logger.info("[backtest] SPY daily bars loaded: %d rows (%s → %s)",
-                    len(spy), spy.index[0].date(), spy.index[-1].date())
+        logger.info("[backtest] SPY %s closes loaded from %s: %d rows (%s → %s)",
+                    RETURN_BASIS, SOURCE_TABLE, len(spy), spy.index[0].date(), spy.index[-1].date())
 
         logger.info("[backtest] Running signal cohort backtests...")
         signal_rows = backtest_signals(conn, spy)

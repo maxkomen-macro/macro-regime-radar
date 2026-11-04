@@ -39,12 +39,12 @@ def render_backtests() -> None:
     """Main entry point — call from app.py inside the Backtests tab."""
     from utils.tab_context import register_tab_context
     register_tab_context("Historical Analysis", {
-        "shows": "SPY forward returns by signal trigger and regime cohort across 1M/3M/6M/12M horizons",
+        "shows": "SPY forward total returns (dividends reinvested) by signal trigger and regime cohort across 1M/3M/6M/12M horizons",
         "key_tools": ["query_database"],
         "tables": ["backtest_results"],
     })
     section_header("SIGNAL & REGIME BACKTESTS")
-    st.caption("Historical SPY forward returns following signal triggers and regime periods.")
+    st.caption("Historical SPY forward total returns (split- and dividend-adjusted closes, dividends reinvested) following signal triggers and regime periods.")
     st.divider()
 
     raw = load_backtest_results()
@@ -134,7 +134,7 @@ def render_backtests() -> None:
     with c_chart2:
         _render_hit_rate_chart(filtered)
 
-    st.caption("Based on SPY historical daily returns. Signals from `signals` table, regimes from `regimes` table.")
+    st.caption("Based on SPY total returns from `asset_prices` (adjusted closes, dividends reinvested), not price returns. Signals from `signals` table, regimes from `regimes` table.")
 
     # ── Factor Attribution (Phase 12B — pyfolio-reloaded) ─────────────────────
     st.divider()
