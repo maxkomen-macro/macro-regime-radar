@@ -375,3 +375,88 @@ def test_the_history_backfill_fetches_unadjusted_bars(monkeypatch):
     monkeypatch.setattr(bf.yf, "Ticker", Ticker)
     assert bf.fetch_and_insert("SPY", "1993-01-29", conn=None) == 0
     assert seen["auto_adjust"] is False
+
+
+# ── the report: returns, and a path that can never replace a kept file ───────
+
+def test_the_report_lists_every_return_the_restatement_changes(db):
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), now=AFTER_CLOSE)
+    got = {(r["date"], r["prev_date"]): (r["before_pct"], r["after_pct"]) for r in rep["returns"]}
+    assert set(got) == {("2026-09-03", "2026-08-31"), ("2026-09-04", "2026-09-03")}
+    assert got[("2026-09-03", "2026-08-31")] == pytest.approx(((768.66 / 765 - 1) * 100, (773.11 / 765 - 1) * 100))
+    assert got[("2026-09-04", "2026-09-03")] == pytest.approx(((770 / 768.66 - 1) * 100, (770 / 773.11 - 1) * 100))
+
+
+def test_the_splice_report_changes_only_the_boundary_return_when_the_block_is_a_constant_rescale(splice_db):
+    rep = rs.restate(splice_db, dates=[], symbols=[], client=_splice_client(), ranges=[rs.SPY_SPLICE], now=AFTER_CLOSE)
+    assert [(r["date"], round(r["before_pct"], 2), round(r["after_pct"], 2)) for r in rep["returns"]] == [
+        ("2024-02-27", 2.66, 0.19)]
+
+
+@pytest.mark.parametrize("name", ["md.db", "md.db-wal", "md.db-shm", "md.pre-restate-20260919T003000Z.db", "keep.db"])
+def test_the_cli_refuses_a_report_path_that_could_replace_a_kept_file(monkeypatch, db, tmp_path, name, capsys):
+    import src.market_data.yfinance_client as yc
+
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Official())
+    before = _sha(db)
+    rc = rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply",
+                  "--snapshot", str(tmp_path / "keep.db"), "--report", str(tmp_path / name)])
+    assert rc == 2 and "refusing, nothing written" in capsys.readouterr().err
+    assert _sha(db) == before and not (tmp_path / "keep.db").exists()
+
+
+def test_the_cli_refuses_an_existing_report_file_and_a_link_to_the_database(monkeypatch, db, tmp_path):
+    import src.market_data.yfinance_client as yc
+
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Official())
+    old = tmp_path / "old.json"
+    old.write_text("keep")
+    link = tmp_path / "link.json"
+    link.symlink_to(db)
+    for target in (old, link):
+        assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--report", str(target)]) == 2
+    assert old.read_text() == "keep" and _close(db, "SPY", "2026-09-03") == 768.66
+
+
+# ── scripts/restate_impact.py: the before/after comparison ────────────────────
+
+def test_the_impact_comparison_reports_prices_returns_and_each_consumer(tmp_path, db):
+    from scripts import restate_impact as ri
+
+    before = tmp_path / "before.db"
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), apply=True, now=AFTER_CLOSE, snapshot=before)
+    shas = (_sha(before), _sha(db))
+
+    def spy_close(path):
+        c = sqlite3.connect(path)
+        try:
+            v = c.execute("SELECT close FROM market_daily WHERE symbol='SPY' AND date='2026-09-03'").fetchone()[0]
+            c.execute("UPDATE market_daily SET close = -1")   # a consumer's writes land in its copy only
+            c.commit()
+        finally:
+            c.close()
+        return pd.DataFrame([{"name": "spy_0903", "date": "2026-09-03", "value": v},
+                             {"name": "constant", "date": "2026-09-03", "value": 1.0}])
+
+    def broken(path):
+        raise RuntimeError("no table")
+
+    rep = ri.compare(before, db, consumers={"stub": spy_close, "broken": broken})
+    assert rep["prices"]["rows_changed"] == 1 and rep["prices"]["rows_only_on_one_side"] == 0
+    assert rep["prices"]["rows"][0]["close_after"] == 773.11
+    assert rep["returns"]["changed"] == 2 and rep["returns"]["by_symbol"] == {"SPY": 2}
+    stub = rep["downstream"]["stub"]
+    assert stub["rows_changed"] == 1 and set(stub["by_name"]) == {"spy_0903"}
+    assert stub["by_name"]["spy_0903"]["latest"] == {"date": "2026-09-03", "before": 768.66, "after": 773.11}
+    assert rep["downstream"]["broken"]["error_before"] == "RuntimeError: no table"
+    assert "W-FRI" in rep["weekly_label"]
+    assert (_sha(before), _sha(db)) == shas  # both inputs only read
+
+
+def test_the_impact_cli_never_replaces_an_existing_report(tmp_path, db):
+    from scripts import restate_impact as ri
+
+    old = tmp_path / "r.json"
+    old.write_text("keep")
+    assert ri.main(["--before", str(db), "--after", str(db), "--report", str(old)]) == 2
+    assert old.read_text() == "keep"

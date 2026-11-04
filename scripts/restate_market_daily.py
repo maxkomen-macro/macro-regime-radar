@@ -141,7 +141,7 @@ def restate(db_path: Path, dates: list[str], symbols: list[str], client, *, rang
                     "basis": BASIS, "basis_tol": BASIS_TOL,
                     "source_check": "consistency inside one provider (Yahoo): anchors on the stored basis; "
                                     "not an independent or exchange-official source check",
-                    "rows": [], "anchors": [], "problems": problems, "applied": False}
+                    "rows": [], "returns": [], "anchors": [], "problems": problems, "applied": False}
     conn = _open(db_path, apply=False)
     try:
         wanted: dict[str, dict[str, str]] = {}   # symbol -> {date: why it is restated}
@@ -189,6 +189,24 @@ def restate(db_path: Path, dates: list[str], symbols: list[str], client, *, rang
                                        "stored_close": old["close"], "official_close": b["close"],
                                        "close_change_pct": (b["close"] / old["close"] - 1) * 100 if _good(old["close"]) else None,
                                        "changed": changed})
+            # every close-to-close return the restatement changes: into each target row and
+            # out of it into the next stored row (a return between two targets counts once)
+            new_close = {d: stored[d]["close"] for d in all_dates}
+            new_close.update({r["date"]: r["new"]["close"] for r in report["rows"]
+                              if r["symbol"] == symbol and r["date"] in targets})
+            pos = {d: i for i, d in enumerate(all_dates)}
+            touched = sorted({all_dates[i] for d in targets for i in (pos[d], pos[d] + 1)
+                              if 0 < i < len(all_dates)})
+            for d in touched:
+                p = all_dates[pos[d] - 1]
+                if not (_good(stored[p]["close"]) and _good(stored[d]["close"])):
+                    continue
+                before = stored[d]["close"] / stored[p]["close"] - 1
+                after = new_close[d] / new_close[p] - 1
+                if abs(after - before) > 1e-5:   # 1e-3pp: the adjusted block's float32 rounding moves returns up to 1e-4pp
+                    report["returns"].append({"symbol": symbol, "date": d, "prev_date": p,
+                                              "before_pct": before * 100, "after_pct": after * 100,
+                                              "change_pp": (after - before) * 100})
     finally:
         conn.close()
     if problems:
@@ -243,8 +261,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return a
 
 
+def _report_path_problem(report: str, db: str, snapshot: str) -> str | None:
+    """--report must name a new file that is none of the files the run reads or keeps:
+    the database, its SQLite sidecars, the snapshot, or a default snapshot name."""
+    rp, dbp = Path(report), Path(db)
+    if rp.exists() or rp.is_symlink():
+        return f"--report {rp} already exists; name a new file"
+    keep = [dbp] + [dbp.with_name(dbp.name + x) for x in ("-wal", "-shm", "-journal")]
+    if snapshot:
+        keep.append(Path(snapshot))
+    if any(rp.resolve() == k.resolve() for k in keep) or (
+            rp.resolve().parent == dbp.resolve().parent and rp.name.startswith(f"{dbp.stem}.pre-restate-")):
+        return f"--report {rp} names the database, a sidecar or a snapshot"
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     a = parse_args(argv)
+    if a.report:
+        why = _report_path_problem(a.report, a.db, a.snapshot)
+        if why:
+            print(f"refusing, nothing written: {why}", file=sys.stderr)
+            return 2
     symbols = a.symbols
     if not symbols:
         import yaml
@@ -260,7 +298,8 @@ def main(argv: list[str] | None = None) -> int:
         print(exc, file=sys.stderr)
         return 2
     if a.report:
-        Path(a.report).write_text(json.dumps(rep, indent=1))
+        with open(a.report, "x") as f:   # exclusive: never replaces a file created meanwhile
+            json.dump(rep, f, indent=1)
     shown = [r for r in rep["rows"] if r["kind"] != "splice"][:200]
     print(f"{'symbol':<6} {'date':<10} {'stored':>10} {'official':>10} {'change':>8}")
     for r in shown:
@@ -270,6 +309,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"splice: {len(spl)} rows of {spl[0]['symbol']} {spl[0]['date']}..{spl[-1]['date']} (full list in --report)")
     worst = max((abs(x["log_diff"]) for x in rep["anchors"]), default=0.0)
     print(f"basis check: {len(rep['anchors'])} anchor rows, max |log diff| {worst:.2e} (limit {BASIS_TOL:g}); {rep['source_check']}")
+    if rep["returns"]:
+        big = max(rep["returns"], key=lambda x: abs(x["change_pp"]))
+        print(f"returns: {len(rep['returns'])} close-to-close returns change; largest {big['symbol']} {big['date']} "
+              f"{big['before_pct']:+.3f}% -> {big['after_pct']:+.3f}% (every one in --report)")
     n = sum(r["changed"] for r in rep["rows"])
     print(f"{n} of {len(rep['rows'])} target rows differ; " + (f"written, snapshot {rep['snapshot']}" if rep["applied"] else "dry run, nothing written."))
     return 0
