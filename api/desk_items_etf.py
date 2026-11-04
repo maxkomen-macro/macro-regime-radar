@@ -875,6 +875,7 @@ def desk_etf(ctx: dict) -> dict:
     finally:
         conn.close()
     return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store)),
-            "stock_bond": part("stock_bond", lambda: stock_bond(store)),
-            "correlations": part("correlations", lambda: correlations(store)),
-            "matrix": part("matrix", lambda: matrix(store))}
+            # Desk P1b: the three correlation blocks with their 20/60/120-return views and the correlation by regime
+            "stock_bond": part("stock_bond", lambda: stock_bond(store, views=True)),
+            "correlations": part("correlations", lambda: correlations(store, views=True)),
+            "matrix": part("matrix", lambda: matrix(store, views=True))}

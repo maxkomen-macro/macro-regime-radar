@@ -257,6 +257,60 @@ const publishedPrint = o(
 );
 // §12.8 (S-24): `dates` names each tenor's date, null for a tenor not stored.
 const curvePoint = o({ "3m": "n", "2y": "n", "5y": "n", "10y": "n", "30y": "n", date: "s?", dates: m("s?") });
+// Desk P1b (docs/desk/CORRELATION_VIEWS.md): the correlation blocks' fields, shared by each block and its views.
+const corrSpan = o({ start: "s!", end: "s!", n: "n" });
+const stockBondFields = {
+  today: "n",
+  today_date: "s?",
+  today_reason: "s?",
+  year_ago: "n",
+  year_ago_date: "s?",
+  flipped: "s?",
+  flipped_on: "s?",
+  flipped_to: e(["positive", "negative"], { nul: true }),
+  series: l(o({ date: "s!", corr: "n" })),
+  window: corrSpan,
+  line_window: corrSpan,
+} as const;
+const matrixGrid = {
+  no_data: l(o({ symbol: "s!", reason: "s?" })),
+  values: l(l("n", { strict: true }), { req: true, strict: true }),
+  window: o({ start: "s!", end: "s!", n: "n" }, { nul: true }),
+  coverage: l("n"),
+  lead: o(
+    {
+      text: "s?",
+      rule: "s",
+      hedging: "b?",
+      spy_tlt: "n",
+      highest: o({ a: "s!", b: "s!", corr: "n!" }, { nul: true }),
+      lowest: o({ a: "s!", b: "s!", corr: "n!" }, { nul: true }),
+    },
+    { nul: true },
+  ),
+} as const;
+/** The three served horizons, each read on its own: a horizon that cannot be read is removed, the others stand. */
+const byHorizon = (of: Obj) => o({ "20": { ...of, nul: true }, "60": { ...of, nul: true }, "120": { ...of, nul: true } }, { nul: true });
+const regimeStat = { corr: "n", n: "n", first: "s?", last: "s?", reason: "s?" } as const;
+const byRegimeSpec = o(
+  {
+    regime_history: "s!",
+    rule: "s",
+    lag_months: "n",
+    as_known: "s?",
+    as_known_reason: "s?",
+    min_n: "n",
+    current: e(REGIME_LABELS, { nul: true }),
+    current_row: "s?",
+    sample: o({ start: "s!", end: "s!" }, { nul: true }),
+    unlabeled_n: "n",
+    incomplete_n: "n",
+    regimes: l(o({ ...regimeStat, regime: e(REGIME_LABELS, { req: true }), spells: "n", largest_spell_share: "n" })),
+    all: o(regimeStat, { nul: true }),
+    reason: "s?",
+  },
+  { nul: true },
+);
 const seasonRow = o({ month: "n", label: "s!", n: "n", avg: "n", pct_up: "n", first_year: "n", last_year: "n" });
 const macdPoint = o({ date: "s!", macd: "n", signal: "n", hist: "n" });
 const rsiVisit = o({ date: "s!", rsi: "n", after_20d: "n", after_20d_to: "s?", after_20d_status: e(["complete", "pending", "missing"], { nul: true }) }, { nul: true });
@@ -575,17 +629,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     ...envelope,
     curve: o({ today: curvePoint, month_ago: curvePoint, "2s10s_bp": "n", "2s10s_chg_bp": "n", "10y_chg_bp": "n", freq: "s", source: "s" }),
     stock_bond: o({
-      today: "n",
-      today_date: "s?",
-      today_reason: "s?",
-      year_ago: "n",
-      year_ago_date: "s?",
-      flipped: "s?",
-      flipped_on: "s?",
-      flipped_to: e(["positive", "negative"], { nul: true }),
-      series: l(o({ date: "s!", corr: "n" })),
-      window: o({ start: "s!", end: "s!", n: "n" }),
-      line_window: o({ start: "s!", end: "s!", n: "n" }),
+      ...stockBondFields,
       stock: o({ etf: "s!", name: "s" }),
       bond: o({ etf: "s!", name: "s" }),
       transform: "s",
@@ -594,6 +638,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       freq: "s",
       source: "s",
       providers: l("s"),
+      // Desk P1b: the same at 20, 60 and 120 daily returns (docs/desk/CORRELATION_VIEWS.md §3).
+      horizons: l("n"),
+      by_horizon: byHorizon(o({ ...stockBondFields, horizon: "n", noise_band: "n" })),
     }),
     credit: o({
       // §12.8: each spread with its own date; a value without its date is not read.
@@ -609,27 +656,27 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       line_window: o({ start: "s!", end: "s!", n: "n" }),
       peak_12m: o({ date: "s!", hy: "n" }, { nul: true }),
     }),
-    correlations: l(o({ asset: "s!", symbol: "s", quantity: "s", transform: "s", corr: "n", date: "s?", window: o({ start: "s!", end: "s!", n: "n" }, { nul: true }), reason: "s?" })),
+    correlations: l(
+      o({
+        asset: "s!",
+        symbol: "s",
+        quantity: "s",
+        transform: "s",
+        corr: "n",
+        date: "s?",
+        window: o({ start: "s!", end: "s!", n: "n" }, { nul: true }),
+        reason: "s?",
+        // Desk P1b: each row at 20, 60 and 120 daily returns, and by regime of the revised history (§3, §4).
+        by_horizon: byHorizon(o({ horizon: "n", noise_band: "n", corr: "n", window: o({ start: "s!", end: "s!", n: "n" }, { nul: true }), reason: "s?" })),
+        by_regime: byRegimeSpec,
+      }),
+    ),
     // The matrix is one grid: its names and every row of values, or nothing (Codex G1-5).
     matrix: o({
       assets: l("s!", { req: true, strict: true }),
       labels: l("s!", { strict: true }),
-      no_data: l(o({ symbol: "s!", reason: "s?" })),
-      values: l(l("n", { strict: true }), { req: true, strict: true }),
+      ...matrixGrid,
       horizon: "n",
-      window: o({ start: "s!", end: "s!", n: "n" }, { nul: true }),
-      coverage: l("n"),
-      lead: o(
-        {
-          text: "s?",
-          rule: "s",
-          hedging: "b?",
-          spy_tlt: "n",
-          highest: o({ a: "s!", b: "s!", corr: "n!" }, { nul: true }),
-          lowest: o({ a: "s!", b: "s!", corr: "n!" }, { nul: true }),
-        },
-        { nul: true },
-      ),
       quantity: "s",
       transform: "s",
       unit: "s",
@@ -637,6 +684,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       freq: "s",
       source: "s",
       providers: l("s"),
+      // Desk P1b: the grid at 20, 60 and 120 daily returns to the same session; each one is checked as one fact by the page.
+      horizons: l("n"),
+      by_horizon: byHorizon(o({ ...matrixGrid, horizon: "n", noise_band: "n" })),
     }),
     reads: reads(["curve", "front_end", "stock_bond", "credit", "correlations"]),
   }),

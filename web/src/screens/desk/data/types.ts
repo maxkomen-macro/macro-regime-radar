@@ -743,6 +743,68 @@ export interface DatedValue {
   source?: string;
 }
 
+// ── Desk P1b (docs/desk/CORRELATION_VIEWS.md): correlation windows and correlation by regime ──
+
+/** One horizon of the stock–bond block (the block's own fields at that horizon). */
+export interface StockBondHorizon {
+  horizon: number;
+  noise_band: number | null;
+  today: number | null;
+  today_date: string | null;
+  today_reason: string | null;
+  year_ago: number | null;
+  year_ago_date: string | null;
+  flipped: string | null;
+  flipped_on: string | null;
+  flipped_to: "positive" | "negative" | null;
+  series: { date: string; corr: number | null }[];
+  window: Window;
+  line_window: Window;
+}
+
+/** One horizon of one "What moves with the S&P" row. */
+export interface PairHorizon {
+  horizon: number;
+  noise_band: number | null;
+  corr: number | null;
+  window: Window | null;
+  reason: string | null;
+}
+
+/** One regime of a row's correlation by regime (§4). */
+export interface RegimeCorrStat {
+  regime: string;
+  corr: number | null;
+  n: number | null;
+  first: string | null;
+  last: string | null;
+  reason: string | null;
+  spells: number | null;
+  largest_spell_share: number | null;
+}
+
+/** §4: a row's correlation with SPY pooled within each regime of the revised history. */
+export interface ByRegime {
+  regime_history: string;
+  rule: string;
+  lag_months: number | null;
+  as_known: null;
+  as_known_reason: string | null;
+  min_n: number | null;
+  current: string | null;
+  /** The month of the row `current` comes from (YYYY-MM), two months before the end session's. */
+  current_row?: string | null;
+  sample: { start: string; end: string } | null;
+  unlabeled_n: number | null;
+  incomplete_n: number | null;
+  regimes: RegimeCorrStat[];
+  all: Omit<RegimeCorrStat, "regime" | "spells" | "largest_spell_share"> | null;
+  reason: string | null;
+}
+
+/** One horizon of the matrix. */
+
+
 export interface CorrelationRow {
   asset: string;
   symbol?: string;
@@ -754,6 +816,10 @@ export interface CorrelationRow {
   window?: Window | null;
   /** Why `corr` is null, else null. */
   reason?: string | null;
+  /** Desk P1b: the row at 20, 60 and 120 daily returns to `date`; null when the row has no session to end on. */
+  by_horizon?: Record<string, PairHorizon | null> | null;
+  /** Desk P1b: the correlation with SPY by regime of the revised regime history; null as `by_horizon`. */
+  by_regime?: ByRegime | null;
 }
 
 /** One pair the matrix lead names. */
@@ -787,7 +853,14 @@ export interface MatrixBlock {
   freq?: string;
   source?: string;
   providers?: string[];
+  /** Desk P1b: the horizons served (20, 60, 120). */
+  horizons?: number[];
+  /** Desk P1b: the grid at each horizon, to the same session; "60" repeats the block's own grid. */
+  by_horizon?: Record<string, MatrixHorizon | null> | null;
 }
+
+/** Desk P1b: the matrix at one horizon. */
+export type MatrixHorizon = Pick<MatrixBlock, "values" | "no_data" | "window" | "coverage" | "lead"> & { horizon: number; noise_band: number | null };
 
 export interface MacroResponse extends Envelope {
   curve?: { today: CurvePoint; month_ago: CurvePoint; "2s10s_bp": number | null; "2s10s_chg_bp": number | null; "10y_chg_bp": number | null; freq?: string; source?: string };
@@ -811,6 +884,10 @@ export interface MacroResponse extends Envelope {
     transform?: string;
     date?: string;
     providers?: string[];
+    /** Desk P1b: the horizons served (20, 60, 120). */
+    horizons?: number[];
+    /** Desk P1b: the block's fields at each horizon; "60" repeats the block's own. */
+    by_horizon?: Record<string, StockBondHorizon | null> | null;
   };
   /** §12.8: HY and IG as dated observations; the three-year figures over `rank_window`, null with a `reason` when coverage is short. */
   credit?: {

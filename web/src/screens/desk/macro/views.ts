@@ -8,74 +8,14 @@
  * them, pinned by the API's tests); the views are read only at 20 and 120.
  */
 
-import type { CorrelationRow, MacroResponse, MatrixBlock } from "../data/types";
+import type { ByRegime, MacroResponse, MatrixBlock, MatrixHorizon, PairHorizon, RegimeCorrStat, StockBondHorizon } from "../data/types";
+
+export type { ByRegime, MatrixHorizon, PairHorizon, RegimeCorrStat, StockBondHorizon };
 import { num } from "../kit/format";
 
-export type Span = { start: string; end: string; n: number };
-
-/** One horizon of the stock–bond block (the block's own fields at that horizon). */
-export interface StockBondHorizon {
-  horizon: number;
-  noise_band: number | null;
-  today: number | null;
-  today_date: string | null;
-  today_reason: string | null;
-  year_ago: number | null;
-  year_ago_date: string | null;
-  flipped: string | null;
-  flipped_on: string | null;
-  flipped_to: "positive" | "negative" | null;
-  series: { date: string; corr: number | null }[];
-  window: Span;
-  line_window: Span;
-}
-
-/** One horizon of one "What moves with the S&P" row. */
-export interface PairHorizon {
-  horizon: number;
-  noise_band: number | null;
-  corr: number | null;
-  window: Span | null;
-  reason: string | null;
-}
-
-/** One regime of a row's correlation by regime (§4). */
-export interface RegimeStat {
-  regime: string;
-  corr: number | null;
-  n: number | null;
-  first: string | null;
-  last: string | null;
-  reason: string | null;
-  spells: number | null;
-  largest_spell_share: number | null;
-}
-
-/** §4: a row's correlation with SPY pooled within each regime of the revised history. */
-export interface ByRegime {
-  regime_history: string;
-  rule: string;
-  lag_months: number | null;
-  as_known: null;
-  as_known_reason: string | null;
-  min_n: number | null;
-  current: string | null;
-  /** The month of the row `current` comes from (YYYY-MM), two months before the end session's. */
-  current_row?: string | null;
-  sample: { start: string; end: string } | null;
-  unlabeled_n: number | null;
-  incomplete_n: number | null;
-  regimes: RegimeStat[];
-  all: Omit<RegimeStat, "regime" | "spells" | "largest_spell_share"> | null;
-  reason: string | null;
-}
-
-/** One horizon of the matrix. */
-export type MatrixHorizon = Pick<MatrixBlock, "values" | "no_data" | "window" | "coverage" | "lead"> & { horizon: number; noise_band: number | null };
-
-export type StockBondWithViews = NonNullable<MacroResponse["stock_bond"]> & { horizons?: number[]; by_horizon?: Record<string, StockBondHorizon> };
-export type RowWithViews = CorrelationRow & { by_horizon?: Record<string, PairHorizon> | null; by_regime?: ByRegime | null };
-export type MatrixWithViews = MatrixBlock & { horizons?: number[]; by_horizon?: Record<string, MatrixHorizon> };
+export type StockBondWithViews = NonNullable<MacroResponse["stock_bond"]>;
+export type RowWithViews = NonNullable<MacroResponse["correlations"]>[number];
+export type MatrixWithViews = MatrixBlock;
 
 export const DEFAULT_HORIZON = 60;
 const fin = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
@@ -141,7 +81,7 @@ export function horizonWords(w: number): string {
 }
 
 /** A regime cell's note: "n 540 · 17 spells" (largest spell share when it holds a third or more). */
-export function regimeNote(g: RegimeStat): string {
+export function regimeNote(g: RegimeCorrStat): string {
   const parts: string[] = [];
   if (fin(g.n)) parts.push(`n ${g.n.toLocaleString("en-US")}`);
   if (fin(g.spells) && g.spells > 0) parts.push(`${g.spells} ${g.spells === 1 ? "spell" : "spells"}`);
