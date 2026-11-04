@@ -172,3 +172,69 @@ def test_the_scratch_copy_carries_frames_still_in_the_wal(tmp_path):
         assert writer.execute("SELECT count(*) FROM regimes").fetchone()[0] == 2
     finally:
         writer.close()
+
+
+# Codex S-5: the recession study stops when the ALFRED cache is not the store's data.
+
+def test_the_store_check_passes_when_the_cache_is_the_store():
+    stored = pd.Series([99.0, 101.0], index=pd.to_datetime(["2024-01-01", "2024-02-01"]))
+    gap = alfred.store_gap(stored, TABLE)
+    assert gap == {"stored_months": 2, "alfred_months": 2, "months": 2, "max_abs_diff": 0.0}
+    alfred.enforce_store_match({"X": gap})
+
+
+@pytest.mark.parametrize("stored, words", [
+    # the store was refreshed after the cache: a revised value
+    (pd.Series([99.5, 101.0], index=pd.to_datetime(["2024-01-01", "2024-02-01"])), "differs from the store"),
+    # the store has a newer month than the cache (stale cache)
+    (pd.Series([99.0, 101.0, 102.0], index=pd.to_datetime(["2024-01-01", "2024-02-01", "2024-03-01"])), "3 stored months, 2 ALFRED"),
+    # the cache has a month the store lacks
+    (pd.Series([99.0], index=pd.to_datetime(["2024-01-01"])), "1 stored months, 2 ALFRED"),
+    # nothing stored
+    (pd.Series(dtype=float, index=pd.DatetimeIndex([])), "0 stored months"),
+])
+def test_the_store_check_rejects_a_stale_or_partial_cache(stored, words):
+    with pytest.raises(alfred.StoreMismatch, match=words):
+        alfred.enforce_store_match({"X": alfred.store_gap(stored, TABLE)})
+
+
+# Codex S-6: no study run can delete or overwrite its source database.
+
+def _db(path):
+    import sqlite3
+
+    with sqlite3.connect(path) as c:
+        c.execute("CREATE TABLE regimes (date TEXT PRIMARY KEY, label TEXT)")
+        c.execute("INSERT INTO regimes VALUES ('2024-01-01', 'Overheating')")
+    return path
+
+
+def _labels(path):
+    import sqlite3
+
+    with sqlite3.connect(path) as c:
+        return c.execute("SELECT date, label FROM regimes").fetchall()
+
+
+@pytest.mark.parametrize("name", ["served.db", "governed_start.db"])
+def test_a_source_inside_the_scratch_outputs_is_refused_before_any_write(tmp_path, name):
+    from scripts.research.vintage_studies import check_paths
+
+    src = _db(tmp_path / name)
+    with pytest.raises(ValueError, match="writes in --scratch"):
+        check_paths(src, tmp_path)
+    assert _labels(src) == [("2024-01-01", "Overheating")]
+    check_paths(src, tmp_path / "elsewhere")  # a separate scratch directory is fine
+
+
+def test_a_snapshot_onto_its_own_source_is_refused_and_the_source_survives(tmp_path):
+    from scripts.research.vintage_studies import make_scratch_db, snapshot_db
+
+    src = _db(tmp_path / "store.db")
+    with pytest.raises(ValueError, match="is the source"):
+        snapshot_db(src, src)
+    with pytest.raises(ValueError, match="is the source"):
+        snapshot_db(src, tmp_path / "store.db-wal")
+    with pytest.raises(ValueError, match="is the source"):
+        make_scratch_db(src, src, {"2024-01": "Stagflation"})
+    assert _labels(src) == [("2024-01-01", "Overheating")]
