@@ -400,3 +400,74 @@ def test_the_recession_run_checks_and_fits_on_one_snapshot(tmp_path, monkeypatch
     assert path.resolve() != src.resolve() and labels == [("2024-01-01", "Overheating")]
     assert _labels(src) == [("2024-01-01", "Stagflation")]
     assert rec.DB_PATH == original  # the module's path is restored
+
+
+# Codex S-9: the studies run refuses replay artifacts made from another
+# version of the database, or a histories file paired with another replay.
+
+def _regimes_db(path, labels=("Overheating", "Stagflation"), prob=0.4):
+    import sqlite3
+
+    with sqlite3.connect(path) as c:
+        c.execute("CREATE TABLE regimes (date TEXT, label TEXT, computed_at TEXT, prob_goldilocks REAL, "
+                  "prob_overheating REAL, prob_stagflation REAL, prob_recession REAL, growth_trend REAL, inflation_trend REAL)")
+        for i, lab in enumerate(labels):
+            c.execute("INSERT INTO regimes VALUES (?, ?, '2026-11-03T00:00:00', 0.2, ?, 0.2, 0.2, 0.1, 0.3)",
+                      (f"2024-0{i + 1}-01", lab, prob))
+    return path
+
+
+def _artifacts(labels=("Overheating", "Stagflation"), prob=0.4):
+    months = [f"2024-0{i + 1}" for i in range(len(labels))]
+    h = pd.DataFrame({"served": list(labels), "served_prob_goldilocks": 0.2, "served_prob_overheating": prob,
+                      "served_prob_stagflation": 0.2, "served_prob_recession": 0.2, "served_growth_trend": 0.1,
+                      "served_inflation_trend": 0.3, "first_known": list(labels), "first_known_vintage": "2024-05-15",
+                      "at_governed_start": list(labels)},
+                     index=pd.Index(months, name="month"))
+    return h, {"2024-05-15": dict(zip(months, labels))}
+
+
+def test_artifacts_from_this_database_pass(tmp_path):
+    from scripts.research.vintage_studies import check_artifacts
+
+    h, by_v = _artifacts()
+    check_artifacts(_regimes_db(tmp_path / "s.db"), h, by_v)
+
+
+@pytest.mark.parametrize("db_kw, words", [
+    ({"labels": ("Overheating", "Recession")}, "served labels differ"),
+    ({"labels": ("Overheating", "Stagflation", "Goldilocks")}, "served months"),
+    ({"prob": 0.41}, "prob_overheating differs"),
+])
+def test_artifacts_from_another_database_version_are_refused(tmp_path, db_kw, words):
+    from scripts.research.vintage_studies import ArtifactMismatch, check_artifacts
+
+    h, by_v = _artifacts()
+    with pytest.raises(ArtifactMismatch, match=words):
+        check_artifacts(_regimes_db(tmp_path / "s.db", **db_kw), h, by_v)
+
+
+def test_a_histories_file_paired_with_another_replay_is_refused(tmp_path):
+    from scripts.research.vintage_studies import ArtifactMismatch, check_artifacts
+
+    h, _ = _artifacts()
+    _, other = _artifacts(labels=("Overheating", "Goldilocks"))
+    with pytest.raises(ArtifactMismatch, match="first-known labels"):
+        check_artifacts(_regimes_db(tmp_path / "s.db"), h, other)
+
+
+def test_the_studies_run_stops_on_stale_artifacts_before_any_study(tmp_path, monkeypatch):
+    import gzip
+
+    from scripts.research import vintage_studies as vs
+
+    src = _regimes_db(tmp_path / "store.db", labels=("Overheating", "Recession"))  # refreshed since the replay
+    h, by_v = _artifacts()
+    h.to_csv(tmp_path / "histories.csv")
+    long = pd.DataFrame([(v, m, lab) for v, d in by_v.items() for m, lab in d.items()], columns=["vintage", "month", "label"])
+    (tmp_path / "labels.csv.gz").write_bytes(gzip.compress(long.to_csv(index=False).encode()))
+    monkeypatch.setattr(vs, "run_catalog", _no_load)
+    with pytest.raises(vs.ArtifactMismatch, match="served labels differ"):
+        vs.main(["--db", str(src), "--labels", str(tmp_path / "labels.csv.gz"), "--histories", str(tmp_path / "histories.csv"),
+                 "--scratch", str(tmp_path / "scratch"), "--out", str(tmp_path / "out")])
+    assert not (tmp_path / "out").exists()

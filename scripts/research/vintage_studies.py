@@ -205,6 +205,46 @@ def regime_stats_for(db: Path, labels: dict[str, str | None] | None) -> dict:
     return {"rows": stats["rows"], "changes": n_changes, "n_rows": len(rows)}
 
 
+class ArtifactMismatch(RuntimeError):
+    """The replay artifacts were not made from this database (Codex S-9)."""
+
+
+def check_artifacts(snap: Path, h: pd.DataFrame, by_v: dict[str, dict[str, str]], tol: float = 1e-9) -> None:
+    """Raise unless the histories file describes exactly the served rows in
+    `snap` (same months, labels, odds and trends) and the per-vintage label
+    table is the replay the histories were built from (each month's
+    first-known label is its label in that vintage). A refresh between the
+    regime run and this one, or a mismatched pair of files, stops the run."""
+    from scripts.research.vintage_regime import PROB_COLS, served_rows
+
+    stored = served_rows(snap)
+    served = stored[stored["computed_at"] == stored["computed_at"].max()]
+    served.index = served.index.astype(str)
+    hi = h.index.astype(str)
+    problems = []
+    if set(served.index) != set(hi):
+        problems.append(f"{len(served)} served months in the database, {len(h)} in the histories, "
+                        f"{len(set(served.index) & set(hi))} in both")
+    common = sorted(set(served.index) & set(hi))
+    hc = h.set_axis(hi).loc[common]
+    sc = served.loc[common]
+    bad = [m for m in common if hc.at[m, "served"] != sc.at[m, "label"]]
+    if bad:
+        problems.append(f"{len(bad)} served labels differ (first {bad[0]})")
+    for src_col, h_col in [(c, f"served_{c}") for c in PROB_COLS] + [("growth_trend", "served_growth_trend"),
+                                                                     ("inflation_trend", "served_inflation_trend")]:
+        diff = (hc[h_col].astype(float) - sc[src_col].astype(float)).abs().max() if common else 0.0
+        if not diff <= tol:
+            problems.append(f"{src_col} differs by up to {diff}")
+    known = h.dropna(subset=["first_known_vintage"])
+    off = [m for m, v, lab in zip(known.index.astype(str), known["first_known_vintage"].astype(str), known["first_known"])
+           if by_v.get(v, {}).get(m) != lab]
+    if off:
+        problems.append(f"{len(off)} first-known labels are not in the per-vintage label table (first {off[0]})")
+    if problems:
+        raise ArtifactMismatch("replay artifacts do not match this database: " + "; ".join(problems))
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--db", required=True, type=Path)
@@ -225,6 +265,7 @@ def main(argv: list[str] | None = None) -> int:
 
     # every run reads one snapshot of the database (Codex S-3), never the live file
     base = snapshot_db(a.db, a.scratch / "served.db")
+    check_artifacts(base, h, by_v)  # Codex S-9: the replay must describe this snapshot
     served = run_catalog(base)
     gov_db = make_scratch_db(base, a.scratch / "governed_start.db", gov)
     governed = run_catalog(gov_db)
