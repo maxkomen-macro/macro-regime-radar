@@ -25,7 +25,8 @@ What one run does, in order, and where it stops:
      link, it has rows of both types, its contract ids are unique, and every row names SPY, that expiry (and
      type); a listed expiry that answers no rows is "no_rows", one side missing "type_missing", both
      incomplete. The provider sends no total, so that is the evidence, recorded per expiry.
-  6. Writes the raw provider rows, unmodified, as gzip JSON lines (sorted, deterministic) plus a manifest:
+  6. Writes each provider row's attributes object, unmodified (the JSON:API wrapper's id and type are not
+     kept), as gzip JSON lines (sorted, deterministic) plus a manifest:
      schema version, provider, the quote session, the retrieval start and end, per-expiry counts and
      completeness, the session each row's marks describe, the request count and the data file's SHA-256. A
      snapshot is complete only when the listing and every expiry are complete and the collected rows, read by
@@ -515,7 +516,7 @@ def build_snapshot(session: str, rows: list[dict], expiries: list[dict], listing
         "schema": SCHEMA,
         "kind": "eodhd_option_chain_snapshot",
         "private": True,
-        "note": "Raw provider rows, unmodified. Private: never commit, publish or display.",
+        "note": "Each provider row's attributes object, unmodified (JSON:API id and type not kept). Private: never commit, publish or display.",
         "underlying": UNDERLYING,
         "provider": eod.PROVIDER,
         "endpoint": ENDPOINT,
