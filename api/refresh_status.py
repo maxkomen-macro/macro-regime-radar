@@ -210,7 +210,12 @@ def decide(held: dict | None, *, released_at: datetime, now: datetime, newest_ch
         if parse_stamp(a["started_at"]) > now + CLOCK_SLACK or parse_stamp(a["updated_at"]) > now + CLOCK_SLACK:  # type: ignore[operator]
             return unknown("refresh status carries a future stamp")
     for a in attempts:  # an estimated start has no reliable place in the order
-        if a["started_at_estimated"] and parse_stamp(a["updated_at"]) >= released_at:  # type: ignore[operator]
+        if not a["started_at_estimated"]:
+            continue
+        upd = parse_stamp(a["updated_at"])
+        # finished since the release, or still unfinished and possibly running into it (verifier V-02:
+        # a start record uploaded just before the release could otherwise read as ended before it)
+        if upd >= released_at or (a["status"] not in FINISHED and upd + RUN_MAX >= released_at):  # type: ignore[operator]
             return unknown("a refresh's start time is estimated")
     # End bounds (design F3 rule 2, Codex DR-13, DR-14): serialization by the data-write group means an attempt
     # that is not the newest-started ended no later than the next one's start.

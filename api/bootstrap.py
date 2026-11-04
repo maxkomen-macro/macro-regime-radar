@@ -314,7 +314,7 @@ def reset_refresh_status_for_tests() -> None:
 
 # Codex DR-15: the status read sits before the database check, so it is bounded in total time and
 # size, not only per read: a response that trickles bytes, or never ends, cannot hold the check.
-STATUS_READ_DEADLINE_S = 15.0
+STATUS_READ_DEADLINE_S = 15.0  # body pieces; _status_body adds a 1 s wall-clock margin for the rest
 STATUS_READ_MAX_BYTES = 256 * 1024
 _clock = time.monotonic  # tests replace it to stand for a slow response
 
@@ -349,6 +349,29 @@ def _bounded_get(client: httpx.Client, url: str, headers: dict, *, deadline_s: f
     return bytes(buf)
 
 
+def _status_body(client: httpx.Client, url: str, headers: dict) -> bytes | None:
+    """`_bounded_get` under a wall-clock watchdog (verifier V-01): its deadline is checked per body
+    piece, so connecting, a redirect or slowly sent headers are bounded only per read. The read runs
+    on a daemon thread and this waits at most the deadline plus a second; a read still going is
+    abandoned as a failed fetch, and it ends when refresh_db closes the client on leaving."""
+    box: dict = {}
+
+    def run() -> None:
+        try:
+            box["body"] = _bounded_get(client, url, headers)
+        except BaseException as exc:  # noqa: BLE001 - re-raised in the caller's thread
+            box["exc"] = exc
+
+    t = threading.Thread(target=run, name="refresh-status-read", daemon=True)
+    t.start()
+    t.join(STATUS_READ_DEADLINE_S + 1.0)
+    if t.is_alive():
+        raise _StatusReadLimit("status read passed its deadline")
+    if "exc" in box:
+        raise box["exc"]
+    return box.get("body")
+
+
 def _read_refresh_status(client: httpx.Client | None, auth: dict, assets: list[dict] | None) -> None:
     """Hold this check's view of refresh-status.json. A failed listing, a missing asset, a failed
     download or an invalid document holds no document (never the last one's), with the reason."""
@@ -365,7 +388,7 @@ def _read_refresh_status(client: httpx.Client | None, auth: dict, assets: list[d
             error = "missing"
         else:
             try:
-                body = _bounded_get(client, asset["url"], {**auth, "Accept": "application/octet-stream"})
+                body = _status_body(client, asset["url"], {**auth, "Accept": "application/octet-stream"})
                 doc = rs.parse_doc(body) if body is not None else None
                 error = None if doc is not None else "unreadable"
             except Exception as exc:  # noqa: BLE001 - this read must never affect the database check

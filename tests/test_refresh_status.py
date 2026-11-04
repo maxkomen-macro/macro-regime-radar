@@ -163,6 +163,16 @@ def test_a_status_that_cannot_vouch_for_the_time_since_the_release_is_unknown():
     assert _decide(_held(est))["outcome"] == "unknown"
 
 
+def test_an_estimated_start_still_unfinished_near_the_release_reads_unknown():
+    # verifier V-02: a start record with an estimated start uploaded just before R, then silent
+    early = [_rec(30, "2026-10-14T06:15:00Z", "in_progress", "2026-10-14T12:20:00Z", estimated=True)]
+    out = _decide(_held(early, now="2026-10-14T14:00:00Z"), now=_t("2026-10-14T14:00:00Z"))
+    assert out["outcome"] == "unknown" and "estimated" in out["why"]
+    # one uploaded more than RUN_MAX before R cannot have reached it: it does not block the decision
+    old = [_rec(31, "2026-10-13T00:00:00Z", "in_progress", "2026-10-13T06:00:00Z", estimated=True)]
+    assert _decide(_held(old, covers="2026-10-12T00:00:00Z"))["outcome"] != "unknown"
+
+
 def test_waiting_when_no_relevant_attempt_has_finished_or_the_last_succeeded():
     assert _decide(_held([]))["outcome"] == "waiting"
     running = [_rec(7, "2026-10-14T15:30:00Z", "in_progress")]
@@ -381,6 +391,53 @@ def test_a_real_socket_trickle_is_cut_off_in_wall_time():
             assert _time.monotonic() - t0 < 1.5
     finally:
         srv.shutdown()
+
+
+def test_slowly_sent_headers_are_cut_off_by_the_watchdog(monkeypatch):
+    """Verifier V-01: the per-piece deadline starts with the body, so a server that sends its status
+    line a byte at a time is bounded by the wall-clock watchdog; the check reads fetch failed."""
+    import socket
+    import threading
+    import time as _time
+
+    lsock = socket.socket()
+    lsock.bind(("127.0.0.1", 0))
+    lsock.listen(4)
+    stop = threading.Event()
+
+    def serve():
+        lsock.settimeout(0.2)
+        while not stop.is_set():
+            try:
+                conn, _ = lsock.accept()
+            except OSError:
+                continue
+            try:
+                for b in b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\n{}":
+                    if stop.is_set():
+                        break
+                    conn.sendall(bytes([b]))
+                    _time.sleep(0.3)
+            except OSError:
+                pass
+            finally:
+                conn.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    monkeypatch.setattr(bootstrap, "STATUS_READ_DEADLINE_S", 0.5)
+    url = f"http://127.0.0.1:{lsock.getsockname()[1]}/s"
+    asset = {"name": "refresh-status.json", "url": url}
+    bootstrap.reset_refresh_status_for_tests()
+    try:
+        with httpx.Client() as c:
+            t0 = _time.monotonic()
+            bootstrap._read_refresh_status(c, {}, [asset])
+            assert _time.monotonic() - t0 < 2.5  # deadline + 1 s watchdog, not the ~13 s the headers take
+        assert bootstrap.refresh_attempts()["error"] == "fetch failed"
+    finally:
+        stop.set()
+        lsock.close()
+        bootstrap.reset_refresh_status_for_tests()
 
 
 def test_an_oversized_status_response_reads_unreadable_without_reading_it_all():
