@@ -6,10 +6,13 @@
  * earlier pipeline wrote (6,018 rows), one for every NYSE session, except one
  * yfinance bar: SPY's 2026-03-12 close, a session that run stored none for.
  * Every other row is yfinance: SPY back to 1993-01-29, and all 23 from
- * 2026-05-27. Nothing writes Polygon rows now; the yfinance writers start
- * after each symbol's newest date or insert only missing sessions, and every
- * span already holds every session, so the split holds as the table grows.
- * Stored 5-minute bars (`market_intraday`) are all yfinance.
+ * 2026-05-27. These are the rows' recorded sources. Nothing writes Polygon
+ * rows now: the scheduled writers start after each symbol's newest date, and
+ * backfill_yfinance inserts only missing sessions, of which no span has any.
+ * The manual `fetch_market.py --mode backfill` would rewrite stored prices
+ * and keep their recorded source; the test below fails if any Polygon row
+ * was rewritten after the last Polygon write. Stored 5-minute bars
+ * (`market_intraday`) are all yfinance.
  *
  * Measured on the data-latest database on 2026-11-04.
  * tests/test_stored_provenance.py checks these facts against the database

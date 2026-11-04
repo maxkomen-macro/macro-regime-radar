@@ -394,13 +394,16 @@ def _guarded(fn: Callable[[], T]) -> T:
 # bars from its Polygon.io start (2024-02-27 for 9 of the 23, 2026-02-18 for
 # the other 14) to 2026-05-26 are Polygon.io bars the earlier pipeline wrote,
 # one for every NYSE session, except one yfinance bar: SPY's 2026-03-12 close,
-# a session that run stored none for. Every other row is yfinance. Nothing
-# writes Polygon rows now; the yfinance writers start after each symbol's
-# newest date (incremental) or insert only missing sessions (backfill), and a
-# span with every session stored leaves a backfill nothing to insert inside it.
-# tests/test_stored_provenance.py checks all of this against the database,
-# and the web's copy (web/src/screens/shared/stored-provenance.ts) against
-# this one.
+# a session that run stored none for. Every other row is yfinance. These are
+# the rows' recorded sources. Nothing writes Polygon rows now. The scheduled
+# writers start after each symbol's newest date; backfill_yfinance inserts
+# only missing sessions, and every span holds every session. One path could
+# make a recorded source false: fetch_market.py --mode backfill (manual, no
+# workflow runs it) upserts over existing rows and keeps their `source`
+# while rewriting prices and `fetched_at`. tests/test_stored_provenance.py
+# checks all of this against the database, including that no Polygon row
+# was rewritten after the last Polygon write, and the web's copy
+# (web/src/screens/shared/stored-provenance.ts) against this one.
 _POLYGON_LATE = ("CPER", "EEM", "EFA", "EMB", "IEF", "SHY", "SLV", "UNG", "VIXY", "VTV", "XLE", "XLF", "XLI", "XLK")
 _POLYGON_EARLY = ("GLD", "HYG", "IWM", "LQD", "QQQ", "SPY", "TLT", "USO", "UUP")
 POLYGON_DAILY_FIRST_BY_SYMBOL: dict[str, str] = {

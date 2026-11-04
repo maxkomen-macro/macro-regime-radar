@@ -6,10 +6,12 @@ pipeline's Polygon.io bars (each stored ETF's sessions from its Polygon start
 to 2026-05-26, every session present, SPY's 2026-03-12 bar excepted) and
 yfinance (every other row). The labels (api/desk.py's inventory source,
 web/src/screens/shared/stored-provenance.ts, the Methodology sources list)
-state that split. The database half checks the split itself, including that
-no session inside a span is missing (so a gap-filling backfill has nothing
-to insert there); a restatement or backfill that changes the split fails here
-before a label goes false. The static half keeps the labels' facts in step.
+state each row's recorded source. The database half checks the split
+itself, that no session inside a span is missing (so a gap-filling backfill
+has nothing to insert there) and that no Polygon row was rewritten after the
+last Polygon write (the manual upsert backfill keeps `source` while
+rewriting prices); a change to any of these fails here before a label goes
+false. The static half keeps the labels' facts in step.
 """
 
 from __future__ import annotations
@@ -87,6 +89,43 @@ def test_every_session_inside_a_span_is_stored_and_only_the_named_bars_are_yfina
             found_inside += [(symbol, d) for d, src in stored.items() if src != "polygon"]
             assert set(stored.values()) <= {"polygon", "yfinance"}
     assert sorted(found_inside) == sorted(INSIDE), found_inside
+
+
+# The newest `fetched_at` of any Polygon row: the last Polygon write. Every
+# rewrite of a stored row (fetch_market's upsert, restate_market_daily) sets
+# `fetched_at`, so a later one on a Polygon row means its prices may no longer
+# be Polygon's while its recorded source still says so.
+LAST_POLYGON_WRITE = "2026-05-27T04:19:10.646930"
+
+
+@needs_db
+def test_no_polygon_row_was_rewritten_after_the_last_polygon_write():
+    with closing(_ro()) as c:
+        newest, missing = c.execute(
+            "SELECT MAX(fetched_at), SUM(fetched_at IS NULL) FROM market_daily WHERE source = 'polygon'").fetchone()
+    assert missing == 0
+    assert newest == LAST_POLYGON_WRITE, (
+        f"a Polygon row was written at {newest}: its prices may be another provider's under source='polygon'; "
+        "recheck it before the labels call it Polygon.io")
+
+
+def test_the_backfill_upsert_keeps_source_but_stamps_fetched_at(tmp_path):
+    """The one writer that can rewrite a Polygon row (fetch_market.py --mode
+    backfill) keeps `source` and stamps `fetched_at`: the stamp is what the
+    guard above reads."""
+    from src import migrate
+    from src.market_data import fetch_market
+
+    conn = sqlite3.connect(tmp_path / "m.db")
+    conn.executescript(migrate.MIGRATION_SQL)
+    conn.row_factory = sqlite3.Row
+    conn.execute("INSERT INTO market_daily (symbol, date, open, high, low, close, volume, vwap, source, fetched_at)"
+                 " VALUES ('XLK', '2026-03-02', 100, 100, 100, 100, 1, NULL, 'polygon', ?)", (LAST_POLYGON_WRITE,))
+    fetch_market._upsert_daily(conn, [("XLK", "2026-03-02", 200, 200, 200, 200, 1, None, "2026-11-04T09:00:00")])
+    row = conn.execute("SELECT close, source, fetched_at FROM market_daily WHERE symbol = 'XLK'").fetchone()
+    conn.close()
+    assert tuple(row) == (200, "polygon", "2026-11-04T09:00:00")
+    assert row["fetched_at"] > LAST_POLYGON_WRITE
 
 
 @needs_db
