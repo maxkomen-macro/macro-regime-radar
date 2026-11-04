@@ -41,6 +41,7 @@ Procedure (owner):
     python scripts/restate_market_daily.py --report restate-sept.json   # dry run
     python scripts/restate_market_daily.py --spy-splice --report restate-spy.json
     python scripts/restate_market_daily.py --apply ...                  # same flags; snapshot first
+    python scripts/restate_impact.py --before <snapshot> --after data/macro_radar.db --report impact.json
     python scripts/validate_db.py data/macro_radar.db --previous <snapshot> --mode market-only
     # then publish the validated file the usual way; the market_daily
     # fingerprint in validate_db marks the in-place change as a change.
