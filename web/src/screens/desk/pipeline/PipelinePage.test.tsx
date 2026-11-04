@@ -70,8 +70,12 @@ describe("Stored provider (D2)", () => {
     const gold = within(rows).getAllByRole("row").find((r) => r.textContent?.includes("GC=F"));
     expect(gold?.querySelector(".pl-stored")?.textContent).toBe("stored by Yahoo · all 6,541 rows");
     expect(gold?.querySelector(".pl-policy")?.textContent).toBe("policy: Yahoo only (EODHD does not carry it)");
-    // a series with nothing stored says so (the fixture's DX-Y.NYB predates its first refresh)
-    expect(within(rows).getAllByRole("row").find((r) => r.textContent?.includes("DX-Y.NYB"))?.querySelector(".pl-stored")?.textContent).toBe("nothing stored");
+    // a series with nothing stored prints no stored line; its dates and note say it (the fixture's DX-Y.NYB predates its
+    // first refresh), and no row ever claims "nothing stored" (verifier V-02)
+    const dxy = within(rows).getAllByRole("row").find((r) => r.textContent?.includes("DX-Y.NYB"));
+    expect(dxy?.querySelector(".pl-stored")).toBeNull();
+    expect(dxy?.textContent).toContain("is awaiting the next full refresh");
+    expect(rows.textContent).not.toContain("nothing stored");
     for (const g of groups)
       for (const s of g.series)
         if (s.stored && s.policy !== "FRED") expect(s.stored.providers.map((p) => p.name)).toEqual(["Yahoo"]);
