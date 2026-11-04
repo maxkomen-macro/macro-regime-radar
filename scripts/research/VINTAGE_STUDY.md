@@ -21,7 +21,7 @@ Run date: 2026-11-03. Inputs: the `data-latest` database as published that day (
 
 - **ALFRED** (`scripts/research/alfred.py`): every real-time period of every observation from 1990 (`output_type=1`), cached as gzipped JSON outside the repo. `as_of(day)` rebuilds a series exactly as it could be downloaded on `day`, and `first_release` gives each observation's first non-blank print and its date.
 - **Coverage:** INDPRO has 467 vintage dates (1990-02-16 to 2026-10-16), CPIAUCSL 459 (1990-02-21 to 2026-10-14), UNRATE 441 and USREC 150. USREC vintages only start on 2011-05-02.
-- **Replica check:** the classifier imported from `src/regime.py` reproduces all 356 rows of the newest stored run exactly (labels equal, odds error 0.0). ALFRED's latest vintage equals the stored INDPRO (359 months) and CPI (358 months) inputs to the last digit. The recession replica matches the module's served probability series with a 0.0 pp gap. So "served" and "latest vintage" are the same data, and every difference below is due to the vintage.
+- **Replica check:** the classifier imported from `src/regime.py` reproduces all 356 rows of the newest stored run exactly (labels equal, odds error 0.0). ALFRED's latest vintage equals the stored INDPRO (359 months) and CPI (358 months) inputs to the last digit. The recession replica matches the module's served probability series with a 0.0 pp gap. So "served" and "latest vintage" are the same data, and every difference below is due to the vintage. The scripts enforce this: `enforce_replica` in both stops the run, with no output written, unless every stored row and month is covered and equal (tolerance 1e-9).
 
 ### Regime labels (`vintage_regime.py`)
 
@@ -112,7 +112,7 @@ The served model is the one `src/analytics/recession.py` fits today. Its trainin
   - Scores differ by a mean of 7.56 pp, median 3.04, p90 16.2 and max 72.0. The maximum is 2020-12, scored 73.4% in real time (the recession had begun and its end was not yet dated) against 1.4% served.
   - The band differs in 27 of 183 months (2011-07 to 2026-10).
   - Before 2011-05, the real-time target can't be traced to a stored vintage. ALFRED's USREC vintages start then, and NBER's announcement page could not be reached from this session, so those months are not scored rather than reconstructed from memory.
-- **Latest score:** 12.4% in both experiments. Today's month uses today's data.
+- **Latest scored month:** 2026-10, which reads the 2026-07 feature row, rebuilt as of 2026-08-18 (the day July's INDPRO was first published). It scores 12.39% served, 12.36% with today's model on the first-published inputs, and 12.45% point in time. All three round to 12.4%, but they rest on different data: July's INDPRO 12-month change was first published as 1.08% and reads 1.28% today, and no recession has been dated since 2021.
 
 ## Caveats
 
@@ -149,4 +149,4 @@ python3 -m scripts.research.vintage_studies  --db $DB --labels $OUT/regime_label
 python3 -m scripts.research.vintage_recession --cache $CACHE --db $DB --out $OUT
 ```
 
-Run times on the cloud sandbox: regime replay about 40 s, studies about 30 s, recession about 60 s. `tests/test_research_vintage.py` pins the real-time reconstruction rules (`as_of`, `first_release`, the vintage lookup, the point-in-time label and the score bands) on synthetic tables. ALFRED's latest vintage moves with every release, so a later rerun gives slightly different counts. The replica check guards that the served and latest data still agree.
+Run times on the cloud sandbox: regime replay about 40 s, studies about 30 s, recession about 60 s. `tests/test_research_vintage.py` pins the real-time reconstruction rules (`as_of`, `first_release`, the vintage lookup, the point-in-time label and the score bands) on synthetic tables. ALFRED's latest vintage moves with every release, so a later rerun gives slightly different counts. If a later database or vintage no longer agrees, the replica check stops the run instead of reporting. `tests/test_research_vintage.py` also pins that refusal on mismatched labels, odds, missing rows and months, and ALFRED values that differ from the store.
