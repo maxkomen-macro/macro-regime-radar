@@ -397,6 +397,7 @@ jobs:
 
       - name: Commit playbook.json if it changed
         if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'
+        timeout-minutes: 15
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

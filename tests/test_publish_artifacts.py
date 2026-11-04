@@ -375,6 +375,67 @@ def test_a_push_that_keeps_failing_stops_after_five_attempts(tmp_path):
     assert _git(race.runner, "worktree", "list", "--porcelain", env=race.env).count("worktree ") == 1
 
 
+def _commit_on_main(race: Race, script: str) -> str:
+    """Run shell `script` in the dev clone on current main and push it as one commit."""
+    env = race.env
+    _git(race.dev, "pull", "--quiet", "--ff-only", "origin", "main", env=env)
+    subprocess.run(["bash", "-e", "-c", script], cwd=race.dev, env=env, check=True)
+    _git(race.dev, "add", "-A", env=env)
+    _git(race.dev, "commit", "--quiet", "-m", "change on main", env=env)
+    _git(race.dev, "push", "--quiet", "origin", "main", env=env)
+    return race.tip()
+
+
+def test_a_symlink_on_main_at_the_artifact_path_is_refused_not_followed(tmp_path):
+    race = Race(tmp_path)
+    race.checkout_runner()
+    victim = race.runner / "src/model.py"
+    before = _commit_on_main(race, f"rm output/playbook.json && ln -s {shlex.quote(str(victim))} output/playbook.json")
+    _write(race.runner, "output/playbook.json", "generated\n")
+    res = race.run(_publish_cmd(["Update playbook [skip ci]", "output/playbook.json"]))
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert "not a regular file" in res.stderr
+    assert race.tip() == before
+    assert victim.read_text() == "VERSION = 1\n", "nothing is written through the link"
+
+
+def test_a_symlinked_parent_directory_on_main_is_refused(tmp_path):
+    race = Race(tmp_path)
+    race.checkout_runner()
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    before = _commit_on_main(race, f"rm -r docs/memo && ln -s {shlex.quote(str(elsewhere))} docs/memo")
+    _write(race.runner, "docs/memo/daily_memo.html", "memo\n")
+    res = race.run(_publish_cmd(["Update daily memo [skip ci]", "docs/memo/daily_memo.html"]))
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert "not a plain directory" in res.stderr
+    assert race.tip() == before
+    assert not any(elsewhere.iterdir())
+
+
+def test_a_directory_on_main_at_the_artifact_path_is_refused(tmp_path):
+    race = Race(tmp_path)
+    race.checkout_runner()
+    before = _commit_on_main(race, "rm output/playbook.json && mkdir output/playbook.json && echo x > output/playbook.json/inner")
+    _write(race.runner, "output/playbook.json", "generated\n")
+    res = race.run(_publish_cmd(["Update playbook [skip ci]", "output/playbook.json"]))
+    assert res.returncode == 3, res.stdout + res.stderr
+    assert race.tip() == before
+
+
+def test_a_hung_push_is_cut_off_and_retried(tmp_path):
+    race = Race(tmp_path)
+    race.checkout_runner()
+    merge = race.merge_code("pr")
+    _write(race.runner, "output/playbook.json", "generated\n")
+    extra = _shim_git(tmp_path, "exec sleep 60")
+    extra["PUBLISH_ARTIFACTS_NET_TIMEOUT"] = "2"
+    res = race.run(_publish_cmd(["Update playbook [skip ci]", "output/playbook.json"]), env=_env(tmp_path, extra))
+    assert res.returncode == 0, res.stdout + res.stderr
+    assert "Push succeeded on attempt 2" in res.stdout
+    assert race.changed(merge, race.tip()) == ["output/playbook.json"]
+
+
 # --------------------------------------------------------------------------- the workflows use it
 
 def test_every_git_writer_uses_the_fresh_checkout_publisher():
@@ -385,10 +446,11 @@ def test_every_git_writer_uses_the_fresh_checkout_publisher():
         for banned in ("reset --soft", "git commit", "git push", "git add", "git stash", "pull --rebase", "rebase"):
             assert banned not in run, f"{workflow}: {banned!r} in the commit step"
         assert _workflow_publish_args(workflow, step_name) == [message, artifact]
+        assert step.get("timeout-minutes") == 15, f"{workflow}: the commit step has a deadline"
     # no other workflow step writes to git, and nothing turns the backoff off
     for path in sorted(WF.glob("*.yml")):
         text = path.read_text()
-        for banned in ("reset --soft", "git push", "git commit", "PUBLISH_ARTIFACTS_NO_BACKOFF"):
+        for banned in ("reset --soft", "git push", "git commit", "PUBLISH_ARTIFACTS_NO_BACKOFF", "PUBLISH_ARTIFACTS_NET_TIMEOUT"):
             assert banned not in text, f"{path.name}: {banned!r}"
 
 
@@ -397,6 +459,11 @@ def test_the_publisher_keeps_bounded_retries_and_backoff():
     code = text.split("set -uo pipefail", 1)[1]   # the header comment describes the old step
     assert "ATTEMPTS=5" in code
     assert "sleep $((RANDOM % 10 + 5))" in code
+    # every network call has a deadline, and the worst case fits the step's 15 minutes
+    assert 'NET_TIMEOUT="${PUBLISH_ARTIFACTS_NET_TIMEOUT:-60}"' in code
+    assert code.count('timeout --kill-after=10 "$NET_TIMEOUT"') == 2
+    assert code.count("git fetch") == 1 and code.count("git push") == 1
+    assert 5 * 2 * (60 + 10) + 4 * 14 < 15 * 60
     assert "--force" not in code.replace("worktree remove --force", "")
     for banned in ("reset --soft", "git stash", "rebase", "git add -A", "git add ."):
         assert banned not in code, banned
