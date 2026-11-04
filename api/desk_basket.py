@@ -622,14 +622,22 @@ def fetch_study(symbols: list[str]) -> dict[str, Any]:
 
 def index_block(priced: Mapping[str, Any], histories: Mapping[str, Any], legs: list[tuple[str, float | None]],
                 counts: Mapping[str, Mapping[str, Any]] | None, provider: str, source: str,
-                session: str | None = None) -> dict:
+                session: str | None = None, sessions: list[str] | None = None) -> dict:
     """What the studied index is (spec §2): its provider, its start and the name that sets it, its span,
     the sessions it lacks, the closes left out, its rule in words, and the cap weights' source. `session`
     is the completed New York session the closes were asked through; `last_close` is each name's newest
-    adjusted close as served, so a provider that has not published that session yet shows (spec §3)."""
+    adjusted close as served, so a provider that has not published that session yet shows (spec §3).
+    `off_session` counts each name's bars dated off the XNYS calendar, left out before the index is formed
+    (the engine never sees them); `moved_rebalances` lists a monthly basket's rebalances held on an earlier
+    session because a name had no close on the month's last session (spec §3, Timing)."""
     from api.providers import market
+    from src.desk import basket as bk
 
     symbols = [s for s, _ in legs]
+    moved: list[str] = []
+    if priced["method"] == "monthly" and priced["weighting"] == "target" and sessions is not None:
+        ends = bk.month_end_sessions(sessions)
+        moved = [p["from"] for p in priced["periods"][1:] if p["from"] not in ends]
     return {
         "provider": provider,
         "source": source,
@@ -647,6 +655,8 @@ def index_block(priced: Mapping[str, Any], histories: Mapping[str, Any], legs: l
         "end": priced["end"],
         "sessions": priced["sessions"],
         "missing_sessions": len(priced["missing_sessions"]),
+        "off_session": {s: int(priced["off_session"].get(s, 0)) for s in symbols},
+        "moved_rebalances": moved,
         "excluded": excluded(histories, symbols),
         "cap_weights": cap_block(priced, counts),
     }
@@ -688,7 +698,7 @@ def _study_answer(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], m
         histories = fetch_study(symbols)
     sessions = calendar_for({s: histories[s] for s in symbols})
     priced = _priced(histories, legs, method, 1.0, counts, sessions)
-    block = index_block(priced, histories, legs, counts, provider, source, session)
+    block = index_block(priced, histories, legs, counts, provider, source, session, sessions)
     # the first session a w-session move's z exists on is the (Z_MIN_PRESENT + w)th: the window needs
     # Z_MIN_PRESENT moves, and the first move reads the session w before it
     need = es.Z_MIN_PRESENT + w
@@ -707,7 +717,8 @@ def _study_answer(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], m
         "legs": [[s, w_] for s, w_ in legs], "method": method, "weighting": weighting,
         "counts": None if counts is None else {s: [counts[s]["shares_outstanding"], counts[s]["as_of"]] for s in symbols},
         "requested_from": block["requested_from"], "first_close": block["first_close"],
-        "excluded": block["excluded"],
+        "excluded": block["excluded"], "off_session": block["off_session"],
+        "moved_rebalances": block["moved_rebalances"],
     }
     sup = es.Supplied(spec, level, provenance)
     q = es.Query(kind="shock", shock=STUDY_KEY, target=STUDY_KEY, w=w, z=STUDY_Z, sign=STUDY_MOVES[move])
@@ -817,6 +828,13 @@ def study_projection(item: dict, legs: list[tuple[str, float | None]], method: s
         ix = item["index"]
         out["caveats"].append(f"EODHD had not published {ix['session']}'s close for {', '.join(item['late'])} when this "
                               f"was computed, so the index runs through {ix['end']}; a request 15 minutes later asks again.")
+    moved = item["index"].get("moved_rebalances") or []
+    if moved:
+        out["caveats"].append(
+            f"{len(moved)} monthly rebalance{'s were' if len(moved) != 1 else ' was'} held on an earlier session "
+            f"because a name had no close on the month's last session (latest {moved[-1]}). That session was only "
+            "known to be the month's last index session afterwards, so the index's next return is not one an "
+            "investor could have held at the time.")
     if not item["ok"]:
         out["not_run"] = item["reason"]
         return out

@@ -206,7 +206,7 @@ def served(tmp_path, monkeypatch, install_worker):
         "YNG": (len(sessions) - 200, 10.0 * np.cumprod(1 + 2.0 * common + rng.normal(0, 0.02, len(sessions)))),
     }
     asked: list[str] = []
-    state = {"delay": 0.0, "gate": None, "late": set()}
+    state = {"delay": 0.0, "gate": None, "late": set(), "drop": {}, "extra": {}}
 
     def closes(sym):
         asked.append(sym)
@@ -217,9 +217,12 @@ def served(tmp_path, monkeypatch, install_worker):
             raise UnknownSymbol("eodhd", f"No listing found for '{sym}' on EODHD.")
         first, px = universe[sym]
         last = len(sessions) - 1 if sym in state["late"] else len(sessions)  # a late name lacks the newest session
-        d = np.array(sessions[first:last], dtype="datetime64[D]")
+        rows = [(d, p) for d, p in zip(sessions[first:last], px[first:last]) if d not in state["drop"].get(sym, ())]
+        rows = sorted(rows + [(d, rows[-1][1]) for d in state["extra"].get(sym, ())])
+        d = np.array([r[0] for r in rows], dtype="datetime64[D]")
+        p = np.array([r[1] for r in rows], dtype=float)
         return {"symbol": sym, "provider": "EODHD", "session": SESSION, "from": market.STUDY_HISTORY_FROM,
-                "dates": d, "adjusted": px[first:last].astype(float), "close_raw": px[first:last] * 1.01}
+                "dates": d, "adjusted": p, "close_raw": p * 1.01}
 
     monkeypatch.setattr(market, "daily_closes_since_1995", closes)
     monkeypatch.setattr(market, "last_session", lambda: SESSION)
@@ -320,6 +323,38 @@ def test_a_close_the_provider_has_not_published_yet_is_shown_and_asked_again_aft
     assert b["caveats"] == [desk_basket.HINDSIGHT, desk_basket.REVISED_REGIMES]
     # a published answer is never asked again
     assert same(study(legs="OLD:60,MID:40").json()["data"], b) and len(served["asked"]) == n + 2
+
+
+def test_bars_off_the_calendar_and_a_moved_month_end_rebalance_are_counted_and_said(served):
+    """Spec §3 (Codex DR-05, DR-06): a bar dated off the XNYS calendar is left out before the index is
+    formed and counted per name; a monthly rebalance held early because a name lacks the month-end close
+    is listed, and the answer says the next return was not knowable at the time."""
+    cal = desk_basket.calendar_for({"OLD": desk_basket.study_history(market.daily_closes_since_1995("OLD"), "OLD")})
+    end = sorted(bk_month_ends(cal))[-3]          # a month-end well inside the history
+    before = cal[cal.index(end) - 1]
+    # the synthetic store's weekdays include NYSE holidays: those bars are off the calendar already
+    base = study(legs="OLD:60,MID:40", method="monthly").json()["data"]
+    off = base["index"]["off_session"]
+    assert off["OLD"] == off["MID"] > 0 and base["index"]["moved_rebalances"] == []
+    desk_basket.clear_study_cache()
+    served["state"]["drop"] = {"MID": {end}}
+    served["state"]["extra"] = {"OLD": {"2001-06-02"}}  # a Saturday
+    d = study(legs="OLD:60,MID:40", method="monthly").json()["data"]
+    ix = d["index"]
+    assert ix["off_session"] == {"OLD": off["OLD"] + 1, "MID": off["MID"]} and ix["moved_rebalances"] == [before]
+    assert d["caveats"][-1].startswith(f"1 monthly rebalance was held on an earlier session because a name had no close "
+                                       f"on the month's last session (latest {before}).")
+    assert d["study"] is not None
+    # buy-and-hold has no rebalance to move; the Saturday is still counted
+    h = study(legs="OLD:60,MID:40", method="hold").json()["data"]
+    assert h["index"]["moved_rebalances"] == [] and h["index"]["off_session"] == ix["off_session"]
+    assert h["caveats"] == [desk_basket.HINDSIGHT, desk_basket.REVISED_REGIMES]
+
+
+def bk_month_ends(cal):
+    from src.desk import basket as bk
+
+    return bk.month_end_sessions(cal)
 
 
 @pytest.mark.parametrize("q,words", [

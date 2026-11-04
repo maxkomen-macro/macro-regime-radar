@@ -49,8 +49,9 @@ question). The basket is both the shock and the target. There is no co-condition
 - **Calendar.** The engine's XNYS calendar from `exchange_calendars` (4.13.2), sessions and early closes
   included, over the index's span. Nothing is derived from the bars' dates.
 - **Alignment.** The index is aligned onto the calendar. A session on which any name lacks a close is
-  not an index session; it is missing, never filled, and counted. A bar dated off the calendar is
-  dropped and counted by the engine.
+  not an index session; it is missing, never filled, and counted. A name's bar dated off the calendar
+  is left out before the index is formed and counted per name (`off_session`); the engine sees only
+  index sessions, so its own off-calendar count is of the supplied index and is zero.
 - **As-of.** The bars are asked through the last completed New York session. The engine reads nothing
   dated after the request's generation's as-of (review R-06), the same cutoff a stored study uses, and
   counts what it leaves out. The regime labels are read from that generation's copy.
@@ -60,7 +61,13 @@ question). The basket is both the shock and the target. There is no co-condition
   provider's retry interval (15 minutes, as the two-year bars are), and so is the study built on it.
 - **Timing.** The index is fixed and known at the session close (every input is an exchange close), so
   an event enters the basket at the event session's close, as an S&P 500 study on itself does; the
-  baseline takes the same entry.
+  baseline takes the same entry. One exception is the page's monthly rule, kept unchanged: it rebalances
+  on the month's last index session, so when a name has no close on the calendar month-end the
+  rebalance is held on the earlier session, which was only known to be the month's last index session
+  afterwards. The index's return after it is then not one an investor could have held at the time. The
+  answer lists those sessions (`moved_rebalances`) and says so; buy-and-hold and cap weight's resets
+  (each month's first index session) have no such case. A causal rule would change the page's index and
+  needs its own approval.
 
 ## 4. Missing data
 
