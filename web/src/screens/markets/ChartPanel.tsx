@@ -43,6 +43,7 @@ import { fmtDate, fmtIntradayTs } from "../../lib/format";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import { Caption, MISSING, metaStyle, missingNote, mono, useSnapshotMode } from "../shared/screen-ui";
 import { candleCaption, describeProviderError } from "../shared/provider-ui";
+import { storedDailyProviders } from "../shared/stored-provenance";
 import CandleChart from "./CandleChart";
 
 import { CHART_PANEL_ID } from "./chart-panel-id";
@@ -312,7 +313,18 @@ export default function ChartPanel({ symbol, name, hasHistory, onClose }: Props)
           </div>
         </div>
       ) : hasHistory ? (
-        <div ref={containerRef} style={{ height: 320, width: "100%" }} />
+        <>
+          <div ref={containerRef} style={{ height: 320, width: "100%" }} />
+          {/* Who wrote the bars on screen, from their dates (shared/stored-provenance):
+              the 1Y window crosses the store's Polygon.io-to-yfinance switch. */}
+          {(activeMode === "intraday" ? intradayPoints.length > 0 : dailyBars.length > 0) && (
+            <Caption style={{ marginTop: 8 }}>
+              {activeMode === "intraday"
+                ? "Stored 5-minute bars: yfinance."
+                : `Stored daily bars: ${storedDailyProviders(symbol, dailyBars.map((b) => String(b.time)))}.`}
+            </Caption>
+          )}
+        </>
       ) : (
         <OnDemandHistory symbol={symbol} />
       )}

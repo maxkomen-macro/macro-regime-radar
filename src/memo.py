@@ -653,7 +653,7 @@ def load_market_daily_memo() -> pd.DataFrame:
         return pd.DataFrame()
     try:
         df = load_df(
-            "SELECT symbol, date, open, high, low, close, volume "
+            "SELECT symbol, date, open, high, low, close, volume, source "
             "FROM market_daily ORDER BY symbol, date"
         )
         if df.empty:
@@ -1025,29 +1025,87 @@ def build_playbook_commentary_memo(playbook: dict) -> dict:
     }
 
 
+MARKET_CHART_SYMBOLS = ["SPY", "TLT", "GLD", "HYG"]
+
+# market_daily.source values in words. The table holds two writers' rows: the
+# earlier pipeline's Polygon.io bars and yfinance (see
+# web/src/screens/shared/stored-provenance.ts and tests/test_stored_provenance.py).
+PROVIDER_WORDS = {"polygon": "Polygon.io", "yfinance": "yfinance"}
+
+
+def _market_chart_rows(market_df: pd.DataFrame, as_of: pd.Timestamp) -> dict[str, pd.DataFrame]:
+    """The rows the market chart plots, per symbol: the last 12 months from
+    `as_of` onward, symbols with at least 5 rows, rows with a close."""
+    if market_df.empty:
+        return {}
+    cutoff = as_of - pd.DateOffset(months=12)
+    out: dict[str, pd.DataFrame] = {}
+    for sym in MARKET_CHART_SYMBOLS:
+        sym_data = market_df[market_df["symbol"] == sym].sort_values("date")
+        if sym_data.empty:
+            continue
+        sym_data = sym_data[sym_data["date"] >= cutoff]
+        if sym_data.empty or len(sym_data) < 5:
+            continue
+        sym_data = sym_data[sym_data["close"].notna()]
+        if sym_data.empty:
+            continue
+        out[sym] = sym_data
+    return out
+
+
+def describe_market_sources(rows: pd.DataFrame) -> str:
+    """The providers of these market_daily rows, from their own `source`
+    column, in order of each one's first date, each with its row count and
+    the date runs it covers (a run breaks where only other providers have
+    rows): "Polygon.io (735 rows, Sep 02, 2025 to May 26, 2026) and yfinance
+    (449 rows: Mar 12, 2026; May 27, 2026 to Nov 03, 2026)". "" for no rows
+    or no source column."""
+    if rows.empty or "source" not in rows.columns:
+        return ""
+    src = rows["source"].fillna("unknown")
+    dates = pd.to_datetime(rows["date"])
+    all_dates = sorted(dates.unique())
+    position = {d: i for i, d in enumerate(all_dates)}
+    fmt = lambda d: pd.Timestamp(d).strftime("%b %d, %Y")  # noqa: E731
+    providers = sorted(src.unique(), key=lambda p: dates[src == p].min())
+    parts = []
+    for p in providers:
+        mine = sorted(dates[src == p].unique())
+        runs: list[list] = []
+        for d in mine:
+            if runs and position[d] == position[runs[-1][1]] + 1:
+                runs[-1][1] = d
+            else:
+                runs.append([d, d])
+        spans = "; ".join(fmt(a) if a == b else f"{fmt(a)} to {fmt(b)}" for a, b in runs)
+        n = int((src == p).sum())
+        parts.append(f"{PROVIDER_WORDS.get(p, p)} ({n:,} {'row' if n == 1 else 'rows'}{': ' if len(runs) > 1 else ', '}{spans})")
+    return " and ".join(parts)
+
+
+def market_chart_sources(market_df: pd.DataFrame, as_of: pd.Timestamp) -> str:
+    """The providers of exactly the rows build_market_chart plots."""
+    rows = _market_chart_rows(market_df, as_of)
+    return describe_market_sources(pd.concat(rows.values())) if rows else ""
+
+
 def build_market_chart(market_df: pd.DataFrame, as_of: pd.Timestamp) -> str | None:
     """
     Build a 12-month indexed return chart for SPY, TLT, GLD, HYG.
     Returns base64 PNG string or None.
     """
-    if market_df.empty:
+    rows = _market_chart_rows(market_df, as_of)
+    if not rows:
         return None
 
-    cutoff = as_of - pd.DateOffset(months=12)
-    symbols_to_plot = ["SPY", "TLT", "GLD", "HYG"]
     colors          = {"SPY": "#2c7be5", "TLT": "#9b59b6", "GLD": "#f39c12", "HYG": "#e74c3c"}
     plotted         = False
 
     with plt.rc_context(_CHART_RC):
         fig, ax = plt.subplots(figsize=(7.2, 2.9))
 
-        for sym in symbols_to_plot:
-            sym_data = market_df[market_df["symbol"] == sym].sort_values("date")
-            if sym_data.empty:
-                continue
-            sym_data = sym_data[sym_data["date"] >= cutoff]
-            if sym_data.empty or len(sym_data) < 5:
-                continue
+        for sym, sym_data in rows.items():
             s = sym_data.set_index("date")["close"].dropna()
             if s.empty:
                 continue
@@ -1228,6 +1286,8 @@ def generate_memo() -> None:
 
     # Market returns chart
     market_chart_b64 = build_market_chart(market_daily, as_of)
+    market_chart_src = market_chart_sources(market_daily, as_of)
+    market_sources   = describe_market_sources(market_daily)
     if market_chart_b64:
         print("[memo] Market returns chart generated.")
     else:
@@ -1275,6 +1335,8 @@ def generate_memo() -> None:
         next_week         = next_week,
         playbook          = playbook_ctx,
         market_chart_b64  = market_chart_b64,
+        market_chart_src  = market_chart_src,
+        market_sources    = market_sources,
         key_indicators    = key_indicators,
     )
 
