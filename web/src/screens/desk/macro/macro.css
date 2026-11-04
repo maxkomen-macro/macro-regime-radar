@@ -253,3 +253,103 @@
   font-size: 12px;
   color: var(--dk-t3);
 }
+
+/* Desk P1b: the correlation window control and the correlation-by-regime card (docs/desk/CORRELATION_VIEWS.md §7). */
+.mc-window {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.mc-window-label {
+  margin: 0;
+}
+.mc-window-chips {
+  display: inline-flex;
+  gap: 6px;
+}
+.mc-window-what {
+  font-size: 12.5px;
+  color: var(--dk-t3);
+}
+.mc-window-note {
+  flex-basis: 100%;
+  margin: 0;
+}
+.mc-rg-history {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--dk-t3);
+}
+.mc-rg-tag {
+  color: var(--dk-t1);
+  font-weight: 600;
+}
+.mc-rg {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+.mc-rg th,
+.mc-rg td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--dk-row);
+  text-align: right;
+  white-space: nowrap;
+}
+.mc-rg thead th {
+  font-weight: 500;
+  color: var(--dk-t2);
+}
+.mc-rg th:first-child {
+  text-align: left;
+}
+.mc-rg tbody th {
+  font-weight: 400;
+}
+.mc-rg tbody th .mc-mx-name {
+  margin-left: 8px;
+}
+.mc-rg [data-current] {
+  box-shadow: inset 1px 0 0 var(--dk-box), inset -1px 0 0 var(--dk-box);
+}
+.mc-rg-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  background: var(--dk-gray);
+}
+.mc-rg-dot[data-tone="green"] {
+  background: var(--dk-green);
+}
+.mc-rg-dot[data-tone="amber"] {
+  background: var(--dk-amber);
+}
+.mc-rg-dot[data-tone="red"] {
+  background: var(--dk-red);
+}
+.mc-rg-now {
+  color: var(--dk-t1);
+}
+.mc-rg-val {
+  display: block;
+  font-family: var(--dk-mono);
+}
+.mc-rg-n {
+  display: block;
+  font-size: 11.5px;
+  color: var(--dk-t3);
+}
+.mc-rg-sample {
+  color: var(--dk-t3);
+}
+.mc-rg-notes {
+  margin: 8px 0 2px;
+  padding-left: 16px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--dk-t3);
+}

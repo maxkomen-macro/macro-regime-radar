@@ -10,8 +10,15 @@
  * whether bonds hedge, the credit words, the reads) is the API's. Each block,
  * and each value inside it, keeps its label and says "Awaiting refresh" when
  * it is not served (§1.7); nothing prints a number that was not served.
+ *
+ * Desk P1b (docs/desk/CORRELATION_VIEWS.md): when the blocks serve their 20-,
+ * 60- and 120-return views, one "Correlation window" control switches the
+ * stock–bond card, "What moves with the S&P" and the matrix together, and a
+ * full-width card shows each asset's correlation with SPY by regime of the
+ * revised regime history. Without those views the page is as it was.
  */
 
+import { useState } from "react";
 import { unavailableOf, useMacro } from "../data/api";
 import type { CorrelationRow, MacroResponse, MatrixBlock, Read } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
@@ -23,6 +30,9 @@ import { DESK_ACCENTS } from "../kit/palette";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { matrixProblem } from "./matrix";
+import { DEFAULT_HORIZON, horizonWords, matrixAt, noiseBandOf, noiseSentence, regimeNote, regimeTable, rowAt, servedHorizons, stockBondAt } from "./views";
+import type { MatrixWithViews, RowWithViews, StockBondWithViews } from "./views";
+import { REGIME_TONE } from "../kit/palette";
 import { GLOSSARY } from "../kit/glossary";
 import "./macro.css";
 import { Term, defineTerms } from "../kit/Term";
@@ -249,20 +259,22 @@ export function sbStamp(sb: StockBondBlock): string {
   return `${fin(sb.window.n) ? `${sb.window.n} ` : ""}daily log returns to ${dayShort(sb.window.end)} · ${pair(sb)}, adjusted closes${prov}`;
 }
 
-function StockBond({ m, state }: { m: MacroResponse | undefined; state: State }) {
+function StockBond({ m, state, w = DEFAULT_HORIZON, views = false }: { m: MacroResponse | undefined; state: State; w?: number; views?: boolean }) {
   const adv = useAdvanced();
   const quiet = state === "loading";
   const unserved = useBlockUnserved(m, "stock_bond");
-  const sb = m?.stock_bond;
+  // Desk P1b: the chosen horizon's served fields; the block as served when it has no views.
+  const sb = m?.stock_bond ? stockBondAt(m.stock_bond as StockBondWithViews, w) : undefined;
+  const sub = `${w}-day correlation of daily returns, one year`;
   const series = Array.isArray(sb?.series) ? sb.series : [];
   const drawn = series.filter((p) => fin(p.corr)).length > 1;
   // `flipped: null` is served as "no change of sign within the year"; an absent key is not served (§12.13).
   const flipServed = !!sb && "flipped" in sb && (sb.flipped === null || (typeof sb.flipped === "string" && /^\d{4}-\d{2}$/.test(sb.flipped)));
   // §1.0.2: the block, or the whole answer, served awaiting.
-  if (unserved) return <UnservedCard headingId="mc-sb" className="mc-card" title="Do bonds still hedge stocks?" sub="60-day correlation of daily returns, one year" labels={["Today", "A year ago", "Flipped"]} block={unserved} advanced />;
+  if (unserved) return <UnservedCard headingId="mc-sb" className="mc-card" title="Do bonds still hedge stocks?" sub={sub} labels={["Today", "A year ago", "Flipped"]} block={unserved} advanced />;
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-sb" aria-busy={quiet}>
-      <CardHead id="mc-sb" title="Do bonds still hedge stocks?" sub="60-day correlation of daily returns, one year" />
+      <CardHead id="mc-sb" title="Do bonds still hedge stocks?" sub={sub} />
       {/* desk/pdf-polish 5: what the bond side is, under the title, the owner's words. */}
       <p className="mc-sb-note">{TLT_NOTE}</p>
       <LoadingLine busy={quiet} />
@@ -287,7 +299,7 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
           </StatRow>
           {drawn ? (
             <LineChart
-              ariaLabel="60-day correlation of daily S&P and Treasury returns over the last year"
+              ariaLabel={`${w}-day correlation of daily S&P and Treasury returns over the last year`}
               height={132}
               n={series.length}
               yDomain={[-1, 1]}
@@ -318,7 +330,12 @@ function StockBond({ m, state }: { m: MacroResponse | undefined; state: State })
         <AwaitingStats labels={["Today", "A year ago", "Flipped"]} quiet={quiet} />
       )}
       <div className="dk-card-foot">
-        <AdvancedPanel adv={adv} items="20 / 60 / 250-day · since 1990 · correlation by regime" missing="Other windows, the history since 1990 and the correlation by regime are not served yet." />
+        {views ? (
+          // Desk P1b: 20, 60 and 120 days are the window control above; SPY against TLT by regime is the card below.
+          <AdvancedPanel adv={adv} items="250-day · since 1990" missing="The 250-day window and the history since 1990 are not served yet." />
+        ) : (
+          <AdvancedPanel adv={adv} items="20 / 60 / 250-day · since 1990 · correlation by regime" missing="Other windows, the history since 1990 and the correlation by regime are not served yet." />
+        )}
       </div>
     </section>
   );
@@ -418,15 +435,17 @@ export function corrStamp(rows: readonly CorrelationRow[]): string {
   return [`${fin(n) ? `${n} ` : ""}daily returns to ${dayShort(main)}`, ...others, "each against SPY"].join(" · ");
 }
 
-function Correlations({ m, state }: { m: MacroResponse | undefined; state: State }) {
+function Correlations({ m, state, w = DEFAULT_HORIZON }: { m: MacroResponse | undefined; state: State; w?: number }) {
   const quiet = state === "loading";
   const unserved = useBlockUnserved(m, "correlations");
-  const rows = Array.isArray(m?.correlations) ? m.correlations : [];
+  // Desk P1b: each row at the chosen horizon; a row without views as served.
+  const rows = (Array.isArray(m?.correlations) ? m.correlations : []).map((r) => rowAt(r as RowWithViews, w));
+  const sub = `${w}-day correlation · each asset against the index`;
   // §1.0.2: the block, or the whole answer, served awaiting.
-  if (unserved) return <UnservedCard headingId="mc-corr" className="mc-card" title="What moves with the S&P" sub="60-day correlation · each asset against the index" labels={[]} block={unserved} />;
+  if (unserved) return <UnservedCard headingId="mc-corr" className="mc-card" title="What moves with the S&P" sub={sub} labels={[]} block={unserved} />;
   return (
     <section className="dk-card mc-card" aria-labelledby="mc-corr" aria-busy={quiet}>
-      <CardHead id="mc-corr" title="What moves with the S&P" sub="60-day correlation · each asset against the index" />
+      <CardHead id="mc-corr" title="What moves with the S&P" sub={sub} />
       <LoadingLine busy={quiet} />
       {rows.length ? (
         <>
@@ -470,8 +489,8 @@ function Correlations({ m, state }: { m: MacroResponse | undefined; state: State
         <Awaiting>the correlations</Awaiting>
       )}
       <DroppedNote n={droppedOf(m, "correlations")} one="asset" />
-      {/* desk/matrix: no Advanced control. The full matrix is its own card below; rolling windows and the
-          correlations by regime are not served, and Build Notes lists them under what comes next. */}
+      {/* desk/matrix: no Advanced control. The full matrix is its own card below; the windows (Desk P1b) are the
+          page's control and the correlations by regime their own card, once served. */}
     </section>
   );
 }
@@ -505,12 +524,13 @@ export function matrixStamp(mx: MatrixBlock): string {
   return [`${span}; each pair needs ${h}`, ...prov].join(" · ");
 }
 
-function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
+function Matrix({ m, state, w = DEFAULT_HORIZON }: { m: MacroResponse | undefined; state: State; w?: number }) {
   const quiet = state === "loading";
   const unserved = useBlockUnserved(m, "matrix");
-  const mx = m?.matrix;
+  // Desk P1b: the grid at the chosen horizon, checked as one fact like the 60-day grid.
+  const mx = m?.matrix ? matrixAt(m.matrix as MatrixWithViews, w) : undefined;
   const title = "Correlation matrix";
-  const sub = "60-day correlation of daily returns · every pair of 12 assets";
+  const sub = `${w}-day correlation of daily returns · every pair of 12 assets`;
   if (unserved) return <UnservedCard headingId="mc-mx" className="mc-card mc-mx-card" title={title} sub={sub} labels={[]} block={unserved} />;
   // Codex R-01: the grid is read as one fact. A served matrix that fails any check (the assets and their order,
   // 12×12, symmetry, the unit diagonal, the no-data list, the lead against the cells) is not drawn at all.
@@ -532,7 +552,7 @@ function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
         <>
           {/* matrix-lead-v1: the served sentence, every number in it a served cell. */}
           {grid.lead?.text ? <p className="mc-lead">{grid.lead.text}</p> : null}
-          <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label="The 60-day correlation matrix, every pair">
+          <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label={`The ${w}-day correlation matrix, every pair`}>
             <table className="mc-matrix">
               <caption className="dk-asof">{matrixStamp(grid)}</caption>
               <thead>
@@ -593,6 +613,116 @@ function Matrix({ m, state }: { m: MacroResponse | undefined; state: State }) {
   );
 }
 
+/**
+ * Desk P1b: the window control, offered only for the horizons every correlation
+ * block serves, and the served noise floor of the chosen one in words (§3).
+ */
+function WindowControl({ m, horizons, w, setW }: { m: MacroResponse | undefined; horizons: number[]; w: number; setW: (w: number) => void }) {
+  const note = noiseSentence(w, noiseBandOf(m, w));
+  return (
+    <div className="mc-window" role="group" aria-label="Correlation window">
+      <span className="dk-stat-label mc-window-label">Correlation window</span>
+      <span className="mc-window-chips">
+        {horizons.map((h) => (
+          <button key={h} type="button" className="dk-chip" aria-pressed={w === h} title={`${h} daily returns, ${horizonWords(h)} of sessions`} onClick={() => setW(h)}>
+            {h} days
+          </button>
+        ))}
+      </span>
+      <span className="mc-window-what">applies to the stock–bond card, what moves with the S&P and the matrix</span>
+      {note ? <p className="mc-note mc-window-note">{note}</p> : null}
+    </div>
+  );
+}
+
+/** "+0.31" / "−0.24", or "—" with the served reason as its title. */
+function RegimeValue({ corr, reason }: { corr: number | null | undefined; reason: string | null | undefined }) {
+  return fin(corr) ? <span className="mc-rg-val">{corrText(corr)}</span> : <span className="mc-rg-val dk-stat-await" title={reason ?? undefined}>—</span>;
+}
+
+/**
+ * Desk P1b §4: each asset's correlation with SPY pooled within each regime of
+ * the revised regime history, every value and note served. Labelled as
+ * revised history (P-1); "As known at the time" is named as not available yet.
+ */
+function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }) {
+  const quiet = state === "loading";
+  const unserved = useBlockUnserved(m, "correlations");
+  const rows = (Array.isArray(m?.correlations) ? m.correlations : []) as RowWithViews[];
+  const table = regimeTable(rows);
+  if (unserved || !table.rows.length || !table.regimes.length) return null;
+  const head = table.rows[0].by_regime;
+  const title = "Correlation by regime";
+  const sub = "each asset against SPY, daily returns pooled within each regime";
+  return (
+    <section className="dk-card mc-card mc-rg-card" aria-labelledby="mc-rg" aria-busy={quiet}>
+      <CardHead id="mc-rg" title={title} sub={sub} />
+      <p className="mc-rg-history">
+        <span className="mc-rg-tag">Revised regime history</span> {head.rule}
+      </p>
+      <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label="Correlation with SPY by regime">
+        <table className="mc-rg">
+          <thead>
+            <tr>
+              <th scope="col">Asset</th>
+              {table.regimes.map((r) => (
+                <th key={r} scope="col" data-current={r === table.current || undefined}>
+                  <span className="mc-rg-dot" data-tone={REGIME_TONE[r] ?? "gray"} aria-hidden="true" />
+                  {r}
+                  {r === table.current ? <span className="mc-rg-now"> · now</span> : null}
+                </th>
+              ))}
+              <th scope="col">All labelled</th>
+              <th scope="col">Sample</th>
+            </tr>
+          </thead>
+          <tbody>
+            {table.rows.map((row) => {
+              const br = row.by_regime;
+              const by = new Map(br.regimes.map((g) => [g.regime, g]));
+              return (
+                <tr key={row.asset}>
+                  <th scope="row">
+                    <span className="mc-mx-sym">{row.symbol ?? ""}</span>
+                    <span className="mc-mx-name">{row.asset}</span>
+                  </th>
+                  {br.reason ? (
+                    <td colSpan={table.regimes.length + 2} className="dk-stat-await">
+                      not available · {br.reason}
+                    </td>
+                  ) : (
+                    <>
+                      {table.regimes.map((r) => {
+                        const g = by.get(r);
+                        const v = g?.corr;
+                        return (
+                          <td key={r} data-current={r === table.current || undefined} style={{ background: fin(v) ? matrixTint(v) : undefined }} title={g ? [g.reason, g.first && g.last ? `${dayShort(g.first)} ${g.first.slice(0, 4)} to ${dayShort(g.last)} ${g.last.slice(0, 4)}` : null].filter(Boolean).join(" · ") || undefined : undefined}>
+                            <RegimeValue corr={v} reason={g?.reason} />
+                            {g ? <span className="mc-rg-n">{regimeNote(g)}</span> : null}
+                          </td>
+                        );
+                      })}
+                      <td>
+                        <RegimeValue corr={br.all?.corr} reason={br.all?.reason} />
+                        {br.all && fin(br.all.n) ? <span className="mc-rg-n">n {br.all.n.toLocaleString("en-US")}</span> : null}
+                      </td>
+                      <td className="mc-rg-sample">{br.sample ? `${br.sample.start.slice(0, 4)} to ${dayShort(br.sample.end)}` : "—"}</td>
+                    </>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <ul className="mc-rg-notes">
+        <li>Each value pools every daily return the revised history assigns to that regime since the pair's first common return, so it mixes decades; volatile days weigh more, and one episode can dominate (the share in one spell is shown when it holds a third or more). n is the returns used; a regime with fewer than {fin(head.min_n) ? head.min_n : "the minimum"} is not served. No interval is served, and a gap between two regimes is not a tested difference.</li>
+        {head.as_known_reason ? <li>{head.as_known_reason}</li> : null}
+      </ul>
+    </section>
+  );
+}
+
 /** "FRED", or "FRED/Yahoo" when a served ETF block names its provider. */
 export function sources(m: MacroResponse): string {
   const prov = new Set<string>(m.stock_bond?.providers ?? []);
@@ -605,6 +735,10 @@ export default function MacroPage({ page }: { page: DeskPage }) {
   const state: State = m ? "ready" : q.isError ? "awaiting" : "loading";
   // §12.0: a route served awaiting keeps the page's labels and prints its reason (§1.0.2).
   const unserved = unavailableOf(q.error);
+  // Desk P1b: one window for the three correlation cards, offered only when every one serves it.
+  const horizons = servedHorizons(m);
+  const [chosen, setChosen] = useState(DEFAULT_HORIZON);
+  const w = horizons.includes(chosen) ? chosen : DEFAULT_HORIZON;
   return (
     <div className="mc">
       {/* §6: `● Live · FRED · <date>`, the curve's own date (the HY date when the tenors are dated apart); the ETF blocks'
@@ -612,13 +746,15 @@ export default function MacroPage({ page }: { page: DeskPage }) {
       <PageTitle page={page} badge={unserved ? <NotServedBadge boxed block={unserved} /> : m ? <LiveBadge boxed parts={[sources(m), dayShort(m.curve?.today?.date ?? m.credit?.hy?.date) || null]} /> : null} />
       <Unserved block={unserved}>
         <FailedScope q={q}>
+          {horizons.length ? <WindowControl m={m} horizons={horizons} w={w} setW={setChosen} /> : null}
           <div className="mc-grid">
             <Curve m={m} state={state} />
-            <StockBond m={m} state={state} />
+            <StockBond m={m} state={state} w={w} views={horizons.length > 0} />
             <Credit m={m} state={state} />
-            <Correlations m={m} state={state} />
+            <Correlations m={m} state={state} w={w} />
           </div>
-          <Matrix m={m} state={state} />
+          <Matrix m={m} state={state} w={w} />
+          <RegimeCorr m={m} state={state} />
         </FailedScope>
       </Unserved>
     </div>
