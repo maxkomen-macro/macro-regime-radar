@@ -96,6 +96,31 @@ describe("D7 · a delay within its expected lag is neutral", () => {
   });
 });
 
+/* Release-aware freshness (2026-11-04): a monthly print out at its scheduled
+ * release and not stored yet reads the server's word in the neutral tone, not
+ * "Delayed", not a "print" (current) word and not stale. */
+describe("release-aware freshness · the awaiting-refresh word", () => {
+  const waiting = (p: Partial<SeriesState> = {}) =>
+    s({ id: "CPIAUCSL", kind: "fred", cadence: "monthly", state: "delayed", late: false, cycles_behind: 1, as_of: "2026-08-01", word: "Released, awaiting refresh", ...p });
+  it("prints the served word, neutral, never stale", () => {
+    expect(freshLabel(waiting())).toMatchObject({ word: "Released, awaiting refresh", tone: "neutral", stale: false, muted: null });
+  });
+  it("a blank or missing word falls back to Delayed; late true keeps amber", () => {
+    expect(freshLabel(waiting({ word: "  " })).word).toBe("Delayed");
+    expect(freshLabel(waiting({ word: null })).word).toBe("Delayed");
+    expect(freshLabel(waiting({ late: true })).tone).toBe("delayed");
+  });
+  it("only a delayed state reads the word", () => {
+    expect(freshLabel(waiting({ state: "stale" })).word).toBe("Aug 2026 · 1 release behind");
+    expect(freshLabel(waiting({ state: "close", cycles_behind: 0 })).word).toBe("Aug 2026 print");
+  });
+  it("the group label reads the waiting member over a current one, and the dot does not count it as behind", () => {
+    const cur = s({ id: "UNRATE", kind: "fred", cadence: "monthly", state: "close", cycles_behind: 0, as_of: "2026-09-01" });
+    const g = groupLabel(lookupFrom({ series: [waiting(), cur] } as unknown as Freshness), ["CPIAUCSL", "UNRATE"]);
+    expect(g).toMatchObject({ word: "Released, awaiting refresh", tone: "neutral" });
+  });
+});
+
 describe("freshLabel · live and delayed", () => {
   it("live reads Live with the live tone", () => {
     const l = freshLabel(s({ id: "live_quotes", kind: "live", cadence: "tick", state: "live", delay_min: 0, as_of: "2026-09-18T17:42:00Z", reason: "US relay ticking." }));

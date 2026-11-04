@@ -272,7 +272,9 @@ export default function MethodologyScreen() {
             <Caption>
               Freshness words state what the server judged for each series, never an age worked out in the browser:
               Live; Delayed 7 min; Close · Sep 18 for a market close; Sep 17 for a daily FRED print, adding · 1 day
-              behind when it is late; Aug 2026 print for a monthly one; Final value for a discontinued series. A stale
+              behind when it is late; Aug 2026 print for a monthly one, and Released, awaiting refresh for a monthly print
+              out at its scheduled release and not stored yet, until the full refresh's 06:00 UTC deadline; Final value
+              for a discontinued series. A stale
               value is marked on the number itself with its date and lag (Sep 04 · 8 days behind), and Stated default,
               As of unknown and Snapshot · as of mark a stated default, a date that cannot be established and a saved
               snapshot.
@@ -535,6 +537,7 @@ export default function MethodologyScreen() {
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Close · Sep 18" detail="the newest official market close due" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Sep 17" detail="a daily FRED print, with · 1 day behind in muted ink when it is late" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Aug 2026 print" detail="the newest monthly print due" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Released, awaiting refresh" detail="a monthly print out at its scheduled release, not stored yet; stale from 06:00 UTC the next day" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Final value" detail="a series the source no longer publishes, never marked stale" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--warn-hot)" label="Sep 04 · 8 days behind" detail="stale: behind the newest publication due, marked on the number itself" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-muted)" label="Stated default" detail="a stated default, not data" />

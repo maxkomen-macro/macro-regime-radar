@@ -8,6 +8,8 @@
  *   live      "Live"                              mint
  *   delayed   "Delayed 7 min" (stored bars)       neutral within the expected lag, amber past it
  *             "15-min delayed" (a feed's delay by source, the VIX poll)
+ *             the server's `word` when it serves one: "Released, awaiting refresh"
+ *             (a monthly print out and not stored yet, before the refresh deadline)
  *             (fix/site-audit D7: the server's `late`; absent, amber)
  *   close     "Close · Sep 18" (market, relay)    neutral
  *             "Sep 17" + muted "· 1 day behind" (FRED daily, derived)
@@ -141,7 +143,10 @@ export function freshLabel(s: SeriesState | null | undefined): FreshLabel {
       // fix/site-audit D7: color by lateness against the source's expected lag, which the server
       // judges (`late`): a delay the source always has reads neutral, amber only past it. A live
       // feed's delay is its source's ("15-min delayed"); a stored bar's is its age ("Delayed 7 min").
-      const word = s.delay_min == null ? "Delayed" : s.kind === "live" ? `${s.delay_min}-min delayed` : `Delayed ${s.delay_min} min`;
+      // Release-aware freshness: the server's own word when it serves one ("Released, awaiting refresh", a monthly
+      // print waiting for the full refresh); the tone is still `late`'s.
+      const served = typeof s.word === "string" && s.word.trim() ? s.word : null;
+      const word = served ?? (s.delay_min == null ? "Delayed" : s.kind === "live" ? `${s.delay_min}-min delayed` : `Delayed ${s.delay_min} min`);
       return label(word, s.late === false ? "neutral" : "delayed", reason);
     }
 
