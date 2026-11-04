@@ -59,3 +59,58 @@ or inputs. Each shard writes a manifest (command, seed, sizes, versions, platfor
 
 Tests: `python -m pytest tests/test_options_bench.py` (the engine tests skip unless the engine is in this
 checkout or `OPTIONS_BENCH_ENGINE_ROOT` points at one; the QuantLib test skips without QuantLib).
+
+## Phase 2: the Tier 2 controller (adaptive Phase 2, unserved)
+
+The Tier 2 convergence controller (`src/desk/options_adaptive.py`) is scored on top of a finished run of
+`run.py`, whose references R0 and baseline answers it reuses (they do not depend on Tier 2):
+
+```
+python -m scripts.options_bench.calibrate --refs RUN_DIR --out CAL_DIR            # every candidate, development seed
+python -m scripts.options_bench.calibrate --refs RUN_DIR --out CAL_DIR --select   # choose, size, write the freeze
+python -m scripts.options_bench.run --engine-root . --out HELD_OUT --seed SEED --per-group <the freeze's sizes>
+python -m scripts.options_bench.phase2 --refs HELD_OUT --freeze scripts/options_bench/calibration/phase2-freeze-2.json \
+    --out P2_DIR --held-out
+python -m scripts.options_bench.score2 P2_DIR
+python -m scripts.options_bench.routine --out DIR                                 # ~300 development cases, every push
+```
+
+- `adaptive.py`: the adapter, and the verdict protocol (covered, confirmed, straddle; one tightened reference R1
+  per straddling case, judged inconsistent, unreliable, covered or confirmed, precise straddle, coarse straddle
+  in that order).
+- `phase2.py`: Tier 2 under the frozen configuration, the Tier 1 identity check, R1, the dividend scenario, the
+  report-only targets 0.5, 0.25 and 0.1 tol, and repeated cases for determinism. It refuses to run when any
+  engine or bench file differs from the freeze, and with `--held-out` a reference run that is not the freeze's
+  seed and sizes. Its manifest fingerprints the reference run's files: a resume after they changed is refused,
+  and so is a result file found without its manifest. Every record's case inputs (canonical, through
+  `Case.from_json`) must be the case its id names under the run's seed and sizes, not only the same id: a
+  reference run holding another case is not the population, a resume refuses results for another case, and a
+  reference shard without its own manifest is refused (Codex S-14; calibration's resume and selection likewise).
+- `score2.py`: every exit-gate row, with five populations per group and maturity band, and the conditional,
+  resolved-all and all-accepted limits (only the conditional one binds). It refuses result shards without their
+  manifest and fails the run row when the references differ from the fingerprint or a result is not the case
+  its id names. Only a run started with
+  `--held-out` on the freeze's own population (seed, sizes, named cases, every case finished), whose seed is not
+  the development seed, can be a Phase 2 acceptance; any other run's rows are kept and labelled "diagnostic only,
+  not a Phase 2 acceptance".
+- Attempts: attempt 1's freeze (`calibration/phase2-freeze.json`, commit 2f7bf07, held-out seed 20261029) and
+  its selection report are kept byte for byte; they no longer match the files at HEAD. Attempt 2's freeze is
+  `calibration/phase2-freeze-2.json` (commit ef7d784, held-out seed 20261102, fixed before its calibration); its
+  held-out run is the Phase 2 acceptance run (docs/desk/OPTIONS_ADAPTIVE_PHASE2.md). The S-14 fix changed
+  `phase2.py`, `score2.py` and `calibrate.py` after that run, so freeze 2 no longer matches HEAD either: the
+  runner (and `routine.py`, whose default is freeze 2) refuses it, and the next run needs a new freeze.
+- A delta accepted before the price is held to the accepted price's own test: the exercise-zone and decision
+  test for an envelope delta, the deep-exercise rule over every level run for a delta of ±1. One that fails is
+  withdrawn, audited (`delta_withdrawn`) and judged afresh at the price's level.
+- The proved interval [L, U]: a lattice candidate outside it is refused, never served or clipped, and the
+  audit keeps every refusal. The interval row fails on any usable Tier 2 output outside its own [L, U] (the
+  main answer, each sweep target, each dividend scenario), any estimate band wholly outside it, or an
+  inconsistent interval; refusals alone do not fail it and are reported by group and maturity band. Below L
+  they are numerical undershoots; the cause has not been established.
+- The analytic route states h + 0.1·tol(L) (the half-width and the padding are recorded apart) and is taken
+  only when that meets the target. Midpoints are unchanged where the route is kept; cases the stricter
+  eligibility sends to the lattice can change in work, status and value.
+- The design and its statistics: design P2-2 (review-loop/options-adaptive/designs/ in the project files) and
+  docs/desk/OPTIONS_ADAPTIVE_PHASE2.md.
+
+Tests: `python -m pytest tests/test_options_engine.py tests/test_options_adaptive.py tests/test_options_bench_phase2.py`.
