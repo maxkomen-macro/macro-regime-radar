@@ -162,7 +162,8 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-rg-vix": { forms: [], text: "VIX avg is the average VIX close over the sessions of those months." },
   "col-rg-vix-days": { forms: [], text: "VIX days is how many sessions of those months have a stored VIX close; the cell's title gives the sessions due." },
   // Data Pipeline · the series inventory (api/desk_pipeline.py).
-  "col-pl-series": { forms: [], text: "The series by name, with its provider and how often it is observed." },
+  // D2 (desk-upgrade): who stored the rows is api/desk_pipeline.py stored_providers; the policy is policy_of.
+  "col-pl-series": { forms: [], text: "The series by name and frequency, who supplied its stored rows (the table's one writer, FRED, where rows carry no provider), and the intended provider policy when it differs." },
   "col-pl-id": { forms: [], text: "ID is the series' code at its source: a FRED series ID or a ticker." },
   "col-pl-from": { forms: [], text: "From is the first observation stored." },
   "col-pl-asof": { forms: [], text: "As of is the newest observation stored." },

@@ -320,3 +320,22 @@
   font-weight: 400;
   color: var(--dk-t3);
 }
+/* D2: who stored the rows, then the declared fallback rule, each on its own line under the name, quieter. */
+.pl-table .pl-stored,
+.pl-table .pl-policy {
+  display: block;
+  font-weight: 400;
+  color: var(--dk-t2);
+}
+.pl-table .pl-policy {
+  font-family: var(--dk-sans);
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+/* D2: where the table has room (full width from 1101 to 1250 px, beside the bridge from 1400 px), the
+   series cell is wide enough for its stored-by line to read on one or two lines. */
+@media (min-width: 1101px) and (max-width: 1250px), (min-width: 1400px) {
+  .pl-table tbody th {
+    min-width: 200px;
+  }
+}
