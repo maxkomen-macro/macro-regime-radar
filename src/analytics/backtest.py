@@ -247,7 +247,11 @@ def compute_metrics(returns: list) -> dict:
         # Codex DR-07: finite returns whose sum or middle pair overflows still have a
         # representable mean and median; recompute those (only those) on halved values.
         if not np.isfinite(avg):
-            avg = float(np.sum(arr / len(arr)))
+            # Scale by a power of two so every |x| < 1 (exact), sum exactly, unscale, and clamp
+            # into [min, max], where the true mean lies: finite up to the float boundary (S-02).
+            scale = 2.0 ** -int(np.frexp(np.max(np.abs(arr)))[1])
+            avg = (math.fsum((arr * scale).tolist()) / len(arr)) / scale
+            avg = float(min(max(avg, float(arr.min())), float(arr.max())))
         if not np.isfinite(med):
             mid = np.sort(arr)[(len(arr) - 1) // 2:len(arr) // 2 + 1]
             med = float(mid[0] / 2 + mid[-1] / 2)
@@ -395,7 +399,7 @@ def print_summary(conn: sqlite3.Connection) -> None:
         ORDER BY test_name, horizon, metric
         """
     ).fetchall()
-    print(f"\n--- Backtest Results ({len(rows)} metric rows) ---")
+    print(f"\n--- Backtest Results ({len(rows)} metric rows; SPY {RETURN_BASIS}, dividends reinvested) ---")
     prev_key = None
     for r in rows:
         key = (r["test_name"], r["horizon"])

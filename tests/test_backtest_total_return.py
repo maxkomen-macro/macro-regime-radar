@@ -376,3 +376,39 @@ def test_a_non_finite_metric_is_never_stored(tmp_path):
         assert n == 1 and c.execute("SELECT metric FROM backtest_results").fetchall() == [("n",)]
     finally:
         c.close()
+
+
+def test_the_mean_stays_finite_at_the_float_boundary():
+    """Codex S-02: three copies of the largest finite float average to it."""
+    import sys
+    big = sys.float_info.max
+    m = bt.compute_metrics([big] * 3)
+    assert m["avg_return"] == big and m["median_return"] == big
+    m2 = bt.compute_metrics([big, 0.0])
+    assert m2["avg_return"] == pytest.approx(big / 2) and m2["median_return"] == pytest.approx(big / 2)
+
+
+def test_the_streamlit_label_reads_the_rows_it_shows(monkeypatch):
+    """Codex S-01: the legacy tab derives its label from the loaded rows
+    (one cache entry with the values), never from a separate query. Loaded
+    with a stub streamlit that monkeypatch removes again afterwards."""
+    import importlib, sys as _sys, types
+    from pathlib import Path
+    st = types.ModuleType("streamlit")
+    st.cache_data = lambda *a, **k: (a[0] if a and callable(a[0]) else (lambda f: f))
+    monkeypatch.setitem(_sys.modules, "streamlit", st)
+    for name in [m for m in _sys.modules if m == "components" or m.startswith("components.")]:
+        monkeypatch.delitem(_sys.modules, name)
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[1] / "dashboard"))
+    try:
+        bt_tab = importlib.import_module("components.backtests")
+    except ImportError as exc:  # plotly or the dashboard's own deps absent
+        pytest.skip(f"legacy dashboard deps absent: {exc}")
+    finally:  # modules imported here against the stub never outlive the test
+        for name in [m for m in _sys.modules if m == "components" or m.startswith("components.")]:
+            _sys.modules.pop(name, None)
+    df = pd.DataFrame({"test_name": ["a", "a"], "return_basis": ["total_return", "total_return"]})
+    assert bt_tab._stored_basis(df) == "total_return"
+    assert bt_tab._stored_basis(df.assign(return_basis=["total_return", None])) == "unrecorded"
+    assert bt_tab._stored_basis(df.drop(columns="return_basis")) == "unrecorded"
+    assert bt_tab._stored_basis(pd.DataFrame()) == "unrecorded"

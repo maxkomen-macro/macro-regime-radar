@@ -220,10 +220,15 @@ def load_alert_feed() -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def load_backtest_results() -> pd.DataFrame:
-    """Load backtest_results."""
+    """Load backtest_results, with each row's stored return_basis (NULL, or
+    absent on a table that predates the column: basis not recorded). The
+    basis is loaded with the values, under one cache entry, so a label read
+    from it always describes the rows shown (Codex S-01)."""
     try:
+        cols = set(_query("PRAGMA table_info(backtest_results)")["name"])
+        basis = "return_basis" if "return_basis" in cols else "NULL AS return_basis"
         return _query(
-            "SELECT test_name, cohort, horizon, metric, value, computed_at "
+            f"SELECT test_name, cohort, horizon, metric, value, computed_at, {basis} "
             "FROM backtest_results ORDER BY test_name, horizon, metric"
         )
     except Exception:

@@ -35,15 +35,14 @@ HORIZONS = ["1M", "3M", "6M", "12M"]
 HORIZON_ORDER = {h: i for i, h in enumerate(HORIZONS)}
 
 
-def _stored_basis() -> str:
-    """"total_return" when every stored backtest row records that basis
+def _stored_basis(raw: pd.DataFrame) -> str:
+    """"total_return" when every displayed row records that basis
     (src/analytics/backtest.py writes it); "unrecorded" for rows stored
-    before the column existed or left NULL, which are never labelled."""
-    cols = _query("PRAGMA table_info(backtest_results)")
-    if cols.empty or "return_basis" not in set(cols["name"]):
+    before the column existed or left NULL, which are never labelled. Read
+    from the same loaded rows the tab shows (Codex S-01)."""
+    if raw.empty or "return_basis" not in raw.columns:
         return "unrecorded"
-    vals = _query("SELECT DISTINCT return_basis FROM backtest_results")["return_basis"].tolist()
-    return "total_return" if vals == ["total_return"] else "unrecorded"
+    return "total_return" if (raw["return_basis"] == "total_return").all() else "unrecorded"
 
 
 def render_backtests() -> None:
@@ -55,16 +54,18 @@ def render_backtests() -> None:
         "tables": ["backtest_results"],
     })
     section_header("SIGNAL & REGIME BACKTESTS")
-    total_return = _stored_basis() == "total_return"
+    raw = load_backtest_results()
+    total_return = _stored_basis(raw) == "total_return"
     if total_return:
         st.caption("Historical SPY forward total returns (split- and dividend-adjusted closes, dividends reinvested) "
                    "following signal triggers and regime periods.")
+    elif raw.empty:
+        st.caption("Historical SPY forward returns following signal triggers and regime periods.")
     else:
         st.caption("Historical SPY forward returns following signal triggers and regime periods. "
                    "Return basis not recorded for these stored results.")
     st.divider()
 
-    raw = load_backtest_results()
     if raw.empty:
         st.info(
             "No backtest results found. "
