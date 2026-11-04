@@ -359,7 +359,7 @@ def _status_body(client: httpx.Client, url: str, headers: dict) -> bytes | None:
     def run() -> None:
         try:
             box["body"] = _bounded_get(client, url, headers)
-        except BaseException as exc:  # noqa: BLE001 - re-raised in the caller's thread
+        except Exception as exc:  # noqa: BLE001 - re-raised in the caller's thread (verifier V-08: never SystemExit)
             box["exc"] = exc
 
     t = threading.Thread(target=run, name="refresh-status-read", daemon=True)
