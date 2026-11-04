@@ -841,5 +841,12 @@ describe("Position Monitor DV01", () => {
     const block = await screen.findByTestId("pm-dv01");
     expect(block).toHaveTextContent("2y leg long 8.3% NAV (−0.0016% NAV/bp of 2y) · 10y leg short 2.0% NAV (+0.0016% NAV/bp of 10y) · h = 4.14 · gross 10.3% NAV");
     expect(block).toHaveTextContent("Weights recomputed from current yields: a current, rebalanced hypothetical spread proxy.");
+    // The collapsed rows: the spread's size cell says "leg" with the reference-leg definition; a single position's stays NAV.
+    const rows = within(card).getAllByTestId("dk-mon-row");
+    const [spread, single] = [rows.find((r) => r.getAttribute("data-id") === "s")!, rows.find((r) => r.getAttribute("data-id") === base.id)!];
+    expect(within(spread).getByText("2% leg").getAttribute("data-term")).toBe("nav-ref-leg");
+    expect(spread.querySelector(".dk-mon-row")?.getAttribute("aria-describedby")).toMatch(/^dk-def-nav-ref-leg /);
+    expect(within(single).getByText("4% NAV").getAttribute("data-term")).toBe("nav");
+    expect(document.getElementById("dk-def-nav-ref-leg")?.textContent).toMatch(/not the spread's total/);
   });
 });

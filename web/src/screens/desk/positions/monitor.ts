@@ -142,6 +142,8 @@ export interface PositionView {
   note: string | null;
   /** The position's DV01 proxy, or why there is none (DV01_SPEC.md revision 2). */
   dv01: Dv01;
+  /** A spread: the saved size is its reference leg's market value (the shared row says "leg", §7). */
+  reference_leg: boolean;
   /** XNYS sessions from `entry_date` (the New York date of the save) through today, both counted, so an
    * entry on a session is day 1, a save after the close included (evaluation is at the close, §9); a save
    * on a weekend or holiday is day 0 until the next session opens. Null when the calendar does not reach. */
@@ -170,7 +172,7 @@ export function restatement(t: Trigger, entryValue: number, etf: EtfLevel): { fa
 }
 
 export function viewOf(p: PositionRecord, levels: Levels, now: Date): PositionView {
-  const base = { id: p.id, name: positionName(p), size_nav: p.size_nav, monitoring: p.monitoring, day: sessionCount(p.entry_date, nyDate(now)), record: p, level_now: null, note: null, dv01: dv01Of(p, levels) };
+  const base = { id: p.id, name: positionName(p), size_nav: p.size_nav, monitoring: p.monitoring, day: sessionCount(p.entry_date, nyDate(now)), record: p, level_now: null, note: null, dv01: dv01Of(p, levels), reference_leg: isSpreadPosition(p) };
   const t = p.trigger;
   const served = t ? servedFor(levels, t.series) : null;
   if (p.monitoring !== "automatic" || !t || !served || !isFiniteNumber(p.original_room)) return { ...base, room_pct: null, to_level: null, now: p.monitoring === "automatic" ? served : null };
