@@ -200,6 +200,10 @@ export function falsifiesLine(v: PositionView): string {
   // lines keep §9's words.
   const dated = t.series !== "spx" && t.series !== "curve_2s10s" && v.now ? ` on ${dayShort(v.now.date) || v.now.date}` : "";
   const now = v.now ? ` · now ${levelWords(t.series, v.now.value)}${dated}` : " · now not served";
+  // Final review S-03: an ETF level that could not be restated is the entry's, on the entry day's price scale; it
+  // is never printed beside today's close as if it were the level now.
+  if (parseSeries(t.series)?.kind === "etf" && v.level_now === null && v.now)
+    return `${seriesLabel(t.series)} ${t.operator} ${levelWords(t.series, t.threshold)} at entry; the level now is not known${now}`;
   return `${seriesLabel(t.series)} ${t.operator} ${levelWords(t.series, v.level_now ?? t.threshold)}${now}`;
 }
 

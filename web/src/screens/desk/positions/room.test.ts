@@ -202,6 +202,8 @@ describe("P1c: the monitor's view of the new series", () => {
     expect([v.room_pct, v.to_level, v.level_now]).toEqual([null, null, null]);
     expect(v.now).toMatchObject({ value: 392.8800048828125 });
     expect(v.note).toBe("Room not computed: the close of 2026-09-23 is not among the served closes (through 2026-09-23), so the level cannot be checked against them.");
+    // Final review S-03: the entry's level is never printed beside today's close as the level now.
+    expect(falsifiesLine(v)).toBe("GLD above 394.48 at entry; the level now is not known · now 392.88 on Sep 23");
     expect(viewOf(r, { ...LEVELS, etfs: {} }, NOW)).toMatchObject({ room_pct: null, now: null, note: null });
   });
   it("never turns an unusable entry value or close into a room (design review DR-03)", () => {
@@ -212,6 +214,7 @@ describe("P1c: the monitor's view of the new series", () => {
       const v = viewOf(rec, { ...LEVELS, etfs: { GLD: { ...GLD, closes: { ...GLD.closes, "2026-09-23": close } } } }, NOW);
       expect([v.room_pct, v.to_level, v.level_now], `${entry} ${close}`).toEqual([null, null, null]);
       expect(v.note).toMatch(/^Room not computed: /);
+      expect(falsifiesLine(v)).toMatch(/at entry; the level now is not known · now /);
     }
   });
   it("never shows a room whose final arithmetic overflows (design review DR-05)", () => {
@@ -220,6 +223,7 @@ describe("P1c: the monitor's view of the new series", () => {
     const v = viewOf(tiny, { ...LEVELS, etfs: { GLD: { ...GLD, value: 1e100, closes: { ...GLD.closes, "2026-09-23": 1e-300 } } } }, NOW);
     expect([v.room_pct, v.to_level, v.level_now]).toEqual([null, null, null]);
     expect(v.note).toBe("Room not computed: the distance to the level is not a usable number.");
+    expect(falsifiesLine(v)).toMatch(/at entry; the level now is not known · now /);
   });
 });
 
