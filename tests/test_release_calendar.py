@@ -199,9 +199,11 @@ def test_rows_after_freds_last_date_are_reported_not_failed_until_fred_lists_the
     rep = _online(lines, {13: ["2026-12-16", "2027-01-14", "2027-02-17"]}, tmp_path)
     assert any("g17: a row on 2027-01-15 is not a FRED release date" in e for e in rep.errors)
     assert any("g17: FRED dates without a row: 2027-01-14" in e for e in rep.errors)
-    # a FRED that lists nothing checks nothing, and says so
+    # a FRED that lists nothing for the release fails: it would otherwise pass every row unchecked
     rep = _online(lines, {}, tmp_path)
-    assert rep.errors == [] and any("3 rows after FRED's last listed date (none)" in n for n in rep.notes)
+    assert rep.errors == ["g17: FRED lists no release dates for release 13 from 2026-01-01; 3 rows cannot be "
+                          "checked (Fed G.17 Industrial Production and Capacity Utilization (FRED release 13))"]
+    assert not [n for n in rep.notes if "after FRED's last listed date" in n]
 
 
 def test_a_revision_only_fred_date_is_advisory_for_retail(tmp_path):

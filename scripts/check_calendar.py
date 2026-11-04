@@ -22,7 +22,8 @@ Two checks:
           release date (error). Rows after it (the next year's dates, which FRED
           lists late) are reported as not yet checkable (note): they come from
           the agency's own published schedule, and the check holds them to FRED
-          once FRED lists that far;
+          once FRED lists that far. Rows for a release FRED lists no dates for at
+          all from --start are an error (a wrong id or a bad answer), never a pass;
         - for the strict families (CPI, the jobs report, G.17) every FRED date
           must have a row (error). Retail sales, GDP and PCE are advisory the
           other way: FRED also lists revision-only dates for them (the retail
@@ -201,13 +202,18 @@ def check_online(rows: list[Row], rep: Report, *, key: str, start: date, today: 
             fred = fetch(fam.fred_release, start, key)
             fred_set = set(fred)
             fred_last = fred[-1] if fred else None
-            ahead = [d for d in mine if fred_last is None or d > fred_last]
+            if mine and fred_last is None:
+                # rows to check and no FRED date at all from --start: a wrong release id or a bad answer, never
+                # "FRED has not listed this far" (that would pass every row unchecked)
+                rep.errors.append(f"{fam.key}: FRED lists no release dates for release {fam.fred_release} from "
+                                  f"{start}; {len(mine)} rows cannot be checked ({fam.source})")
+            ahead = [d for d in mine if fred_last is not None and d > fred_last]
             for d in mine:
-                if d not in fred_set and d not in ahead:
+                if fred_last is not None and d not in fred_set and d not in ahead:
                     rep.errors.append(f"{fam.key}: a row on {d} is not a FRED release date ({fam.source})")
             if ahead:
                 rep.notes.append(f"{fam.key}: {len(ahead)} rows after FRED's last listed date "
-                                 f"({fred_last or 'none'}), {ahead[0]} to {ahead[-1]}: not checkable against FRED "
+                                 f"({fred_last}), {ahead[0]} to {ahead[-1]}: not checkable against FRED "
                                  f"until it lists them; they come from the agency's own schedule ({fam.schedule})")
             missing = [d for d in fred if d not in set(mine)]
             beyond = [d for d in missing if last is None or d > last]
