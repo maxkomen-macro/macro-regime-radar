@@ -73,7 +73,7 @@ describe("ChartPanel stored provenance (market_daily's source, by date)", () => 
 
   it("names Polygon.io and yfinance with their own bars' dates when the 1Y window crosses the switch", async () => {
     const { calls } = stubFetch({
-      "/api/market/daily": () => [bar("2025-11-04"), bar("2026-05-26"), bar("2026-05-27"), bar("2026-11-03")],
+      "/api/market/daily": () => [bar("2026-02-18"), bar("2026-05-26"), bar("2026-05-27"), bar("2026-11-03")],
       "/api/freshness": () => ({}),
     });
     renderWithProviders(<ChartPanel symbol="XLK" name="Technology" hasHistory onClose={() => {}} />);
