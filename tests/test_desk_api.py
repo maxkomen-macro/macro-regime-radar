@@ -976,16 +976,46 @@ def test_a_series_missing_from_an_existing_table_awaits_the_next_refresh_not_the
 
 def test_patching_the_engine_through_the_proxy_leaves_no_shadow(monkeypatch):
     """Verifier V-07: attribute writes on api.desk.es reach the real module, so
-    an undone patch leaves nothing behind that later hides the module."""
+    an undone patch leaves nothing behind that later hides the module. The
+    proxy has no namespace of its own at all (vars() refuses it), which holds
+    the old "DEFAULT_SEED not in vars(es)" for every name, and the undo puts
+    the module's own value back (pytest 9's undo once deleted it, #10644)."""
     from src.desk import event_study as real
 
+    before = real.DEFAULT_SEED
     with monkeypatch.context() as m:
         m.setattr(desk_mod.es, "DEFAULT_SEED", 1)
         assert real.DEFAULT_SEED == 1 and desk_mod.es.DEFAULT_SEED == 1
-    assert "DEFAULT_SEED" not in vars(desk_mod.es)
+    assert real.DEFAULT_SEED == before and desk_mod.es.DEFAULT_SEED == before
+    with pytest.raises(TypeError):
+        vars(desk_mod.es)
     with monkeypatch.context() as m:
         m.setattr(real, "DEFAULT_SEED", 99)
         assert desk_mod.es.DEFAULT_SEED == 99
+    assert real.DEFAULT_SEED == before and desk_mod.es.DEFAULT_SEED == before
+
+
+def test_every_monkeypatch_through_the_proxy_undoes_to_the_modules_own_values(monkeypatch):
+    """pytest 9 compatibility (#10644): nested patches, a patch by import
+    string, a new name, and a delete, all made through api.desk.es, undo to
+    exactly the module's values, on pytest 8 and 9 alike."""
+    from src.desk import event_study as real
+
+    seed, presets = real.DEFAULT_SEED, real.PRESETS
+    with monkeypatch.context() as m:
+        m.setattr(desk_mod.es, "DEFAULT_SEED", 1)
+        m.setattr(desk_mod.es, "DEFAULT_SEED", 2)
+        m.setattr("api.desk.es.PRESETS", {})
+        m.setattr(desk_mod.es, "NOT_AN_ENGINE_NAME", 3, raising=False)
+        assert (real.DEFAULT_SEED, real.PRESETS, real.NOT_AN_ENGINE_NAME) == (2, {}, 3)
+    assert real.DEFAULT_SEED == seed and real.PRESETS is presets
+    assert not hasattr(real, "NOT_AN_ENGINE_NAME")
+    with monkeypatch.context() as m:
+        m.delattr(desk_mod.es, "DEFAULT_SEED")
+        assert not hasattr(real, "DEFAULT_SEED")
+    assert real.DEFAULT_SEED == seed and desk_mod.es.DEFAULT_SEED == seed
+    with pytest.raises(AttributeError):
+        desk_mod.es.__dict__  # Python's own lookups are not the module's
 
 
 def test_the_freshness_mirror_of_the_refresh_series_is_the_registrys():
