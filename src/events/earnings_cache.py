@@ -1012,19 +1012,19 @@ def main(argv: list[str] | None = None, *, now: datetime | None = None) -> int:
             if not db.exists():
                 print("[earnings-cache probe] not started: the --db file does not exist.")
                 return 2
-            report = _announced(key, db, now)
+            found = _announced(key, db, now)
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "data-latest.db"
                 print("[earnings-cache probe] downloading the public data-latest database for the cross-check ...")
                 _download_public_db(db)
-                report = _announced(key, db, now)
+                found = _announced(key, db, now)
     except Exception as exc:  # never print a message that could carry a URL or the key
         print(f"[earnings-cache probe] failed: {type(exc).__name__}")
         return 2
-    for line in report.lines:
+    for line in found.lines:
         print(line)
-    return 0 if report.outcome == "pass" else 1
+    return 0 if found.outcome == "pass" else 1
 
 
 if __name__ == "__main__":
