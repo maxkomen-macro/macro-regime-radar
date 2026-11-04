@@ -11,7 +11,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
 import { current, deskGet, retry, useInstruments, useMacro, useTechnicals } from "../data/api";
 import type { TechnicalsResponse } from "../data/types";
-import { eitherFailed, type QueryLike } from "../kit/ui";
+import { eitherFailed, loadFailed, type QueryLike } from "../kit/ui";
+import { rateSeriesOf } from "./dv01";
 import { etfLevelFrom, levelsFrom, tenorsFrom, type EtfLevel, type Levels } from "./monitor";
 import { POSITIONS_KEY, familyOf, isOpen, loadPositions, monitoredSeriesOf, parseSeries, writePositions, type PositionStore, type SaveResult } from "./store";
 
@@ -44,7 +45,9 @@ export function useLevels(store: PositionStore, always = false, draft = ""): Lev
   const refs = open.map((p) => parseSeries(p.trigger?.series));
   const heldEtfs = [...new Set(refs.flatMap((r) => (r?.kind === "etf" ? [r.symbol] : [])))];
   const tech = useTechnicals({ enabled: always || refs.some((r) => r?.kind === "spx") });
-  const macro = useMacro({ enabled: always || open.some((p) => p.trigger && familyOf(p.trigger.series) === "rate") });
+  // DV01 (DR-10): an open yield or spread position needs the curve whether it is monitored automatically or by hand.
+  const rated = store.positions.some((p) => isOpen(p) && rateSeriesOf(p) !== null);
+  const macro = useMacro({ enabled: always || rated || open.some((p) => p.trigger && familyOf(p.trigger.series) === "rate") });
   const inst = useInstruments({ enabled: always || heldEtfs.length > 0 });
   // A list that is not served (loading or failed) is null: whether a ticker is stored cannot be told.
   const stored = inst.data?.instruments ? inst.data.instruments.filter((i) => i.kind === "etf").map((i) => i.symbol) : null;
@@ -71,7 +74,8 @@ export function useLevels(store: PositionStore, always = false, draft = ""): Lev
   const etfReads: QueryLike[] = heldEtfs.length ? [inst, ...held] : [];
   const loading = tech.isLoading || macro.isLoading || (heldEtfs.length > 0 && (inst.isLoading || held.some((q) => q.isLoading)));
   // desk/usability §14.10, §14.12: whether the levels are still asked, and the requests as one failed scope.
-  return { ...levelsFrom(tech.data, macro.data), tenors: tenorsFrom(macro.data), etfs, stored, loading, reads: eitherFailed(tech, macro, ...etfReads) };
+  const rates = loadFailed(macro) ? ("failed" as const) : macro.isLoading ? ("loading" as const) : undefined;
+  return { ...levelsFrom(tech.data, macro.data), tenors: tenorsFrom(macro.data), etfs, stored, rates, loading, reads: eitherFailed(tech, macro, ...etfReads) };
 }
 
 /** The message for a write the browser did not keep. */

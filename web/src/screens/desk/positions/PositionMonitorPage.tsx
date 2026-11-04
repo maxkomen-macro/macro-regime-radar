@@ -37,7 +37,8 @@ import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { apiParams, askFromSearch, questionWords, searchFor, slotsOf, targetLabel, type Ask } from "../event-study/question";
 import { readSaved, recordedLegs } from "../basket/weights";
 import { isYield, planFor, planRefusal, suggestions, underlyingName } from "./levels";
-import { falsifiesLine, sizeLine, viewOf, type PositionView } from "./monitor";
+import { dv01Detail, falsifiesLine, sizeLine, viewOf, type PositionView } from "./monitor";
+import { isSpreadPosition, rateSeriesOf, spreadSizeHelp } from "./dv01";
 import { nyDate } from "./sessions";
 import { closed90d, exportPositions, importPositions, isOpen, namedSeriesOf, newPositionId, whyUnreadable, withClose, type CloseType, type PositionRecord, type PositionStore, type Subject } from "./store";
 import { saveWords, useLevels, usePositionStore } from "./usePositionStore";
@@ -153,6 +154,16 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
           <p>{sizeLine(v)}</p>
         </div>
       </div>
+      {dv01Detail(v.dv01) ? (
+        <div data-testid="pm-dv01">
+          <p className="dk-stat-label">DV01 · proxy</p>
+          {dv01Detail(v.dv01)!.map((line) => (
+            <p key={line} className="pm-manual">
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
       {option ? (
         <>
           <p className="dk-stat-label">Option</p>
@@ -196,7 +207,10 @@ function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, l
   const deployed = sized && !unreadable ? views.reduce((a, r) => a + (r.size_nav as number), 0) : null;
   // §14.10, §14.12: an automatic row's level is the API's; while it is asked the card says so, and when the
   // request failed it says Couldn't load · Retry (a row would read "now not served" either way).
-  const live = views.some((r) => r.monitoring === "automatic");
+  // DV01 (DR-10): a yield or spread position reads `/macro` whether it is monitored automatically or by hand.
+  const live = views.some((r) => r.monitoring === "automatic" || rateSeriesOf(r.record) !== null);
+  // DV01_SPEC.md §7: a spread's saved size is its reference leg, so a sum with one in it is not an allocation.
+  const spreads = views.some((r) => isSpreadPosition(r.record));
   return (
     <FailedScope q={live ? reads : IDLE}>
       <section className="dk-card pm-mon" aria-labelledby="pm-mon-title">
@@ -233,7 +247,7 @@ function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, l
         {views.length ? (
           <p className="pm-note">
             Sorted by room left · room = distance to the level as a share of the room at entry, same scale for every trade · size as % of NAV ·{" "}
-            {deployed != null ? `${Math.round(deployed * 1000) / 10}% deployed, ` : ""}
+            {deployed != null ? (spreads ? `${Math.round(deployed * 1000) / 10}% NAV in saved sizes (a spread counts its reference leg), ` : `${Math.round(deployed * 1000) / 10}% deployed, `) : ""}
             {unreadable ? (
               <>{`${views.length} readable position${views.length === 1 ? "" : "s"}`} · click a row for the gate text</>
             ) : (
@@ -523,6 +537,15 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     return { kind: "instrument", id: namedSeriesOf(draft.instrument) ?? draft.instrument.trim() };
   };
 
+  // DV01_SPEC.md §7 (DR-08, DR-13): a spread's size is its longer-maturity reference leg, said before it is saved,
+  // for the position as Save would record it (its subject, and automatic on the plan's series or manual).
+  const prospective = (() => {
+    const subj = subject();
+    const plan = planFor(picked?.id ?? null, draft.instrument, levels, subj.kind);
+    return plan.kind === "manual" ? { subject: subj, monitoring: "manual" as const, trigger: null } : { subject: subj, monitoring: "automatic" as const, trigger: { series: plan.series } };
+  })();
+  const sizeHelp = spreadSizeHelp(prospective, levels);
+
   const save = () => {
     if (!ready) return;
     const finish = (text: string, tone: "saved" | "refused") => {
@@ -691,9 +714,14 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
             </div>
             <div className="pm-field">
               <label htmlFor={`${uid}-size`} className="dk-stat-label">
-                Size · % NAV
+                {sizeHelp ? "Size · % NAV of the longer-maturity (reference) leg" : "Size · % NAV"}
               </label>
-              <input id={`${uid}-size`} className="pm-input pm-mono" inputMode="decimal" value={draft.size} onChange={(e) => set("size", e.target.value)} autoComplete="off" />
+              <input id={`${uid}-size`} className="pm-input pm-mono" inputMode="decimal" value={draft.size} onChange={(e) => set("size", e.target.value)} autoComplete="off" aria-describedby={sizeHelp ? `${uid}-size-help` : undefined} />
+              {sizeHelp ? (
+                <p id={`${uid}-size-help`} className="pm-step-hint" data-testid="pm-spread-size">
+                  {sizeHelp}
+                </p>
+              ) : null}
             </div>
             <div className="pm-field">
               <label htmlFor={`${uid}-hz`} className="dk-stat-label">
