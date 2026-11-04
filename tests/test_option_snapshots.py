@@ -60,8 +60,10 @@ def make_chain(spec: dict[str, int], stamp: str = STAMP) -> list[dict]:
 
 class FakeEodhd:
     def __init__(self, rows: list[dict], *, inclusive: bool = True, fail_after: int | None = None,
-                 fail_status: int = 503, probe_rows: list[dict] | None = None, dup_exp: str | None = None):
+                 fail_status: int = 503, probe_rows: list[dict] | None = None, dup_exp: str | None = None,
+                 tamper=None):
         self.rows = rows
+        self.tamper = tamper  # (query, page rows) -> page rows: a provider answer the test wants to be wrong
         self.inclusive = inclusive
         self.calls: list[dict] = []
         self.fail_after = fail_after
@@ -94,6 +96,8 @@ class FakeEodhd:
             keep = fields.split(",")
             page = [{k: r[k] for k in keep if k in r} for r in page]
         nxt = f"https://eodhd.com/api/next?page%5Boffset%5D={off + lim}" if off + lim < len(sel) else None
+        if self.tamper is not None:
+            page = self.tamper(q, page)
         return httpx.Response(200, json={"meta": {"offset": off, "limit": lim},
                                          "data": [{"id": r.get("contract"), "type": "options-contracts", "attributes": r} for r in page],
                                          "links": {"next": nxt}})
@@ -554,3 +558,96 @@ def test_an_interrupted_upload_is_kept_and_the_next_attempt_takes_a_new_number(t
     assert store.attempts(SESSION) == [] and store.taken(SESSION) == {1}
     r = go(FakeEodhd(make_chain(SPEC)), store)
     assert r.state == "stored" and r.attempt == 2 and orphan.read_bytes() == b"cut off"
+
+
+# ── Max's A-2 pre-merge cases (2026-11-04): reproduced, fixed, pinned ──
+
+
+def _empty_for(exp: str, type_: str | None = None):
+    def tamper(q, page):
+        if q.get("filter[exp_date_eq]") == exp and (type_ is None or q.get("filter[type]") == type_):
+            return []
+        return page
+    return tamper
+
+
+def test_a2_case1_a_listed_expiry_answering_no_rows_is_never_complete(tmp_path):
+    """Reproduced at 5301606: the listing saw 2026-11-04, the exact fetch answered no rows and no next link,
+    and the expiry was recorded complete with 0 contracts, so the whole snapshot read complete."""
+    store = osn.LocalStore(tmp_path)
+    r = go(FakeEodhd(make_chain(SPEC), tamper=_empty_for("2026-11-04")), store)
+    rec = {e["exp_date"]: e for e in r.manifest["expiries"]}
+    assert rec["2026-11-04"] == {"exp_date": "2026-11-04", "contracts": 0, "calls": 0, "puts": 0, "requests": 1,
+                                 "complete": False, "reason": "no_rows"}
+    assert r.state == "stored_partial" and r.manifest["complete"] is False
+    assert "expiry_incomplete" in r.manifest["incomplete_reasons"]
+    assert r.manifest["expiries_complete"] == len(SPEC) - 1
+    # the partial attempt stays, and a later run with a whole answer completes the session as attempt 2
+    r2 = go(FakeEodhd(make_chain(SPEC)), store)
+    assert (r2.state, r2.attempt) == ("stored", 2)
+    assert [m["complete"] for m in store.attempts(SESSION)] == [False, True]
+
+
+def test_a2_case1_a_listed_expiry_with_one_side_missing_is_never_complete(tmp_path, monkeypatch):
+    """The provider answers an expiry's calls whole and no puts at all: listed, paged to the end, unique, and
+    still not a whole SPY expiry. Both the one-page path and the by-type path (2026-12-18 at 100 a page)."""
+    monkeypatch.setattr(osn, "PAGE_LIMIT", 100)
+    for exp in ("2026-12-18", "2026-11-03"):
+        chain = [r for r in make_chain(SPEC) if not (r["exp_date"] == exp and r["type"] == "put")]
+        r = go(FakeEodhd(chain), osn.LocalStore(tmp_path / exp))
+        rec = {e["exp_date"]: e for e in r.manifest["expiries"]}[exp]
+        assert rec["complete"] is False and rec["reason"] == "type_missing" and rec["puts"] == 0 and rec["calls"] == SPEC[exp]
+        assert r.state == "stored_partial" and r.manifest["expiries_complete"] == len(SPEC) - 1
+
+
+def _strip_symbol(exp: str, *, value=None, drop=True):
+    def tamper(q, page):
+        if q.get("filter[exp_date_eq]") == exp and page:
+            bad = dict(page[0], contract="QQQ261106C00400000")
+            if drop:
+                bad.pop("underlying_symbol", None)
+            else:
+                bad["underlying_symbol"] = value
+            return page + [bad]
+        return page
+    return tamper
+
+
+@pytest.mark.parametrize("drop, value", [(True, None), (False, None), (False, "QQQ"), (False, "spy")])
+def test_a2_case2_a_row_not_naming_spy_never_passes(tmp_path, drop, value):
+    """Reproduced at 5301606: a QQQ contract with no underlying_symbol, served inside a SPY expiry, passed
+    the expiry check and was stored in a complete snapshot."""
+    chain = make_chain(SPEC)
+    r = go(FakeEodhd(chain, tamper=_strip_symbol("2026-11-06", value=value, drop=drop)), osn.LocalStore(tmp_path))
+    assert r.state == "stored_partial" and "provider_contradiction" in r.manifest["incomplete_reasons"]
+    rows, man, _ = read_stored(tmp_path, SESSION)
+    assert not any(x["contract"].startswith("QQQ") for x in rows)
+    assert all(x["underlying_symbol"] == "SPY" for x in rows)
+    rec = {e["exp_date"]: e for e in man["expiries"]}
+    assert rec["2026-11-06"]["complete"] is False and rec["2026-11-06"]["reason"] == "not_fetched"
+    assert all(rec[e]["complete"] for e in ("2026-11-02", "2026-11-03", "2026-11-04"))  # earlier expiries kept
+
+
+def test_a2_case2_the_probe_and_listing_must_name_spy_too(tmp_path):
+    def probe_tamper(q, page):
+        return [{k: v for k, v in r.items() if k != "underlying_symbol"} for r in page] if q.get("page[limit]") == str(osn.PROBE_LIMIT) else page
+    fake = FakeEodhd(make_chain(SPEC), tamper=probe_tamper)
+    r = go(fake, osn.LocalStore(tmp_path))
+    assert (r.state, r.detail, len(fake.calls)) == ("provider_error", "contradiction", 1)
+    assert fake.calls[0]["fields[options-contracts]"] == osn.PROBE_FIELDS and "underlying_symbol" in osn.PROBE_FIELDS
+
+    def list_tamper(q, page):
+        if q.get("fields[options-contracts]") == osn.LIST_FIELDS:
+            return [dict(x, underlying_symbol="QQQ") for x in page]
+        return page
+    fake = FakeEodhd(make_chain(SPEC), tamper=list_tamper)
+    r = go(fake, osn.LocalStore(tmp_path / "b"))
+    assert r.state == "provider_error" and r.detail == "no_rows"  # nothing collected, nothing stored
+    assert "provider_contradiction" in r.manifest["incomplete_reasons"]
+    assert not list((tmp_path / "b").rglob("*.json"))
+
+
+def test_a2_case2_rows_belong_rejects_a_missing_symbol():
+    row = make_chain({"2026-11-03": 1})[0]
+    assert osn._rows_belong([row], "2026-11-03", None)
+    assert not osn._rows_belong([{k: v for k, v in row.items() if k != "underlying_symbol"}], "2026-11-03", None)

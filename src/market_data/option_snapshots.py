@@ -18,10 +18,13 @@ What one run does, in order, and where it stops:
      no call made.
   4. One probe request names the session the provider's end-of-day marks describe (the Options Finder's
      chain_session rule, imported, not copied). Unnamed: "session_unknown". Already stored: done.
-  5. Lists every expiry from that session on (seek pages sorted by expiry, fields=exp_date), then fetches each
-     expiry exactly (exp_date_eq; split by type and paged by strike when one page cannot hold it). An expiry
-     is complete only when its last page has no next link, its contract ids are unique, and every row names
-     SPY, that expiry (and type). The provider sends no total, so that is the evidence, recorded per expiry.
+  5. Lists every expiry from that session on (seek pages sorted by expiry), then fetches each expiry exactly
+     (exp_date_eq; split by type and paged by strike when one page cannot hold it). Every row of every page,
+     probe and listing included, must name SPY in underlying_symbol; a row that names another underlying or
+     none stops the run (provider_contradiction). An expiry is complete only when its last page has no next
+     link, it has rows of both types, its contract ids are unique, and every row names SPY, that expiry (and
+     type); a listed expiry that answers no rows is "no_rows", one side missing "type_missing", both
+     incomplete. The provider sends no total, so that is the evidence, recorded per expiry.
   6. Writes the raw provider rows, unmodified, as gzip JSON lines (sorted, deterministic) plus a manifest:
      schema version, provider, the quote session, the retrieval start and end, per-expiry counts and
      completeness, the session each row's marks describe, the request count and the data file's SHA-256. A
@@ -95,6 +98,8 @@ MAX_ATTEMPTS = 4  # stored attempts per session; a session that never completes 
 PAGE_LIMIT = 1000  # the provider's page maximum (api/providers/eodhd.py clamps to it)
 MAX_OFFSET = 10000  # the client clamps offsets above this, so paging must stop before it
 PROBE_LIMIT = 100
+LIST_FIELDS = "exp_date,underlying_symbol"
+PROBE_FIELDS = "contract,underlying_symbol,exp_date,bid_date,ask_date"
 MIN_INTERVAL_S = 0.25  # 4 requests a second, under the client's 5-a-second bucket
 REQUEST_TIMEOUT_S = 30.0
 # No client retry: the options quota (100,000 marketplace calls, 10 a request, a rolling 24 h from the first
@@ -393,6 +398,10 @@ class Fetcher:
         rows = [r.get("attributes", r) if isinstance(r, dict) else r for r in d.get("data") or []]
         if not all(isinstance(r, dict) for r in rows):
             raise Contradiction("a row that is not an object")
+        # Every request asks for underlying_symbol (the probe and listing name it in `fields`), and a row that
+        # does not name SPY, including one that leaves it out, stops the run: nothing on that page is relied on.
+        if any(r.get("underlying_symbol") != UNDERLYING for r in rows):
+            raise Contradiction("a row that does not name the underlying")
         return rows, bool((d.get("links") or {}).get("next"))
 
 
@@ -408,7 +417,7 @@ def list_expiries(fetch: Fetcher, start: date) -> tuple[list[str], bool]:
 
     while True:
         try:
-            rows, more = fetch(exp_date_from=anchor.isoformat(), sort="exp_date", limit=PAGE_LIMIT, fields="exp_date")
+            rows, more = fetch(exp_date_from=anchor.isoformat(), sort="exp_date", limit=PAGE_LIMIT, fields=LIST_FIELDS)
         except BudgetExhausted:
             return listed(), False
         dates = [_exp(r.get("exp_date")) for r in rows]
@@ -449,7 +458,7 @@ def _rows_belong(rows: list[dict], exp: str, type_: str | None) -> bool:
     for r in rows:
         if str(r.get("exp_date"))[:10] != exp or r.get("type") not in TYPES or (type_ and r.get("type") != type_):
             return False
-        if r.get("underlying_symbol") not in (None, UNDERLYING):
+        if r.get("underlying_symbol") != UNDERLYING:  # a missing symbol never passes (A-2, case 2)
             return False
     return True
 
@@ -474,8 +483,15 @@ def fetch_expiry(fetch: Fetcher, exp: str) -> tuple[list[dict], dict]:
                 reason = "rows_inconsistent"
         if reason is None and not _rows_belong(rows, exp, None):
             reason = "rows_inconsistent"
-    rec = {"exp_date": exp, "contracts": len(rows), "calls": sum(r.get("type") == "call" for r in rows),
-           "puts": sum(r.get("type") == "put" for r in rows), "requests": n, "complete": reason is None}
+    calls, puts = sum(r.get("type") == "call" for r in rows), sum(r.get("type") == "put" for r in rows)
+    # The listing saw this expiry, so an answer with no rows contradicts it, and a listed SPY expiry carries
+    # both calls and puts: either is an incomplete expiry, never a complete one with nothing in it (A-2, case 1).
+    if reason is None and not rows:
+        reason = "no_rows"
+    elif reason is None and not (calls and puts):
+        reason = "type_missing"
+    rec = {"exp_date": exp, "contracts": len(rows), "calls": calls, "puts": puts, "requests": n,
+           "complete": reason is None}
     if reason:
         rec["reason"] = reason
     return rows, rec
@@ -653,7 +669,7 @@ def run(*, token: str | None, store: Store | None, now: datetime | None = None,
         return Result("storage_refused" if str(exc).startswith("refused") else "storage_failed", detail=_word(exc))
     fetch = Fetcher(client or eod.EodhdClient(token, timeout=REQUEST_TIMEOUT_S, max_retries=CLIENT_RETRIES), sleep=sleep)
     try:
-        probe, _ = fetch(exp_date_from=expected, sort="exp_date", limit=PROBE_LIMIT, fields="contract,exp_date,bid_date,ask_date")
+        probe, _ = fetch(exp_date_from=expected, sort="exp_date", limit=PROBE_LIMIT, fields=PROBE_FIELDS)
     except ProviderError as exc:
         state = "not_entitled" if exc.kind in ("unauthorized", "missing_token") else "provider_error"
         return Result(state, requests=fetch.used, detail=_provider_stop(exc))
