@@ -87,11 +87,11 @@ def load(cache: Path, series_id: str, *, refresh: bool = False, obs_start: str =
     p = cache_path(cache, series_id)
     if refresh or not p.exists():
         rows = fetch_vintages(series_id, obs_start)
-        p.parent.mkdir(parents=True, exist_ok=True)
+        from scripts.research import safeio
+
         meta = {"series_id": series_id, "obs_start": obs_start,
                 "fetched_at_utc": pd.Timestamp.now("UTC").strftime("%Y-%m-%dT%H:%M:%SZ"), "rows": rows}
-        with gzip.open(p, "wt") as f:
-            json.dump(meta, f)
+        safeio.write_bytes(p, gzip.compress(json.dumps(meta).encode()))
     with gzip.open(p, "rt") as f:
         meta = json.load(f)
     df = pd.DataFrame(meta["rows"])

@@ -30,6 +30,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import sqlite3
 import sys
@@ -38,7 +39,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scripts.research import alfred
+from scripts.research import alfred, safeio
 
 # The window the served run used: the stored rows from the newest run start
 # here (the 30-year lookback's start on the run date, see check_replica).
@@ -46,6 +47,7 @@ from scripts.research import alfred
 OBS_START = "1996-11-01"
 LABELS = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
 PROB_COLS = ("prob_goldilocks", "prob_overheating", "prob_stagflation", "prob_recession")
+OUTPUTS = ("regime_histories.csv", "regime_labels_by_vintage.csv.gz", "regime_summary.json")
 LAG = 2  # src/desk/event_study.REGIME_LAG_MONTHS (asserted in main)
 
 
@@ -285,6 +287,8 @@ def run(cache: Path, db: Path, out: Path) -> dict:
     from src.desk import event_study as es
 
     assert es.REGIME_LAG_MONTHS == LAG, "the Desk's lag changed; re-read the study's timing section"
+    outputs = [out / f for f in OUTPUTS]
+    safeio.guard_outputs(db, outputs)  # Codex S-7: before any computation
     ind_t, cpi_t = alfred.load(cache, "INDPRO"), alfred.load(cache, "CPIAUCSL")
     reps = replay_all(ind_t, cpi_t)
     replica = check_replica(db, reps, ind_t, cpi_t)
@@ -314,12 +318,11 @@ def run(cache: Path, db: Path, out: Path) -> dict:
         "dominant_prob_abs_diff_first_known": _prob_diff(h),
         "timing": timing(known, pd.PeriodIndex(h.index, freq="M")),
     }
-    out.mkdir(parents=True, exist_ok=True)
-    h.to_csv(out / "regime_histories.csv")
+    safeio.write_text(out / "regime_histories.csv", h.to_csv(), db=db)
     # the per-vintage label table, for the event-study and drill-down runs
     long = pd.concat({v: r["label"] for v, r in reps.items()}, names=["vintage", "month"]).rename("label")
-    long.to_frame().to_csv(out / "regime_labels_by_vintage.csv.gz", compression="gzip")
-    (out / "regime_summary.json").write_text(json.dumps(res, indent=2, default=str))
+    safeio.write_bytes(out / "regime_labels_by_vintage.csv.gz", gzip.compress(long.to_frame().to_csv().encode(), mtime=0), db=db)
+    safeio.write_text(out / "regime_summary.json", json.dumps(res, indent=2, default=str), db=db)
     return res
 
 

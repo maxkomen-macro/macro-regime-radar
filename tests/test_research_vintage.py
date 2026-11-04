@@ -238,3 +238,92 @@ def test_a_snapshot_onto_its_own_source_is_refused_and_the_source_survives(tmp_p
     with pytest.raises(ValueError, match="is the source"):
         make_scratch_db(src, src, {"2024-01": "Stagflation"})
     assert _labels(src) == [("2024-01-01", "Overheating")]
+
+
+# Codex S-7: no output file can be, or write through to, the source database.
+
+@pytest.mark.parametrize("target", ["store.db", "store.db-wal", "store.db-shm", "store.db-journal"])
+def test_an_output_symlinked_to_the_source_or_a_sidecar_is_refused(tmp_path, target):
+    from scripts.research import safeio
+
+    src = _db(tmp_path / "store.db")
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "summary.json").symlink_to(tmp_path / target)
+    with pytest.raises(safeio.OutputAliasesSource):
+        safeio.guard_outputs(src, [out / "summary.json"])
+    with pytest.raises(safeio.OutputAliasesSource):
+        safeio.write_text(out / "summary.json", "{}", db=src)
+    assert _labels(src) == [("2024-01-01", "Overheating")]
+
+
+def test_an_output_hard_linked_to_the_source_is_refused(tmp_path):
+    import os
+
+    from scripts.research import safeio
+
+    src = _db(tmp_path / "store.db")
+    out = tmp_path / "out"
+    out.mkdir()
+    os.link(src, out / "summary.json")
+    with pytest.raises(safeio.OutputAliasesSource):
+        safeio.guard_outputs(src, [out / "summary.json"])
+    assert _labels(src) == [("2024-01-01", "Overheating")]
+    safeio.guard_outputs(src, [out / "other.json"])  # an unrelated output is fine
+
+
+def test_a_write_replaces_a_symlink_instead_of_writing_through_it(tmp_path):
+    from scripts.research import safeio
+
+    src = _db(tmp_path / "store.db")
+    before = src.read_bytes()
+    link = tmp_path / "summary.json"
+    link.symlink_to(src)  # created after any check: the write itself must not follow it
+    safeio.write_text(link, "{}")
+    assert not link.is_symlink() and link.read_text() == "{}"
+    assert src.read_bytes() == before and _labels(src) == [("2024-01-01", "Overheating")]
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["store.db", "summary.json"]  # no temporary left
+
+
+def _alias_out(tmp_path, src, name):
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / name).symlink_to(src)
+    return out
+
+
+def _no_load(*a, **k):
+    raise AssertionError("computation started before the output check")
+
+
+def test_the_regime_run_refuses_an_aliased_output_before_computing(tmp_path, monkeypatch):
+    from scripts.research import alfred as al, safeio, vintage_regime
+
+    src = _db(tmp_path / "store.db")
+    monkeypatch.setattr(al, "load", _no_load)
+    with pytest.raises(safeio.OutputAliasesSource):
+        vintage_regime.run(tmp_path / "cache", src, _alias_out(tmp_path, src, "regime_summary.json"))
+    assert _labels(src) == [("2024-01-01", "Overheating")]
+
+
+def test_the_recession_run_refuses_an_aliased_output_before_computing(tmp_path, monkeypatch):
+    from scripts.research import alfred as al, safeio, vintage_recession
+
+    src = _db(tmp_path / "store.db")
+    monkeypatch.setattr(al, "load", _no_load)
+    with pytest.raises(safeio.OutputAliasesSource):
+        vintage_recession.run(tmp_path / "cache", src, _alias_out(tmp_path, src, "recession_histories.csv"))
+    assert _labels(src) == [("2024-01-01", "Overheating")]
+
+
+def test_the_studies_run_refuses_an_aliased_output_before_computing(tmp_path):
+    from scripts.research import safeio, vintage_studies
+
+    src = _db(tmp_path / "store.db")
+    out = _alias_out(tmp_path, src, "studies_summary.json")
+    with pytest.raises(safeio.OutputAliasesSource):
+        vintage_studies.main(["--db", str(src), "--labels", str(tmp_path / "missing.csv.gz"),
+                              "--histories", str(tmp_path / "missing.csv"), "--scratch", str(tmp_path / "scratch"),
+                              "--out", str(out)])
+    assert _labels(src) == [("2024-01-01", "Overheating")]
+    assert not (tmp_path / "scratch").exists()

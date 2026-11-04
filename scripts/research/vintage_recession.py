@@ -37,9 +37,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from scripts.research import alfred
+from scripts.research import alfred, safeio
 
 VINTAGED = ("UNRATE", "INDPRO", "USREC")
+OUTPUTS = ("recession_histories.csv", "recession_summary.json")
 BAND_EDGES = (20.0, 40.0)  # percent: recession._classify_prob and desk_items_macro.RECESSION_BAND_EDGES
 
 
@@ -111,6 +112,7 @@ def row_known_dates(tables: dict[str, pd.DataFrame]) -> pd.Series:
 def run(cache: Path, db: Path, out: Path) -> dict:
     from src.analytics import recession as rec
 
+    safeio.guard_outputs(db, [out / f for f in OUTPUTS])  # Codex S-7: before any computation
     rec.DB_PATH = db  # read-only either way (dbpath.connect_ro)
     tables = {s: alfred.load(cache, s) for s in VINTAGED}
     conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
@@ -157,8 +159,7 @@ def run(cache: Path, db: Path, out: Path) -> dict:
         conn.close()
 
     df = pd.DataFrame(recs).set_index("month")
-    out.mkdir(parents=True, exist_ok=True)
-    df.to_csv(out / "recession_histories.csv")
+    safeio.write_text(out / "recession_histories.csv", df.to_csv(), db=db)
 
     def cmp(col: str) -> dict:
         d = df.dropna(subset=[col])
@@ -189,7 +190,7 @@ def run(cache: Path, db: Path, out: Path) -> dict:
         "usrec_first_vintage": alfred.first_release(tables["USREC"])["published"].min(),
         "alfred_fetched_at_utc": {s: t.attrs.get("fetched_at_utc") for s, t in tables.items()},
     }
-    (out / "recession_summary.json").write_text(json.dumps(res, indent=2, default=str))
+    safeio.write_text(out / "recession_summary.json", json.dumps(res, indent=2, default=str), db=db)
     return res
 
 

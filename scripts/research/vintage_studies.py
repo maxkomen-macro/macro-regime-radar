@@ -39,6 +39,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from scripts.research import safeio
+
 PRIMARY_H = 20
 
 
@@ -233,6 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     a = ap.parse_args(argv)
 
     check_paths(a.db, a.scratch)
+    safeio.guard_outputs(a.db, [a.out / "studies_summary.json"])  # Codex S-7: before any computation
 
     from src.desk import event_study as es
 
@@ -258,8 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         "point_in_time_vs_served": compare(served, pit),
         "regime_stats": {"served": regime_stats_for(base, None), "governed_start": regime_stats_for(base, gov)},
     }
-    a.out.mkdir(parents=True, exist_ok=True)
-    (a.out / "studies_summary.json").write_text(json.dumps(res, indent=2, default=str))
+    safeio.write_text(a.out / "studies_summary.json", json.dumps(res, indent=2, default=str), db=a.db)
     for name in ("governed_start_vs_served", "point_in_time_vs_served"):
         print(f"\n== {name}")
         for slug, c in res[name].items():
