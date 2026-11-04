@@ -106,6 +106,8 @@ class Store:
 
         raw: dict[str, Any] = {}
         self.missing: list[str] = []
+        self.regimes: Any = None   # the stored regime rows by month (event_study.load_regimes), set by desk_etf
+        self._labels: Any = None
         for k in keys:
             try:
                 raw[k] = es.load_level(conn, registry.get(k), cutoff)
@@ -138,6 +140,19 @@ class Store:
             al, _bad, _why = es.validate_values(al, registry.get(k))
             self.px[k] = al.to_numpy(dtype=float)
         self._np = np
+
+    def labels(self):
+        """Each session's regime label under the engine's rule (event_study.regime_at: a session in month K takes
+        the row stamped K − 2, else Unlabeled), as an object array over `sessions`; None without regime rows."""
+        import numpy as np
+
+        from src.desk import event_study as es
+
+        if self.regimes is None or len(self.regimes) == 0:
+            return None
+        if self._labels is None:
+            self._labels = np.asarray(es.regime_at(self.sessions, self.regimes), dtype=object)
+        return self._labels
 
     def providers_of(self, keys) -> list[str]:
         """The providers of the stored series among `keys`, the ones a block reads
@@ -395,35 +410,28 @@ def _corr_at(corr, i: int) -> float | None:
     return v if math.isfinite(v) else None
 
 
-def incomplete(store: Store, t: int) -> str:
-    return f"fewer than {CORR_WINDOW} complete daily return pairs in the window to {store.iso[t]}"
+def incomplete(store: Store, t: int, w: int = CORR_WINDOW) -> str:
+    return f"fewer than {w} complete daily return pairs in the window to {store.iso[t]}"
 
 
-def why_no_corr(store: Store, x, y, t: int) -> str:
+def why_no_corr(store: Store, x, y, t: int, w: int = CORR_WINDOW) -> str:
     """Why the correlation on session t is null: an incomplete window, or one
     of the two series without any variation in it."""
     import numpy as np
 
-    lo = t - CORR_WINDOW + 1
+    lo = t - w + 1
     if lo < 0 or not (np.isfinite(x[lo:t + 1]).all() and np.isfinite(y[lo:t + 1]).all()):
-        return incomplete(store, t)
+        return incomplete(store, t, w)
     return f"no variation in one of the two series in the window to {store.iso[t]}"
 
 
-def stock_bond(store: Store) -> dict:
-    """The /macro stock_bond block: SPY against TLT, today, a year ago, the
-    last change of sign, and the one-year line."""
+def stock_bond_at(store: Store, rs, rt, t: int, w: int = CORR_WINDOW) -> dict:
+    """SPY against TLT over w daily returns: today (session t), a year ago, the
+    last change of sign and the one-year line (the stock_bond rules, at w)."""
     import numpy as np
     import pandas as pd
 
-    missing = [k.upper() for k in (BENCHMARK, "tlt") if not store.has(k)]
-    if missing:
-        raise awaiting_refresh(missing)
-    rs, rt = daily_returns(store, BENCHMARK), daily_returns(store, "tlt")
-    corr = rolling_corr(rs, rt)
-    t = both_close(store, BENCHMARK, "tlt")
-    if t is None:
-        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    corr = rolling_corr(rs, rt, w)
     today = _corr_at(corr, t)
     ago = int(store.sessions.searchsorted(store.sessions[t] - pd.DateOffset(months=12), side="right")) - 1
     year_ago = _corr_at(corr, ago) if ago >= 0 else None
@@ -435,15 +443,34 @@ def stock_bond(store: Store) -> dict:
         if now != prev:
             flipped_on, flipped_to = store.iso[int(i)], ("positive" if now > 0 else "negative")
     return {
-        "today": today, "today_date": store.iso[t], "today_reason": None if today is not None else why_no_corr(store, rs, rt, t),
+        "today": today, "today_date": store.iso[t], "today_reason": None if today is not None else why_no_corr(store, rs, rt, t, w),
         "year_ago": year_ago, "year_ago_date": store.iso[ago] if ago >= 0 else None,
         "flipped": flipped_on[:7] if flipped_on else None, "flipped_on": flipped_on, "flipped_to": flipped_to,
         "series": series,
-        "window": {"start": store.iso[max(t - CORR_WINDOW + 1, 0)], "end": store.iso[t], "n": CORR_WINDOW},
+        "window": {"start": store.iso[max(t - w + 1, 0)], "end": store.iso[t], "n": w},
         "line_window": {"start": series[0]["date"] if series else store.iso[t], "end": store.iso[t], "n": len(series)},
+    }
+
+
+def stock_bond(store: Store, views: bool = False) -> dict:
+    """The /macro stock_bond block: SPY against TLT, today, a year ago, the
+    last change of sign, and the one-year line, at 60 daily returns; with
+    `views` (desk P1b) the same at 20, 60 and 120 under `by_horizon`."""
+    missing = [k.upper() for k in (BENCHMARK, "tlt") if not store.has(k)]
+    if missing:
+        raise awaiting_refresh(missing)
+    rs, rt = daily_returns(store, BENCHMARK), daily_returns(store, "tlt")
+    t = both_close(store, BENCHMARK, "tlt")
+    if t is None:
+        raise env.Awaiting(env.BLOCK_FAILED_REASON)
+    return {
+        **stock_bond_at(store, rs, rt, t),
         "stock": {"etf": "SPY", "name": "S&P 500 ETF"}, "bond": {"etf": "TLT", "name": "20+ year Treasury ETF"},
         "transform": "daily log return", "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
         "providers": provider_words(store.providers_of([BENCHMARK, "tlt"])),
+        **({"horizons": list(HORIZONS),
+            "by_horizon": {str(w): {**stock_bond_at(store, rs, rt, t, w), "horizon": w, "noise_band": noise_band(w)}
+                           for w in HORIZONS}} if views else {}),
     }
 
 
@@ -472,10 +499,13 @@ def corr_at(x, y, t: int, w: int = CORR_WINDOW) -> float | None:
     return r if math.isfinite(r) else None
 
 
-def correlations(store: Store) -> list[dict]:
+def correlations(store: Store, views: bool = False) -> list[dict]:
     """The /macro correlations block: each asset against SPY, 60 daily returns
     to its own newest session with both values; a row the store cannot compute
-    says why. VIX is listed only when the store holds it."""
+    says why. VIX is listed only when the store holds it. With `views` (desk P1b),
+    each row also carries `by_horizon` (20, 60 and 120 returns to the same
+    session) and `by_regime` (CORRELATION_VIEWS.md §4), null when the row has
+    no session to end on."""
     from src.desk import series as registry
 
     if not store.has(BENCHMARK):
@@ -488,7 +518,8 @@ def correlations(store: Store) -> list[dict]:
         row = {"asset": name, "symbol": spec.series_id,
                "quantity": "index level (^VIX)" if key == "vix" else "adjusted close",
                "transform": "daily log change" if key == "vix" else "daily log return",
-               "corr": None, "date": None, "window": None, "reason": None}
+               "corr": None, "date": None, "window": None, "reason": None,
+               **({"by_horizon": None, "by_regime": None} if views else {})}
         if not store.has(key):
             row["reason"] = awaiting_refresh([spec.series_id]).reason
             rows.append(row)
@@ -503,10 +534,136 @@ def correlations(store: Store) -> list[dict]:
         row.update({"corr": r, "date": store.iso[t],
                     "window": {"start": store.iso[max(t - CORR_WINDOW + 1, 0)], "end": store.iso[t], "n": CORR_WINDOW},
                     "reason": None if r is not None else why_no_corr(store, spy, ra, t)})
+        if views:
+            row["by_horizon"] = {str(w): pair_at(store, spy, ra, t, w) for w in HORIZONS}
+            row["by_regime"] = by_regime(store, spy, ra, t)
         rows.append(row)
     if all(r["corr"] is None and r["reason"] and r["reason"].startswith("Awaiting refresh") for r in rows):
         raise awaiting_refresh([r["symbol"] for r in rows])
     return rows
+
+
+# ── Correlation windows and correlation by regime (desk P1b) ───────────────
+# docs/desk/CORRELATION_VIEWS.md is the method; each rule below names its section.
+
+HORIZONS = (20, 60, 120)          # §3: about one month, one quarter and six months of sessions
+NOISE_Z = 1.6448536269514722      # §3: the standard normal's 95th percentile, a two-sided 90% band
+NOISE_RULE = "fisher-z-90-iid"
+MIN_REGIME_RETURNS = 60           # §4: a regime needs the default window's count of returns
+REGIME_HISTORY = "revised"
+AS_KNOWN_REASON = ("As known at the time is not available yet: it needs the point-in-time regime history "
+                   "(the approved point-in-time plan), which is not built.")
+
+
+def noise_band(w: int) -> float:
+    """§3: how far from zero a sample correlation of w independent normal
+    return pairs lands one time in ten when the true correlation is zero,
+    tanh(z₀.₉₅ / √(w − 3)). A floor on the noise, not an interval."""
+    return math.tanh(NOISE_Z / math.sqrt(w - 3))
+
+
+def pair_at(store: Store, x, y, t: int, w: int) -> dict:
+    """§3: one pair's correlation over the w return dates ending at t, its window and its reason when null."""
+    r = corr_at(x, y, t, w)
+    return {"corr": r, "window": {"start": store.iso[max(t - w + 1, 0)], "end": store.iso[t], "n": w},
+            "reason": None if r is not None else why_no_corr(store, x, y, t, w), "horizon": w, "noise_band": noise_band(w)}
+
+
+def pearson(a, b) -> float | None:
+    """Pearson's r of two complete, equal-length samples; null without variation (corr_at's formula)."""
+    da, db = a - a.mean(), b - b.mean()
+    sab, saa, sbb = float((da * db).sum()), float((da * da).sum()), float((db * db).sum())
+    if saa == 0 or sbb == 0:
+        return None
+    r = sab / math.sqrt(saa * sbb)
+    return r if math.isfinite(r) else None
+
+
+def regime_rule() -> str:
+    from src.desk import event_study as es
+
+    return (f"Revised regime history: a daily return dated in month K takes the regimes row stamped "
+            f"K−{es.REGIME_LAG_MONTHS} months, the first month that row could govern (the event study's rule); "
+            f"returns without a row are Unlabeled and left out.")
+
+
+def by_regime(store: Store, x, y, t: int) -> dict:
+    """§4: the pair's correlation pooled within each regime of the revised
+    history, and over every labelled return, from the pair's first common
+    return through session t. Each regime carries n, its first and last
+    return, its spells (runs of consecutive months with the label holding a
+    return used) and the share of n in the largest spell."""
+    import numpy as np
+
+    from src.desk import event_study as es
+
+    out: dict[str, Any] = {"regime_history": REGIME_HISTORY, "rule": regime_rule(), "lag_months": es.REGIME_LAG_MONTHS,
+                           "as_known": None, "as_known_reason": AS_KNOWN_REASON, "min_n": MIN_REGIME_RETURNS,
+                           "current": None, "sample": None, "unlabeled_n": None, "incomplete_n": None,
+                           "regimes": [], "all": None, "reason": None}
+    labels = store.labels()
+    if labels is None:
+        out["reason"] = "no regime history is stored in this database"
+        return out
+    both = np.isfinite(x[:t + 1]) & np.isfinite(y[:t + 1])
+    idx = np.flatnonzero(both)
+    if not len(idx):
+        out["reason"] = f"no daily return both series hold through {store.iso[t]}"
+        return out
+    lo = int(idx[0])
+    ok, lab = both[lo:t + 1], labels[lo:t + 1]
+    xs, ys = x[lo:t + 1], y[lo:t + 1]
+    labelled = lab != es.UNLABELED
+    cur = labels[t]
+    out.update({"current": None if cur == es.UNLABELED else str(cur),
+                "sample": {"start": store.iso[lo], "end": store.iso[t]},
+                "unlabeled_n": int((ok & ~labelled).sum()), "incomplete_n": int((~ok).sum())})
+    # Spells: runs of consecutive calendar months with one label (a month without a row breaks a run).
+    sess = store.sessions[lo:t + 1]
+    mi = np.asarray(sess.year * 12 + sess.month - 1, dtype=int)
+    span = np.arange(mi[0], mi[-1] + 1)
+    mlab = [labels_of_month(store.regimes, int(m), es.REGIME_LAG_MONTHS) for m in span]
+    run = np.zeros(len(span), dtype=int)
+    for k in range(1, len(span)):
+        run[k] = run[k - 1] + (0 if mlab[k] is not None and mlab[k] == mlab[k - 1] else 1)
+    date_run = run[mi - mi[0]]
+
+    def stat(sel, name: str) -> dict:
+        n = int(sel.sum())
+        row: dict[str, Any] = {"corr": None, "n": n, "first": None, "last": None, "reason": None}
+        if n:
+            used = np.flatnonzero(sel)
+            row["first"], row["last"] = store.iso[lo + int(used[0])], store.iso[lo + int(used[-1])]
+        if n < MIN_REGIME_RETURNS:
+            row["reason"] = (f"only {n} daily {'return' if n == 1 else 'returns'} in {name}; "
+                             f"a correlation needs {MIN_REGIME_RETURNS}")
+            return row
+        r = pearson(xs[sel], ys[sel])
+        row["corr"] = r
+        if r is None:
+            row["reason"] = f"no variation in one of the two series in {name}"
+        return row
+
+    for name in es.REGIME_LABELS:
+        sel = ok & (lab == name)
+        row = {"regime": name, **stat(sel, name), "spells": 0, "largest_spell_share": None}
+        if row["n"]:
+            counts = np.bincount(date_run[sel])
+            counts = counts[counts > 0]
+            row["spells"] = int(len(counts))
+            row["largest_spell_share"] = float(counts.max()) / row["n"]
+        out["regimes"].append(row)
+    out["all"] = stat(ok & labelled, "the labelled history")
+    return out
+
+
+def labels_of_month(months, m: int, lag: int) -> str | None:
+    """The label governing calendar month m (year·12 + month − 1): the row stamped m − lag, else None."""
+    import pandas as pd
+
+    key = pd.Period(year=(m - lag) // 12, month=(m - lag) % 12 + 1, freq="M")
+    v = months.get(key)
+    return v if isinstance(v, str) else None
 
 
 # ── The 12-asset matrix (§12.8 `matrix`, desk/matrix) ──────────────────────
@@ -530,28 +687,28 @@ def common_close(store: Store, keys: list[str]) -> int | None:
     return int(idx[-1]) if len(idx) else None
 
 
-def coverage(x, t: int) -> int:
-    """How many of the CORR_WINDOW return dates ending at t hold a return of x
+def coverage(x, t: int, w: int = CORR_WINDOW) -> int:
+    """How many of the w return dates ending at t hold a return of x
     (a return needs its session's close and the previous one's)."""
     import numpy as np
 
-    return int(np.isfinite(x[max(t - CORR_WINDOW + 1, 0):t + 1]).sum())
+    return int(np.isfinite(x[max(t - w + 1, 0):t + 1]).sum())
 
 
-def why_no_window(store: Store, key: str, x, t: int) -> str | None:
-    """Why one asset has no 60-date window to t, or None when it has one: the
-    returns it holds of the 60, and the first one missing (Codex R-02)."""
+def why_no_window(store: Store, key: str, x, t: int, w: int = CORR_WINDOW) -> str | None:
+    """Why one asset has no w-date window to t, or None when it has one: the
+    returns it holds of the w, and the first one missing (Codex R-02)."""
     import numpy as np
 
-    lo = t - CORR_WINDOW + 1
-    have = coverage(x, t)
-    if have < CORR_WINDOW:
+    lo = t - w + 1
+    have = coverage(x, t, w)
+    if have < w:
         if lo < 1:
             first = f"the stored calendar starts {store.iso[0]}"
         else:
             i = lo + int(np.flatnonzero(~np.isfinite(x[lo:t + 1]))[0])
             first = store.gap_reason(key, i) or store.gap_reason(key, i - 1)
-        return f"only {have} of {CORR_WINDOW} daily returns in the window to {store.iso[t]}: {first}"
+        return f"only {have} of {w} daily returns in the window to {store.iso[t]}: {first}"
     w = x[lo:t + 1]
     if float(((w - w.mean()) ** 2).sum()) == 0:
         return f"no variation in the window to {store.iso[t]}"
@@ -599,10 +756,38 @@ def no_valid_close(store: Store, key: str) -> str:
     return f"no valid close among its {n} stored {'row' if n == 1 else 'rows'} (each must be a finite, positive close on an XNYS session)"
 
 
-def matrix(store: Store) -> dict:
+def matrix_at(store: Store, keys: list[str], symbols: list[str], reasons: dict[str, str | None], rets: dict,
+              t: int, w: int = CORR_WINDOW) -> dict:
+    """The matrix over the w daily returns to session t: every pair of the
+    assets with a complete window at w, the others "no data" with the reason
+    (`reasons` holds the horizon-free ones: not stored, no valid close)."""
+    why = {k: reasons[k] if k not in rets else why_no_window(store, k, rets[k], t, w) for k in keys}
+    ok = [k for k in keys if why[k] is None]
+    values: list[list[float | None]] = []
+    for a in keys:
+        row: list[float | None] = []
+        for b in keys:
+            row.append(corr_at(rets[a], rets[b], t, w) if a in ok and b in ok else None)
+        values.append(row)
+    # Codex R-02: the requested horizon apart from what was observed. `window.n` counts the return dates the
+    # calendar holds in the window (fewer than the horizon when it starts inside it), `coverage` the returns each
+    # asset holds there; a pair is served only when both assets hold all `horizon` of them.
+    first = max(t - w + 1, 1)
+    observed = t - first + 1 if t >= 1 else 0
+    return {
+        "no_data": [{"symbol": sym, "reason": why[k]} for k, sym in zip(keys, symbols) if why[k] is not None],
+        "values": values,
+        "window": {"start": store.iso[first] if observed else store.iso[t], "end": store.iso[t], "n": observed},
+        "coverage": [coverage(rets[k], t, w) if k in rets else None for k in keys],
+        "lead": matrix_lead(symbols, values),
+    }
+
+
+def matrix(store: Store, views: bool = False) -> dict:
     """The /macro matrix block: every pair of the twelve assets over the 60
     daily returns to the newest session every asset with a valid close
-    closes on."""
+    closes on; with `views` (desk P1b) the same at 20, 60 and 120 returns to
+    that session under `by_horizon`."""
     from src.desk import series as registry
 
     keys = [k for k, _ in MATRIX_ASSETS]
@@ -622,40 +807,44 @@ def matrix(store: Store) -> dict:
     reasons: dict[str, str | None] = {}
     for k, sym in zip(keys, symbols):
         if k in rets:
-            reasons[k] = why_no_window(store, k, rets[k], t)
+            reasons[k] = None  # judged per horizon (matrix_at)
         elif k in stored:
             reasons[k] = no_valid_close(store, k)
         else:
             reasons[k] = awaiting_refresh([sym]).reason
-    ok = [k for k in keys if reasons[k] is None]
-    values: list[list[float | None]] = []
-    for a in keys:
-        row: list[float | None] = []
-        for b in keys:
-            row.append(corr_at(rets[a], rets[b], t) if a in ok and b in ok else None)
-        values.append(row)
-    # Codex R-02: the requested horizon apart from what was observed. `window.n` counts the return dates the
-    # calendar holds in the window (fewer than the horizon when it starts inside it), `coverage` the returns each
-    # asset holds there; a pair is served only when both assets hold all `horizon` of them.
-    first = max(t - CORR_WINDOW + 1, 1)
-    observed = t - first + 1 if t >= 1 else 0
+    at = matrix_at(store, keys, symbols, reasons, rets, t)
     return {
         "assets": symbols, "labels": [name for _, name in MATRIX_ASSETS],
-        "no_data": [{"symbol": sym, "reason": reasons[k]} for k, sym in zip(keys, symbols) if reasons[k] is not None],
-        "values": values,
+        "no_data": at["no_data"],
+        "values": at["values"],
         "horizon": CORR_WINDOW,
-        "window": {"start": store.iso[first] if observed else store.iso[t], "end": store.iso[t], "n": observed},
-        "coverage": [coverage(rets[k], t) if k in rets else None for k in keys],
-        "lead": matrix_lead(symbols, values),
+        "window": at["window"],
+        "coverage": at["coverage"],
+        "lead": at["lead"],
         "quantity": "adjusted close (^VIX: index level)", "transform": "daily log return (^VIX: daily log change)",
         "unit": "correlation", "date": store.iso[t], "freq": "daily", "source": SOURCE,
         "providers": provider_words(store.providers_of(valid)),
+        **({"horizons": list(HORIZONS),
+            "by_horizon": {str(w): {**matrix_at(store, keys, symbols, reasons, rets, t, w), "horizon": w,
+                                    "noise_band": noise_band(w)} for w in HORIZONS}} if views else {}),
     }
 
 
 # ── The item ────────────────────────────────────────────────────────────────
 
 SECTOR_KEYS = ("xlb", "xlc", "xle", "xlf", "xli", "xlk", "xlp", "xlre", "xlu", "xlv", "xly")
+
+
+def _regimes(conn: Any):
+    """The stored regime rows (event_study.load_regimes), or None when the database has no regimes table."""
+    import sqlite3
+
+    from src.desk import event_study as es
+
+    try:
+        return es.load_regimes(conn)
+    except sqlite3.OperationalError:
+        return None
 
 
 def desk_etf(ctx: dict) -> dict:
@@ -667,6 +856,7 @@ def desk_etf(ctx: dict) -> dict:
     conn = _connect()
     try:
         store = Store(conn, [BENCHMARK, *SECTOR_KEYS, "rsp", "iwm", *(k for k, _ in CORR_ASSETS), VIX[0], "smh"], cutoff)
+        store.regimes = _regimes(conn)
     finally:
         conn.close()
     return {"sectors": part("sectors", lambda: leadership(store)), "breadth": part("breadth", lambda: breadth(store)),
