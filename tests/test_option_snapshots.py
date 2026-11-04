@@ -397,13 +397,54 @@ def test_s4_an_attempt_interrupted_before_its_manifest_is_reported(tmp_path, kin
     assert after["complete"] == [SESSION] and after["interrupted"] == [f"{SESSION}-a01"] and after["attempts"] == 2
 
 
-def test_s4_an_unreadable_manifest_counts_as_interrupted(tmp_path):
-    store = osn.LocalStore(tmp_path)
-    go(FakeEodhd(make_chain(SPEC)), store)
-    (tmp_path / "SPY" / "2026-11" / osn.asset_names(SESSION, 1)[1]).write_text("[not a manifest")
-    manifests, interrupted = store.inventory()
+@pytest.mark.parametrize("kind", ["local", "github"])
+@pytest.mark.parametrize("bad", [b"[not a manifest", b"[1, 2]"])
+def test_s5_an_unreadable_manifest_is_reported_interrupted_and_the_session_is_collected_again(tmp_path, kind, bad):
+    """The report and the collector read a manifest the same way: one that does not parse as an object is an
+    interrupted attempt. It stays, keeps its number, and the next run collects the session under the next."""
+    gh = FakeGitHub()
+    store = (lambda: osn.LocalStore(tmp_path)) if kind == "local" else (lambda: gh_store(gh))
+    assert go(FakeEodhd(make_chain(SPEC)), store()).state == "stored"
+    man_name = osn.asset_names(SESSION, 1)[1]
+    if kind == "local":
+        (tmp_path / "SPY" / "2026-11" / man_name).write_bytes(bad)
+    else:
+        aid = next(i for i, a in gh.assets.items() if a["name"] == man_name)
+        gh.blobs[aid] = bad
+    manifests, interrupted = store().inventory()
     assert manifests == [] and interrupted == [(SESSION, 1)]
-    assert "complete=0" in osn.report_line(store, NOW) and "interrupted=1" in osn.report_line(store, NOW)
+    line = osn.report_line(store(), NOW)
+    assert "complete=0" in line and f"interrupted=1 [{SESSION}-a01]" in line
+    assert store().attempts(SESSION) == [] and store().taken(SESSION) == {1}
+    r = go(FakeEodhd(make_chain(SPEC)), store())
+    assert r.state == "stored" and r.attempt == 2
+    manifests, interrupted = store().inventory()
+    h = osn.history(manifests, NOW, interrupted)
+    assert h["complete"] == [SESSION] and h["interrupted"] == [f"{SESSION}-a01"]
+    assert go(FakeEodhd(make_chain(SPEC)), store()).state == "already_stored"
+    if kind == "local":
+        assert (tmp_path / "SPY" / "2026-11" / man_name).read_bytes() == bad  # never replaced
+    else:
+        assert gh.blobs[aid] == bad and gh.deletes == 0
+
+
+def test_s5_a_store_that_cannot_be_read_is_a_storage_failure_not_a_retry(tmp_path):
+    """A manifest download that fails says nothing about the attempt: the run stops before any EODHD call
+    rather than collect a session that may already be complete."""
+    gh = FakeGitHub()
+    assert go(FakeEodhd(make_chain(SPEC)), gh_store(gh)).state == "stored"
+    man_id = next(i for i, a in gh.assets.items() if a["name"] == osn.asset_names(SESSION, 1)[1])
+
+    def failing(request):
+        if request.url.path.endswith(f"/releases/assets/{man_id}"):
+            return httpx.Response(502)
+        return gh(request)
+    fake = FakeEodhd(make_chain(SPEC))
+    r = go(fake, osn.GitHubReleaseStore(ARCHIVE, GH_TOKEN, transport=httpx.MockTransport(failing)))
+    assert r.state == "storage_failed" and "502" in r.detail and fake.calls == []
+    # the report path raises the same StorageError (main prints storage_failed) rather than call it interrupted
+    with pytest.raises(osn.StorageError):
+        osn.GitHubReleaseStore(ARCHIVE, GH_TOKEN, transport=httpx.MockTransport(failing)).inventory()
 
 
 def test_the_report_cli_makes_no_eodhd_call(tmp_path, monkeypatch, capsys):

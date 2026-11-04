@@ -171,16 +171,21 @@ class LocalStore:
         d = self._dir(session)
         return {p.name for p in d.iterdir()} if d.is_dir() else set()
 
+    def _read(self, path: Path) -> bytes:
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            raise StorageError(f"a stored file cannot be read ({type(exc).__name__})") from exc
+
     def attempts(self, session: str) -> list[dict]:
-        out = []
+        """The session's readable manifests. One that cannot be parsed is an interrupted attempt, the same as
+        the report reads it: it keeps its number and the session can be collected again (S-5)."""
+        found = _Found()
         for name in sorted(self._names(session)):
             m = _ASSET_RE.match(name)
-            if m and m.group(1) == session and m.group(3) == "manifest.json":
-                try:
-                    out.append(json.loads((self._dir(session) / name).read_text()))
-                except (OSError, ValueError) as exc:
-                    raise StorageError(f"a stored manifest cannot be read ({type(exc).__name__})") from exc
-        return out
+            if m and m.group(1) == session:
+                found.add(name, lambda name=name: self._read(self._dir(session) / name))
+        return found.manifests
 
     def taken(self, session: str) -> set[int]:
         return {int(m.group(2)) for n in self._names(session) if (m := _ASSET_RE.match(n)) and m.group(1) == session}
@@ -206,7 +211,7 @@ class LocalStore:
         """Every readable manifest, and every attempt with no readable manifest (S-4)."""
         found = _Found()
         for p in sorted((self.root / UNDERLYING).glob("*/*")):
-            found.add(p.name, lambda p=p: p.read_bytes())
+            found.add(p.name, lambda p=p: self._read(p))
         return found.result()
 
 
@@ -300,14 +305,11 @@ class GitHubReleaseStore:
         return {n: a for n, a in self._assets(rel).items() if (m := _ASSET_RE.match(n)) and m.group(1) == session}
 
     def attempts(self, session: str) -> list[dict]:
-        out = []
+        """The session's readable manifests; one that cannot be parsed is an interrupted attempt (S-5)."""
+        found = _Found()
         for name, asset in sorted(self._session_assets(session).items()):
-            if name.endswith(".manifest.json"):
-                try:
-                    out.append(json.loads(self._download(asset)))
-                except ValueError as exc:
-                    raise StorageError("a stored manifest is not JSON") from exc
-        return out
+            found.add(name, lambda asset=asset: self._download(asset))
+        return found.manifests
 
     def taken(self, session: str) -> set[int]:
         return {int(_ASSET_RE.match(n).group(2)) for n in self._session_assets(session)}  # type: ignore[union-attr]
@@ -350,7 +352,9 @@ class GitHubReleaseStore:
 
 class _Found:
     """A store's assets as attempts: the readable manifests, and the attempts that have none (a data file
-    whose upload was cut off before its manifest, or a manifest that cannot be read)."""
+    whose upload was cut off before its manifest, or a manifest that does not parse as an object). The one
+    classification for collection and for the report. A store that cannot be read raises StorageError: that
+    is not evidence about an attempt."""
 
     def __init__(self) -> None:
         self.manifests: list[dict] = []
@@ -365,9 +369,10 @@ class _Found:
         self.attempts.add(key)
         if m.group(3) != "manifest.json":
             return
+        blob = read()  # StorageError propagates
         try:
-            man = json.loads(read())
-        except (OSError, ValueError, StorageError):
+            man = json.loads(blob)
+        except ValueError:
             return
         if isinstance(man, dict):
             self.manifests.append(man)
