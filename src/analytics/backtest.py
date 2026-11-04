@@ -242,9 +242,18 @@ def compute_metrics(returns: list) -> dict:
         return {"avg_return": float("nan"), "median_return": float("nan"),
                 "hit_rate": float("nan"), "n": 0}
     arr = np.array(returns, dtype=float)
+    with np.errstate(over="ignore", invalid="ignore"):
+        avg, med = float(np.mean(arr)), float(np.median(arr))
+        # Codex DR-07: finite returns whose sum or middle pair overflows still have a
+        # representable mean and median; recompute those (only those) on halved values.
+        if not np.isfinite(avg):
+            avg = float(np.sum(arr / len(arr)))
+        if not np.isfinite(med):
+            mid = np.sort(arr)[(len(arr) - 1) // 2:len(arr) // 2 + 1]
+            med = float(mid[0] / 2 + mid[-1] / 2)
     return {
-        "avg_return":    float(np.mean(arr)),
-        "median_return": float(np.median(arr)),
+        "avg_return":    avg,
+        "median_return": med,
         "hit_rate":      float(np.mean(arr > 0)),
         "n":             int(len(arr)),
     }
@@ -359,7 +368,8 @@ def upsert_backtest_results(conn: sqlite3.Connection, rows: list) -> int:
     if not rows:
         return 0
     # Filter out NaN values (backtest_results.value is NOT NULL).
-    rows = [r for r in rows if not (isinstance(r[4], float) and math.isnan(r[4]))]
+    # NaN (an empty cohort) and, defensively, any non-finite value are never stored (Codex DR-07).
+    rows = [r for r in rows if not (isinstance(r[4], float) and not math.isfinite(r[4]))]
     if not rows:
         return 0
     ensure_basis_column(conn)

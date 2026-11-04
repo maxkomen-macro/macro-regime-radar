@@ -351,3 +351,28 @@ def test_an_unrepresentable_ratio_is_unscored():
     idx = pd.DatetimeIndex([pd.Timestamp("2024-01-02"), pd.Timestamp("2024-01-03")])
     assert bt.compute_forward_return(pd.Series([1e-308, 1e308], index=idx), idx[0], 1) is None
     assert bt.compute_forward_return(pd.Series([100.0, 110.0], index=idx), idx[0], 1) == pytest.approx(0.10)
+
+
+def test_aggregates_of_huge_finite_returns_stay_finite():
+    """DR-07: mean and median of [1e308, 1e308] are 1e308, not inf; ordinary
+    samples keep numpy's own mean and median bit for bit."""
+    m = bt.compute_metrics([1e308, 1e308])
+    assert m["avg_return"] == 1e308 and m["median_return"] == 1e308 and m["hit_rate"] == 1.0 and m["n"] == 2
+    m3 = bt.compute_metrics([1e308, 1e308, 1e308])
+    assert m3["avg_return"] == pytest.approx(1e308) and m3["median_return"] == 1e308
+    xs = [0.013, -0.021, 0.0457, 0.101, -0.003, 0.0]
+    import numpy as np
+    m = bt.compute_metrics(xs)
+    assert m["avg_return"] == float(np.mean(xs)) and m["median_return"] == float(np.median(xs))
+
+
+def test_a_non_finite_metric_is_never_stored(tmp_path):
+    path = tmp_path / "t.db"
+    _db(path)
+    c = sqlite3.connect(path)
+    try:
+        n = bt.upsert_backtest_results(c, [("T", "c", "1M", "avg_return", float("inf"), "x"),
+                                           ("T", "c", "1M", "n", 1.0, "x")])
+        assert n == 1 and c.execute("SELECT metric FROM backtest_results").fetchall() == [("n",)]
+    finally:
+        c.close()
