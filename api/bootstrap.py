@@ -326,7 +326,8 @@ class _StatusReadLimit(Exception):
 def _bounded_get(client: httpx.Client, url: str, headers: dict, *, deadline_s: float | None = None,
                  max_bytes: int | None = None) -> bytes | None:
     """The body of `url`, or None when it is larger than `max_bytes`. Raises on an HTTP error, a
-    network error, or `deadline_s` passing (checked on every chunk and bounded per read by the timeout)."""
+    network error, or `deadline_s` passing: checked on every piece the transport yields, and each read
+    waits at most the per-read timeout, so the whole read ends within deadline_s plus one read timeout."""
     deadline_s = STATUS_READ_DEADLINE_S if deadline_s is None else deadline_s
     max_bytes = STATUS_READ_MAX_BYTES if max_bytes is None else max_bytes
     clock = _clock
@@ -335,7 +336,9 @@ def _bounded_get(client: httpx.Client, url: str, headers: dict, *, deadline_s: f
     buf = bytearray()
     with client.stream("GET", url, headers=headers, timeout=per_read) as resp:
         resp.raise_for_status()
-        for chunk in resp.iter_bytes(8192):
+        # no chunk_size: each piece is handed over as the transport yields it. A chunk_size buffers
+        # until that many bytes arrive, so a trickle would pass the deadline unseen (Codex S-01).
+        for chunk in resp.iter_bytes():
             buf += chunk
             if len(buf) > max_bytes:
                 return None

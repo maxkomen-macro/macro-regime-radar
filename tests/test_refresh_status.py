@@ -323,26 +323,64 @@ def test_a_status_read_never_affects_the_database_check(monkeypatch, tmp_path):
     bootstrap.reset_refresh_status_for_tests()
 
 
-def _trickle(clock_step):
-    """A status response that never ends, one byte per read, while the replaced clock advances."""
+def _trickle(seconds_per_byte=1.0, total=20_000):
+    """A status response that sends one byte per `seconds_per_byte` of a replaced clock: time passes
+    in the transport, between the bytes, not when the reader looks at the clock (Codex S-01)."""
     t = [0.0]
     def clock():
-        t[0] += clock_step
         return t[0]
     def body():
-        while True:
+        for _ in range(total):
+            t[0] += seconds_per_byte
             yield b" "
     return clock, body
 
 
 def test_a_trickling_status_response_is_cut_off_at_the_total_deadline(monkeypatch):
-    # Codex DR-15: per-read timeouts never fire on a response that keeps sending; the total deadline does
-    clock, body = _trickle(1.0)
+    # Codex DR-15/S-01: per-read timeouts never fire on a response that keeps sending, and a reader
+    # that buffers 8 KiB before looking at the clock would only stop after 8,192 seconds here
+    clock, body = _trickle()
     monkeypatch.setattr(bootstrap, "_clock", clock)
     c = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=body())))
     with pytest.raises(bootstrap._StatusReadLimit):
         bootstrap._bounded_get(c, f"{API}/releases/assets/9", {})
-    assert clock() <= bootstrap.STATUS_READ_DEADLINE_S + 3  # stopped at the first read past the deadline
+    assert clock() <= bootstrap.STATUS_READ_DEADLINE_S + 1  # stopped at the first byte past the deadline
+
+
+def test_a_real_socket_trickle_is_cut_off_in_wall_time():
+    """The same bound over a real local HTTP connection: a server that sends a byte every 50 ms and
+    never finishes; with a 0.5 s deadline the read ends within about a second."""
+    import http.server
+    import threading
+    import time as _time
+
+    class Slow(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.end_headers()
+            try:
+                for _ in range(400):
+                    self.wfile.write(b" ")
+                    self.wfile.flush()
+                    _time.sleep(0.05)
+            except OSError:
+                pass
+
+        def log_message(self, *a):
+            pass
+
+    srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Slow)
+    srv.daemon_threads = True
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        with httpx.Client() as c:
+            t0 = _time.monotonic()
+            with pytest.raises(bootstrap._StatusReadLimit):
+                bootstrap._bounded_get(c, f"http://127.0.0.1:{srv.server_address[1]}/s", {}, deadline_s=0.5)
+            assert _time.monotonic() - t0 < 1.5
+    finally:
+        srv.shutdown()
 
 
 def test_an_oversized_status_response_reads_unreadable_without_reading_it_all():
@@ -366,7 +404,7 @@ def test_a_trickling_status_response_never_holds_the_database_check(monkeypatch,
     db_asset = {"id": 11, "name": "macro_radar.db", "updated_at": "2026-10-14T14:09:00Z", "size": 1,
                 "url": f"{API}/releases/assets/11", "digest": "sha256:" + "0" * 64}
     bootstrap.identity_path().write_text(json.dumps(bootstrap.asset_identity(db_asset)))
-    clock, body = _trickle(1.0)
+    clock, body = _trickle()
     monkeypatch.setattr(bootstrap, "_clock", clock)
     def handler(request):
         if request.url.path.endswith("/releases/tags/data-latest"):
@@ -379,6 +417,7 @@ def test_a_trickling_status_response_never_holds_the_database_check(monkeypatch,
     assert bootstrap.refresh_db() is False
     assert bootstrap.status()["last_result"] == "unchanged"
     assert bootstrap.refresh_attempts()["error"] == "fetch failed"
+    assert clock() <= bootstrap.STATUS_READ_DEADLINE_S + 1  # the check waited at most the deadline
     bootstrap.reset_refresh_status_for_tests()
 
 
