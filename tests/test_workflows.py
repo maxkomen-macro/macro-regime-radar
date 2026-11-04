@@ -1,8 +1,8 @@
 """GitHub Actions contract (2026-09-06): the four workflows parse, the refresh
 modes are explicit and resolved by one testable function, an hourly run can
 never masquerade as a full refresh, validation gates every upload, the
-data-write concurrency group and the retry/soft-reset commit pattern are
-intact, memos depend on a validated full refresh, and the lean dependency
+data-write concurrency group is intact, the Git writers commit through
+scripts/publish_artifacts.sh, memos depend on a validated full refresh, and the lean dependency
 sets cover their modules' imports."""
 
 from __future__ import annotations
@@ -101,8 +101,11 @@ def test_concurrency_and_commit_pattern_preserved():
     for name in ("refresh-data.yml", "daily-memo.yml", "weekly-memo.yml"):
         text = (WF / name).read_text()
         assert "git stash" not in text and "pull --rebase" not in text, name
-        assert "git reset --soft origin/main" in text, name
-        assert "for i in 1 2 3 4 5" in text, name
+        # The commit goes through the fresh-checkout publisher; the soft-reset loop
+        # reverted PRs merged during a run (2026-11-04). The race itself, retries and
+        # backoff are pinned in tests/test_publish_artifacts.py.
+        assert "git reset --soft" not in text, name
+        assert "bash scripts/publish_artifacts.sh " in text, name
     assert "data/macro_radar.db merge=ours" in (ROOT / ".gitattributes").read_text()
 
 

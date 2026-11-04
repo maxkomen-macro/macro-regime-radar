@@ -396,28 +396,14 @@ jobs:
           fi
 
       - name: Commit playbook.json if it changed
-        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'
+        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass' && github.ref == 'refs/heads/main'
+        timeout-minutes: 15
         run: |
-          if git diff --quiet output/playbook.json 2>/dev/null; then
-            echo "playbook.json unchanged — nothing to commit"
-          else
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add output/playbook.json
-            git commit -m "Update playbook [skip ci]"
-            COMMIT_MSG=$(git log -1 --pretty=%B)
-            # Same retry/soft-reset pattern as before; only a tiny text file now.
-            for i in 1 2 3 4 5; do
-              if git fetch origin main \
-                 && git reset --soft origin/main \
-                 && git commit -m "$COMMIT_MSG" \
-                 && git push; then
-                echo "Push succeeded on attempt $i"
-                exit 0
-              fi
-              echo "Attempt $i failed (fetch/reset/commit/push), retrying..."
-              sleep $((RANDOM % 10 + 5))
-            done
-            echo "Push failed after 5 attempts"
-            exit 1
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # Builds the commit in a fresh worktree of the current origin/main and
+          # stages only this file, so a PR merged while this run was in flight is
+          # never undone (the soft-reset loop undid #35 and #30 on 2026-11-04).
+          # Five attempts with backoff; a moved main rebuilds on the newer main;
+          # an unchanged playbook makes no commit. See scripts/publish_artifacts.sh.
+          bash scripts/publish_artifacts.sh "Update playbook [skip ci]" output/playbook.json
