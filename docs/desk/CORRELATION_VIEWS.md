@@ -103,7 +103,9 @@ with the reason "only n daily returns in <regime>". A regime with no variation i
 reason.
 
 **Current regime.** `current` is the label governing the row's end session `t` under the same lag
-rule, so the page can mark the column that applies now. It is null when `t` is Unlabeled.
+rule, so the page can mark the column that applies now. `current_row` is the month of the row it
+comes from (`YYYY-MM`, two months before `t`'s month). Both are null when `t` is Unlabeled. This can
+differ from the newest stored row, which the sidebar and the Regime tab show, and the page says so.
 
 **What a regime number means, and what it does not.**
 - It describes how the two assets co-moved on the days the revised history assigns to that regime.

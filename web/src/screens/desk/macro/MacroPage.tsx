@@ -30,7 +30,7 @@ import { DESK_ACCENTS } from "../kit/palette";
 import { AdvancedPanel, Awaiting, DroppedNote, LiveBadge, NotServedBadge, ReadBox, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useBlockUnserved, LoadingLine, FailedScope } from "../kit/ui";
 import { droppedOf } from "../data/schema";
 import { matrixProblem } from "./matrix";
-import { DEFAULT_HORIZON, horizonWords, matrixAt, noiseBandOf, noiseSentence, regimeNote, regimeTable, rowAt, servedHorizons, stockBondAt } from "./views";
+import { DEFAULT_HORIZON, historyLabel, horizonWords, matrixAt, noiseBandOf, noiseSentence, regimeNote, regimeTable, rowAt, servedHorizons, stockBondAt } from "./views";
 import type { MatrixWithViews, RowWithViews, StockBondWithViews } from "./views";
 import { REGIME_TONE } from "../kit/palette";
 import { GLOSSARY } from "../kit/glossary";
@@ -658,7 +658,7 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
     <section className="dk-card mc-card mc-rg-card" aria-labelledby="mc-rg" aria-busy={quiet}>
       <CardHead id="mc-rg" title={title} sub={sub} />
       <p className="mc-rg-history">
-        <span className="mc-rg-tag">Revised regime history</span> {head.rule}
+        <span className="mc-rg-tag">{historyLabel(head.regime_history)}</span> {head.rule}
       </p>
       <div className="mc-matrix-wrap" data-scrollable="true" tabIndex={0} role="region" aria-label="Correlation with SPY by regime">
         <table className="mc-rg">
@@ -717,6 +717,11 @@ function RegimeCorr({ m, state }: { m: MacroResponse | undefined; state: State }
       </div>
       <ul className="mc-rg-notes">
         <li>Each value pools every daily return the revised history assigns to that regime since the pair's first common return, so it mixes decades; volatile days weigh more, and one episode can dominate (the share in one spell is shown when it holds a third or more). n is the returns used; a regime with fewer than {fin(head.min_n) ? head.min_n : "the minimum"} is not served. No interval is served, and a gap between two regimes is not a tested difference.</li>
+        {table.current && table.currentRow ? (
+          <li>
+            “Now” is the regime the rule gives the latest session: the row stamped {monthYear(table.currentRow)}. The sidebar and the Regime tab show the newest row, which can differ.
+          </li>
+        ) : null}
         {head.as_known_reason ? <li>{head.as_known_reason}</li> : null}
       </ul>
     </section>

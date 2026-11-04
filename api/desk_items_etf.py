@@ -582,9 +582,9 @@ def pearson(a, b) -> float | None:
 def regime_rule() -> str:
     from src.desk import event_study as es
 
-    return (f"Revised regime history: a daily return dated in month K takes the regimes row stamped "
-            f"K−{es.REGIME_LAG_MONTHS} months, the first month that row could govern (the event study's rule); "
-            f"returns without a row are Unlabeled and left out.")
+    return (f"A daily return dated in month K takes the regimes row stamped K−{es.REGIME_LAG_MONTHS} months, "
+            f"the first month that row could govern (the event study's rule); returns without a row are Unlabeled "
+            f"and left out.")
 
 
 def by_regime(store: Store, x, y, t: int) -> dict:
@@ -599,7 +599,7 @@ def by_regime(store: Store, x, y, t: int) -> dict:
 
     out: dict[str, Any] = {"regime_history": REGIME_HISTORY, "rule": regime_rule(), "lag_months": es.REGIME_LAG_MONTHS,
                            "as_known": None, "as_known_reason": AS_KNOWN_REASON, "min_n": MIN_REGIME_RETURNS,
-                           "current": None, "sample": None, "unlabeled_n": None, "incomplete_n": None,
+                           "current": None, "current_row": None, "sample": None, "unlabeled_n": None, "incomplete_n": None,
                            "regimes": [], "all": None, "reason": None}
     labels = store.labels()
     if labels is None:
@@ -615,7 +615,10 @@ def by_regime(store: Store, x, y, t: int) -> dict:
     xs, ys = x[lo:t + 1], y[lo:t + 1]
     labelled = lab != es.UNLABELED
     cur = labels[t]
-    out.update({"current": None if cur == es.UNLABELED else str(cur),
+    end = store.sessions[t]
+    m = end.year * 12 + end.month - 1 - es.REGIME_LAG_MONTHS  # the month of the row governing session t
+    gov = f"{m // 12:04d}-{m % 12 + 1:02d}"
+    out.update({"current": None if cur == es.UNLABELED else str(cur), "current_row": None if cur == es.UNLABELED else gov,
                 "sample": {"start": store.iso[lo], "end": store.iso[t]},
                 "unlabeled_n": int((ok & ~labelled).sum()), "incomplete_n": int((~ok).sum())})
     # Spells: runs of consecutive calendar months with one label (a month without a row breaks a run).

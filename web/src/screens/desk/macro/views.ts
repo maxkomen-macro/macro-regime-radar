@@ -4,7 +4,8 @@
  * its `stock_bond`, `correlations` and `matrix` blocks. These helpers only pick
  * and word served values: a horizon's numbers are the API's, and a page never
  * computes one. The 60-return fields the blocks served before P1b stay the
- * blocks' own; `by_horizon["60"]` repeats them, so every horizon reads one way.
+ * blocks' own and are what the page reads at 60 (`by_horizon["60"]` repeats
+ * them, pinned by the API's tests); the views are read only at 20 and 120.
  */
 
 import type { CorrelationRow, MacroResponse, MatrixBlock } from "../data/types";
@@ -59,6 +60,8 @@ export interface ByRegime {
   as_known_reason: string | null;
   min_n: number | null;
   current: string | null;
+  /** The month of the row `current` comes from (YYYY-MM), two months before the end session's. */
+  current_row?: string | null;
   sample: { start: string; end: string } | null;
   unlabeled_n: number | null;
   incomplete_n: number | null;
@@ -100,21 +103,21 @@ export function servedHorizons(m: MacroResponse | undefined): number[] {
   return common.length > 1 && common.includes(DEFAULT_HORIZON) ? common : [];
 }
 
-/** The stock–bond block at horizon w: the served horizon's fields over the block's own, or the block as served. */
+/** The stock–bond block at horizon w: the served horizon's fields over the block's own; at 60, or without views, the block as served. */
 export function stockBondAt(sb: StockBondWithViews, w: number): StockBondWithViews {
-  const h = sb.by_horizon?.[String(w)];
+  const h = w === DEFAULT_HORIZON ? undefined : sb.by_horizon?.[String(w)];
   return h ? { ...sb, ...h } : sb;
 }
 
 /** One "What moves with the S&P" row at horizon w; the row as served without its views. */
 export function rowAt(r: RowWithViews, w: number): RowWithViews {
-  const h = r.by_horizon?.[String(w)];
+  const h = w === DEFAULT_HORIZON ? undefined : r.by_horizon?.[String(w)];
   return h ? { ...r, corr: h.corr, window: h.window, reason: h.reason } : r;
 }
 
 /** The matrix at horizon w (its grid, no-data list, window, coverage and lead), the block as served without it. */
 export function matrixAt(mx: MatrixWithViews, w: number): MatrixWithViews {
-  const h = mx.by_horizon?.[String(w)];
+  const h = w === DEFAULT_HORIZON ? undefined : mx.by_horizon?.[String(w)];
   return h ? { ...mx, values: h.values, no_data: h.no_data, window: h.window, coverage: h.coverage, lead: h.lead, horizon: h.horizon } : mx;
 }
 
@@ -146,12 +149,19 @@ export function regimeNote(g: RegimeStat): string {
   return parts.join(" · ");
 }
 
+/** "Revised regime history" for the served history, never assumed. */
+export function historyLabel(h: string | null | undefined): string {
+  return h === "revised" ? "Revised regime history" : h ? `Regime history: ${h}` : "";
+}
+
 /** The rows that carry a correlation by regime, and the regimes they name (in the served order). */
-export function regimeTable(rows: readonly RowWithViews[]): { rows: (RowWithViews & { by_regime: ByRegime })[]; regimes: string[]; current: string | null } {
+export function regimeTable(rows: readonly RowWithViews[]): { rows: (RowWithViews & { by_regime: ByRegime })[]; regimes: string[]; current: string | null; currentRow: string | null } {
   const served = rows.filter((r): r is RowWithViews & { by_regime: ByRegime } => !!r.by_regime && Array.isArray(r.by_regime.regimes));
   const regimes = served.find((r) => r.by_regime.regimes.length)?.by_regime.regimes.map((g) => g.regime) ?? [];
   const currents = new Set(served.map((r) => r.by_regime.current).filter((c): c is string => typeof c === "string"));
   // One current regime only when every row agrees (they end on their own sessions, normally the same month).
   const current = currents.size === 1 ? [...currents][0] : null;
-  return { rows: served, regimes, current };
+  const rowsOf = new Set(served.map((r) => r.by_regime.current_row).filter((c): c is string => typeof c === "string" && /^\d{4}-\d{2}$/.test(c)));
+  const currentRow = current && rowsOf.size === 1 ? [...rowsOf][0] : null;
+  return { rows: served, regimes, current, currentRow };
 }

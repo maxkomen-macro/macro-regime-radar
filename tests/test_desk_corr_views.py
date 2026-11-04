@@ -214,7 +214,7 @@ def test_each_regime_is_the_pooled_pearson_of_its_returns_under_the_k_minus_2_ru
     br = row["by_regime"]
     assert (br["regime_history"], br["lag_months"], br["as_known"], br["min_n"]) == ("revised", 2, None, 60)
     assert br["as_known_reason"] == etf.AS_KNOWN_REASON and br["reason"] is None
-    assert "Revised regime history" in br["rule"] and "K−2" in br["rule"]
+    assert br["rule"].startswith("A daily return dated in month K takes the regimes row stamped K−2 months")
     assert br["sample"] == {"start": st.iso[want["lo"]], "end": st.iso[want["t"]]}
     assert (br["unlabeled_n"], br["incomplete_n"]) == (want["unlabeled"], want["incomplete"])
     assert [g["regime"] for g in br["regimes"]] == list(es.REGIME_LABELS)
@@ -295,11 +295,11 @@ def test_the_current_regime_is_the_row_governing_the_end_session(tmp_path):
     months = _cycling()
     st = _store(tmp_path, months)
     br = next(r for r in etf.correlations(st, True) if r["symbol"] == "TLT")["by_regime"]
-    assert br["current"] == months[pd.Period("2026-07", freq="M")]
+    assert (br["current"], br["current_row"]) == (months[pd.Period("2026-07", freq="M")], "2026-07")
     (tmp_path / "x").mkdir()
     st2 = _store(tmp_path / "x", _cycling(end="2026-06"))
     br2 = next(r for r in etf.correlations(st2, True) if r["symbol"] == "TLT")["by_regime"]
-    assert br2["current"] is None
+    assert br2["current"] is None and br2["current_row"] is None
 
 
 def test_no_regime_rows_says_so_and_serves_no_regime_value(tmp_path):
@@ -364,6 +364,7 @@ def test_on_the_published_copy_the_views_hold_their_rules():
         end = pd.Timestamp(r["date"])
         gov = pd.Period(year=end.year, month=end.month, freq="M") - 2
         assert br["current"] == (months.get(gov) if gov in months.index else None)
+        assert br["current_row"] == (str(gov) if gov in months.index else None)
     want = _expected_regime(st, months, "spy", "tlt")
     br = next(r for r in rows if r["symbol"] == "TLT")["by_regime"]
     for g in br["regimes"]:

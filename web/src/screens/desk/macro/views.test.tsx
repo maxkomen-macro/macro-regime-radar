@@ -23,12 +23,13 @@ const REGIMES = ["Goldilocks", "Overheating", "Stagflation", "Recession Risk"];
 function byRegime(base: number, current: string | null = "Overheating"): ByRegime {
   return {
     regime_history: "revised",
-    rule: "Revised regime history: a daily return dated in month K takes the regimes row stamped K−2 months, the first month that row could govern (the event study's rule); returns without a row are Unlabeled and left out.",
+    rule: "A daily return dated in month K takes the regimes row stamped K−2 months, the first month that row could govern (the event study's rule); returns without a row are Unlabeled and left out.",
     lag_months: 2,
     as_known: null,
     as_known_reason: "As known at the time is not available yet: it needs the point-in-time regime history (the approved point-in-time plan), which is not built.",
     min_n: 60,
     current,
+    current_row: current ? "2026-07" : null,
     sample: { start: "2002-07-31", end: "2026-09-23" },
     unlabeled_n: 22,
     incomplete_n: 0,
@@ -42,9 +43,20 @@ function byRegime(base: number, current: string | null = "Overheating"): ByRegim
   };
 }
 
+/** /macro as served before P1b: the fixture's blocks without their views. */
+function plain(): Any {
+  const m = JSON.parse(JSON.stringify(servedMacro())) as Any;
+  delete m.stock_bond.horizons;
+  delete m.stock_bond.by_horizon;
+  delete m.matrix.horizons;
+  delete m.matrix.by_horizon;
+  m.correlations = (m.correlations as Any[]).map(({ by_horizon: _h, by_regime: _r, ...r }) => (void [_h, _r], r));
+  return m;
+}
+
 /** /macro as served, with its P1b views: "60" repeats each block's own answer, 20 and 120 differ. */
 function withViews(opts: { matrixHorizons?: number[] } = {}): Any {
-  const m = JSON.parse(JSON.stringify(servedMacro())) as Any;
+  const m = plain();
   const sb = m.stock_bond as Any;
   const own = (o: Any) => ({ today: o.today, today_date: o.today_date, today_reason: o.today_reason, year_ago: o.year_ago, year_ago_date: o.year_ago_date, flipped: o.flipped, flipped_on: o.flipped_on, flipped_to: o.flipped_to, series: o.series, window: o.window, line_window: o.line_window });
   sb.horizons = [20, 60, 120];
@@ -89,7 +101,7 @@ afterEach(() => {
 
 describe("P1b helpers", () => {
   it("offers only the horizons every correlation block serves, and nothing without views", () => {
-    expect(servedHorizons(servedMacro() as unknown as MacroResponse)).toEqual([]);
+    expect(servedHorizons(plain() as MacroResponse)).toEqual([]);
     expect(servedHorizons(withViews() as MacroResponse)).toEqual([20, 60, 120]);
     expect(servedHorizons(withViews({ matrixHorizons: [20, 60] }) as MacroResponse)).toEqual([20, 60]);
     expect(servedHorizons(withViews({ matrixHorizons: [60] }) as MacroResponse)).toEqual([]);
@@ -100,8 +112,9 @@ describe("P1b helpers", () => {
     const m = withViews();
     const sb = stockBondAt(m.stock_bond as StockBondWithViews, 20);
     expect([sb.today, sb.window?.n, sb.stock?.etf]).toEqual([-0.33, 20, "SPY"]);
-    const plain = servedMacro() as Any;
-    expect(stockBondAt(plain.stock_bond, 20)).toBe(plain.stock_bond);
+    const before = plain();
+    expect(stockBondAt(before.stock_bond, 20)).toBe(before.stock_bond);
+    expect(stockBondAt(m.stock_bond as StockBondWithViews, 60)).toBe(m.stock_bond);
     const tlt = (m.correlations as RowWithViews[]).find((r) => r.symbol === "TLT")!;
     expect(rowAt(tlt, 20).corr).toBe(-0.33);
     expect(rowAt(tlt, 60).corr).toBe(tlt.corr);
@@ -122,7 +135,7 @@ describe("P1b helpers", () => {
     expect(regimeTable(rows).current).toBe("Overheating");
     const split = rows.map((r, i) => (i === 0 ? { ...r, by_regime: { ...(r.by_regime as ByRegime), current: "Stagflation" } } : r));
     expect(regimeTable(split).current).toBeNull();
-    expect(regimeTable(servedMacro().correlations as RowWithViews[]).rows).toEqual([]);
+    expect(regimeTable(plain().correlations as RowWithViews[]).rows).toEqual([]);
   });
 });
 
@@ -132,7 +145,7 @@ describe("the correlation window control", () => {
   });
 
   it("is absent when the blocks serve no views", async () => {
-    stubDesk({ "/api/desk/macro": () => servedMacro() });
+    stubDesk({ "/api/desk/macro": () => plain() });
     renderTab();
     await waitFor(() => expect(screen.getByRole("region", { name: /^Correlation matrix/ })).toBeInTheDocument());
     expect(screen.queryByRole("group", { name: "Correlation window" })).toBeNull();
@@ -192,6 +205,7 @@ describe("the correlation-by-regime card", () => {
     expect(card).toHaveTextContent("stamped K−2 months");
     expect(card).toHaveTextContent("As known at the time is not available yet");
     expect(card).toHaveTextContent("No interval is served");
+    expect(card).toHaveTextContent("“Now” is the regime the rule gives the latest session: the row stamped Jul 2026.");
     expect(card).toHaveTextContent("a regime with fewer than 60 is not served");
   });
 
