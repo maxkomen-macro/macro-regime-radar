@@ -207,3 +207,20 @@ def test_the_repo_calendar_loads_over_the_published_rows_it_corrects(loader, mon
     with CSV_PATH.open() as fh:
         assert manual == {(r["event_name"], r["event_datetime"]) for r in csv.DictReader(fh)}
     assert ("NVDA earnings (Q3 2027)", "2026-11-19T21:00:00Z", "finnhub_earnings") in _stored(db)
+
+
+@pytest.mark.parametrize("lines", [
+    ["CPI Release,not-a-date,high"],                                              # only an invalid row (Codex S-01)
+    ["CPI Release,2026-03-11T12:30:00Z,high", "CPI Release,,high"],               # a valid row and a blank field
+])
+def test_codex_s01_a_file_with_a_rejected_row_deletes_nothing(loader, monkeypatch, lines):
+    """Codex S-01: a rejected row used to count as listed, so a file holding only an invalid row
+    deleted every valid stored row. Any rejected row now skips the reconciliation: the valid rows
+    still load, and nothing stored is deleted until the file is clean."""
+    le, db, tmp = loader
+    monkeypatch.setattr(le, "CSV_PATH", _write(tmp / "c.csv", lines))
+    before = set(_stored(db))
+    le.load_events()
+    after = set(_stored(db))
+    assert before <= after
+    assert len(after - before) == (1 if len(lines) == 2 else 0)

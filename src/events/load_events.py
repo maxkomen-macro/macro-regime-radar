@@ -13,8 +13,9 @@ Duplicate (event_name, event_datetime) pairs are silently ignored on re-runs
 
 The CSV is the source of its own rows (desk upgrade P0d): a manual_csv row the
 file no longer lists, one corrected to another date, say, is deleted, so a fixed
-date never sits beside the wrong one in the published store. Rows from other
-sources (finnhub_earnings) are never touched.
+date never sits beside the wrong one in the published store. Only a clean file
+reconciles (Codex S-01): one with any rejected row, or no rows, deletes nothing
+and says so. Rows from other sources (finnhub_earnings) are never touched.
 """
 import csv
 import sqlite3
@@ -67,7 +68,6 @@ def load_events() -> int:
 
     created_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
     good_rows: list[tuple] = []
-    listed: set[tuple[str, str]] = set()  # every (name, datetime) the file holds, valid or not
     skipped = 0
 
     with open(CSV_PATH, newline="", encoding="utf-8") as f:
@@ -82,7 +82,6 @@ def load_events() -> int:
             name  = row.get("event_name",     "").strip()
             dt    = row.get("event_datetime",  "").strip()
             imp   = row.get("importance",      "").strip().lower()
-            listed.add((name, dt))
 
             if not (name and dt and imp):
                 print(f"[events] WARNING: line {lineno} — blank required field, skipping.")
@@ -122,8 +121,11 @@ def load_events() -> int:
         stored = conn.execute(
             "SELECT id, event_name, event_datetime FROM event_calendar WHERE source = 'manual_csv'"
         ).fetchall()
-        # a file that lists nothing never empties the table (a truncated checkout, say)
-        dropped = [r for r in stored if listed and (r["event_name"], r["event_datetime"]) not in listed]
+        # Codex S-01: only a clean, non-empty file reconciles; a rejected row or a file that lists
+        # nothing (a truncated checkout, say) never deletes a stored row
+        listed = {(name, dt) for name, dt, _imp, _at in good_rows}
+        reconcile = skipped == 0 and bool(good_rows)
+        dropped = [r for r in stored if reconcile and (r["event_name"], r["event_datetime"]) not in listed]
         conn.executemany("DELETE FROM event_calendar WHERE id = ?", [(r["id"],) for r in dropped])
         conn.commit()
     finally:
@@ -138,6 +140,9 @@ def load_events() -> int:
     )
     for r in dropped:
         print(f"[events]   removed {r['event_datetime']}  {r['event_name']}")
+    if not reconcile:
+        print("[events] WARNING: the CSV has rejected rows or none; stored rows the file no longer "
+              "lists were kept. Fix the file (python scripts/check_calendar.py --offline).")
     return inserted
 
 
