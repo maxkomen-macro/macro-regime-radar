@@ -81,6 +81,21 @@ scores them on every run. `tests/test_options_dividend_smoothing.py` checks them
 (before this change), 10 of the 16 fail that check, including both held-out dividend-scenario failures
 (S29 G2/1239 and G4-negrate/54).
 
+## Existing tests changed
+
+Each change accounts for an intended change in behaviour. No test was removed, skipped or loosened.
+
+- `tests/test_options_engine.py`: the golden layout now puts the 16 dividend named regressions before R-1, so
+  the row count is the named list plus R-1 plus the 300-case subset.
+- `tests/test_options_bench.py`: the named-input check lists the 16 new ids and also checks each one's inputs
+  against the seeded generator.
+- `tests/test_options_bench_phase2.py`: the Phase 2 harness compares Tier 1 with Phase 2's stored run, which
+  was made before this change. B8 (a dividend on day 2) is smoothed now, so the check must report that it no
+  longer matches. The other four cases must still match, and the stored records are not edited.
+- `tests/test_desk_options_math.py`: the early-dividend context (dividends on days 3, 94 and 185) now converges
+  at its (N, 2N) pair rather than (2N, 4N). Its value is still checked against QuantLib. Refinement charging
+  is now checked on B8, which still refines to (2N, 4N) on its delta test.
+
 ## Evidence still to come
 
 - The fresh held-out bench run on a seed registered before the run, scored on its seven components.
