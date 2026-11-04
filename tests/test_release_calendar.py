@@ -13,10 +13,9 @@ the macro events the News calendar and the Options Finder list.
   on 2026-11-03 (fred/release/dates, releases 10, 50 and 13), pinned here so
   the suite catches an edit without the network. The live comparison is
   `python scripts/check_calendar.py` (FRED_API_KEY).
-- **The 2027 dates** of the Fed, BEA and Census families equal the agencies'
-  own published schedules as read on 2026-11-04 (FRED listed no 2027 dates
-  then), pinned the same way. The BLS families (CPI, the jobs report) have
-  no 2027 rows yet: bls.gov refused this environment's requests.
+- **The 2027 dates** of every family equal the agencies' own published
+  schedules as read on 2026-11-04 (FRED listed no 2027 dates then), pinned
+  the same way.
 - **The online check's rules** on a fake FRED, including rows after FRED's
   last listed date (reported, not failed, until FRED lists that far).
 - **The loader** keeps the store to the file: a manual_csv row the file no
@@ -53,7 +52,7 @@ FRED_2026 = {
 }
 
 
-# The agencies' own schedules, read 2026-11-04 ~20:05 UTC (FRED listed no 2027 dates for these releases then):
+# The agencies' own schedules, read 2026-11-04 ~20:05-20:20 UTC (FRED listed no 2027 dates for these releases then):
 #   g17    https://www.federalreserve.gov/releases/g17/release_dates.htm (page last updated 2026-08-18)
 #   retail https://www.census.gov/economic-indicators/calendar-listview.html (2027 calendar,
 #          "Advance Monthly Sales for Retail and Food Services")
@@ -61,6 +60,8 @@ FRED_2026 = {
 #   pce    https://www.bea.gov/news/schedule/next-year ("Personal Income and Outlays")
 #   fomc   https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm (2027 meetings, statement on the
 #          second day; "each meeting date is tentative until confirmed at the meeting immediately preceding it")
+#   cpi, jobs  BLS "Schedule of Selected Releases 2027" (https://www.bls.gov/schedule/2027/home.htm), from the
+#          owner's browser copy printed 2026-11-04 20:20 UTC: bls.gov answers 403 to the cloud environment
 AGENCY_2027 = {
     "g17": ["2027-01-15", "2027-02-17", "2027-03-15", "2027-04-15", "2027-05-17", "2027-06-16", "2027-07-16",
             "2027-08-17", "2027-09-16", "2027-10-18", "2027-11-17", "2027-12-16"],
@@ -72,8 +73,10 @@ AGENCY_2027 = {
             "2027-08-25", "2027-09-30", "2027-10-28", "2027-11-24", "2027-12-22"],
     "fomc": ["2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09", "2027-07-28", "2027-09-15", "2027-10-27",
              "2027-12-08"],
-    "cpi": [],    # bls.gov answered 403 to this environment; no row without the agency's schedule or FRED
-    "jobs": [],
+    "cpi": ["2027-01-13", "2027-02-11", "2027-03-10", "2027-04-13", "2027-05-12", "2027-06-10", "2027-07-14",
+            "2027-08-11", "2027-09-14", "2027-10-14", "2027-11-10", "2027-12-10"],
+    "jobs": ["2027-01-08", "2027-02-05", "2027-03-05", "2027-04-02", "2027-05-07", "2027-06-04", "2027-07-02",
+             "2027-08-06", "2027-09-03", "2027-10-08", "2027-11-05", "2027-12-03"],
 }
 
 def _rows(path: Path = CSV_PATH) -> tuple[list[cc.Row], cc.Report]:

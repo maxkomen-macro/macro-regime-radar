@@ -82,9 +82,9 @@ class Family:
 
 FAMILIES: tuple[Family, ...] = (
     Family("cpi", re.compile(r"^CPI Release$"), time(8, 30), 10, True, "BLS Consumer Price Index (FRED release 10)",
-           "https://www.bls.gov/schedule/news_release/cpi.htm"),
+           "https://www.bls.gov/schedule/2027/home.htm"),
     Family("jobs", re.compile(r"^Jobs Report \(NFP\)$"), time(8, 30), 50, True, "BLS Employment Situation (FRED release 50)",
-           "https://www.bls.gov/schedule/news_release/empsit.htm"),
+           "https://www.bls.gov/schedule/2027/home.htm"),
     Family("g17", re.compile(r"^Industrial Production \(G\.17\)$"), time(9, 15), 13, True,
            "Fed G.17 Industrial Production and Capacity Utilization (FRED release 13)",
            "https://www.federalreserve.gov/releases/g17/release_dates.htm"),
