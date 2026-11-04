@@ -390,6 +390,17 @@ def upsert_backtest_results(conn: sqlite3.Connection, rows: list) -> int:
     return len(rows)
 
 
+def summary_basis_label(conn: sqlite3.Connection) -> str:
+    """The basis the stored rows record: total return only when every row
+    says so; otherwise (no column, NULL or mixed) not recorded (Codex S-03)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(backtest_results)")}
+    if "return_basis" in cols:
+        bases = {r[0] for r in conn.execute("SELECT DISTINCT return_basis FROM backtest_results")}
+        if bases == {RETURN_BASIS_KEY}:
+            return f"SPY {RETURN_BASIS}, dividends reinvested"
+    return "SPY forward returns, basis not recorded"
+
+
 def print_summary(conn: sqlite3.Connection) -> None:
     rows = conn.execute(
         """
@@ -399,7 +410,7 @@ def print_summary(conn: sqlite3.Connection) -> None:
         ORDER BY test_name, horizon, metric
         """
     ).fetchall()
-    print(f"\n--- Backtest Results ({len(rows)} metric rows; SPY {RETURN_BASIS}, dividends reinvested) ---")
+    print(f"\n--- Backtest Results ({len(rows)} metric rows; {summary_basis_label(conn)}) ---")
     prev_key = None
     for r in rows:
         key = (r["test_name"], r["horizon"])

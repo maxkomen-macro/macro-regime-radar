@@ -412,3 +412,21 @@ def test_the_streamlit_label_reads_the_rows_it_shows(monkeypatch):
     assert bt_tab._stored_basis(df.assign(return_basis=["total_return", None])) == "unrecorded"
     assert bt_tab._stored_basis(df.drop(columns="return_basis")) == "unrecorded"
     assert bt_tab._stored_basis(pd.DataFrame()) == "unrecorded"
+
+
+def test_the_cli_summary_labels_only_recorded_total_return_rows(tmp_path, capsys):
+    """Codex S-03: rows stored without a basis print as not recorded."""
+    for i, kw in enumerate(({"with_basis": True}, {"with_basis": False}, {"with_basis": True, "bases": ("total_return", None)})):
+        path = tmp_path / f"s{i}.db"
+        _bt_table(path, **kw)
+        c = sqlite3.connect(path)
+        c.row_factory = sqlite3.Row
+        try:
+            bt.print_summary(c)
+        finally:
+            c.close()
+        out = capsys.readouterr().out
+        if i == 0:
+            assert "SPY total return, dividends reinvested" in out
+        else:
+            assert "basis not recorded" in out and "total return" not in out
