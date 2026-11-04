@@ -120,7 +120,7 @@ PENALTY_LOW = 1e7
 
 
 def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels: list[int], w: float,
-            american: bool = True) -> dict:
+            american: bool = True, limits: dict | None = None) -> dict:
     out = {}
     pt, ms = t_levels[-3:], s_levels[-3:]
     for k, name, floor in ((0, "value", 1e-12 * c.spot), (1, "delta", 1e-12)):
@@ -144,6 +144,8 @@ def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels
     v = out["value"]
     v["tol"] = tolerance(v["ref"], c.spot)
     for name, limit in (("value", REF_FRACTION * v["tol"]), ("delta", REF_FRACTION * DELTA_TOL)):
+        if limits and name in limits:   # a tightened reference (Phase 2) states its own target for u
+            limit = limits[name]
         r = out[name]
         # a study that is not in its asymptotic range leaves the quantity unresolved, unless even its widened
         # estimate is negligible (rounding-level changes have no meaningful order)
@@ -158,16 +160,22 @@ def _assess(c: Case, runs: dict, m0: int, p0: int, t_levels: list[int], s_levels
         if pe > PECLET_MONOTONE:
             why.append(f"convection-dominated: cell Péclet {pe:.3g} on the coarsest space level ({ms[0]} intervals)")
         if r["u"] > limit:
-            why.append(f"{name} uncertainty above {REF_FRACTION:g} of its tolerance")
+            why.append(f"{name} uncertainty above {REF_FRACTION:g} of its tolerance" if not (limits and name in limits)
+                       else f"{name} uncertainty above its target {limit:.3g}")
         r["limit"] = limit
         r["status"] = "reliable" if not why else "unresolved: " + "; ".join(why)
     return out
 
 
 def reference(c: Case, exercise_days: Iterable[int] | None = None, american: bool = True,
-              escalate: bool = True) -> dict:
+              escalate: bool = True, limits: dict | None = None, escalate_max: int = ESCALATE_MAX,
+              cell_cap: float = CELL_CAP) -> dict:
     """The case's reference value and delta with their uncertainty, escalating the time or space refinement
-    (one level at a time, whichever dominates the worse quantity) while a quantity is unresolved."""
+    (one level at a time, whichever dominates the worse quantity) while a quantity is unresolved.
+
+    The defaults are the standard reference. Phase 2's tightened reference (adaptive.tighten) passes a target
+    for u per quantity in `limits` ({"value": ..., "delta": ...}) and larger escalation and cell caps; a quantity
+    it leaves out keeps the standard limit."""
     t0 = time.time()
     m0, p0, w = grid(c)
     ex = None if exercise_days is None else sorted(set(exercise_days))
@@ -194,7 +202,7 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
     run(3 * m0 // 4, p0, WIDTH_FACTOR * w)
     run(9 * m0 // 8, p0, WIDTH_FACTOR ** 2 * w)
     run(m0 // 4, p0, w, PENALTY_LOW)
-    out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
+    out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american, limits)
     steps = {"time": 0, "space": 0}
     while escalate:
         worst = max(("value", "delta"), key=lambda n: out[n]["u"] / out[n]["limit"])
@@ -202,14 +210,14 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
         if r["status"] == "reliable" and out["value" if worst == "delta" else "delta"]["status"] == "reliable":
             break
         convective = "convection-dominated" in r["status"]   # only finer space levels can clear it
-        dims = sorted((d for d in ("time", "space") if steps[d] < ESCALATE_MAX),
+        dims = sorted((d for d in ("time", "space") if steps[d] < escalate_max),
                       key=lambda d: (not (convective and d == "space"), -r[d]["u"]))
         if not dims or r["u_width"] + r["u_penalty"] > r["limit"]:
             break
         d = dims[0]
         nxt = 2 * (t_levels[-1] if d == "time" else s_levels[-1])
         cost = (m0 + 1) * nxt * c.days if d == "time" else (nxt + 1) * p0 * c.days
-        if cells + cost > CELL_CAP:
+        if cells + cost > cell_cap:
             break
         if d == "time":
             t_levels.append(nxt)
@@ -218,7 +226,7 @@ def reference(c: Case, exercise_days: Iterable[int] | None = None, american: boo
             s_levels.append(nxt)
             run(nxt, p0)
         steps[d] += 1
-        out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american)
+        out = _assess(c, runs, m0, p0, t_levels, s_levels, w, american, limits)
     if solver_misses[0]:  # a penalty step stopped at its iteration cap: no quantity of this case is trusted
         for name in ("value", "delta"):
             r = out[name]
