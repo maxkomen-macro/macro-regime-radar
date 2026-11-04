@@ -159,14 +159,14 @@ describe("P1c: the monitor's view of the new series", () => {
     const v = viewOf(r, { ...LEVELS, tenors: { ...LEVELS.tenors, "10y": { value: 4.81, date: "2026-09-24" } } }, NOW);
     expect(v.room_pct).toBeCloseTo(0.4, 9);
     expect(v.to_level).toEqual({ value: 10, unit: "bp" });
-    expect(falsifiesLine(v)).toBe("10y yield below 4.71% · now 4.81%");
+    expect(falsifiesLine(v)).toBe("10y yield below 4.71% · now 4.81% on Sep 24");
     expect(viewOf(r, { ...LEVELS, tenors: {} }, NOW)).toMatchObject({ room_pct: null, to_level: null, now: null });
   });
   it("reads a spread computed from two tenors in bp", () => {
     const r = saved("5s30s", "short", "curve_up_10", FULL);
     expect(whyUnreadable(r)).toBeNull();
     const v = viewOf(r, FULL, NOW);
-    expect([v.room_pct, v.to_level, falsifiesLine(v)]).toEqual([1, { value: 10, unit: "bp" }, "5s30s above +43 bp · now +33 bp"]);
+    expect([v.room_pct, v.to_level, falsifiesLine(v)]).toEqual([1, { value: 10, unit: "bp" }, "5s30s above +43 bp · now +33 bp on Sep 22"]);
   });
   it("reads a stored ETF's room from its newest stored close against the frozen 50-day", () => {
     const r = saved("GLD", "short", "above_50d", LEVELS);
@@ -176,7 +176,7 @@ describe("P1c: the monitor's view of the new series", () => {
     expect(v.room_pct).toBeCloseTo((394.4752001953125 - 393.6) / (394.4752001953125 - 392.8800048828125), 9);
     expect(v.to_level?.unit).toBe("%");
     expect(v.to_level?.value).toBeCloseTo(((394.4752001953125 - 393.6) / 393.6) * 100, 9);
-    expect(falsifiesLine(v)).toBe("GLD above 394.48 · now 393.60");
+    expect(falsifiesLine(v)).toBe("GLD above 394.48 · now 393.60 on Sep 24");
     expect(v.note).toBeNull();
   });
   it("restates the frozen level with the stored closes, so a split is never read as a breach", () => {
@@ -187,7 +187,7 @@ describe("P1c: the monitor's view of the new series", () => {
     const after = viewOf(r, { ...LEVELS, etfs: { GLD: { ...GLD, value: GLD.value / 2, closes: half } } }, NOW);
     expect(after.room_pct).toBeCloseTo(before.room_pct!, 12);
     expect(after.level_now).toBeCloseTo(394.4752001953125 / 2, 9);
-    expect(falsifiesLine(after)).toBe("GLD above 197.24 · now 196.44");
+    expect(falsifiesLine(after)).toBe("GLD above 197.24 · now 196.44 on Sep 23");
     expect(after.note).toBe("The level was 394.48 at entry; the stored closes have been restated ×0.5000 since (a distribution or a split), and the level with them.");
     // A distribution restates the past closes a little: the level moves with them, so the payout is not room lost.
     const paid = { ...GLD.closes, "2026-09-23": GLD.closes["2026-09-23"] * 0.997 };
@@ -203,6 +203,16 @@ describe("P1c: the monitor's view of the new series", () => {
     expect(v.now).toMatchObject({ value: 392.8800048828125 });
     expect(v.note).toBe("Room not computed: the stored close of 2026-09-23 is not served, so the level cannot be checked against today's closes.");
     expect(viewOf(r, { ...LEVELS, etfs: {} }, NOW)).toMatchObject({ room_pct: null, now: null, note: null });
+  });
+  it("never turns an unusable entry value or close into a room (design review DR-03)", () => {
+    const r = saved("GLD", "short", "above_50d", LEVELS);
+    // An imported record with a zero or negative entry value, or a served close of zero: no room, with the reason.
+    for (const [entry, close] of [[0, 392.88], [-392.88, 392.88], [392.88, 0], [1e-320, 392.88]] as const) {
+      const rec = { ...r, entry_value: entry, original_room: 394.4752001953125 - entry };
+      const v = viewOf(rec, { ...LEVELS, etfs: { GLD: { ...GLD, closes: { ...GLD.closes, "2026-09-23": close } } } }, NOW);
+      expect([v.room_pct, v.to_level, v.level_now], `${entry} ${close}`).toEqual([null, null, null]);
+      expect(v.note).toMatch(/^Room not computed: /);
+    }
   });
 });
 

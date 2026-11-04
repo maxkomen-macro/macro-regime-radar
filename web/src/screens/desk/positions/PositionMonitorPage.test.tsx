@@ -695,7 +695,7 @@ describe("the Monitored card's levels come from the API (desk/usability §14.10,
     const mon = screen.getByRole("region", { name: /Monitored/ });
     expect(mon).toHaveTextContent("100% room · 0.4% to level");
     fireEvent.click(within(within(mon).getByTestId("dk-mon-row")).getAllByRole("button")[0]);
-    await waitFor(() => expect(mon).toHaveTextContent("GLD above 394.48 · now 392.88"));
+    await waitFor(() => expect(mon).toHaveTextContent("GLD above 394.48 · now 392.88 on Sep 23"));
   });
 
   it("P1c: a tenor's yield is monitored on a bp move from entry, and the form says what a long in a yield is", async () => {

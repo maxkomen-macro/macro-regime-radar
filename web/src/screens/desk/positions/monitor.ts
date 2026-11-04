@@ -156,8 +156,12 @@ export function positionName(p: Pick<PositionRecord, "direction" | "instrument">
  */
 export function restatement(t: Trigger, entryValue: number, etf: EtfLevel): { factor: number } | { why: string } {
   const close = etf.closes[t.observed_on];
-  if (!isFiniteNumber(close) || !(entryValue > 0)) return { why: `the stored close of ${t.observed_on} is not served, so the level cannot be checked against today's closes` };
-  return { factor: close / entryValue };
+  if (!isFiniteNumber(close)) return { why: `the stored close of ${t.observed_on} is not served, so the level cannot be checked against today's closes` };
+  // A price is positive: a record (an import) whose entry value is not, or a factor that does not come out a
+  // finite positive number, is not restated into a room (design review DR-03).
+  const factor = close / entryValue;
+  if (!(entryValue > 0) || !(close > 0) || !Number.isFinite(factor) || !(factor > 0)) return { why: "the value at entry and the stored close of that day do not give a usable restatement" };
+  return { factor };
 }
 
 export function viewOf(p: PositionRecord, levels: Levels, now: Date): PositionView {
@@ -174,6 +178,7 @@ export function viewOf(p: PositionRecord, levels: Levels, now: Date): PositionVi
     if ("why" in r) return { ...base, room_pct: null, to_level: null, now: served, note: `Room not computed: ${r.why}.` };
     threshold = t.threshold * r.factor;
     room = p.original_room * r.factor;
+    if (!Number.isFinite(threshold) || !Number.isFinite(room) || !(room > 0)) return { ...base, room_pct: null, to_level: null, now: served, note: "Room not computed: the restated level is not a usable number." };
     if (Math.abs(r.factor - 1) > 1e-6) note = `The level was ${levelWords(t.series, t.threshold)} at entry; the stored closes have been restated ×${num(r.factor, 4)} since (a distribution or a split), and the level with them.`;
   }
   const d = signedDistance(served.value, { operator: t.operator, threshold });
@@ -185,7 +190,10 @@ export function viewOf(p: PositionRecord, levels: Levels, now: Date): PositionVi
 export function falsifiesLine(v: PositionView): string {
   const t = v.record.trigger;
   if (v.monitoring !== "automatic" || !t) return v.record.wrong_if.label;
-  const now = v.now ? ` · now ${levelWords(t.series, v.now.value)}` : " · now not served";
+  // P1c (design review DR-04): a series P1c added says the date of the value it calls now; the S&P and 2s10s
+  // lines keep §9's words.
+  const dated = t.series !== "spx" && t.series !== "curve_2s10s" && v.now ? ` on ${dayShort(v.now.date) || v.now.date}` : "";
+  const now = v.now ? ` · now ${levelWords(t.series, v.now.value)}${dated}` : " · now not served";
   return `${seriesLabel(t.series)} ${t.operator} ${levelWords(t.series, v.level_now ?? t.threshold)}${now}`;
 }
 
