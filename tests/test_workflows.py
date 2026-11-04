@@ -197,10 +197,13 @@ def test_lean_requirement_sets_cover_their_modules():
     market_mods |= _module_imports(ROOT / "src/market_data/session.py") | _module_imports(ROOT / "src/watermarks.py")
     third_party = {m for m in market_mods if m not in STDLIB and m != "src"}
     assert third_party <= _requirement_modules(ROOT / "requirements-market.txt"), third_party
-    # validate_db.py must stay stdlib + api/ (it runs on the lean sets)
+    # validate_db.py must stay stdlib + api/ (it runs on the lean sets); since Analyst Desk P0c it also imports
+    # src/market_data/quality.py, which is itself stdlib + api/, through src/ packages that import nothing
     v = {m for m in _module_imports(ROOT / "scripts/validate_db.py") if m not in STDLIB}
-    assert v <= {"api"}, v
-    for mod in ("api/freshness.py", "api/calendar.py"):
+    assert v <= {"api", "src"}, v
+    for pkg in ("src/__init__.py", "src/market_data/__init__.py"):
+        assert not _module_imports(ROOT / pkg), pkg
+    for mod in ("api/freshness.py", "api/calendar.py", "src/market_data/quality.py"):
         deps = {m for m in _module_imports(ROOT / mod) if m not in STDLIB}
         assert deps <= {"api"}, (mod, deps)
 

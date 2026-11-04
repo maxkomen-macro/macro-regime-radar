@@ -80,9 +80,22 @@ class _Engine:
     imports no heavy dependency at module import (CLAUDE.md, FastAPI section),
     so `import api.main` stays as light as it was before the Desk. The worker's
     first build (desk_assets, the presets) or the first study loads it; every
-    `es.<name>` below reads the real module, monkeypatches included."""
+    `es.<name>` below reads the real module, monkeypatches included.
+
+    The proxy holds no state of its own: no instance ``__dict__`` (empty
+    ``__slots__``), and Python's own ``__dunder__`` lookups are not forwarded,
+    so ``es.__dict__`` is not the module's namespace either. A monkeypatch
+    through ``es`` therefore records the module's real value as the one to
+    restore. pytest 9 records an instance's own ``__dict__`` entry instead
+    (pytest #10644); with an empty instance dict here it recorded "absent" and
+    its undo deleted the attribute from src.desk.event_study for the rest of
+    the session."""
+
+    __slots__ = ()
 
     def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
         from src.desk import event_study
 
         return getattr(event_study, name)
