@@ -131,6 +131,8 @@ def clear_caches() -> None:
         c.clear()
     # the Options Finder's (design F3): its chain windows
     _window_cache.clear()
+    # desk/basket-study (P1a): the basket study's daily closes since 1995
+    _study_cache.clear()
 
 
 def _now_iso() -> str:

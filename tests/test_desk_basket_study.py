@@ -368,3 +368,48 @@ def test_monthly_the_studys_index_returns_are_the_charts_after_both_rebalance(se
     ra = np.log(a.loc[after]).diff().dropna()
     rb = np.log(b.loc[after]).diff().dropna()
     assert len(ra) > 400 and np.allclose(ra.to_numpy(), rb.to_numpy(), rtol=0, atol=1e-12)
+
+
+# ── the provider read: market.daily_closes_since_1995 ───────────────────────
+
+from tests.test_providers import TOKEN, Upstream, _at, up  # noqa: E402,F401  (the scripted EODHD and its fixture)
+
+
+def test_the_studys_closes_are_one_eodhd_request_since_1995_completed_sessions_only(up, monkeypatch):
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")  # Friday, after the close
+    market.clear_caches()
+    rows = [{"date": "2026-09-23", "close": 100.0, "adjusted_close": 50.0},
+            {"date": "2026-09-24", "close": 101.0, "adjusted_close": None},       # no adjusted close: NaN, left to the basket
+            {"date": "2026-09-25", "close": 102.0, "adjusted_close": 51.123456789},
+            {"date": "2026-09-28", "close": 103.0, "adjusted_close": 52.0}]       # after the last completed session
+    up.script["/api/eod/NVDA.US"] = [(200, rows)]
+    got = market.daily_closes_since_1995("NVDA")
+    req = up.calls[-1]
+    assert req.url.params["from"] == "1995-01-01" and req.url.params["to"] == "2026-09-25" and req.url.params["period"] == "d"
+    assert [str(d) for d in got["dates"]] == ["2026-09-23", "2026-09-24", "2026-09-25"] and got["session"] == "2026-09-25"
+    assert got["adjusted"][0] == 50.0 and np.isnan(got["adjusted"][1])
+    assert got["adjusted"][2] == round(102.0 * (51.123456789 / 102.0), 6) and list(got["close_raw"]) == [100.0, 101.0, 102.0]
+    # a repeat in the same session is the cache's; the two-year cache is not touched
+    market.daily_closes_since_1995("NVDA")
+    assert up.paths().count("/api/eod/NVDA.US") == 1 and len(market._daily_cache._data) == 0
+    h = desk_basket.study_history(got, "NVDA")
+    assert h.dates == ("2026-09-23", "2026-09-25") and h.close_traded == (100.0, 102.0) and h.unadjusted == 1
+    market.clear_caches()
+    assert len(market._study_cache._data) == 0
+
+
+def test_the_studys_closes_refuse_an_unknown_name_and_an_empty_answer(up, monkeypatch):
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")
+    market.clear_caches()
+    up.script["/api/eod/NOPEX.US"] = [(404, "no")]
+    with pytest.raises(UnknownSymbol):
+        market.daily_closes_since_1995("NOPEX")
+    up.script["/api/eod/EMPTY.US"] = [(200, [])]
+    from api.providers.errors import EmptyResult
+
+    with pytest.raises(EmptyResult):
+        market.daily_closes_since_1995("EMPTY")
+    with pytest.raises(desk_basket.env.Refused, match="no adjusted closes"):
+        desk_basket.study_history({"dates": np.array(["2026-09-25"], dtype="datetime64[D]"), "adjusted": np.array([np.nan]),
+                                   "close_raw": np.array([1.0])}, "X")
+    market.clear_caches()
