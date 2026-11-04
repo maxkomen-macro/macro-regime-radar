@@ -402,7 +402,7 @@ def test_the_recession_run_checks_and_fits_on_one_snapshot(tmp_path, monkeypatch
     assert rec.DB_PATH == original  # the module's path is restored
 
 
-# Codex S-9: the studies run refuses replay artifacts made from another
+# Codex S-9, S-10: the studies run refuses replay artifacts made from another
 # version of the database, or a histories file paired with another replay.
 
 def _regimes_db(path, labels=("Overheating", "Stagflation"), prob=0.4):
@@ -417,21 +417,40 @@ def _regimes_db(path, labels=("Overheating", "Stagflation"), prob=0.4):
     return path
 
 
-def _artifacts(labels=("Overheating", "Stagflation"), prob=0.4):
+def _table_csv(by_v):
+    long = pd.DataFrame([(v, m, lab) for v, d in sorted(by_v.items()) for m, lab in d.items()],
+                        columns=["vintage", "month", "label"])
+    return long.to_csv(index=False).encode()
+
+
+def _artifacts(labels=("Overheating", "Stagflation"), prob=0.4, later=None):
+    """Histories for `labels` (first known in vintage 2024-05-15) and the
+    replay they came from; `later` adds a later vintage's labels."""
+    from scripts.research.vintage_regime import REPLAY_COL, replay_digest
+
     months = [f"2024-0{i + 1}" for i in range(len(labels))]
+    by_v = {"2024-05-15": dict(zip(months, labels))}
+    if later:
+        by_v["2024-06-14"] = dict(zip(months, later))
     h = pd.DataFrame({"served": list(labels), "served_prob_goldilocks": 0.2, "served_prob_overheating": prob,
                       "served_prob_stagflation": 0.2, "served_prob_recession": 0.2, "served_growth_trend": 0.1,
                       "served_inflation_trend": 0.3, "first_known": list(labels), "first_known_vintage": "2024-05-15",
-                      "at_governed_start": list(labels)},
+                      "at_governed_start": list(labels), REPLAY_COL: replay_digest(_table_csv(by_v))},
                      index=pd.Index(months, name="month"))
-    return h, {"2024-05-15": dict(zip(months, labels))}
+    return h, by_v
+
+
+def _digest(by_v):
+    from scripts.research.vintage_regime import replay_digest
+
+    return replay_digest(_table_csv(by_v))
 
 
 def test_artifacts_from_this_database_pass(tmp_path):
     from scripts.research.vintage_studies import check_artifacts
 
     h, by_v = _artifacts()
-    check_artifacts(_regimes_db(tmp_path / "s.db"), h, by_v)
+    check_artifacts(_regimes_db(tmp_path / "s.db"), h, by_v, _digest(by_v))
 
 
 @pytest.mark.parametrize("db_kw, words", [
@@ -444,7 +463,7 @@ def test_artifacts_from_another_database_version_are_refused(tmp_path, db_kw, wo
 
     h, by_v = _artifacts()
     with pytest.raises(ArtifactMismatch, match=words):
-        check_artifacts(_regimes_db(tmp_path / "s.db", **db_kw), h, by_v)
+        check_artifacts(_regimes_db(tmp_path / "s.db", **db_kw), h, by_v, _digest(by_v))
 
 
 def test_a_histories_file_paired_with_another_replay_is_refused(tmp_path):
@@ -453,21 +472,67 @@ def test_a_histories_file_paired_with_another_replay_is_refused(tmp_path):
     h, _ = _artifacts()
     _, other = _artifacts(labels=("Overheating", "Goldilocks"))
     with pytest.raises(ArtifactMismatch, match="first-known labels"):
-        check_artifacts(_regimes_db(tmp_path / "s.db"), h, other)
+        check_artifacts(_regimes_db(tmp_path / "s.db"), h, other, _digest(other))
+
+
+def _write(tmp_path, h, by_v):
+    import gzip
+
+    h.to_csv(tmp_path / "histories.csv")
+    (tmp_path / "labels.csv.gz").write_bytes(gzip.compress(_table_csv(by_v)))
+
+
+def _studies(tmp_path, src):
+    from scripts.research import vintage_studies as vs
+
+    vs.main(["--db", str(src), "--labels", str(tmp_path / "labels.csv.gz"), "--histories", str(tmp_path / "histories.csv"),
+             "--scratch", str(tmp_path / "scratch"), "--out", str(tmp_path / "out")])
 
 
 def test_the_studies_run_stops_on_stale_artifacts_before_any_study(tmp_path, monkeypatch):
-    import gzip
-
     from scripts.research import vintage_studies as vs
 
     src = _regimes_db(tmp_path / "store.db", labels=("Overheating", "Recession"))  # refreshed since the replay
-    h, by_v = _artifacts()
-    h.to_csv(tmp_path / "histories.csv")
-    long = pd.DataFrame([(v, m, lab) for v, d in by_v.items() for m, lab in d.items()], columns=["vintage", "month", "label"])
-    (tmp_path / "labels.csv.gz").write_bytes(gzip.compress(long.to_csv(index=False).encode()))
+    _write(tmp_path, *_artifacts())
     monkeypatch.setattr(vs, "run_catalog", _no_load)
     with pytest.raises(vs.ArtifactMismatch, match="served labels differ"):
-        vs.main(["--db", str(src), "--labels", str(tmp_path / "labels.csv.gz"), "--histories", str(tmp_path / "histories.csv"),
-                 "--scratch", str(tmp_path / "scratch"), "--out", str(tmp_path / "out")])
+        _studies(tmp_path, src)
     assert not (tmp_path / "out").exists()
+
+
+def test_a_replay_that_differs_only_after_first_release_is_refused(tmp_path, monkeypatch):
+    """S-10: both tables agree on every first-known label, but a later
+    vintage differs (the label a study session reads); the digest refuses it."""
+    from scripts.research import vintage_studies as vs
+
+    src = _regimes_db(tmp_path / "store.db")
+    h, mine = _artifacts(later=("Overheating", "Stagflation"))
+    _, other = _artifacts(later=("Overheating", "Recession"))
+    assert all(other["2024-05-15"][m] == lab for m, lab in zip(h.index, h["first_known"]))
+    _write(tmp_path, h, other)
+    monkeypatch.setattr(vs, "run_catalog", _no_load)
+    with pytest.raises(vs.ArtifactMismatch, match="not the histories' replay digest"):
+        _studies(tmp_path, src)
+    _write(tmp_path, h, mine)  # the matching pair gets past the check to the studies
+    with pytest.raises(AssertionError, match="computation started"):
+        _studies(tmp_path, src)
+
+
+def test_histories_without_a_replay_digest_are_refused(tmp_path):
+    from scripts.research.vintage_regime import REPLAY_COL
+    from scripts.research.vintage_studies import ArtifactMismatch, check_artifacts
+
+    h, by_v = _artifacts()
+    with pytest.raises(ArtifactMismatch, match="none recorded"):
+        check_artifacts(_regimes_db(tmp_path / "s.db"), h.drop(columns=[REPLAY_COL]), by_v, _digest(by_v))
+
+
+def test_the_replay_digest_covers_exactly_the_bytes_the_studies_parse(tmp_path):
+    import gzip
+
+    from scripts.research.vintage_studies import read_replay
+
+    _, by_v = _artifacts(later=("Goldilocks", "Recession"))
+    (tmp_path / "t.csv.gz").write_bytes(gzip.compress(_table_csv(by_v), mtime=0))
+    digest, vdates, parsed = read_replay(tmp_path / "t.csv.gz")
+    assert digest == _digest(by_v) and vdates == ["2024-05-15", "2024-06-14"] and parsed == by_v

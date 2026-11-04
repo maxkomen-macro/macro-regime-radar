@@ -31,6 +31,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
+import io
 import json
 import sqlite3
 import sys
@@ -44,8 +46,24 @@ from scripts.research import safeio
 PRIMARY_H = 20
 
 
+def read_replay(path: Path) -> tuple[str, list[str], dict[str, dict[str, str]]]:
+    """The per-vintage label table and the SHA-256 of exactly the bytes parsed
+    (uncompressed), to match against the histories' replay digest (S-10)."""
+    from scripts.research.vintage_regime import replay_digest
+
+    raw = Path(path).read_bytes()
+    data = gzip.decompress(raw) if raw[:2] == b"\x1f\x8b" else raw
+    vdates, by_v = _parse_labels(data)
+    return replay_digest(data), vdates, by_v
+
+
 def load_vintage_labels(path: Path) -> tuple[list[str], dict[str, dict[str, str]]]:
-    long = pd.read_csv(path)
+    _digest, vdates, by_v = read_replay(path)
+    return vdates, by_v
+
+
+def _parse_labels(data: bytes) -> tuple[list[str], dict[str, dict[str, str]]]:
+    long = pd.read_csv(io.BytesIO(data))
     by_v: dict[str, dict[str, str]] = {}
     for v, g in long.groupby("vintage", sort=True):
         by_v[str(v)] = dict(zip(g["month"].astype(str), g["label"]))
@@ -209,19 +227,25 @@ class ArtifactMismatch(RuntimeError):
     """The replay artifacts were not made from this database (Codex S-9)."""
 
 
-def check_artifacts(snap: Path, h: pd.DataFrame, by_v: dict[str, dict[str, str]], tol: float = 1e-9) -> None:
+def check_artifacts(snap: Path, h: pd.DataFrame, by_v: dict[str, dict[str, str]], replay_sha256: str,
+                    tol: float = 1e-9) -> None:
     """Raise unless the histories file describes exactly the served rows in
     `snap` (same months, labels, odds and trends) and the per-vintage label
-    table is the replay the histories were built from (each month's
-    first-known label is its label in that vintage). A refresh between the
-    regime run and this one, or a mismatched pair of files, stops the run."""
-    from scripts.research.vintage_regime import PROB_COLS, served_rows
+    table is the replay the histories were built from: the table's digest is
+    the one every histories row carries (S-10), and each month's first-known
+    label is its label in that vintage. A refresh between the regime run and
+    this one, or a mismatched pair of files, stops the run."""
+    from scripts.research.vintage_regime import PROB_COLS, REPLAY_COL, served_rows
 
     stored = served_rows(snap)
     served = stored[stored["computed_at"] == stored["computed_at"].max()]
     served.index = served.index.astype(str)
     hi = h.index.astype(str)
     problems = []
+    digests = set(h[REPLAY_COL].astype(str)) if REPLAY_COL in h else set()
+    if digests != {replay_sha256}:
+        problems.append(f"the label table's digest {replay_sha256[:12]} is not the histories' replay digest "
+                        f"({', '.join(sorted(d[:12] for d in digests)) or 'none recorded'})")
     if set(served.index) != set(hi):
         problems.append(f"{len(served)} served months in the database, {len(h)} in the histories, "
                         f"{len(set(served.index) & set(hi))} in both")
@@ -261,11 +285,11 @@ def main(argv: list[str] | None = None) -> int:
 
     h = pd.read_csv(a.histories, index_col=0)
     gov = {m: (lab if isinstance(lab, str) else None) for m, lab in h["at_governed_start"].items()}
-    vdates, by_v = load_vintage_labels(a.labels)
+    replay_sha256, vdates, by_v = read_replay(a.labels)
 
     # every run reads one snapshot of the database (Codex S-3), never the live file
     base = snapshot_db(a.db, a.scratch / "served.db")
-    check_artifacts(base, h, by_v)  # Codex S-9: the replay must describe this snapshot
+    check_artifacts(base, h, by_v, replay_sha256)  # Codex S-9, S-10: the replay must describe this snapshot
     served = run_catalog(base)
     gov_db = make_scratch_db(base, a.scratch / "governed_start.db", gov)
     governed = run_catalog(gov_db)

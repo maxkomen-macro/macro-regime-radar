@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import sqlite3
 import sys
@@ -46,6 +47,15 @@ from scripts.research import alfred, safeio
 # Every replay uses the same start, so only the data vintage differs.
 OBS_START = "1996-11-01"
 LABELS = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+# Codex S-10: every histories row carries the SHA-256 of the (uncompressed)
+# per-vintage label table written in the same run, binding the two files
+REPLAY_COL = "replay_sha256"
+
+
+def replay_digest(table_csv: bytes) -> str:
+    return hashlib.sha256(table_csv).hexdigest()
+
+
 PROB_COLS = ("prob_goldilocks", "prob_overheating", "prob_stagflation", "prob_recession")
 OUTPUTS = ("regime_histories.csv", "regime_labels_by_vintage.csv.gz", "regime_summary.json")
 LAG = 2  # src/desk/event_study.REGIME_LAG_MONTHS (asserted in main)
@@ -321,10 +331,12 @@ def run(cache: Path, db: Path, out: Path) -> dict:
         "dominant_prob_abs_diff_first_known": _prob_diff(h),
         "timing": timing(known, pd.PeriodIndex(h.index, freq="M")),
     }
-    safeio.write_text(out / "regime_histories.csv", h.to_csv(), db=db)
     # the per-vintage label table, for the event-study and drill-down runs
     long = pd.concat({v: r["label"] for v, r in reps.items()}, names=["vintage", "month"]).rename("label")
-    safeio.write_bytes(out / "regime_labels_by_vintage.csv.gz", gzip.compress(long.to_frame().to_csv().encode(), mtime=0), db=db)
+    table_csv = long.to_frame().to_csv().encode()
+    h[REPLAY_COL] = replay_digest(table_csv)
+    safeio.write_text(out / "regime_histories.csv", h.to_csv(), db=db)
+    safeio.write_bytes(out / "regime_labels_by_vintage.csv.gz", gzip.compress(table_csv, mtime=0), db=db)
     safeio.write_text(out / "regime_summary.json", json.dumps(res, indent=2, default=str), db=db)
     return res
 
