@@ -659,3 +659,196 @@ def test_without_the_raw_table_every_raw_row_is_missing_and_the_watermarks_survi
         assert (rows[sid]["first"], rows[sid]["last"], rows[sid]["status"]) == (None, None, "missing"), (sid, rows[sid])
     assert groups["Macro (monthly)"] == groups["Credit"] == groups["Rates"] == "missing"
     assert rows["BAMLH0A0HYM2"]["status"] == "current", "the Desk's own HY row still reads its stored rows"
+
+
+# ── D2: the stored provider apart from the declared policy (desk-upgrade) ───
+
+def _insert(conn, table: str, sid: str, rows: list[tuple]) -> None:
+    """Rows as a writer would leave them, mixed providers and junk included: (date, value, provider[, run_id])."""
+    if table == "asset_prices":
+        conn.executemany("INSERT INTO asset_prices (symbol, interval, date, close, provider) VALUES (?, '1d', ?, ?, ?)",
+                         [(sid, *r) for r in rows])
+    else:
+        cols = "series_id, date, value, provider" + (", run_id, ingested_at" if len(rows[0]) > 3 else "")
+        marks = ", ".join("?" * (4 if len(rows[0]) == 3 else 6))
+        conn.executemany(f"INSERT INTO desk_series ({cols}) VALUES ({marks})",
+                         [(sid, *r, *(("2026-09-23T12:00:00Z",) if len(r) > 3 else ())) for r in rows])
+
+
+def _mixed_store(tmp_path, *, migrated: bool) -> Path:
+    """The hermetic store, with ^NDX (desk_series) and ^GSPC (asset_prices) stored by Yahoo then EODHD, and
+    every class of row the engine's reader sets aside: a text value, an impossible day, a misshapen date, a
+    future date; on a migrated store also a row of a run that never committed and one dated after its run."""
+    from api import provenance
+    from src.market_data import asset_history
+
+    path = store.build(tmp_path / "macro_radar.db")
+    conn = sqlite3.connect(path)
+    asset_history.ensure_table(conn)
+    days = [d.strftime("%Y-%m-%d") for d in __import__("pandas").bdate_range("2026-06-01", "2026-09-22")]
+    yahoo, eod = days[:40], days[40:]
+    run = ()
+    if migrated:
+        provenance.migrate(conn, now=datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc))
+        good, _ = provenance.start_run(conn, datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc))
+        provenance.mark_committed(conn, good, datetime(2026, 9, 23, 12, 0, tzinfo=timezone.utc))
+        open_run, _ = provenance.start_run(conn, datetime(2026, 9, 23, 13, 0, tzinfo=timezone.utc))
+        early, _ = provenance.start_run(conn, datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc))
+        provenance.mark_committed(conn, early, datetime(2026, 9, 10, 12, 0, tzinfo=timezone.utc))
+        run = (good,)
+    ndx = ([(d, 18000.0 + i, "yfinance", *run) for i, d in enumerate(yahoo)]
+           + [(d, 19000.0 + i, "eodhd", *run) for i, d in enumerate(eod)]
+           + [("2026-02-30", 1.0, "yfinance", *run), ("2026-05-29", "n/a", "eodhd", *run), ("2026/05/28", 1.0, "eodhd", *run),
+              ("2099-01-02", 1.0, "eodhd", *run)])
+    if migrated:
+        ndx += [("2026-05-27", 1.0, "hand-typed", open_run), ("2026-09-23", 1.0, "hand-typed", early)]
+    _insert(conn, "desk_series", "^NDX", ndx)
+    _insert(conn, "asset_prices", "^GSPC", [(d, 5000.0 + i, "yfinance") for i, d in enumerate(yahoo)]
+            + [(d, 6000.0 + i, "eodhd") for i, d in enumerate(eod)] + [("2026-02-30", 1.0, "eodhd"), ("2099-01-02", 1.0, "eodhd")])
+    conn.commit()
+    conn.close()
+    return path
+
+
+@pytest.mark.parametrize("migrated", [False, True], ids=["plain", "provenance"])
+def test_stored_providers_count_exactly_the_rows_the_reader_reads(migrated, tmp_path, install_worker, monkeypatch):
+    """D2: each provider's rows and dates are of the observations the engine's
+    reader reads (load_level), row for row, a mixed series included; every row
+    it sets aside is set aside here too; `latest` is the newest row's provider."""
+    from src.desk import event_study as es
+
+    path = _mixed_store(tmp_path, migrated=migrated)
+    serve_pipeline(install_worker, monkeypatch, path)
+    at(monkeypatch, datetime(2026, 9, 23, 15, 0, tzinfo=timezone.utc))
+    rows = rows_of(get_pipeline())
+    days = [d.strftime("%Y-%m-%d") for d in __import__("pandas").bdate_range("2026-06-01", "2026-09-22")]
+    for sid in ("^NDX", "^GSPC"):
+        st = rows[sid]["stored"]
+        assert st["basis"] == "row_provider" and st["latest"] == "EODHD", (sid, st)
+        assert [(p["code"], p["name"], p["rows"], p["first"], p["last"]) for p in st["providers"]] == [
+            ("yfinance", "Yahoo", 40, days[0], days[39]), ("eodhd", "EODHD", len(days) - 40, days[40], days[-1])], (sid, st)
+        assert st["rows"] == len(days) and (rows[sid]["first"], rows[sid]["last"]) == (days[0], days[-1])
+    conn = sqlite3.connect(path)
+    try:
+        for spec in pipe.desk_specs():
+            try:
+                s = es.load_level(conn, spec, "2026-09-23")
+            except es.NotStored:
+                assert rows[spec.series_id]["stored"] is None, spec.series_id
+                continue
+            st = rows[spec.series_id]["stored"]
+            assert st["rows"] == len(s), spec.series_id
+            assert st["providers"][0]["first"] == s.index[0].strftime("%Y-%m-%d"), spec.series_id
+            assert max(p["last"] for p in st["providers"]) == s.index[-1].strftime("%Y-%m-%d"), spec.series_id
+    finally:
+        conn.close()
+    # the declaration is unchanged (R-15): only `stored` reads the provider column
+    _assert_providers(rows)
+
+
+def test_an_unknown_provider_code_is_shown_as_stored(tmp_path, install_worker, monkeypatch):
+    """A code outside the word table is printed as stored, never renamed or dropped."""
+    path = store.build(tmp_path / "macro_radar.db")
+    conn = sqlite3.connect(path)
+    conn.execute("UPDATE desk_series SET provider = 'hand-typed' WHERE series_id = 'DGS10' AND date >= '2026-09-01'")
+    conn.commit()
+    conn.close()
+    serve_pipeline(install_worker, monkeypatch, path)
+    st = rows_of(get_pipeline())["DGS10"]["stored"]
+    assert [p["name"] for p in st["providers"]] == ["FRED", "hand-typed"] and st["latest"] == "hand-typed"
+    assert st["providers"][1]["first"] == "2026-09-01" and st["providers"][1]["last"] == store.DAILY_END
+
+
+def test_raw_series_rows_name_their_one_writer(hermetic, monkeypatch):
+    """raw_series has no provider column: its rows say FRED on the table-writer
+    basis, spanning the stored stamps (never the watermark); none stored, null."""
+    rows = rows_of(get_pipeline())
+    conn = sqlite3.connect(hermetic)
+    try:
+        for sid in pipe.RAW_SERIES_ROWS:
+            n, lo, hi = conn.execute("SELECT COUNT(*), MIN(date), MAX(date) FROM raw_series WHERE series_id = ?", (sid,)).fetchone()
+            st = rows[sid]["stored"]
+            if not n:
+                assert st is None, sid
+                continue
+            assert st == {"basis": "table_writer", "rows": n, "latest": "FRED",
+                          "providers": [{"code": "fred", "name": "FRED", "rows": n, "first": lo, "last": hi}]}, sid
+    finally:
+        conn.close()
+    assert rows["USREC"]["stored"] is None
+
+
+def test_raw_series_has_one_writer_and_it_is_fred():
+    """The table-writer basis holds only while src/fetch_data.py (FRED) is the
+    one module outside tests that inserts into raw_series."""
+    pattern = re.compile(r"INSERT\s+(?:OR\s+\w+\s+)?INTO\s+raw_series|to_sql\(\s*['\"]raw_series", re.I)
+    skip = {"tests", "node_modules", ".git", "web", "proposals"}
+    writers = sorted(str(f.relative_to(ROOT)) for f in ROOT.rglob("*.py")
+                     if not skip & set(f.relative_to(ROOT).parts) and pattern.search(f.read_text(errors="replace")))
+    assert writers == ["src/fetch_data.py"], writers
+    assert "fred" in (ROOT / "src" / "fetch_data.py").read_text().lower()
+
+
+def test_each_rows_policy_is_its_writers_rule(hermetic):
+    """D2: the intended fallback policy per series: FRED rows FRED; a price
+    EODHD first where the writer has an EODHD code for it, Yahoo alone where it
+    has none (gold futures, which EODHD does not carry)."""
+    from src.market_data import asset_history
+
+    rows = rows_of(get_pipeline())
+    for sid, r in rows.items():
+        spec = registry.BY_SERIES_ID.get(sid) if sid not in pipe.RAW_SERIES_ROWS else None
+        if spec is None or spec.source == "fred":
+            want = pipe.POLICY_FRED
+        else:
+            code = asset_history._eodhd_code(sid) if spec.source == "asset_prices" else spec.eodhd
+            want = pipe.POLICY_EODHD_FIRST if code else pipe.POLICY_YAHOO_ONLY
+        assert r["policy"] == want, (sid, r["policy"])
+    assert rows["GC=F"]["policy"] == pipe.POLICY_YAHOO_ONLY
+    assert all(rows[s]["policy"] == pipe.POLICY_EODHD_FIRST for s in ("^GSPC", "^VIX", "^NDX", "DX-Y.NYB", "JPY=X", "SPY", "TLT"))
+
+
+def test_the_new_strings_speak_the_desks_language():
+    ts = (ROOT / "web" / "src" / "screens" / "desk" / "desk-language.test.ts").read_text()
+    banned = re.compile(re.search(r"const BANNED = /(.+?)/gi;", ts).group(1), re.I)
+    for text in (pipe.POLICY_FRED, pipe.POLICY_EODHD_FIRST, pipe.POLICY_YAHOO_ONLY, *pipe.PROVIDER_WORDS.values()):
+        assert not banned.search(text), text
+
+
+def test_a_count_that_disagrees_with_the_reader_is_never_served(tmp_path, monkeypatch):
+    """The item refuses rather than serve providers for rows the reader does not read."""
+    monkeypatch.setattr(db, "DB_PATH", store.build(tmp_path / "macro_radar.db"))
+    real = pipe.stored_providers
+
+    def off_by_one(conn, spec, as_of):
+        st = real(conn, spec, as_of)
+        return st and {**st, "rows": st["rows"] + 1}
+
+    monkeypatch.setattr(pipe, "stored_providers", off_by_one)
+    with pytest.raises(RuntimeError, match="disagree with the engine's reader"):
+        pipe.desk_pipeline({})
+
+
+def test_the_published_copy_names_its_stored_providers(install_worker, monkeypatch):
+    """On the published store: every stored row's providers sum to its stored
+    count, and every market price names the provider its rows carry."""
+    if not PUBLISHED.exists() or PUBLISHED.stat().st_size == 0:
+        pytest.skip("data/macro_radar.db is not in this tree")
+    serve_pipeline(install_worker, monkeypatch, PUBLISHED)
+    rows = rows_of(get_pipeline())
+    conn = sqlite3.connect(PUBLISHED)
+    try:
+        for sid, r in rows.items():
+            st = r["stored"]
+            if st is None:
+                assert r["first"] is None, sid
+                continue
+            assert st["rows"] == sum(p["rows"] for p in st["providers"]), sid
+            if st["basis"] == "row_provider" and registry.BY_SERIES_ID[sid].source != "fred":
+                table, col = (("asset_prices", "symbol") if registry.BY_SERIES_ID[sid].source == "asset_prices"
+                              else ("desk_series", "series_id"))
+                extra = " AND interval = '1d'" if table == "asset_prices" else ""
+                codes = {c for (c,) in conn.execute(f"SELECT DISTINCT provider FROM {table} WHERE {col} = ?{extra}", (sid,))}
+                assert {p["code"] for p in st["providers"]} <= codes, sid
+    finally:
+        conn.close()

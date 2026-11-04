@@ -58,7 +58,9 @@ auditable data pipeline. The design language states this rather than sells it.
   group, the stream WebSocket/debug pair, and `POST /api/assistant/ask` (count as of
   2026-08-26) [repo]. During development the client assumes `http://127.0.0.1:8000` [brief].
 - **Cadence truth [repo]:** regimes/signals are monthly-cadence; the stored market
-  universe (23 ETFs) is refreshed daily by the pipeline (yfinance); intraday is 5-min for
+  universe (23 ETFs) is refreshed daily by the pipeline (yfinance; each ETF's bars from
+  2024-02-27, or 2026-02-18 for 14 of them, to 2026-05-26 are Polygon.io rows kept from the
+  earlier pipeline, bar SPY's 2026-03-12 close, and every label says so by date); intraday is 5-min for
   SPY/QQQ; news is hourly with a rolling retention window; the calendar is a
   hand-maintained CSV through Dec 2026. Freshness messaging must state what the data
   is, never pretend it is live. Since 2026-09-06 the server publishes source-aware

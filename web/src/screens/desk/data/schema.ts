@@ -932,7 +932,31 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       o({
         name: "s!",
         status: e(FRESH_STATES),
-        series: l(o({ label: "s!", id: "s!", key: "s?", provider: "s", freq: e(["daily", "weekly", "monthly"]), first: "s?", last: "s?", feeds: l("s!"), status: e(FRESH_STATES), note: "s?" })),
+        series: l(
+          o({
+            label: "s!",
+            id: "s!",
+            key: "s?",
+            provider: "s",
+            // D2: the intended fallback rule, apart from the providers of the stored rows
+            policy: "s",
+            stored: o(
+              {
+                basis: e(["row_provider", "table_writer"]),
+                rows: "n",
+                latest: "s!",
+                providers: l(o({ code: "s!", name: "s!", rows: "n", first: "s!", last: "s!" })),
+              },
+              { nul: true },
+            ),
+            freq: e(["daily", "weekly", "monthly"]),
+            first: "s?",
+            last: "s?",
+            feeds: l("s!"),
+            status: e(FRESH_STATES),
+            note: "s?",
+          }),
+        ),
       }),
     ),
   }),
