@@ -312,10 +312,16 @@ def daily_bars(symbol: str) -> dict:
         raise UnknownSymbol("api", str(exc)) from exc
     session = last_session()
     key = f"{inst.canonical}:{DAILY_RANGE}:{session}"
-    # An answer still missing the session's close is asked again after DAILY_RETRY_S; the decision and the
-    # refresh happen under the key's own single-flight lock (Codex R-13), so concurrent requests make one call.
+    # An answer still missing the session's close, or its adjusted close (a bar the basket leaves out, Codex
+    # S-05), is asked again after DAILY_RETRY_S; the decision and the refresh happen under the key's own
+    # single-flight lock (Codex R-13), so concurrent requests make one call.
     return _daily_cache.get(key, lambda: _daily_compute(inst, session),
-                            stale=lambda v, age: v["bars"][-1]["ts"][:10] < session and age > DAILY_RETRY_S)
+                            stale=lambda v, age: _last_adjusted_bar(v["bars"]) < session and age > DAILY_RETRY_S)
+
+
+def _last_adjusted_bar(bars: list[dict]) -> str:
+    """The newest bar's date that carries an adjusted close ("" when none does)."""
+    return next((b["ts"][:10] for b in reversed(bars) if b.get("adjusted") is True), "")
 
 
 # desk/basket-study (P1a): the basket event study reads each name's daily closes from this date, the same

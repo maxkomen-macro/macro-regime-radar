@@ -554,6 +554,32 @@ def test_codex_s04_a_session_posted_without_its_adjusted_close_is_asked_again(up
     market.clear_caches()
 
 
+def test_codex_s05_the_two_year_bars_ask_again_for_a_session_posted_without_its_adjusted_close(up, monkeypatch):
+    """Codex S-05, S-04's sibling: Basket & Hedge's price and hedge read the two-year bars, and leave out a bar
+    without an adjusted close; that cache too asks again while the newest adjusted bar precedes the session, so
+    the price and the study move to the new session together. A complete answer is not asked again."""
+    _at(monkeypatch, "2026-09-25T21:00:00+00:00")
+    market.clear_caches()
+    first = [{"date": "2026-09-24", "open": 1, "high": 1, "low": 1, "close": 101.0, "adjusted_close": 101.0, "volume": 10},
+             {"date": "2026-09-25", "open": 1, "high": 1, "low": 1, "close": 102.0, "adjusted_close": None, "volume": 10}]
+    full = [dict(first[0]), {**first[1], "adjusted_close": 102.0}]
+    up.script["/api/eod/NVDA.US"] = [(200, first), (200, full)]
+    h = desk_basket.history_of(market.daily_bars("NVDA"), "NVDA")
+    assert h.dates[-1] == "2026-09-24"
+    market.daily_bars("NVDA")  # within the retry wait: the stored answer
+    assert up.paths().count("/api/eod/NVDA.US") == 1
+    key = "NVDA:2Y:2026-09-25"
+    stamp, value = market._daily_cache._data[key]
+    market._daily_cache._data[key] = (stamp - market.DAILY_RETRY_S - 60, value)  # older than the retry wait
+    h = desk_basket.history_of(market.daily_bars("NVDA"), "NVDA")
+    assert up.paths().count("/api/eod/NVDA.US") == 2 and h.dates[-1] == "2026-09-25"
+    stamp, value = market._daily_cache._data[key]
+    market._daily_cache._data[key] = (stamp - market.DAILY_RETRY_S - 60, value)
+    market.daily_bars("NVDA")  # complete through the session: kept
+    assert up.paths().count("/api/eod/NVDA.US") == 2
+    market.clear_caches()
+
+
 def test_the_studys_closes_refuse_an_unknown_name_and_an_empty_answer(up, monkeypatch):
     _at(monkeypatch, "2026-09-25T21:00:00+00:00")
     market.clear_caches()
