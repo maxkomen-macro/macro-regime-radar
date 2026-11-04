@@ -149,6 +149,8 @@ def _garch(path: Path) -> pd.DataFrame:
 
     with _module_db(volatility, path):
         out = volatility.compute_garch_signal()
+    if out.get("status") != "ok":   # the card did not compute: an error, never "unchanged"
+        raise RuntimeError(f"compute_garch_signal returned status {out.get('status')!r}: {out.get('reason')}")
     rows = []
     for k, v in out.items():
         if isinstance(v, (list, tuple)):
@@ -209,8 +211,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--report", default="", help="write the full comparison as JSON (a new file)")
     a = ap.parse_args(argv)
     before, after = Path(a.before), Path(a.after)
-    if a.report and (Path(a.report).exists() or Path(a.report).is_symlink()):
-        print(f"refusing: --report {a.report} already exists; name a new file", file=sys.stderr)
+    if a.report and (Path(a.report).exists() or Path(a.report).is_symlink()
+                     or not Path(a.report).resolve().parent.is_dir()):
+        print(f"refusing: --report {a.report} already exists or its folder does not; name a new file", file=sys.stderr)
         return 2
     rep = compare(before, after)
     if a.report:

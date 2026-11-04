@@ -516,3 +516,42 @@ def test_the_history_backfill_holds_back_an_unfinished_session(monkeypatch):
     assert bf.fetch_and_insert("SPY", "2026-09-17", conn, now=AFTER_CLOSE) == 1  # the finished bar, once complete
     assert conn.execute("SELECT date, close FROM market_daily ORDER BY date").fetchall() == [
         ("2026-09-17", 700.0), ("2026-09-18", 701.5)]
+
+
+def test_a_garch_card_that_did_not_compute_is_an_error_not_unchanged(monkeypatch, tmp_path, db):
+    from scripts import restate_impact as ri
+    from src.analytics import volatility
+
+    monkeypatch.setattr(volatility, "compute_garch_signal", lambda: {"status": "error", "reason": "db read failed: x"})
+    with pytest.raises(RuntimeError, match="db read failed"):
+        ri._garch(tmp_path / "x.db")
+    rep = ri.downstream(db, db, consumers={"garch": ri._garch})
+    assert "db read failed" in rep["garch"]["error_before"] and "rows_compared" not in rep["garch"]
+
+
+@pytest.mark.parametrize("field,bad", [("open", float("nan")), ("high", 0.0), ("low", -1.0), ("volume", float("nan")),
+                                       ("volume", -5.0)])
+def test_every_written_field_is_checked_before_anything_is_written(db, field, bad):
+    before = _sha(db)
+
+    class Bad(Provider):
+        def fetch_daily(self, symbol, start, end, auto_adjust=True):
+            df = super().fetch_daily(symbol, start, end, auto_adjust)
+            df.loc[df["date"] == "2026-09-03", field] = bad
+            return df
+
+    with pytest.raises(SystemExit, match="no usable fetched bar"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Bad(), apply=True, now=AFTER_CLOSE)
+    assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
+
+
+def test_a_report_in_a_missing_folder_is_refused_before_anything_is_written(monkeypatch, db, tmp_path):
+    import src.market_data.yfinance_client as yc
+    from scripts import restate_impact as ri
+
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
+    before = _sha(db)
+    missing = tmp_path / "no-such-dir" / "r.json"
+    assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply", "--report", str(missing)]) == 2
+    assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
+    assert ri.main(["--before", str(db), "--after", str(db), "--report", str(missing)]) == 2

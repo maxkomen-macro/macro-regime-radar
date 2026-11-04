@@ -69,8 +69,8 @@ DB_PATH = ROOT / "data" / "macro_radar.db"
 BAD_CLOSE_DATES = ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-10"]
 SPY_SPLICE = ("SPY", "1993-01-29", "2024-02-26")
 BASIS = "unadjusted for distributions (Yahoo Close: split-adjusted only)"
-BASIS_TOL = 2e-4   # |log(stored / fetched)| on an anchor row. Measured 2026-11-04 over the 8,503
-                   # stored rows since 2024-02-27 outside the four dates: at most 6.5e-5 (0.0065%)
+BASIS_TOL = 2e-4   # |log(stored / fetched)| on an anchor row. Measured 2026-11-04 (data-latest of that
+                   # morning) over the 8,503 stored rows since 2024-02-27 outside the four dates: at most 6.5e-5
 ANCHORS = 3        # stored rows checked on each side of a block of targets, where they exist
 FIELDS = ("open", "high", "low", "close", "volume")
 
@@ -122,6 +122,12 @@ def _bars(client, symbol: str, start: str, end: str) -> dict[str, dict]:
 
 def _good(x) -> bool:
     return x is not None and math.isfinite(x) and x > 0
+
+
+def _usable(b: dict | None) -> bool:
+    """Every field written must be usable: prices finite and positive, volume finite and not negative."""
+    return (b is not None and all(_good(b[f]) for f in ("open", "high", "low", "close"))
+            and b["volume"] is not None and math.isfinite(b["volume"]) and b["volume"] >= 0)
 
 
 def restate(db_path: Path, dates: list[str], symbols: list[str], client, *, ranges=(), apply: bool = False,
@@ -181,7 +187,7 @@ def restate(db_path: Path, dates: list[str], symbols: list[str], client, *, rang
                                     f"({err * 100:+.3f}%): the fetch is not on the stored basis")
             for d in sorted(targets):
                 b = bars.get(d)
-                if b is None or not _good(b["close"]):
+                if not _usable(b):
                     problems.append(f"{symbol} {d}: no usable fetched bar for a target row")
                     continue
                 old = {f: stored[d][f] for f in FIELDS}
@@ -268,6 +274,8 @@ def _report_path_problem(report: str, db: str, snapshot: str) -> str | None:
     rp, dbp = Path(report), Path(db)
     if rp.exists() or rp.is_symlink():
         return f"--report {rp} already exists; name a new file"
+    if not rp.resolve().parent.is_dir():
+        return f"--report {rp}: its folder does not exist"
     keep = [dbp] + [dbp.with_name(dbp.name + x) for x in ("-wal", "-shm", "-journal")]
     if snapshot:
         keep.append(Path(snapshot))

@@ -365,7 +365,7 @@ def run_intraday_only(now: datetime | None = None, client=None, assets: dict | N
         session_day = today_ny(now)
         if is_trading_day(session_day) and bar_is_complete(session_day, now):
             n = _fetch_daily_incremental(conn, client, assets.get("daily", []), now)
-            logger.info("[fetch_market] post-close capture: %d official daily bar(s) stored.", n)
+            logger.info("[fetch_market] post-close capture: %d finished-session daily bar(s) stored.", n)
     finally:
         conn.close()
 
