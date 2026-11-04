@@ -53,6 +53,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -311,6 +312,40 @@ def reset_refresh_status_for_tests() -> None:
     _refresh_status = None
 
 
+# Codex DR-15: the status read sits before the database check, so it is bounded in total time and
+# size, not only per read: a response that trickles bytes, or never ends, cannot hold the check.
+STATUS_READ_DEADLINE_S = 15.0
+STATUS_READ_MAX_BYTES = 256 * 1024
+_clock = time.monotonic  # tests replace it to stand for a slow response
+
+
+class _StatusReadLimit(Exception):
+    """The status read passed its total deadline or its byte cap."""
+
+
+def _bounded_get(client: httpx.Client, url: str, headers: dict, *, deadline_s: float | None = None,
+                 max_bytes: int | None = None) -> bytes | None:
+    """The body of `url`, or None when it is larger than `max_bytes`. Raises on an HTTP error, a
+    network error, or `deadline_s` passing (checked on every chunk and bounded per read by the timeout)."""
+    deadline_s = STATUS_READ_DEADLINE_S if deadline_s is None else deadline_s
+    max_bytes = STATUS_READ_MAX_BYTES if max_bytes is None else max_bytes
+    clock = _clock
+    end = clock() + deadline_s
+    per_read = httpx.Timeout(min(10.0, deadline_s))
+    buf = bytearray()
+    with client.stream("GET", url, headers=headers, timeout=per_read) as resp:
+        resp.raise_for_status()
+        for chunk in resp.iter_bytes(8192):
+            buf += chunk
+            if len(buf) > max_bytes:
+                return None
+            if clock() > end:
+                raise _StatusReadLimit("status read passed its deadline")
+    if clock() > end:
+        raise _StatusReadLimit("status read passed its deadline")
+    return bytes(buf)
+
+
 def _read_refresh_status(client: httpx.Client | None, auth: dict, assets: list[dict] | None) -> None:
     """Hold this check's view of refresh-status.json. A failed listing, a missing asset, a failed
     download or an invalid document holds no document (never the last one's), with the reason."""
@@ -327,9 +362,8 @@ def _read_refresh_status(client: httpx.Client | None, auth: dict, assets: list[d
             error = "missing"
         else:
             try:
-                resp = client.get(asset["url"], headers={**auth, "Accept": "application/octet-stream"}, timeout=30.0)
-                resp.raise_for_status()
-                doc = rs.parse_doc(resp.content)
+                body = _bounded_get(client, asset["url"], {**auth, "Accept": "application/octet-stream"})
+                doc = rs.parse_doc(body) if body is not None else None
                 error = None if doc is not None else "unreadable"
             except Exception as exc:  # noqa: BLE001 - this read must never affect the database check
                 log.warning("refresh-status.json could not be read (%s); monthly prints read conservatively", public_error(exc))

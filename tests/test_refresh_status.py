@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import sys
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
@@ -318,6 +319,65 @@ def test_a_status_read_never_affects_the_database_check(monkeypatch, tmp_path):
     monkeypatch.setattr(bootstrap, "_transport", httpx.MockTransport(handler))
     assert bootstrap.refresh_db() is False
     assert bootstrap.status()["last_result"] == "no_asset"
+    assert bootstrap.refresh_attempts()["error"] == "fetch failed"
+    bootstrap.reset_refresh_status_for_tests()
+
+
+def _trickle(clock_step):
+    """A status response that never ends, one byte per read, while the replaced clock advances."""
+    t = [0.0]
+    def clock():
+        t[0] += clock_step
+        return t[0]
+    def body():
+        while True:
+            yield b" "
+    return clock, body
+
+
+def test_a_trickling_status_response_is_cut_off_at_the_total_deadline(monkeypatch):
+    # Codex DR-15: per-read timeouts never fire on a response that keeps sending; the total deadline does
+    clock, body = _trickle(1.0)
+    monkeypatch.setattr(bootstrap, "_clock", clock)
+    c = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, content=body())))
+    with pytest.raises(bootstrap._StatusReadLimit):
+        bootstrap._bounded_get(c, f"{API}/releases/assets/9", {})
+    assert clock() <= bootstrap.STATUS_READ_DEADLINE_S + 3  # stopped at the first read past the deadline
+
+
+def test_an_oversized_status_response_reads_unreadable_without_reading_it_all():
+    big = b"[" + b" " * (bootstrap.STATUS_READ_MAX_BYTES + 1) + b"]"
+    assert bootstrap._bounded_get(_client([STATUS_ASSET], big), f"{API}/releases/assets/9", {}) is None
+    bootstrap.reset_refresh_status_for_tests()
+    with _client([STATUS_ASSET], big) as c:
+        bootstrap._read_refresh_status(c, {}, [STATUS_ASSET])
+    assert bootstrap.refresh_attempts()["error"] == "unreadable" and bootstrap.refresh_attempts()["doc"] is None
+    assert bootstrap._bounded_get(_client([STATUS_ASSET], GOOD), f"{API}/releases/assets/9", {}) == GOOD
+    bootstrap.reset_refresh_status_for_tests()
+
+
+def test_a_trickling_status_response_never_holds_the_database_check(monkeypatch, tmp_path):
+    """The database check still completes (here: the asset is unchanged) and the status reads fetch failed."""
+    from api import db
+    live = tmp_path / "macro_radar.db"
+    sqlite3.connect(live).close()
+    monkeypatch.setattr(db, "DB_PATH", live)
+    monkeypatch.setattr(bootstrap, "_token", lambda: "t")
+    db_asset = {"id": 11, "name": "macro_radar.db", "updated_at": "2026-10-14T14:09:00Z", "size": 1,
+                "url": f"{API}/releases/assets/11", "digest": "sha256:" + "0" * 64}
+    bootstrap.identity_path().write_text(json.dumps(bootstrap.asset_identity(db_asset)))
+    clock, body = _trickle(1.0)
+    monkeypatch.setattr(bootstrap, "_clock", clock)
+    def handler(request):
+        if request.url.path.endswith("/releases/tags/data-latest"):
+            return httpx.Response(200, json={"assets": [STATUS_ASSET, db_asset]})
+        if request.url.path.endswith("/assets/9"):
+            return httpx.Response(200, content=body())
+        return httpx.Response(404)
+    monkeypatch.setattr(bootstrap, "_transport", httpx.MockTransport(handler))
+    bootstrap.reset_refresh_status_for_tests()
+    assert bootstrap.refresh_db() is False
+    assert bootstrap.status()["last_result"] == "unchanged"
     assert bootstrap.refresh_attempts()["error"] == "fetch failed"
     bootstrap.reset_refresh_status_for_tests()
 
