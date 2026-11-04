@@ -59,7 +59,7 @@ Loaded by every session and every Project thread, and re-read after compaction. 
 - Do not remove `USSLIND` from `RECESSION_SERIES` config without reading `src/analytics/recession.py` first — the model already trains on the `T10YIE − T5YIE` fallback, and the config entry keeps the stored history and the staleness check working.
 - Do not assume the env var is `NEWSAPI_KEY` — code uses `NEWS_API_KEY` (underscore).
 - Do not extend or reintroduce the `polygon.py` code path — yfinance (`yfinance_client.py`) is the live market data source for daily and intraday.
-- Do not replace the workflow retry loop with stash/rebase patterns.
+- Do not commit or push from a workflow step except through `scripts/publish_artifacts.sh` (fresh worktree of current `main`, allow-listed files only); never stash/rebase or `reset --soft` (it reverted merged PRs twice, `.claude/rules/workflows.md`).
 - Do not remove `data/macro_radar.db merge=ours` from `.gitattributes`.
 - Do not introduce historical-range-based `fill_pct` for signal cards.
 - Do not silently swallow errors — surface them in the UI or log to session state.

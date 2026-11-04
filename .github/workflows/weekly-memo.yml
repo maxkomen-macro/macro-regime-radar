@@ -4,8 +4,8 @@ name: Weekly Memo Email
 # Refresh Data workflow dispatches this one after the validated Monday morning
 # full run, passing its run id; the memo consumes that run's validated
 # database artifact. A manual dispatch without a run id uses the current
-# data-latest asset. The memo commit uses the retry / soft-reset loop (never
-# stash/rebase).
+# data-latest asset. The memo commit goes through scripts/publish_artifacts.sh
+# (a fresh worktree of current main, only the memo staged; never stash/rebase).
 
 on:
   workflow_dispatch:
@@ -131,26 +131,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/memo/weekly_memo.html
-          if git diff --cached --quiet; then
-            echo "No memo changes to commit"
-          else
-            git commit -m "Update weekly memo [skip ci]"
-            COMMIT_MSG=$(git log -1 --pretty=%B)
-            # Retry / soft-reset loop (never stash/rebase).
-            for i in 1 2 3 4 5; do
-              if git fetch origin main \
-                 && git reset --soft origin/main \
-                 && git commit -m "$COMMIT_MSG" \
-                 && git push; then
-                echo "Push succeeded on attempt $i"
-                break
-              fi
-              if [ "$i" -eq 5 ]; then echo "Push failed after 5 attempts"; exit 1; fi
-              echo "Attempt $i failed (fetch/reset/commit/push), retrying..."
-              sleep $((RANDOM % 10 + 5))
-            done
-          fi
+          # Builds the commit in a fresh worktree of the current origin/main and
+          # stages only the memo, so a PR merged while this run was in flight is
+          # never undone. Five attempts with backoff; an unchanged memo makes no
+          # commit. See scripts/publish_artifacts.sh.
+          bash scripts/publish_artifacts.sh "Update weekly memo [skip ci]" docs/memo/weekly_memo.html
           ls -la output/email_body.html
 
       - name: Send memo email
