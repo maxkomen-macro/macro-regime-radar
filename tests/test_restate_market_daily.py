@@ -30,8 +30,8 @@ AFTER_CLOSE = datetime(2026, 9, 19, 0, 30, tzinfo=timezone.utc)
 DIV = 0.98   # a dividend-adjusted fetch scales earlier closes by this
 
 
-class Official:
-    """Unadjusted daily bars as the vendor serves them after the close.
+class Provider:
+    """Unadjusted daily bars as the provider (Yahoo) reports them after the close.
 
     `adjusted` imitates auto_adjust=True: rows before `ex_date` are scaled by
     DIV whatever the caller asks for, the way a wrong-basis fetch looks."""
@@ -110,11 +110,12 @@ def _sha(path):
 
 def test_dry_run_reports_and_writes_nothing(db):
     before = _sha(db)
-    client = Official()
+    client = Provider()
     rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=client, apply=False, now=AFTER_CLOSE)
     rows = {(r["symbol"], r["date"]): r for r in rep["rows"]}
     assert rows[("SPY", "2026-09-03")]["stored_close"] == 768.66
-    assert rows[("SPY", "2026-09-03")]["official_close"] == 773.11
+    assert rows[("SPY", "2026-09-03")]["provider_close"] == 773.11
+    assert not any("official" in k for k in rows[("SPY", "2026-09-03")])  # provider-reported, never "official"
     assert rows[("SPY", "2026-09-03")]["changed"] and rows[("SPY", "2026-09-03")]["kind"] == "mid-session"
     assert rep["applied"] is False and rep["db_sha256"] == before and "snapshot" not in rep
     assert "not an independent or exchange-official source check" in rep["source_check"]
@@ -124,13 +125,13 @@ def test_dry_run_reports_and_writes_nothing(db):
 
 
 def test_every_fetch_asks_for_unadjusted_bars(db):
-    client = Official()
+    client = Provider()
     rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=client, now=AFTER_CLOSE)
     assert client.calls and all(c[3] is False for c in client.calls)
 
 
 def test_apply_overwrites_only_the_named_rows_that_exist(db):
-    rep = rs.restate(db, dates=["2026-09-02", "2026-09-03"], symbols=["SPY"], client=Official(), apply=True,
+    rep = rs.restate(db, dates=["2026-09-02", "2026-09-03"], symbols=["SPY"], client=Provider(), apply=True,
                      now=AFTER_CLOSE)
     assert rep["applied"] is True
     got = _row(db, "SPY", "2026-09-03")
@@ -144,7 +145,7 @@ def test_apply_overwrites_only_the_named_rows_that_exist(db):
 def test_apply_keeps_a_byte_identical_snapshot_first(db, tmp_path):
     before_bytes = db.read_bytes()
     snap = tmp_path / "keep.db"
-    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), apply=True, now=AFTER_CLOSE,
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE,
                      snapshot=snap)
     assert snap.read_bytes() == before_bytes
     assert rep["snapshot"] == str(snap) and rep["snapshot_sha256"] == hashlib.sha256(before_bytes).hexdigest()
@@ -152,12 +153,12 @@ def test_apply_keeps_a_byte_identical_snapshot_first(db, tmp_path):
 
 
 def test_the_default_snapshot_sits_beside_the_database_and_is_never_overwritten(db):
-    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), apply=True, now=AFTER_CLOSE)
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE)
     snaps = list(db.parent.glob("md.pre-restate-20260919T003000Z.db"))
     assert len(snaps) == 1 and _close(snaps[0], "SPY", "2026-09-03") == 768.66
     after = _sha(db)
     with pytest.raises(SystemExit, match="already exists"):
-        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), apply=True, now=AFTER_CLOSE)
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE)
     assert _sha(db) == after and _close(snaps[0], "SPY", "2026-09-03") == 768.66
 
 
@@ -165,7 +166,7 @@ def test_an_unfinished_session_is_refused(db):
     before = _sha(db)
     mid_session = datetime(2026, 9, 18, 15, 0, tzinfo=timezone.utc)
     with pytest.raises(SystemExit, match="not complete"):
-        rs.restate(db, dates=["2026-09-18"], symbols=["SPY"], client=Official(), apply=True, now=mid_session)
+        rs.restate(db, dates=["2026-09-18"], symbols=["SPY"], client=Provider(), apply=True, now=mid_session)
     assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
 
 
@@ -174,17 +175,17 @@ def test_a_fetch_on_another_basis_is_refused_before_anything_is_written(db):
     0.59% off on the real September rows. The anchors catch it."""
     before = _sha(db)
     with pytest.raises(SystemExit, match="not on the stored basis"):
-        rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=Official(adjusted=True), apply=True,
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=Provider(adjusted=True), apply=True,
                    now=AFTER_CLOSE)
     assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
 
 
 def test_an_anchor_inside_the_tolerance_passes_and_one_outside_refuses(db):
-    inside = Official()
+    inside = Provider()
     inside.bars[("SPY", "2026-08-31")] = 765.0 * math.exp(rs.BASIS_TOL * 0.5)
     rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=inside, now=AFTER_CLOSE)
     assert max(abs(a["log_diff"]) for a in rep["anchors"]) == pytest.approx(rs.BASIS_TOL * 0.5)
-    outside = Official()
+    outside = Provider()
     outside.bars[("SPY", "2026-08-31")] = 765.0 * math.exp(rs.BASIS_TOL * 2)
     with pytest.raises(SystemExit, match="2026-08-31"):
         rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=outside, now=AFTER_CLOSE)
@@ -193,7 +194,7 @@ def test_an_anchor_inside_the_tolerance_passes_and_one_outside_refuses(db):
 def test_one_missing_bar_refuses_the_whole_run(db):
     """No partial restatement: QQQ's bar is missing, so SPY is not written either."""
     before = _sha(db)
-    client = Official()
+    client = Provider()
     del client.bars[("QQQ", "2026-09-03")]
     with pytest.raises(SystemExit, match="QQQ 2026-09-03"):
         rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=client, apply=True, now=AFTER_CLOSE)
@@ -201,18 +202,18 @@ def test_one_missing_bar_refuses_the_whole_run(db):
 
 
 def test_a_missing_anchor_bar_or_no_neighbour_at_all_is_refused(tmp_path, db):
-    client = Official()
+    client = Provider()
     del client.bars[("SPY", "2026-09-04")]
     with pytest.raises(SystemExit, match="anchor row has no fetched bar"):
         rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=client, now=AFTER_CLOSE)
     lonely = _make(tmp_path / "lonely.db", [_bar("SPY", "2026-09-03", 768.66)])
     with pytest.raises(SystemExit, match="no stored neighbour"):
-        rs.restate(lonely, dates=["2026-09-03"], symbols=["SPY"], client=Official(), now=AFTER_CLOSE)
+        rs.restate(lonely, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), now=AFTER_CLOSE)
 
 
 def test_a_bad_fetched_close_is_refused(db):
     for bad in (0.0, -1.0, float("nan"), float("inf")):
-        client = Official()
+        client = Provider()
         client.bars[("SPY", "2026-09-03")] = bad
         with pytest.raises(SystemExit, match="no usable fetched bar"):
             rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=client, apply=True, now=AFTER_CLOSE)
@@ -223,12 +224,12 @@ def test_uncheckpointed_writes_are_refused(db):
     wal = db.with_name(db.name + "-wal")
     wal.write_bytes(b"x")
     with pytest.raises(SystemExit, match="uncheckpointed"):
-        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), apply=True, now=AFTER_CLOSE)
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE)
     assert _close(db, "SPY", "2026-09-03") == 768.66 and not list(db.parent.glob("*.pre-restate-*"))
 
 
 def test_an_unchanged_row_is_reported_but_not_rewritten(db):
-    client = Official()
+    client = Provider()
     client.bars[("SPY", "2026-09-03")] = 768.66
     conn = sqlite3.connect(db)
     conn.execute("UPDATE market_daily SET open=768.66, high=768.66, low=768.66, volume=10.0"
@@ -261,7 +262,7 @@ def splice_db(tmp_path):
 
 
 def _splice_client():
-    return Official(bars={("SPY", d): c for d, c in RAW.items()})
+    return Provider(bars={("SPY", d): c for d, c in RAW.items()})
 
 
 def test_the_splice_replaces_the_adjusted_block_and_fixes_the_boundary_return(splice_db):
@@ -326,14 +327,14 @@ def test_the_cli_defaults_to_a_dry_run_of_the_four_dates():
 def test_the_cli_writes_the_report_and_returns_2_on_a_refusal(monkeypatch, db, tmp_path, capsys):
     import src.market_data.yfinance_client as yc
 
-    monkeypatch.setattr(yc, "YFinanceClient", lambda: Official())
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
     out = tmp_path / "rep.json"
     assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--report", str(out)]) == 0
     rep = json.loads(out.read_text())
-    assert rep["rows"][0]["official_close"] == 773.11 and rep["applied"] is False
+    assert rep["rows"][0]["provider_close"] == 773.11 and rep["applied"] is False
     assert "dry run, nothing written" in capsys.readouterr().out
     assert _close(db, "SPY", "2026-09-03") == 768.66
-    monkeypatch.setattr(yc, "YFinanceClient", lambda: Official(adjusted=True))
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider(adjusted=True))
     assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply"]) == 2
     assert "refusing, nothing written" in capsys.readouterr().err
     assert _close(db, "SPY", "2026-09-03") == 768.66
@@ -380,7 +381,7 @@ def test_the_history_backfill_fetches_unadjusted_bars(monkeypatch):
 # ── the report: returns, and a path that can never replace a kept file ───────
 
 def test_the_report_lists_every_return_the_restatement_changes(db):
-    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), now=AFTER_CLOSE)
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), now=AFTER_CLOSE)
     got = {(r["date"], r["prev_date"]): (r["before_pct"], r["after_pct"]) for r in rep["returns"]}
     assert set(got) == {("2026-09-03", "2026-08-31"), ("2026-09-04", "2026-09-03")}
     assert got[("2026-09-03", "2026-08-31")] == pytest.approx(((768.66 / 765 - 1) * 100, (773.11 / 765 - 1) * 100))
@@ -397,7 +398,7 @@ def test_the_splice_report_changes_only_the_boundary_return_when_the_block_is_a_
 def test_the_cli_refuses_a_report_path_that_could_replace_a_kept_file(monkeypatch, db, tmp_path, name, capsys):
     import src.market_data.yfinance_client as yc
 
-    monkeypatch.setattr(yc, "YFinanceClient", lambda: Official())
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
     before = _sha(db)
     rc = rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply",
                   "--snapshot", str(tmp_path / "keep.db"), "--report", str(tmp_path / name)])
@@ -408,7 +409,7 @@ def test_the_cli_refuses_a_report_path_that_could_replace_a_kept_file(monkeypatc
 def test_the_cli_refuses_an_existing_report_file_and_a_link_to_the_database(monkeypatch, db, tmp_path):
     import src.market_data.yfinance_client as yc
 
-    monkeypatch.setattr(yc, "YFinanceClient", lambda: Official())
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
     old = tmp_path / "old.json"
     old.write_text("keep")
     link = tmp_path / "link.json"
@@ -424,7 +425,7 @@ def test_the_impact_comparison_reports_prices_returns_and_each_consumer(tmp_path
     from scripts import restate_impact as ri
 
     before = tmp_path / "before.db"
-    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Official(), apply=True, now=AFTER_CLOSE, snapshot=before)
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE, snapshot=before)
     shas = (_sha(before), _sha(db))
 
     def spy_close(path):
@@ -460,3 +461,58 @@ def test_the_impact_cli_never_replaces_an_existing_report(tmp_path, db):
     old.write_text("keep")
     assert ri.main(["--before", str(db), "--after", str(db), "--report", str(old)]) == 2
     assert old.read_text() == "keep"
+
+
+def test_the_impact_comparison_runs_every_registered_consumer_and_reports_what_fails(tmp_path, db):
+    from scripts import restate_impact as ri
+
+    assert set(ri.CONSUMERS) == {"surprise", "backtest", "risk", "garch"}
+    before = tmp_path / "before.db"
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE, snapshot=before)
+    rep = ri.compare(before, db)
+    assert set(rep["downstream"]) == set(ri.CONSUMERS)
+    for label, d in rep["downstream"].items():
+        assert ("rows_compared" in d) or (d.get("error_before") or d.get("error_after")), label
+
+
+def test_the_garch_consumer_flattens_numbers_sparkline_and_labels(monkeypatch, tmp_path):
+    from scripts import restate_impact as ri
+    from src.analytics import volatility
+
+    seen = {}
+
+    def fake():
+        seen["db"] = volatility.DB_PATH
+        return {"status": "ok", "conditional_vol_annual_pct": 14.5, "regime": "LOW", "spark_60d": [1.0, 2.0], "n_obs": 3}
+
+    monkeypatch.setattr(volatility, "compute_garch_signal", fake)
+    df = ri._garch(tmp_path / "x.db")
+    assert seen["db"] == tmp_path / "x.db" and volatility.DB_PATH != tmp_path / "x.db"
+    assert dict(zip(df["name"], df["value"])) == {"status=ok": 1.0, "conditional_vol_annual_pct": 14.5, "regime=LOW": 1.0,
+                                                 "spark_60d[0]": 1.0, "spark_60d[1]": 2.0, "n_obs": 3.0}
+
+
+def test_the_history_backfill_holds_back_an_unfinished_session(monkeypatch):
+    import src.market_data.backfill_yfinance as bf
+
+    idx = pd.DatetimeIndex(["2026-09-17", "2026-09-18"], name="Date").tz_localize("America/New_York")
+    frame = pd.DataFrame({"Open": [1.0, 2.0], "High": [1.0, 2.0], "Low": [1.0, 2.0], "Close": [700.0, 701.5],
+                          "Volume": [9.0, 3.0]}, index=idx)
+
+    class Ticker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kw):
+            return frame
+
+    monkeypatch.setattr(bf.yf, "Ticker", Ticker)
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE market_daily (symbol TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,"
+                 " volume REAL, vwap REAL, source TEXT, fetched_at TEXT, UNIQUE(symbol, date))")
+    mid_session = datetime(2026, 9, 18, 15, 0, tzinfo=timezone.utc)
+    assert bf.fetch_and_insert("SPY", "2026-09-17", conn, now=mid_session) == 1
+    assert conn.execute("SELECT date, close FROM market_daily").fetchall() == [("2026-09-17", 700.0)]
+    assert bf.fetch_and_insert("SPY", "2026-09-17", conn, now=AFTER_CLOSE) == 1  # the finished bar, once complete
+    assert conn.execute("SELECT date, close FROM market_daily ORDER BY date").fetchall() == [
+        ("2026-09-17", 700.0), ("2026-09-18", 701.5)]

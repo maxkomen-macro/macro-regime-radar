@@ -9,7 +9,7 @@ unadjusted history, corrected here and nowhere else. Two known defects:
 * Mid-session closes (B6, 2026-09-18). main's morning full runs of
   2026-09-01, 09-02, 09-03 and 09-10 landed during the US session and stored
   unfinished bars with partial volume for all 23 daily symbols (SPY 2026-09-03
-  is stored at 768.66 against an official 773.17). src/market_data/session.py
+  is stored at 768.66 against the provider's finished-session close of 773.17). src/market_data/session.py
   stops new ones. Default mode.
 * The SPY splice (--spy-splice). SPY's rows from 1993-01-29 to 2024-02-26 came
   from a Yahoo backfill of 2026-03-13 with auto_adjust=True, so they are
@@ -187,7 +187,7 @@ def restate(db_path: Path, dates: list[str], symbols: list[str], client, *, rang
                 old = {f: stored[d][f] for f in FIELDS}
                 changed = any(old[f] is None or b[f] is None or abs(old[f] - b[f]) > 1e-9 for f in FIELDS)
                 report["rows"].append({"symbol": symbol, "date": d, "kind": kinds[d], "stored": old, "new": b,
-                                       "stored_close": old["close"], "official_close": b["close"],
+                                       "stored_close": old["close"], "provider_close": b["close"],
                                        "close_change_pct": (b["close"] / old["close"] - 1) * 100 if _good(old["close"]) else None,
                                        "changed": changed})
             # every close-to-close return the restatement changes: into each target row and
@@ -302,9 +302,9 @@ def main(argv: list[str] | None = None) -> int:
         with open(a.report, "x") as f:   # exclusive: never replaces a file created meanwhile
             json.dump(rep, f, indent=1)
     shown = [r for r in rep["rows"] if r["kind"] != "splice"][:200]
-    print(f"{'symbol':<6} {'date':<10} {'stored':>10} {'official':>10} {'change':>8}")
+    print(f"{'symbol':<6} {'date':<10} {'stored':>10} {'provider':>10} {'change':>8}")
     for r in shown:
-        print(f"{r['symbol']:<6} {r['date']:<10} {r['stored_close']:>10.4f} {r['official_close']:>10.4f} {r['close_change_pct']:>+7.3f}%")
+        print(f"{r['symbol']:<6} {r['date']:<10} {r['stored_close']:>10.4f} {r['provider_close']:>10.4f} {r['close_change_pct']:>+7.3f}%")
     spl = [r for r in rep["rows"] if r["kind"] == "splice"]
     if spl:
         print(f"splice: {len(spl)} rows of {spl[0]['symbol']} {spl[0]['date']}..{spl[-1]['date']} (full list in --report)")

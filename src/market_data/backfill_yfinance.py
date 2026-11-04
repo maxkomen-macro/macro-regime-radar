@@ -13,6 +13,7 @@ Run:
 import argparse
 import logging
 import sqlite3
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +21,11 @@ import pandas as pd
 import yfinance as yf
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
+if str(ROOT) not in sys.path:   # also run as a script
+    sys.path.insert(0, str(ROOT))
+
+from src.market_data.session import bar_is_complete  # noqa: E402
+
 DB_PATH = ROOT / "data" / "macro_radar.db"
 
 DEFAULT_START   = "1993-01-01"
@@ -43,8 +49,9 @@ def _get_conn() -> sqlite3.Connection:
     return conn
 
 
-def fetch_and_insert(symbol: str, start: str, conn: sqlite3.Connection) -> int:
+def fetch_and_insert(symbol: str, start: str, conn: sqlite3.Connection, now: datetime | None = None) -> int:
     logger.info("Fetching %s from %s via yfinance...", symbol, start)
+    now = now or datetime.now(timezone.utc)
     ticker = yf.Ticker(symbol)
     # unadjusted for distributions, like every other market_daily row (owner decision
     # 2026-11-04): the 2026-03-13 SPY backfill used auto_adjust=True and spliced a
@@ -59,9 +66,14 @@ def fetch_and_insert(symbol: str, start: str, conn: sqlite3.Connection) -> int:
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None).dt.normalize()
     df["date_str"] = df["Date"].dt.strftime("%Y-%m-%d")
 
-    fetched_at = datetime.now(timezone.utc).replace(tzinfo=None).isoformat()
-    rows = []
+    fetched_at = now.astimezone(timezone.utc).replace(tzinfo=None).isoformat()
+    rows, held = [], []
     for _, row in df.iterrows():
+        # only complete sessions (B6, as fetch_market does): a run during the session would
+        # store the unfinished bar as a close, and INSERT OR IGNORE would keep it forever
+        if not bar_is_complete(row["Date"].date(), now):
+            held.append(row["date_str"])
+            continue
         rows.append((
             symbol,
             row["date_str"],
@@ -75,6 +87,8 @@ def fetch_and_insert(symbol: str, start: str, conn: sqlite3.Connection) -> int:
             fetched_at,
         ))
 
+    if held:
+        logger.info("%s: holding back %s until its session is complete.", symbol, ", ".join(held))
     cursor = conn.executemany(
         """
         INSERT OR IGNORE INTO market_daily

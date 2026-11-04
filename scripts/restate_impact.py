@@ -15,7 +15,9 @@ are compared:
 
 * surprise: src/analytics/surprise.run, every derived_metrics row;
 * backtest: src/analytics/backtest.run, every backtest_results row;
-* risk: src/analytics/intelligence._compute_risk_indicators (SPY momentum).
+* risk: src/analytics/intelligence._compute_risk_indicators (SPY momentum);
+* garch: src/analytics/volatility.compute_garch_signal (the legacy dashboard's
+  SPY volatility card: levels, forecast, regime, direction, sparkline).
 
 The report is evidence for the owner's decision; it changes nothing.
 """
@@ -140,7 +142,25 @@ def _risk(path: Path) -> pd.DataFrame:
     return pd.DataFrame([{"name": k, "date": "", "value": float(v)} for k, v in out.items()])
 
 
-CONSUMERS = {"surprise": _surprise, "backtest": _backtest, "risk": _risk}
+def _garch(path: Path) -> pd.DataFrame:
+    """The legacy dashboard's SPY GARCH signal (src/analytics/volatility.compute_garch_signal):
+    each number, each sparkline point, and each label as a `label=value` row."""
+    from src.analytics import volatility
+
+    with _module_db(volatility, path):
+        out = volatility.compute_garch_signal()
+    rows = []
+    for k, v in out.items():
+        if isinstance(v, (list, tuple)):
+            rows += [{"name": f"{k}[{i}]", "date": "", "value": float(x)} for i, x in enumerate(v)]
+        elif isinstance(v, (int, float)) and not isinstance(v, bool):
+            rows.append({"name": k, "date": "", "value": float(v)})
+        else:
+            rows.append({"name": f"{k}={v}", "date": "", "value": 1.0})
+    return pd.DataFrame(rows, columns=["name", "date", "value"])
+
+
+CONSUMERS = {"surprise": _surprise, "backtest": _backtest, "risk": _risk, "garch": _garch}
 
 
 def downstream(before: Path, after: Path, consumers: dict | None = None) -> dict:
