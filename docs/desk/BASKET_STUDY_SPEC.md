@@ -18,22 +18,27 @@ question). The basket is both the shock and the target. There is no co-condition
   same function `/basket/price` prices with: the saved legs, at their typed weights or cap-weighted from
   the stored share counts, held or rebalanced monthly; base 100 on the first XNYS session every name
   has a close, defined on every later session every name has a close.
-- **History.** `/basket/price` reads two years of daily bars per name, too short for the engine (the
-  z-score alone needs 252 moves before the first event). The study reads each name's EODHD daily bars
+- **History.** `/basket/price` reads two years of daily bars per name, too short for most questions (the
+  z-score needs 240 of its trailing 252 moves before the first event can be judged). The study reads each name's EODHD daily bars
   from `1995-01-01` (`STUDY_HISTORY_FROM`): the regime labels the engine needs start in 1996 on the
   current store, and the z window needs a year before that. One EODHD end-of-day request per name, the
   same 1 API call as the two-year request (EODHD charges end-of-day requests per request, not per row);
-  cached per name per completed New York session in a compact form (dates and closes as arrays), apart
-  from the two-year cache, which is unchanged.
+  cached per name per completed New York session in a compact form (dates, adjusted closes and closes as
+  traded, as arrays; cap weight reads the traded closes, as `/basket/price` does), apart from the two-year
+  cache, which is unchanged.
 - **So the study's index is not the chart's rebased.** The start is the first session every name has a
   close in the longer history, usually years before the chart's. With buy-and-hold the weights drift
   from that earlier start, so the two indices' returns differ. With monthly rebalancing they agree on
   every month both cover after each has rebalanced once. The answer states the study's own start and
   which name sets it.
 - **A basket with a recent listing has a short history.** The index starts at the youngest name's first
-  close. When that leaves too little history for the question (fewer sessions than the z window and the
-  move need, or no evaluable session), the study is not run and the answer says why, with the index's
-  start and its binding name. Nothing is backfilled and no name is dropped.
+  close. The first session whose `w`-session move can have a z-score is the index's (240 + `w`)th: its
+  move reads the session `w` before it, and the z window needs 240 moves present (it reaches back 252).
+  An index with fewer sessions is not run, and the answer says why, with the index's start and its
+  binding name. Nothing is backfilled and no name is dropped. An index long enough is handed to the
+  engine unchanged, which decides the rest by its own masks: a session whose window has zero variance has
+  no z-score, and a question with no event or no evaluable session answers with the engine's own empty
+  state or refusal.
 - **Prices.** Split- and dividend-adjusted closes (total return), as `/basket/price` reads them; a bar
   without an adjusted close is left out, never priced from its raw close, and counted (Codex R-07 of
   desk/books). Cap weight reads today's share counts at the study's start (the page's rule); a split or
@@ -46,9 +51,13 @@ question). The basket is both the shock and the target. There is no co-condition
 - **Alignment.** The index is aligned onto the calendar. A session on which any name lacks a close is
   not an index session; it is missing, never filled, and counted. A bar dated off the calendar is
   dropped and counted by the engine.
-- **As-of.** The bars run through the last completed New York session. The engine reads nothing dated
-  after the request's generation's as-of (review R-06), the same cutoff a stored study uses, and counts
-  what it leaves out. The regime labels are read from that generation's copy.
+- **As-of.** The bars are asked through the last completed New York session. The engine reads nothing
+  dated after the request's generation's as-of (review R-06), the same cutoff a stored study uses, and
+  counts what it leaves out. The regime labels are read from that generation's copy.
+- **A close not published yet.** Asked just after the close, EODHD may not have published that session
+  for every name. The answer then states the session asked for, each name's newest close and the index's
+  last session, and says the newest session is missing. The name's history is asked again after the
+  provider's retry interval (15 minutes, as the two-year bars are), and so is the study built on it.
 - **Timing.** The index is fixed and known at the session close (every input is an exchange close), so
   an event enters the basket at the event session's close, as an S&P 500 study on itself does; the
   baseline takes the same entry.
@@ -63,8 +72,11 @@ question). The basket is both the shock and the target. There is no co-condition
 
 ## 5. Overlapping returns
 
-- **Events.** The `w`-session move is overlapping by construction; after an event the next `w`
-  sessions are a cooldown, so one episode counts once.
+- **Events.** The `w`-session move is overlapping by construction. After an event at session t,
+  sessions t+1 to t+`w` are a cooldown; the next session past 2σ after it is a new event. A move that
+  stays past 2σ longer than the cooldown therefore counts again (with `w` = 5 and 13 sessions past 2σ,
+  three events), and at a short horizon those events can fall in separate blocks. This is the engine's
+  rule for every study, unchanged.
 - **Forward windows.** Events whose forward windows overlap form one block; the interval is a cluster
   bootstrap over blocks (exact enumeration up to 7 blocks, 10,000 Monte Carlo draws above, seed
   20260921). An interval needs 5 blocks; a zero-exclusion claim needs 10 blocks and under 3% of
@@ -99,7 +111,10 @@ The card says "Revised regime history". "As known at the time" labels are the po
 `GET /api/desk/basket/study?legs=…&method=…&weighting=…&window=…&move=…&horizon=…` (spec §12.19).
 The basket parameters are `/basket/price`'s (no `notional`: the index's returns do not depend on it).
 Computed on request behind the provider ceiling: a job per (generation, completed session, basket,
-question), 202 `computing` past 8 s, 429 `busy` when the queue is full, a repeat a lookup. The answer
+question), 202 `computing` past 8 s, 429 `busy` when the queue is full, a repeat a lookup. A job past 8 s
+keeps running and the next request reads it; a failed job is not kept, so the next request computes it
+again; an answer built while a close was not yet published is computed again on a request 15 minutes or
+more later (§3). The answer
 is the `/study` shape for one horizon (§12.2's fields that apply), plus the index's provenance. A
 basket too short for the question answers ready with `study: null` and the reason.
 Needs a Render deploy to go live.

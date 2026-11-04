@@ -206,7 +206,7 @@ def served(tmp_path, monkeypatch, install_worker):
         "YNG": (len(sessions) - 200, 10.0 * np.cumprod(1 + 2.0 * common + rng.normal(0, 0.02, len(sessions)))),
     }
     asked: list[str] = []
-    state = {"delay": 0.0, "gate": None}
+    state = {"delay": 0.0, "gate": None, "late": set()}
 
     def closes(sym):
         asked.append(sym)
@@ -216,9 +216,10 @@ def served(tmp_path, monkeypatch, install_worker):
         if sym not in universe:
             raise UnknownSymbol("eodhd", f"No listing found for '{sym}' on EODHD.")
         first, px = universe[sym]
-        d = np.array(sessions[first:], dtype="datetime64[D]")
+        last = len(sessions) - 1 if sym in state["late"] else len(sessions)  # a late name lacks the newest session
+        d = np.array(sessions[first:last], dtype="datetime64[D]")
         return {"symbol": sym, "provider": "EODHD", "session": SESSION, "from": market.STUDY_HISTORY_FROM,
-                "dates": d, "adjusted": px[first:].astype(float), "close_raw": px[first:] * 1.01}
+                "dates": d, "adjusted": px[first:last].astype(float), "close_raw": px[first:last] * 1.01}
 
     monkeypatch.setattr(market, "daily_closes_since_1995", closes)
     monkeypatch.setattr(market, "last_session", lambda: SESSION)
@@ -244,6 +245,7 @@ def test_a_long_basket_is_studied_and_the_answer_names_its_index(served):
     # the store's first weekday, 1995-01-02, was the observed New Year's Day: the XNYS calendar starts the index after it
     assert ix["provider"] == "EODHD" and ix["requested_from"] == "1995-01-01" and ix["start"] == "1995-01-03"
     assert ix["end"] == SESSION and ix["method"] == "monthly" and ix["weighting"] == "target" and ix["excluded"] == []
+    assert ix["session"] == SESSION and ix["last_close"] == {"OLD": SESSION, "MID": SESSION}
     s = d["study"]
     assert s["matched_n"] > 0 and s["selected_horizon"] == 20 and len(s["horizons"]) == 4
     assert s["verdict"] in ("reliable", "suggestive", "no_edge", "insufficient") and s["verdict_rule"] == "v1"
@@ -295,6 +297,29 @@ def test_a_repeat_is_a_lookup(served):
     # another horizon of the same question reads the same job
     study(legs="OLD:60,MID:40", horizon="5")
     assert len(served["asked"]) == n
+
+
+def test_a_close_the_provider_has_not_published_yet_is_shown_and_asked_again_after_the_retry_interval(served, monkeypatch):
+    """Spec §3 and §9 (Codex DR-03): asked right after the close, before EODHD publishes it, the index runs
+    through the session before and says so; a repeat inside the provider's retry interval is a lookup, and
+    one after it asks again and serves the published close."""
+    served["state"]["late"] = {"MID"}
+    a = study(legs="OLD:60,MID:40").json()["data"]
+    prev = served["sessions"][-2]
+    assert a["index"]["session"] == SESSION and a["index"]["last_close"] == {"OLD": SESSION, "MID": prev}
+    assert a["index"]["end"] == prev and a["study"]["sample_end"] <= prev
+    assert a["caveats"][-1] == (f"EODHD had not published {SESSION}'s close for MID when this was computed, so the "
+                                f"index runs through {prev}; a request 15 minutes later asks again.")
+    n = len(served["asked"])
+    same = lambda x, y: {k: v for k, v in x.items() if k != "elapsed_ms"} == {k: v for k, v in y.items() if k != "elapsed_ms"}
+    assert same(study(legs="OLD:60,MID:40").json()["data"], a) and len(served["asked"]) == n
+    served["state"]["late"] = set()
+    monkeypatch.setattr(market, "DAILY_RETRY_S", 0.0)
+    b = study(legs="OLD:60,MID:40").json()["data"]
+    assert len(served["asked"]) == n + 2 and b["index"]["end"] == SESSION
+    assert b["caveats"] == [desk_basket.HINDSIGHT, desk_basket.REVISED_REGIMES]
+    # a published answer is never asked again
+    assert same(study(legs="OLD:60,MID:40").json()["data"], b) and len(served["asked"]) == n + 2
 
 
 @pytest.mark.parametrize("q,words", [

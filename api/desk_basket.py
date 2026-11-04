@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
+import time
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Mapping
@@ -620,9 +621,12 @@ def fetch_study(symbols: list[str]) -> dict[str, Any]:
 
 
 def index_block(priced: Mapping[str, Any], histories: Mapping[str, Any], legs: list[tuple[str, float | None]],
-                counts: Mapping[str, Mapping[str, Any]] | None, provider: str, source: str) -> dict:
+                counts: Mapping[str, Mapping[str, Any]] | None, provider: str, source: str,
+                session: str | None = None) -> dict:
     """What the studied index is (spec §2): its provider, its start and the name that sets it, its span,
-    the sessions it lacks, the closes left out, its rule in words, and the cap weights' source."""
+    the sessions it lacks, the closes left out, its rule in words, and the cap weights' source. `session`
+    is the completed New York session the closes were asked through; `last_close` is each name's newest
+    adjusted close as served, so a provider that has not published that session yet shows (spec §3)."""
     from api.providers import market
 
     symbols = [s for s, _ in legs]
@@ -631,6 +635,8 @@ def index_block(priced: Mapping[str, Any], histories: Mapping[str, Any], legs: l
         "source": source,
         "requested_from": market.STUDY_HISTORY_FROM,
         "first_close": {l["symbol"]: l["first_close"] for l in priced["legs"]},
+        "session": session,
+        "last_close": {s: histories[s].dates[-1] for s in symbols},
         "method": priced["method"],
         "weighting": priced["weighting"],
         "rule": (INDEX_RULE[priced["method"]] if priced["weighting"] == "target" else
@@ -654,9 +660,24 @@ def _study_cutoff(gen: Any) -> str:
 
 def _study_job(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], method: str, weighting: str,
                counts: Mapping[str, Mapping[str, Any]] | None, w: int, move: str, *,
-               provider: str = PROVIDER, source: str = STUDY_SOURCE, histories: Mapping[str, Any] | None = None) -> dict:
+               provider: str = PROVIDER, source: str = STUDY_SOURCE, histories: Mapping[str, Any] | None = None,
+               session: str | None = None) -> dict:
     """One basket study on its generation's copy: fetch, price the index, run the engine. The engine's
-    StudyError (too little history for the question) is a value, `ok` False with its words."""
+    StudyError (too little history for the question) is a value, `ok` False with its words. Every answer
+    carries `late` (the names whose newest close is older than `session`, the completed session the
+    closes were asked through) and `computed_at`, so study_item asks a late answer again on the
+    provider's retry interval (spec §9)."""
+    item = _study_answer(gen, cutoff, legs, method, weighting, counts, w, move, provider=provider, source=source,
+                         histories=histories, session=session)
+    last = item["index"]["last_close"]
+    item["late"] = sorted(s for s, d in last.items() if session is not None and d < session)
+    item["computed_at"] = time.monotonic()
+    return item
+
+
+def _study_answer(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], method: str, weighting: str,
+                  counts: Mapping[str, Mapping[str, Any]] | None, w: int, move: str, *,
+                  provider: str, source: str, histories: Mapping[str, Any] | None, session: str | None) -> dict:
     import pandas as pd
 
     from src.analytics import dbpath
@@ -667,7 +688,7 @@ def _study_job(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], meth
         histories = fetch_study(symbols)
     sessions = calendar_for({s: histories[s] for s in symbols})
     priced = _priced(histories, legs, method, 1.0, counts, sessions)
-    block = index_block(priced, histories, legs, counts, provider, source)
+    block = index_block(priced, histories, legs, counts, provider, source, session)
     # the first session a w-session move's z exists on is the (Z_MIN_PRESENT + w)th: the window needs
     # Z_MIN_PRESENT moves, and the first move reads the session w before it
     need = es.Z_MIN_PRESENT + w
@@ -739,12 +760,23 @@ def study_item(gen: Any, legs: list[tuple[str, float | None]], method: str, weig
 
     def submit(g: Any) -> tuple[tuple, Any]:
         cutoff = _study_cutoff(g)
-        tail = (cutoff, market.last_session(), tuple(legs), method, weighting,
+        session = market.last_session()
+        tail = (cutoff, session, tuple(legs), method, weighting,
                 None if counts is None else tuple(sorted((s, c["shares_outstanding"], c["as_of"]) for s, c in counts.items())),
                 w, move)
-        return _study_submit(g, tail, lambda: _study_job(g, cutoff, legs, method, weighting, counts, w, move))
+        return _study_submit(g, tail, lambda: _study_job(g, cutoff, legs, method, weighting, counts, w, move,
+                                                         session=session))
 
     key, fut = submit(gen)
+    if fut.done() and fut.exception() is None:
+        # a name's close for the session was not published yet when this answer was computed: ask again
+        # once the provider's own retry interval has passed (market.DAILY_RETRY_S), as daily_bars does
+        done = fut.result()
+        if done.get("late") and time.monotonic() - done["computed_at"] > market.DAILY_RETRY_S:
+            with _study_lock:
+                if _study_cache.get(key) is fut:
+                    _study_cache.pop(key, None)
+            key, fut = submit(gen)
     try:
         return fut.result(timeout=STUDY_TIMEOUT_S)
     except FutureTimeout:
@@ -781,6 +813,10 @@ def study_projection(item: dict, legs: list[tuple[str, float | None]], method: s
         "not_run": None,
         "caveats": [HINDSIGHT, REVISED_REGIMES],
     }
+    if item.get("late"):
+        ix = item["index"]
+        out["caveats"].append(f"EODHD had not published {ix['session']}'s close for {', '.join(item['late'])} when this "
+                              f"was computed, so the index runs through {ix['end']}; a request 15 minutes later asks again.")
     if not item["ok"]:
         out["not_run"] = item["reason"]
         return out
@@ -835,7 +871,6 @@ def study_projection(item: dict, legs: list[tuple[str, float | None]], method: s
 
 def study(params: list[tuple[str, str]], t0: float | None = None) -> dict:
     """§12.19 (desk/basket-study, P1a): the event study on a basket kept in the browser."""
-    import time
 
     t0 = time.perf_counter() if t0 is None else t0
     legs, method, weighting, w, move, h = parse_study_params(params)
