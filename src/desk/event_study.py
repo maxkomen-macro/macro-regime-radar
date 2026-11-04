@@ -1072,11 +1072,14 @@ def verdict_sentences(*, unit: str, horizons: list[dict], regimes: list[dict], d
 
 # ── the study ─────────────────────────────────────────────────────────────────
 
-def _series_meta(key: str, raw: pd.Series, off: int, missing: int, invalid: int, invalid_reason: str | None) -> dict:
-    spec = registry.get(key)
+def _series_meta(key: str, raw: pd.Series, off: int, missing: int, invalid: int, invalid_reason: str | None,
+                 spec: registry.DeskSeries | None = None, table: str | None = None) -> dict:
+    """One input's provenance. `spec` and `table` are given for a supplied
+    series (desk/basket-study), which is not in the registry and not stored."""
+    spec = spec or registry.get(key)
     first = raw.index[0].strftime("%Y-%m-%d")
     return {
-        "key": key, "label": spec.label, "series_id": spec.series_id, "table": spec.table,
+        "key": key, "label": spec.label, "series_id": spec.series_id, "table": table or spec.table,
         "unit": spec.unit, "known_by": spec.known_by,
         "fixed": registry.rule_str(spec.fixed), "known": registry.rule_str(spec.known), "defer_as_target": spec.defer_as_target,
         "history_from": first, "history_declared": spec.history_from,
@@ -1090,7 +1093,8 @@ def _series_meta(key: str, raw: pd.Series, off: int, missing: int, invalid: int,
 
 def _inputs_hash(q: Query, metas: list[dict], months: pd.Series, generation: Any, horizons: list[dict],
                  future_excluded: dict[str, int] | None = None, non_numeric_excluded: dict[str, int] | None = None,
-                 malformed_date_excluded: dict[str, int] | None = None, no_provenance_excluded: dict[str, int] | None = None) -> str:
+                 malformed_date_excluded: dict[str, int] | None = None, no_provenance_excluded: dict[str, int] | None = None,
+                 supplied: dict | None = None) -> str:
     """R-09: the data generation id, the content hash of every input series
     and of the regime table, every effective parameter, the timing rules and
     the resampling method and draws per horizon, and the rows the as-of left
@@ -1118,6 +1122,8 @@ def _inputs_hash(q: Query, metas: list[dict], months: pd.Series, generation: Any
         payload["malformed_date_excluded"] = dict(sorted(malformed_date_excluded.items()))
     if no_provenance_excluded:  # Codex R-14; the same
         payload["no_provenance_excluded"] = dict(sorted(no_provenance_excluded.items()))
+    if supplied is not None:  # desk/basket-study: what the supplied series is; absent for a stored study, which hashes as before
+        payload["supplied"] = supplied
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 
@@ -1237,15 +1243,124 @@ def run_on_traced(conn: sqlite3.Connection, q: Query, *, generation: Any, n_boot
     return (out, *_traced(t))
 
 
+# ── a supplied series (desk/basket-study, P1a) ────────────────────────────────
+
+SUPPLIED_TABLE = "supplied"
+
+
+@dataclass(frozen=True)
+class Supplied:
+    """A level series the caller computed and hands to the engine in place of
+    a stored one (desk/basket-study: a basket's index from the provider's
+    closes). Everything else about a run is the engine's own: the calendar,
+    alignment, validity, z, cooldown, entry, forward windows, baseline,
+    bootstrap, regimes and verdict. `spec` declares it as the registry
+    declares a stored series (unit, timing rules), under a key the registry
+    does not use; `level` is on a tz-naive DatetimeIndex of dates, strictly
+    ascending; `provenance` is a JSON-safe description of what the series is
+    and where it came from, hashed into `inputs_hash` beside its content."""
+
+    spec: registry.DeskSeries
+    level: pd.Series
+    provenance: dict
+
+    def __post_init__(self) -> None:
+        if self.spec.key in registry.BY_KEY:
+            raise StudyError(f"a supplied series cannot take the registry key {self.spec.key!r}")
+        if self.spec.unit not in registry.UNITS:
+            raise StudyError(f"a supplied series' unit must be one of {', '.join(registry.UNITS)}")
+        idx = self.level.index
+        if not isinstance(idx, pd.DatetimeIndex) or idx.tz is not None:
+            raise StudyError("a supplied series is indexed by tz-naive dates")
+        if len(idx) == 0:
+            raise StudyError(f"{self.spec.label} has no observations")
+        if not (idx == idx.normalize()).all():
+            raise StudyError("a supplied series is indexed by dates, without a time of day")
+        if not idx.is_monotonic_increasing or not idx.is_unique:
+            raise StudyError("a supplied series' dates are not strictly ascending")
+        json.dumps(self.provenance, sort_keys=True)  # JSON-safe, or TypeError
+
+    def read(self, as_of: str) -> pd.Series:
+        """The series as the engine reads a stored one (R-06): nothing dated
+        after the as-of, with the count it left out; the store's other
+        exclusions cannot occur in a supplied series and count zero."""
+        s = self.level.astype(float).rename(self.spec.key)
+        later = s.index > pd.Timestamp(as_of)
+        out = s[~later].copy()
+        if out.empty:
+            raise StudyError(f"{self.spec.label} has no observation on or before {as_of}")
+        out.attrs.update(malformed_date_excluded=0, no_provenance_excluded=0, future_excluded=int(later.sum()),
+                         after_run_excluded=0, after_run_dates=[], non_numeric_excluded=0)
+        return out
+
+
+def supplied_spec(key: str, label: str, series_id: str, history_from: str, *, unit: str = "log_return",
+                  fixed: registry.Rule = registry.AT_CLOSE, known: registry.Rule = registry.AT_CLOSE,
+                  note: str | None = None) -> registry.DeskSeries:
+    """The declaration of a supplied series: a shock and a target, fixed and
+    known at the session close unless stated otherwise."""
+    return registry.DeskSeries(key, label, SUPPLIED_TABLE, series_id, unit, 1.0, history_from, 1, ("shock", "target"),
+                               fixed=fixed, known=known, note=note)
+
+
+def validate_supplied(q: Query, spec: registry.DeskSeries) -> Query:
+    """A shock study on the supplied series itself: the series is the shock
+    and the target, with the engine's own windows, thresholds, signs, regime
+    filter and seed. No co-condition (P1a)."""
+    if q.kind != "shock":
+        raise StudyError("a study on a supplied series is a shock study")
+    if q.shock != spec.key or q.target != spec.key:
+        raise StudyError(f"a study on a supplied series takes it as both the shock and the target ({spec.key})")
+    if q.cond not in (None, "", "none") or q.cond_value not in (None, ""):
+        raise StudyError("a study on a supplied series takes no condition")
+    if q.regime != "all" and q.regime not in REGIME_LABELS:
+        raise StudyError(f"regime must be 'all' or one of {', '.join(REGIME_LABELS)}; got {q.regime!r}")
+    seed = _integer(q.seed, "seed")
+    if not 0 <= seed <= MAX_SEED:
+        raise StudyError(f"seed must be between 0 and {MAX_SEED}; got {q.seed!r}")
+    w = _integer(q.w, "w")
+    if w not in WINDOWS:
+        raise StudyError(f"w must be one of {WINDOWS}; got {q.w!r}")
+    z = _finite(q.z, "z")
+    if z not in THRESHOLDS:
+        raise StudyError(f"z must be one of {THRESHOLDS}; got {q.z!r}")
+    if q.sign not in SIGNS:
+        raise StudyError(f"sign must be one of {SIGNS}")
+    return replace(q, w=w, z=z, cond=None, cond_value=None, cross=None, seed=seed)
+
+
+def supplied_slug(q: Query) -> str:
+    """A supplied study's address, in slug_for's format (it names no preset)."""
+    return (f"{q.shock}-w{q.w}-z{_num_slug(q.z)}-{_SIGN_WORD[q.sign]}-none-{q.target}"
+            + ("" if q.regime == "all" else f"-{_REGIME_SLUG[q.regime]}"))
+
+
+def run_on_supplied_traced(conn: sqlite3.Connection, q: Query, supplied: Supplied, *, generation: Any, n_boot: int = N_BOOT,
+                           as_of: str | None = None) -> tuple[dict, EventTable, SignalTrace]:
+    """`run_on_traced` with `supplied` as the shock and the target
+    (desk/basket-study, P1a): the regime table is read from `conn`, the
+    generation's copy, up to the as-of; the series is read up to it too."""
+    q = validate_supplied(q, supplied.spec)
+    t: dict = {}
+    out = _run(q, conn, n_boot=n_boot, generation=generation, as_of=resolve_as_of(as_of), trace=t, supplied=supplied)
+    return (out, *_traced(t))
+
+
 def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, clamped: bool = False, as_of: str,
-         trace: dict | None = None) -> dict:
-    target_spec = registry.get(q.target)
-    shock_spec = registry.get(q.shock)
+         trace: dict | None = None, supplied: "Supplied | None" = None) -> dict:
+    # desk/basket-study: a supplied series stands in for the registry's under its own key; every other
+    # input is read from the store exactly as before, so a stored study takes no branch below
+    def spec_of(k: str) -> registry.DeskSeries:
+        return supplied.spec if supplied is not None and k == supplied.spec.key else registry.get(k)
+
+    target_spec = spec_of(q.target)
+    shock_spec = spec_of(q.shock)
     cond_meta = CONDITIONS.get(q.cond or "") if q.kind == "shock" else None
     keys = {q.target, q.shock}
     if cond_meta and cond_meta["series"]:
         keys.add(cond_meta["series"])
-    raw = {k: load_level(conn, registry.get(k), as_of) for k in sorted(keys)}
+    raw = {k: (supplied.read(as_of) if supplied is not None and k == supplied.spec.key else load_level(conn, registry.get(k), as_of))
+           for k in sorted(keys)}
     future_excluded = {k: s.attrs.get("future_excluded", 0) for k, s in raw.items() if s.attrs.get("future_excluded", 0)}
     non_numeric = {k: s.attrs.get("non_numeric_excluded", 0) for k, s in raw.items() if s.attrs.get("non_numeric_excluded", 0)}
     malformed = {k: s.attrs.get("malformed_date_excluded", 0) for k, s in raw.items() if s.attrs.get("malformed_date_excluded", 0)}
@@ -1267,7 +1382,7 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
     invalid_reason: dict[str, str | None] = {}
     for k, s in raw.items():
         a, off[k], missing[k] = align(s, sessions)
-        al[k], invalid[k], invalid_reason[k] = validate_values(a, registry.get(k))
+        al[k], invalid[k], invalid_reason[k] = validate_values(a, spec_of(k))
     target, shock = al[q.target], al[q.shock]
     n_sessions = len(sessions)
 
@@ -1340,7 +1455,7 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
     n_events = int(len(ev_pos))
 
     # entry (R-01, R-02, R-03): the same delay for events and baseline candidates (R-05)
-    inputs = [shock_spec] + ([registry.get(cond_meta["series"])] if cond_meta and cond_meta["series"] else [])
+    inputs = [shock_spec] + ([spec_of(cond_meta["series"])] if cond_meta and cond_meta["series"] else [])
     delay_all = entry_delay_vec(inputs, target_spec, clock)
 
     def entries_for(pos: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -1410,7 +1525,9 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             evaluable=evaluable.copy(), trigger=trigger, holds=holds_arr.astype(bool),
         )
 
-    metas = [_series_meta(k, raw[k], off[k], missing[k], invalid[k], invalid_reason[k]) for k in sorted(raw)]
+    metas = [_series_meta(k, raw[k], off[k], missing[k], invalid[k], invalid_reason[k],
+                          *((supplied.spec, SUPPLIED_TABLE) if supplied is not None and k == supplied.spec.key else ()))
+             for k in sorted(raw)]
     as_of_by = {m["key"]: m["last"] for m in metas}
     data_start = max(raw[k].index[0] for k in keys)
     sentences = verdict_sentences(
@@ -1465,8 +1582,9 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
     fl, ll = first_labelled_date(months), last_labelled_date(months)
     return {
         "study": {
-            "slug": slug_for(q),
-            "preset": next((n for n, p in PRESETS.items() if validate(p) == replace(q, seed=DEFAULT_SEED)), None),
+            "slug": slug_for(q) if supplied is None else supplied_slug(q),
+            "preset": (next((n for n, p in PRESETS.items() if validate(p) == replace(q, seed=DEFAULT_SEED)), None)
+                       if supplied is None else None),
             "kind": q.kind,
             "label": study_label + (f", while {cond_label}" if cond_label else "") + (f", regime {q.regime}" if q.regime != "all" else "") + f" → {target_spec.label}",
             "params": asdict(q),
@@ -1525,7 +1643,8 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
                           f"and fewer than {OPPOSITE_SIGN_MAX:.0%} of resampled medians adverse (zero counts as adverse)"),
             "z_window": Z_WINDOW if q.kind == "shock" else None,
             "z_min_present": Z_MIN_PRESENT if q.kind == "shock" else None,
-            "inputs_hash": _inputs_hash(q, metas, months, generation, horizons, future_excluded, non_numeric, malformed, unprovenanced),
+            "inputs_hash": _inputs_hash(q, metas, months, generation, horizons, future_excluded, non_numeric, malformed, unprovenanced,
+                                        supplied=None if supplied is None else supplied.provenance),
             "as_of_cutoff": as_of,
             "future_excluded": dict(sorted(future_excluded.items())),
             "non_numeric_excluded": dict(sorted(non_numeric.items())),
