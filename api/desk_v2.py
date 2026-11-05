@@ -1291,7 +1291,25 @@ def horizon_row(H: dict, table: Any, verdict: str) -> dict:
         "adverse_share": H.get("opposite_sign_share") if ci else None,
         "draws": H["n_draws"], "method": METHOD[H["resampling"]], "reason": reason_words(H["note"]),
         "verdict": verdict, "worst": worst, "best": best,
+        **optional_ranges(table, h, ci),
     }
+
+
+def optional_ranges(table: Any, h: int, ci: Any) -> dict:
+    """P1d (docs/desk/INTERVALS_SPEC.md §4): the 80% and 95% pairs of the same resampled medians, off the traced
+    run's side channel (EventTable.intervals). All four are null when the horizon has no 90% interval; a level's pair
+    is also null alone when either of its bounds is not finite. The verdicts stay at 90% (`ci_lo`/`ci_hi`)."""
+    out = {"ci80_lo": None, "ci80_hi": None, "ci95_lo": None, "ci95_hi": None}
+    if not ci:
+        return out
+    pairs = table.intervals.get(h)
+    if pairs is None:
+        raise ValueError(f"the event table carries no 80% or 95% range at h {h}, where the run has a 90% one")
+    for level in ("80", "95"):
+        pair = pairs[level]
+        if pair is not None:
+            out[f"ci{level}_lo"], out[f"ci{level}_hi"] = float(pair[0]), float(pair[1])
+    return out
 
 
 def why_sentence(row: dict, unit: str) -> str:

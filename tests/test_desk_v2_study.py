@@ -678,3 +678,42 @@ def test_codex_r03_round2_the_route_reports_the_sp_stale_and_no_firing(tmp_path,
     assert d["firing_now"] is not True and d["firing_day"] is None
     row = next(r for r in dc.check_response("/ledger", client.get("/api/desk/ledger"))["data"]["signals"] if r["slug"] == "hy-2sigma-20d")
     assert row["stale"] is True and row["firing_now"] is False
+
+
+# ── P1d: the 80% and 95% ranges (docs/desk/INTERVALS_SPEC.md §4) ────────────
+
+def test_p1d_every_row_serves_the_80_and_95_ranges_off_the_traced_tables(served):
+    """Each §12.2 horizons[] row serves the four fields, equal to the traced table's pairs, nested around the
+    unchanged 90% interval; a row with no 90% interval serves all four null."""
+    ranged = empty = 0
+    for slug in sorted(set(catalog.CATALOG_QUERY_SLUGS) - set(TIER2)):
+        d = _study(f"preset={slug}")["data"]
+        item = served.current.results[f"desk_study:{slug}"]
+        by_h = {H["h"]: H for H in item["native"]["horizons"]}
+        for row in d["horizons"]:
+            assert {"ci80_lo", "ci80_hi", "ci95_lo", "ci95_hi"} <= set(row), (slug, row["h"])
+            assert [row["ci_lo"], row["ci_hi"]] == (by_h[row["h"]]["ci90"] or [None, None])
+            pairs = item["events"].intervals[row["h"]]
+            if row["ci_lo"] is None:
+                assert pairs is None and row["ci80_lo"] is row["ci80_hi"] is row["ci95_lo"] is row["ci95_hi"] is None
+                empty += 1
+                continue
+            assert (row["ci80_lo"], row["ci80_hi"]) == pairs["80"] and (row["ci95_lo"], row["ci95_hi"]) == pairs["95"]
+            assert row["ci95_lo"] <= row["ci_lo"] <= row["ci80_lo"] <= row["ci80_hi"] <= row["ci_hi"] <= row["ci95_hi"]
+            ranged += 1
+    assert ranged
+
+
+def test_p1d_optional_ranges_null_rules():
+    """horizon_row's projection: no 90% interval, all four null; a level whose pair was not finite, that pair null
+    alone; a traced table without the horizon's entry where the run has a 90% interval is an inconsistency."""
+    from types import MappingProxyType, SimpleNamespace
+
+    table = SimpleNamespace(intervals=MappingProxyType({20: MappingProxyType({"80": (-0.01, 0.02), "95": None}), 60: None}))
+    none = {"ci80_lo": None, "ci80_hi": None, "ci95_lo": None, "ci95_hi": None}
+    assert desk_v2.optional_ranges(table, 60, None) == none
+    assert desk_v2.optional_ranges(table, 20, None) == none
+    assert desk_v2.optional_ranges(table, 20, [-0.015, 0.025]) == {"ci80_lo": -0.01, "ci80_hi": 0.02, "ci95_lo": None, "ci95_hi": None}
+    for h in (60, 120):
+        with pytest.raises(ValueError, match="no 80% or 95% range"):
+            desk_v2.optional_ranges(table, h, [-0.015, 0.025])
