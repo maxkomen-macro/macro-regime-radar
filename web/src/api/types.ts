@@ -129,6 +129,9 @@ export interface BacktestRow {
   hit_rate: number | null;
   n: number | null;
   computed_at: string | null;
+  /** "total_return" on rows computed from SPY's split- and dividend-adjusted
+   * closes; absent or null on rows stored before that (basis not recorded). */
+  return_basis?: string | null;
 }
 
 export interface DatedValue {
