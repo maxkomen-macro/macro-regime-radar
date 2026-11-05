@@ -69,6 +69,31 @@ jobs:
           echo "Resolved mode: $MODE (event=$EVENT_NAME schedule='$SCHEDULE')"
           if [ "$(date -u +%H)" -lt 18 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi
 
+      # Release-aware freshness F-3 (Max, 2026-11-04): a full refresh records its attempt in the
+      # refresh-status.json release asset even when it fails, so the API never shows a monthly print as
+      # "Released, awaiting refresh" over a failed refresh (api/refresh_status.py). Full mode only, so no
+      # other mode can mark a macro release failed. These steps never touch the database, its verdict or
+      # their upload conditions, and cannot fail or block the refresh (continue-on-error, bounded).
+      - name: Record the attempt start
+        id: attempt
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload refresh-attempt status (started)
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf status-prev && mkdir -p status-prev
+          gh release download data-latest -p refresh-status.json -D status-prev --clobber || echo "No previous refresh status could be read; this one starts its own."
+          python scripts/refresh_status.py start --prev status-prev/refresh-status.json --out refresh-status.json \
+            --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}" --event "${{ github.event_name }}" \
+            --started-at "${{ steps.attempt.outputs.started_at }}"
+          gh release upload data-latest refresh-status.json --clobber
+
       - name: Install dependencies (full)
         if: steps.mode.outputs.mode == 'full'
         run: pip install -r requirements.txt -r requirements-snapshot.txt
@@ -112,6 +137,7 @@ jobs:
           } > .env
 
       - name: Run FRED pipeline (fetch + regimes + signals)
+        id: fred
         if: steps.mode.outputs.mode == 'full'
         run: python main.py
 
@@ -291,6 +317,7 @@ jobs:
         run: python scripts/build_snapshot.py --out snapshot-latest.json
 
       - name: Publish validated DB snapshot to data-latest release
+        id: publish
         if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -407,3 +434,22 @@ jobs:
           # Five attempts with backoff; a moved main rebuilds on the newer main;
           # an unchanged playbook makes no commit. See scripts/publish_artifacts.sh.
           bash scripts/publish_artifacts.sh "Update playbook [skip ci]" output/playbook.json
+
+      # F-3: the attempt's outcome, whatever happened above (always(): failures and cancellations too).
+      # The macro outcome comes from the FRED, validation and publish steps only (api/refresh_status.py
+      # macro_status); later ancillary steps never turn it into a failure.
+      - name: Upload refresh-attempt status (finished)
+        if: always() && steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          rm -rf status-prev && mkdir -p status-prev
+          gh release download data-latest -p refresh-status.json -D status-prev --clobber || echo "No previous refresh status could be read; this one starts its own."
+          python scripts/refresh_status.py finish --prev status-prev/refresh-status.json --out refresh-status.json \
+            --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}" --event "${{ github.event_name }}" \
+            --started-at "${{ steps.attempt.outputs.started_at }}" --job-status "${{ job.status }}" \
+            --fred "${{ steps.fred.outcome }}" --validate "${{ steps.validate.outcome }}" --publish "${{ steps.publish.outcome }}" \
+            --verdict "${{ steps.validate.outputs.verdict }}" --upload "${{ steps.validate.outputs.upload }}"
+          gh release upload data-latest refresh-status.json --clobber
