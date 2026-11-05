@@ -2,7 +2,7 @@
 
 Status: **prepared, not active.** The code in this change reads one setting, `DATA_RELEASE_REPO`. While it is unset, every reader and writer uses this repo's `data-latest` release exactly as before. Nothing here creates a repo, a token, a secret or a variable, and nothing here deploys or deletes anything. Each step below that does is the owner's, and each needs its own go-ahead.
 
-`<data-repo>` below stands for the private repo's `owner/name`. It is a placeholder: no real name is recorded here.
+`<data-repo>` below stands for the private repo's `owner/name`. It is a placeholder: no real name is recorded here. Write it exactly as GitHub shows it, in the same case: the workflows compare names as written.
 
 ## What moves and what stays
 
@@ -20,7 +20,7 @@ Writers publish in the same order as today: database, then the snapshot (full ru
 
 | Who | Reads or writes | Setting it reads | What it needs at cutover |
 |---|---|---|---|
-| `refresh-data.yml` (full, news-only, verify-only) | downloads the DB at start; uploads DB, snapshot, verdict after validation; full runs read and write `refresh-status.json` | repo variable `DATA_RELEASE_REPO` | repo secret `DATA_RELEASE_TOKEN` (Contents read and write on `<data-repo>`). Without it, a run fails at its first data step with that message, before anything is published |
+| `refresh-data.yml` (full, news-only, verify-only) | downloads the DB at start; uploads DB, snapshot, verdict after validation; full runs read and write `refresh-status.json` | repo variable `DATA_RELEASE_REPO` | repo secret `DATA_RELEASE_TOKEN` (Contents read and write on `<data-repo>`). Without it, a run fails at its first data step with that message, before anything is published. A data repo whose `data-latest` cannot be read (not seeded yet, a token without access, an outage) also stops the run there: unlike this repo, it never proceeds without a prior database, so a refresh cannot build a database that lacks the stored history |
 | `intraday-refresh.yml` | same, DB and verdict | same | same |
 | `daily-memo.yml`, `weekly-memo.yml` | the dispatched path reads the `validated-db` run artifact (unchanged); the manual path (no run id) downloads the DB | same | same secret (read is enough for this path) |
 | Earnings ledger steps (`--fetch-ledger`, `--publish-ledger`) | this repo's release | none | nothing |
@@ -30,9 +30,9 @@ Writers publish in the same order as today: database, then the snapshot (full ru
 | `scripts/sync_data.sh` / `make sync-data` | DB to a local copy | env `DATA_RELEASE_REPO` (before `MRR_REPO`) | the caller's `gh` login must read `<data-repo>` |
 | Cloud sessions and Codex review environments | the test DB, by the public URL in `CLAUDE.md` | none | a read token in the environment and `make sync-data`; `CLAUDE.md`'s curl line changes at step 4 |
 | Earnings-cache probe (`python -m src.events.earnings_cache --probe` with no `--db`; manual) | unset: the public DB URL, unauthenticated. Set: `<data-repo>`'s release through the API | env `DATA_RELEASE_REPO` | `GH_DB_TOKEN` (or `GH_TOKEN`) that reads `<data-repo>`; without it the probe stops before any request |
-| Data rollback (`docs/RUNBOOK.md` section 5) | `gh release upload data-latest …` | none | add `--repo <data-repo>` from step 2 on |
+| Data rollback (`docs/RUNBOOK.md` section 5) | `gh release upload data-latest …` | none | add `--repo <data-repo>` from step 1 on, because writers build on the data repo's copy from then |
 
-A malformed `DATA_RELEASE_REPO` (not `owner/name`) never falls back to the public copy: the API refresh fails with "DATA_RELEASE_REPO is not owner/name" and keeps serving its current file, and the Streamlit app raises.
+A malformed `DATA_RELEASE_REPO` (not `owner/name`) never falls back to the public copy: the API refresh fails with "DATA_RELEASE_REPO is not owner/name" and keeps serving its current file, and the Streamlit app shows a warning and keeps its on-disk file.
 
 ## Cutover
 
@@ -50,13 +50,13 @@ Each step is reversible until step 4. Check the result before moving on.
 
 **Step 3. Mirror off.** Set `DATA_RELEASE_MIRROR` to anything but `true` (or delete it). This repo's copy stops updating and goes stale. Check one full run: no mirror step runs, and the private release advances.
 
-**Step 4. Remove the public copies (separate yes, not reversible).** Delete only `macro_radar.db`, `snapshot-latest.json`, `validation.json` and `refresh-status.json` from this repo's `data-latest`. **Keep the release and every `earnings-cache-ledger-*.bin` asset.** Then update `CLAUDE.md` (test-DB line), `.claude/rules/database.md`, `docs/RUNBOOK.md` sections 3, 5 and 6, and the `Makefile` comment. Check: the public download URL answers 404, and the next refresh, API check, Vercel build and ledger fetch all succeed.
+**Step 4. Remove the public copies (separate yes, not reversible).** Delete only `macro_radar.db`, `snapshot-latest.json`, `validation.json` and `refresh-status.json` from this repo's `data-latest`. **Keep the release and every `earnings-cache-ledger-*.bin` asset.** Then update `CLAUDE.md` (test-DB line), `.claude/rules/database.md`, `.claude/rules/secrets.md` (`GH_DB_TOKEN`'s scope), `docs/RUNBOOK.md` sections 3, 5 and 6, `deploy/ENV.md`, `deploy/api.env.example`, `web/.env.example` and the `Makefile` comment. Check: the public download URL answers 404, and the next refresh, API check, Vercel build and ledger fetch all succeed.
 
 ## Rollback
 
 | From | Do | Effect |
 |---|---|---|
-| Step 1 | delete the `DATA_RELEASE_REPO` variable | writers publish to this repo again on the next run. If a run published only privately, rerun one refresh so this repo's copy is current |
+| Step 1 | if the mirror did not run after the last refresh, copy `<data-repo>`'s current files to this repo first (`scripts/mirror_data_release.sh` with the same environment does it); then delete the `DATA_RELEASE_REPO` variable | writers build on and publish to this repo's copy again from the next run |
 | Step 2 | unset `DATA_RELEASE_REPO` (Render, Streamlit, Vercel; and `SNAPSHOT_REPO` on Vercel if it was used) and restart or redeploy | the reader goes back to this repo's copy, which the mirror kept current |
 | Step 3 | set `DATA_RELEASE_MIRROR=true` again | the next run, whatever it publishes, brings this repo's copy current; until then it is stale |
 | Step 4 | upload the current files from `<data-repo>` back to this repo's `data-latest`, then follow the step 1 rollback | restores the public copy. Anything downloaded while it was public stays downloaded |

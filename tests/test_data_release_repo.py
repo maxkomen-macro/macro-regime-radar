@@ -14,6 +14,7 @@ import os
 import re
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 import httpx
@@ -156,6 +157,14 @@ def test_the_earnings_ledger_reader_stays_on_this_repo(monkeypatch):
     assert bootstrap._GH_API_REPO == f"https://api.github.com/repos/{HOME}"
     assert lr.LIST_URL == f"https://api.github.com/repos/{HOME}/releases/tags/data-latest"
     assert PRIVATE not in lr.asset_url(12)
+    # and a process that starts with the setting already set (module constants are built at import)
+    probe = ("from api import bootstrap, earnings_ledger_reader as lr; "
+             "print(bootstrap._GH_API_REPO); print(lr.LIST_URL); print(lr.asset_url(12))")
+    done = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, capture_output=True, text=True, timeout=120,
+                          env={**os.environ, "DATA_RELEASE_REPO": PRIVATE, "FRED_API_KEY": os.environ.get("FRED_API_KEY", "x")})
+    assert done.returncode == 0, done.stderr
+    lines = done.stdout.split()
+    assert len(lines) == 3 and all(f"repos/{HOME}/" in ln or ln.endswith(f"repos/{HOME}") for ln in lines), lines
 
 
 # ── the legacy Streamlit app (read from source: importing it downloads at import) ──
@@ -298,6 +307,40 @@ def test_the_cutover_mirror_follows_every_publish_runs_on_unchanged_refreshes_an
     assert step["continue-on-error"] is True and int(step["timeout-minutes"]) == 5
     assert step["env"] == {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "DATA_RELEASE_TOKEN": "${{ secrets.DATA_RELEASE_TOKEN }}"}
     assert step["run"].strip() == "bash scripts/mirror_data_release.sh"
+
+
+FETCH = "Fetch current DB snapshot from data-latest release"
+
+
+def _fetch_with(tmp_path: Path, name: str, view_ok: bool, data_repo: str) -> subprocess.CompletedProcess:
+    """Run the workflow's fetch step with a stand-in gh whose `release view` succeeds or fails."""
+    tmp_path.mkdir(parents=True)
+    run = next(s for s in _steps(name) if s["name"] == FETCH)["run"]
+    bindir = tmp_path / "bin"
+    bindir.mkdir(exist_ok=True)
+    gh = bindir / "gh"
+    gh.write_text("#!/usr/bin/env bash\n"
+                  'if [ "$1 $2" = "release view" ]; then exit ' + ("0" if view_ok else "1") + "; fi\n"
+                  'if [ "$1 $2" = "release download" ]; then mkdir -p data && printf db > data/macro_radar.db; exit 0; fi\n'
+                  "exit 2\n")
+    gh.chmod(0o755)
+    env = {"PATH": f"{bindir}:{os.environ.get('PATH', '')}", "DATA_RELEASE_REPO": data_repo, "GITHUB_REPOSITORY": HOME,
+           "GH_TOKEN": "builtin", "DATA_RELEASE_TOKEN": "data-token"}
+    return subprocess.run(["bash", "-eo", "pipefail", "-c", run], cwd=tmp_path, env=env, capture_output=True, text=True)
+
+
+@pytest.mark.parametrize("name", ("refresh-data.yml", "intraday-refresh.yml"))
+def test_the_fetch_never_builds_without_history_from_another_repo_and_is_unchanged_for_this_one(tmp_path, name):
+    # this repo with no release: proceeds without a prior database, exactly as before
+    done = _fetch_with(tmp_path / "a", name, view_ok=False, data_repo=HOME)
+    assert done.returncode == 0 and "No data-latest release yet" in done.stdout
+    # another repo it cannot read (not seeded, wrong token, outage): the run stops before building anything
+    done = _fetch_with(tmp_path / "b", name, view_ok=False, data_repo=PRIVATE)
+    assert done.returncode != 0 and "Could not read data-latest on DATA_RELEASE_REPO" in done.stdout
+    assert not (tmp_path / "b" / "data" / "previous.db").exists()
+    # another repo it can read: the prior database is fetched as usual
+    done = _fetch_with(tmp_path / "c", name, view_ok=True, data_repo=PRIVATE)
+    assert done.returncode == 0 and (tmp_path / "c" / "data" / "previous.db").read_bytes() == b"db"
 
 
 @pytest.mark.parametrize("name", ("daily-memo.yml", "weekly-memo.yml"))
