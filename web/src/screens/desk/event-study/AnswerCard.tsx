@@ -14,6 +14,7 @@ import { useBox } from "../kit/LineChart";
 import { Awaiting, NotServedBadge, Signed, Stat, StatRow, useBlockUnserved, useUnserved, LoadingLine } from "../kit/ui";
 import { WINDOWS, horizonLabel } from "./question";
 import { isLog, isUnit, moveText, scaleOf, tickText, tipOf, whisker } from "../kit/units";
+import { ENGINE_LEVEL, pairAt, type Level } from "./levels";
 
 /** Whether a fix from the empty state changes the question (no wider window than 60, no condition to drop). */
 function applies(q: StudyResponse["question"], fix: string): boolean {
@@ -57,24 +58,29 @@ export function barTicks(lo: number, hi: number, unit: TargetUnit = "log_return"
 }
 
 /** A horizon the chart can draw: its median, baseline and range all served as finite numbers, in display units.
- * The whisker is baseline + ci in native units, then the same linear scale (§1.9). */
-type Drawn = { h: StudyHorizon; med: number; base: number; lo: number; hi: number };
-function drawn(h: StudyHorizon, unit: TargetUnit): Drawn | null {
+ * The whisker is baseline + ci in native units, then the same linear scale (§1.9). P1d: with a `level`, the whisker
+ * is that level's pair (levels.ts pairAt); a horizon whose 90% range is served but not this level's draws its bars
+ * with no whisker (`lo`/`hi` null), never another level's. */
+type Drawn = { h: StudyHorizon; med: number; base: number; lo: number | null; hi: number | null };
+function drawn(h: StudyHorizon, unit: TargetUnit, level?: Level): Drawn | null {
   const w = whisker(h.baseline_median, h.ci_lo, h.ci_hi, unit);
   if (!fin(h.median) || !fin(h.baseline_median) || !w) return null;
   const k = scaleOf(unit);
-  return { h, med: h.median * k, base: h.baseline_median * k, lo: w.lo, hi: w.hi };
+  const at = level === undefined ? null : pairAt(h, level);
+  const p = level === undefined ? w : at ? whisker(h.baseline_median, at.lo, at.hi, unit) : null;
+  return { h, med: h.median * k, base: h.baseline_median * k, lo: p ? p.lo : null, hi: p ? p.hi : null };
 }
 
-/** Exported for Basket & Hedge's PROTOTYPE event study (§1.0.3), which draws its illustrative horizons the same way. */
-export function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: TargetUnit }) {
+/** Exported for Basket & Hedge's PROTOTYPE event study (§1.0.3), which draws its illustrative horizons the same way.
+ * P1d: `level`, the Event Study's effective range level, names the whiskers' level in the chart's description. */
+export function Bars({ horizons, unit, level }: { horizons: StudyHorizon[]; unit: TargetUnit; level?: Level }) {
   const [ref, width, boxH] = useBox<HTMLDivElement>(640, 360);
   const height = Math.max(260, boxH);
   const pad = { l: 56, r: 12, t: 28, b: 40 };
   // Every horizon keeps its place and label; one whose numbers were not served draws no bar and says so.
-  const pts = horizons.map((h) => ({ h, d: drawn(h, unit) }));
+  const pts = horizons.map((h) => ({ h, d: drawn(h, unit, level) }));
   const k = scaleOf(unit);
-  const vals = pts.flatMap((p) => (p.d ? [p.d.med, p.d.base, p.d.lo, p.d.hi] : []));
+  const vals = pts.flatMap((p) => (p.d ? [p.d.med, p.d.base, ...(p.d.lo !== null && p.d.hi !== null ? [p.d.lo, p.d.hi] : [])] : []));
   const lo = Math.min(0, ...vals);
   const hi = Math.max(0, ...vals);
   const ticks = barTicks(lo, hi, unit);
@@ -90,7 +96,7 @@ export function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: Targe
   const bw = Math.min(42, group * 0.2);
   return (
     <div ref={ref} className="dk-chart es-bars">
-      <svg width={width} height={height} role="img" aria-label={`The median move after the event against a normal stretch, with its range, at each horizon${isLog(unit) ? " (log returns, ×100)" : ""}: ${pts.map((p) => (p.d ? `${p.h.label} ${moveText(p.d.med / k, unit)} against ${moveText(p.d.base / k, unit)}` : `${p.h.label} awaiting refresh`)).join("; ")}`}>
+      <svg width={width} height={height} role="img" aria-label={`The median move after the event against a normal stretch, with its ${level === undefined ? "" : `${level}% `}range, at each horizon${isLog(unit) ? " (log returns, ×100)" : ""}: ${pts.map((p) => (p.d ? `${p.h.label} ${moveText(p.d.med / k, unit)} against ${moveText(p.d.base / k, unit)}${p.d.lo === null ? `, no ${level}% range` : ""}` : `${p.h.label} awaiting refresh`)).join("; ")}`}>
         {ticks.map((t) => (
           <g key={t}>
             <line className={t === 0 ? "dk-chart-zero" : "dk-chart-grid"} x1={pad.l} x2={pad.l + pw} y1={y(t)} y2={y(t)} />
@@ -122,10 +128,14 @@ export function Bars({ horizons, unit }: { horizons: StudyHorizon[]; unit: Targe
             <g key={h.h}>
               <rect x={ex} y={top(p.med)} width={bw} height={Math.max(1, hgt(p.med))} fill={BLUE} />
               <rect x={bx} y={top(p.base)} width={bw} height={Math.max(1, hgt(p.base))} fill={GRAY} fillOpacity={0.35} />
-              <line x1={wx} x2={wx} y1={y(p.hi)} y2={y(p.lo)} stroke={BLUE} strokeWidth={2} />
-              <line x1={wx - 8} x2={wx + 8} y1={y(p.hi)} y2={y(p.hi)} stroke={BLUE} strokeWidth={2} />
-              <line x1={wx - 8} x2={wx + 8} y1={y(p.lo)} y2={y(p.lo)} stroke={BLUE} strokeWidth={2} />
-              <text className="es-bar-value" x={wx} y={y(p.hi) - 9} textAnchor="middle">
+              {p.lo !== null && p.hi !== null ? (
+                <g data-testid="es-whisker">
+                  <line x1={wx} x2={wx} y1={y(p.hi)} y2={y(p.lo)} stroke={BLUE} strokeWidth={2} />
+                  <line x1={wx - 8} x2={wx + 8} y1={y(p.hi)} y2={y(p.hi)} stroke={BLUE} strokeWidth={2} />
+                  <line x1={wx - 8} x2={wx + 8} y1={y(p.lo)} y2={y(p.lo)} stroke={BLUE} strokeWidth={2} />
+                </g>
+              ) : null}
+              <text className="es-bar-value" x={wx} y={(p.hi !== null ? y(p.hi) : Math.min(y(p.med), y(0))) - 9} textAnchor="middle">
                 {tip ? <title>{tip}</title> : null}
                 {moveText(p.med / k, unit)}
               </text>
@@ -162,6 +172,7 @@ export default function AnswerCard({
   busy = false,
   onFix,
   horizon,
+  level = ENGINE_LEVEL,
 }: {
   study: StudyResponse | undefined;
   failed: boolean;
@@ -171,6 +182,8 @@ export default function AnswerCard({
   onFix: (fix: string) => void;
   /** The asked horizon, for the stat labels before an answer. */
   horizon?: number;
+  /** P1d: the range level drawn for this answer (levels.ts effectiveLevel); the verdicts stay at 90%. */
+  level?: Level;
 }) {
   const unserved = useUnserved();
   if (!study) {
@@ -313,7 +326,7 @@ export default function AnswerCard({
           <Stat label="Worst · best" awaiting />
         )}
       </StatRow>
-      {!horizons.length ? <Awaiting>the study's horizons</Awaiting> : unit ? <Bars horizons={horizons} unit={unit} /> : <Awaiting>the unit of the study's target</Awaiting>}
+      {!horizons.length ? <Awaiting>the study's horizons</Awaiting> : unit ? <Bars horizons={horizons} unit={unit} level={level} /> : <Awaiting>the unit of the study's target</Awaiting>}
       <p className="es-legend" aria-hidden="true">
         <span>
           <i style={{ background: BLUE }} /> after the event
