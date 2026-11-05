@@ -590,6 +590,7 @@ def run_dispatch(env: dict, clock: Clock, s: date, runner: Runner = subprocess.r
             print(f"::warning::the reservation could not be released ({exc}); it stays counted")
         return 0
     try:
+        dispatched_at = clock.now()
         gh.dispatch(s)
     except GhError as exc:
         print(f"::error::the dispatch call failed ({exc}); it may still have been accepted, so the reservation stays")
@@ -602,7 +603,10 @@ def run_dispatch(env: dict, clock: Clock, s: date, runner: Runner = subprocess.r
         except GhError as exc:
             print(f"  confirm: {exc}")
             runs = []
-        runs = [r for r in runs if r.get("id") not in seen]
+        # only a run this call created: not listed before it, and created no earlier than a minute before it
+        # (clock skew; an earlier dispatch for s is at least RETRY_GAP older, Codex S-1)
+        floor = dispatched_at - timedelta(seconds=60)
+        runs = [r for r in runs if r.get("id") not in seen and (_ts(r.get("created_at")) or floor) >= floor]
         if runs:
             newest = max(runs, key=lambda r: r.get("created_at") or "")
             print(f"confirmed: {newest.get('html_url')}")

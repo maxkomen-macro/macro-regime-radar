@@ -637,6 +637,24 @@ def test_the_confirmation_names_only_the_new_run(tmp_path, capsys):
     assert first["html_url"] not in out and "not listed yet" in out and len(fake.dispatches) == 1
 
 
+def test_an_earlier_run_missing_from_the_first_listing_is_still_not_taken_as_the_new_one(tmp_path, capsys):
+    clock = FakeClock(utc(2026, 11, 5, 23, 40))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    fake.reserve("2026-11-05", run_id="111")
+    fake.reserve("2026-11-05")
+    fake.visible = False
+    earlier = {}
+
+    def late_listing(f, rest):  # the first dispatch's run shows up only after this one's dispatch call
+        if f.dispatches and not earlier:
+            earlier.update(f.add_run(title=cs.TITLE.format("2026-11-05"), event="workflow_dispatch",
+                                     created=utc(2026, 11, 5, 22, 31), updated=utc(2026, 11, 5, 22, 39)))
+    fake.hooks["runs"] = late_listing
+    assert dispatch(fake, clock, "2026-11-05") == 0
+    out = capsys.readouterr().out
+    assert earlier and earlier["html_url"] not in out and "not listed yet" in out and len(fake.dispatches) == 1
+
+
 @pytest.mark.parametrize("attempt", ["2", "3"])
 def test_a_rerun_watcher_never_plans_or_dispatches(tmp_path, attempt):
     clock = FakeClock(utc(2026, 11, 5, 23, 0))
