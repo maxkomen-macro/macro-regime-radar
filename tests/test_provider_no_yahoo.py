@@ -21,6 +21,7 @@ import pytest
 from api.providers import cache as cache_mod
 from api.providers import entitlements
 from api.providers import eodhd as eod
+from api.providers import finnhub as fh
 from api.providers import market
 from api.providers.errors import MissingToken, ProviderError, Unauthorized, UnknownSymbol
 
@@ -71,8 +72,14 @@ def blocked(monkeypatch):
     monkeypatch.setattr(eod.time, "sleep", lambda s: None)
     entitlements.reset_for_tests()
     market.clear_caches()
+    # No Finnhub key, so a profile never reaches the network for its
+    # fundamentals: not with a client an earlier test left behind, and not
+    # with a key the repo-root .env holds. Tests that need Finnhub install
+    # their own mocked client.
+    fh.set_client_for_tests(fh.FinnhubClient(None))
     yield attempts
     market.set_client_for_tests(None)
+    fh.set_client_for_tests(None)
     entitlements.reset_for_tests()
     assert attempts == [], f"the API process attempted Yahoo: {attempts}"
 
