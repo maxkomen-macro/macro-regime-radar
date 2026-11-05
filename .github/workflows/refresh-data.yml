@@ -128,7 +128,7 @@ jobs:
             cp data/macro_radar.db data/previous.db
             echo "DB snapshot: $(du -h data/macro_radar.db | cut -f1)"
           elif [ "$DATA_RELEASE_REPO" != "$GITHUB_REPOSITORY" ]; then
-            # another repo must already hold the database (cutover step 0): never build without its history
+            # another repo must already hold the database (seeded at cutover step 1): never build without its history
             echo "::error::Could not read data-latest on DATA_RELEASE_REPO; nothing built or published."
             exit 1
           else
