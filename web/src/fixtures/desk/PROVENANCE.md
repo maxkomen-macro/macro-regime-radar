@@ -126,6 +126,33 @@ To rebuild them: `web/node_modules/.cache/desk-align/build_fixtures.py`
 writes the files above; the ETF values, `scripts/desk_etf_fixtures.py
 --audit <audit copy> --etf-db <refreshed copy> --store <scratch path>`.
 
+## Rebuilt by Desk P1b (correlation windows and by regime, 2026-11-04)
+
+`macro.json`'s `stock_bond`, `correlations` and `matrix` blocks are rebuilt
+whole by `scripts/desk_corr_views_fixture.py`, with the desk_etf item's own
+builders, from one store:
+
+- **The store:** the public `data-latest` database as downloaded on
+  2026-11-04, with `asset_prices` cut at 2026-09-23 (the fixture world's last
+  completed session).
+- **Regimes:** the stored rows through 2026-08, so 2025-10 is absent, as it
+  is in the fixture world.
+- **Why whole blocks:** each block's 60-return fields must equal its own
+  `by_horizon["60"]`, and the audit-era store the old values came from is an
+  owner-held copy.
+
+Every non-numeric field is as it was. Every number agrees with the old
+fixture within 1e-4: the adjusted closes have restated since 2026-09-27,
+which moves the sixth decimal. The two-decimal values the page prints are
+unchanged.
+
+- **Real:**
+  - the 20- and 120-return views of the three blocks;
+  - each correlation row's by-regime values (revised regime history, rows
+    through 2026-08, so September 2026's sessions take the 2026-07 row);
+  - the noise bands (`fisher-z-90-iid`).
+- **Illustrative:** none.
+
 ## Added by the Options Finder (2026-10-26)
 
 | Fixture | From | Stand-ins |

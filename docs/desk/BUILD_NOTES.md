@@ -197,9 +197,11 @@ more than the engine computes, and the honest fix was to label them.
 In order: constituent-level breadth, the stocks inside the index rather
 than the 11 sector ETFs (it needs a constituent list and a price per
 stock); a stored options surface so the vol card and the options hedge on
-a basket can go live; rolling-window and by-regime views of the
-correlations (the "What moves with the S&P" card carries no Advanced
-control until one is served); then the per-study confidence selector. After that, a server-side position store with accounts, so the
+a basket can go live; the correlation views not served yet, a 250-session
+window and the stock–bond history since 1990 (the 20-, 60- and 120-session
+windows and the correlation by regime of the revised regime history are
+served on Macro; "as known at the time" waits for the point-in-time regime
+history); then the per-study confidence selector. After that, a server-side position store with accounts, so the
 discipline gate can be shared across a desk instead of living in one
 browser.
 
