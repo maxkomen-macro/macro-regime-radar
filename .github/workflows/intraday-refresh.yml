@@ -21,8 +21,9 @@ permissions:
   contents: write
 
 env:
-  # Private storage (Change 1): the repo whose data-latest release holds the
-  # database, validation.json and snapshot-latest.json. Unset, it is this repo,
+  # Private storage (Change 1, docs/data/PRIVATE_STORAGE.md): the repo whose
+  # data-latest release holds the database, validation.json,
+  # snapshot-latest.json and refresh-status.json. Unset, it is this repo,
   # exactly as before. A different repo needs the DATA_RELEASE_TOKEN secret.
   # The earnings ledger steps never read it: the sealed ledger stays here.
   DATA_RELEASE_REPO: ${{ vars.DATA_RELEASE_REPO || github.repository }}
@@ -120,13 +121,14 @@ jobs:
       # Private storage cutover only (vars.DATA_RELEASE_MIRROR == 'true' while
       # DATA_RELEASE_REPO names another repo; docs/data/PRIVATE_STORAGE.md):
       # copy the data repo's current files to this repo's data-latest, in the
-      # primary's order (database, snapshot, verdict), so readers not yet
-      # switched keep receiving them. It copies what the data repo holds, not
-      # this run's output, so it runs on unchanged refreshes too and repairs a
-      # mirror that failed earlier; matching digests are left alone. Bounded,
-      # and never able to fail a refresh.
+      # primary's order (database, snapshot, verdict, refresh status), so
+      # readers not yet switched keep receiving them. It copies what the data
+      # repo holds, not this run's output, so it runs on unchanged and failed
+      # refreshes too (not cancelled ones) and repairs a mirror that failed
+      # earlier; matching digests are left alone. Bounded, and never able to
+      # fail a refresh.
       - name: Mirror the data repo's files to this repo's data-latest (cutover only)
-        if: vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository
+        if: ${{ !cancelled() && vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository }}
         timeout-minutes: 5
         continue-on-error: true
         env:

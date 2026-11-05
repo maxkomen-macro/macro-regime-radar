@@ -21,8 +21,9 @@ permissions:
   actions: read
 
 env:
-  # Private storage (Change 1): the repo whose data-latest release holds the
-  # database, validation.json and snapshot-latest.json. Unset, it is this repo,
+  # Private storage (Change 1, docs/data/PRIVATE_STORAGE.md): the repo whose
+  # data-latest release holds the database, validation.json,
+  # snapshot-latest.json and refresh-status.json. Unset, it is this repo,
   # exactly as before. A different repo needs the DATA_RELEASE_TOKEN secret.
   # The earnings ledger steps never read it: the sealed ledger stays here.
   DATA_RELEASE_REPO: ${{ vars.DATA_RELEASE_REPO || github.repository }}

@@ -6,7 +6,8 @@
 # holds now, not what this run built, so a mirror that failed on one run is
 # repaired on the next even when nothing new was published. A file whose
 # release digest already matches is left alone (no new asset id, so no reader
-# re-downloads it). Order: database, snapshot, verdict, as on the primary.
+# re-downloads it). Order: database, snapshot, verdict, refresh-attempt status,
+# as the primary writes them.
 #
 # Env: DATA_RELEASE_REPO (the data repo), GITHUB_REPOSITORY (this repo),
 # DATA_RELEASE_TOKEN (reads the data repo), GH_TOKEN (writes this repo).
@@ -15,7 +16,7 @@ set -euo pipefail
 
 SRC="${DATA_RELEASE_REPO:?DATA_RELEASE_REPO is not set}"
 DST="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}"
-FILES=(macro_radar.db snapshot-latest.json validation.json)
+FILES=(macro_radar.db snapshot-latest.json validation.json refresh-status.json)
 
 if [ "$SRC" = "$DST" ]; then
   echo "mirror: the data repo is this repo; nothing to mirror"

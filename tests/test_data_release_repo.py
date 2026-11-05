@@ -83,11 +83,15 @@ class Release:
                 {"id": 7, "name": "macro_radar.db", "updated_at": "2026-11-05T07:19:20Z", "size": len(self.payload),
                  "digest": f"sha256:{self.sha}", "url": f"{self.api}/releases/assets/7"},
                 {"id": 8, "name": "validation.json", "updated_at": "2026-11-05T07:19:30Z", "size": len(self.verdict),
-                 "url": f"{self.api}/releases/assets/8"}]})
+                 "url": f"{self.api}/releases/assets/8"},
+                {"id": 9, "name": "refresh-status.json", "updated_at": "2026-11-05T07:20:00Z", "size": 2,
+                 "url": f"{self.api}/releases/assets/9"}]})
         if url == f"{self.api}/releases/assets/7":
             return httpx.Response(200, content=self.payload)
         if url == f"{self.api}/releases/assets/8":
             return httpx.Response(200, content=self.verdict)
+        if url == f"{self.api}/releases/assets/9":
+            return httpx.Response(200, content=b"{}")
         return httpx.Response(404)
 
 
@@ -99,9 +103,11 @@ def scratch(tmp_path, monkeypatch):
     monkeypatch.setattr(bootstrap, "_poke_worker", lambda: None)
     db.reset_connections_for_tests()
     bootstrap.reset_validation_for_tests()
+    bootstrap.reset_refresh_status_for_tests()
     yield target
     db.reset_connections_for_tests()
     bootstrap.reset_validation_for_tests()
+    bootstrap.reset_refresh_status_for_tests()
 
 
 @pytest.mark.parametrize("setting, repo", [(None, HOME), (PRIVATE, PRIVATE)])
@@ -116,6 +122,7 @@ def test_the_database_is_read_from_the_named_repo_and_nowhere_else(scratch, tmp_
     assert scratch.read_bytes() == release.payload
     assert release.urls and all(u.startswith(release.api + "/") for u in release.urls), release.urls
     assert f"{release.api}/releases/assets/8" in release.urls, "the verdict is read from the same repo"
+    assert f"{release.api}/releases/assets/9" in release.urls, "and so is the refresh-attempt status"
     assert bootstrap.status()["last_result"] == "downloaded"
     held = bootstrap.validation_state()
     assert held is not None and held["verdict"] == "pass" and held["db_sha256"] == release.sha
@@ -273,15 +280,21 @@ def test_the_ledger_steps_keep_this_repo_and_the_builtin_token():
     assert cache.count("_download_public_db(") == 2, "defined once, called once (the --probe branch)"
 
 
-@pytest.mark.parametrize("name", ("refresh-data.yml", "intraday-refresh.yml"))
-def test_the_cutover_mirror_follows_both_publishes_runs_on_unchanged_refreshes_and_never_blocks(name):
+@pytest.mark.parametrize("name, after", [
+    ("refresh-data.yml", "Upload refresh-attempt status (finished)"),  # last: after every data-latest write
+    ("intraday-refresh.yml", "Publish the validation verdict"),
+])
+def test_the_cutover_mirror_follows_every_publish_runs_on_unchanged_refreshes_and_never_blocks(name, after):
     steps = _steps(name)
     names = [s.get("name", "") for s in steps]
     m = names.index(MIRROR)
-    assert names[m - 1] == "Publish the validation verdict", names
+    assert names[m - 1] == after, names
+    if name == "refresh-data.yml":
+        assert m == len(steps) - 1
     step = steps[m]
-    # not gated on this run's upload: it copies the data repo's state, so a mirror that failed is repaired later
-    assert step["if"] == "vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository"
+    # not gated on this run's upload or success: it copies the data repo's state, so a failed mirror is repaired
+    # later and a failed refresh's status still reaches readers not yet switched; a cancelled run skips it
+    assert step["if"] == "${{ !cancelled() && vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository }}"
     assert step["continue-on-error"] is True and int(step["timeout-minutes"]) == 5
     assert step["env"] == {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "DATA_RELEASE_TOKEN": "${{ secrets.DATA_RELEASE_TOKEN }}"}
     assert step["run"].strip() == "bash scripts/mirror_data_release.sh"
@@ -365,7 +378,7 @@ else:
 '''
 
 MIRROR_SCRIPT = ROOT / "scripts" / "mirror_data_release.sh"
-FILES = ("macro_radar.db", "snapshot-latest.json", "validation.json")
+FILES = ("macro_radar.db", "snapshot-latest.json", "validation.json", "refresh-status.json")
 
 
 class Mirror:
@@ -404,7 +417,8 @@ class Mirror:
                               capture_output=True, text=True, timeout=60)
 
 
-PUBLISHED = {"macro_radar.db": b"database v2", "snapshot-latest.json": b'{"entries": 2}', "validation.json": b'{"v": 2}'}
+PUBLISHED = {"macro_radar.db": b"database v2", "snapshot-latest.json": b'{"entries": 2}', "validation.json": b'{"v": 2}',
+             "refresh-status.json": b'{"attempts": 2}'}
 
 
 def test_the_mirror_does_nothing_when_the_data_repo_is_this_repo(tmp_path):
@@ -429,7 +443,7 @@ def test_the_mirror_copies_every_file_in_order_reading_with_the_data_token_and_w
     assert m.files(HOME) == PUBLISHED
     calls = m.calls()
     uploads = [Path(c["args"][3]).name for c in calls if c["args"][:2] == ["release", "upload"]]
-    assert uploads == list(FILES), "database, then snapshot, then verdict"
+    assert uploads == list(FILES), "database, then snapshot, then verdict, then the refresh status"
     for c in calls:
         reads_private = PRIVATE in " ".join(c["args"])
         assert c["token"] == ("data-token" if reads_private else "builtin"), c
@@ -447,7 +461,7 @@ def test_the_mirror_repairs_a_stale_copy_on_a_later_run_and_leaves_current_files
     done = m.run()
     assert done.returncode == 0, done.stderr
     uploads = [Path(c["args"][3]).name for c in m.calls() if c["args"][:2] == ["release", "upload"]]
-    assert uploads == ["snapshot-latest.json", "validation.json"]
+    assert uploads == ["snapshot-latest.json", "validation.json", "refresh-status.json"]
     assert "macro_radar.db already current" in done.stdout
     assert m.files(HOME) == {**PUBLISHED, "earnings-cache-ledger-000041.bin": b"sealed"}, "the ledger is untouched"
     # and once current, a run uploads nothing (no new asset ids for readers to chase)

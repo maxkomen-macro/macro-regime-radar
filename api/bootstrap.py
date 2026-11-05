@@ -11,8 +11,10 @@ Behavior knobs (all env; the token is never logged):
 - GH_DB_TOKEN               read-only Contents PAT. Absent → no-op: dev keeps
                             whatever DB is on disk, untouched.
 - DATA_RELEASE_REPO         "owner/name" of the repo whose data-latest release
-                            holds the database and validation.json (private
-                            storage, Change 1). Unset → this repo, as before;
+                            holds the database, validation.json and
+                            refresh-status.json (private storage, Change 1;
+                            docs/data/PRIVATE_STORAGE.md). Unset → this repo,
+                            as before;
                             malformed → the refresh fails with that reason and
                             the served file stays. The earnings ledger reader
                             keeps reading this repo (_GH_API_REPO).
@@ -117,7 +119,7 @@ class DataRepoError(ValueError):
 
 
 def data_release_repo() -> str:
-    """The repo whose data-latest release holds the database and its verdict:
+    """The repo whose data-latest release holds the database, its verdict and the refresh status:
     DATA_RELEASE_REPO when set (stripped), else this repo. Read at each refresh,
     so a changed setting needs only a restart, never a code change."""
     raw = os.environ.get("DATA_RELEASE_REPO", "").strip()
