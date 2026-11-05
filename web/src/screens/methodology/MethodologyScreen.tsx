@@ -38,6 +38,7 @@ import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
 import { SIGNAL_INPUT_IDS, referenceLabel } from "../shared/fresh-state";
 import { Stamp } from "../shared/Stamp";
+import { CBOE_CREDIT, FRED_API_NOTICE, FRED_API_TERMS_STATEMENT, FRED_API_TERMS_URL, FRED_SOURCE_CREDITS, ICE_CREDIT } from "../shared/DataNotice";
 import { useFreshReport } from "../shared/useFreshReport";
 
 /** A1: the methodology's figures are fixed model rules and thresholds, not
@@ -603,6 +604,38 @@ export default function MethodologyScreen() {
               Every surface states its own as-of date and falls back to latest-available data with its date instead of
               an empty screen. Regimes and signals are monthly; market bars daily; intraday 5-minute for SPY and QQQ;
               news hourly with a rolling window.
+            </Caption>
+          </Card>
+          <Card style={{ marginTop: 12 }}>
+            <div id="notices" style={eyebrowStyle}>
+              Notices and credits
+            </div>
+            <p style={{ ...prose, marginTop: 8 }}>
+              {FRED_API_NOTICE} {FRED_API_TERMS_STATEMENT}{" "}
+              <a href={FRED_API_TERMS_URL} target="_blank" rel="noreferrer" style={{ color: "var(--link)" }}>
+                FRED® API Terms of Use ↗
+              </a>
+            </p>
+            <p style={{ ...prose, marginTop: 10 }}>
+              FRED series are retrieved from FRED®, Federal Reserve Bank of St. Louis. Each is credited to its original
+              publisher:
+            </p>
+            <ul style={{ ...prose, marginTop: 6, paddingLeft: 18 }}>
+              {FRED_SOURCE_CREDITS.map(([publisher, what]) => (
+                <li key={publisher}>
+                  <b style={{ color: "var(--text)", fontWeight: 600 }}>Source: {publisher} via FRED®</b>: {what}.
+                </li>
+              ))}
+            </ul>
+            <p style={{ ...prose, marginTop: 10 }}>
+              {ICE_CREDIT} Reproduction of this data in any form is prohibited except with the prior written permission
+              of ICE Data Indices. ICE® is a registered trademark of ICE Data or its affiliates and BofA® is a registered
+              trademark of Bank of America Corporation.
+            </p>
+            <p style={{ ...prose, marginTop: 10 }}>{CBOE_CREDIT}</p>
+            <Caption>
+              A credit names where data comes from; it does not grant anyone a right to reuse it. Third-party series
+              remain subject to their owners&apos; terms.
             </Caption>
           </Card>
         </section>

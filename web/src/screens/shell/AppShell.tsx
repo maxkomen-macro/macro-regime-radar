@@ -36,6 +36,7 @@ import { Navigate, useLocation, useParams } from "react-router-dom";
 import { useFreshness, useRegimeLatest } from "../../api/queries";
 import { useSnapshotMeta } from "../../api/snapshot";
 import { isSeededReport } from "../shared/useFreshReport";
+import { DataNoticeFooter } from "../shared/DataNotice";
 import { useLiveFeeds, useStreamLive, useStreamStatus, useStreamWord } from "../../live/quotes";
 import { useBreakpoint } from "../../lib/useBreakpoint";
 import ErrorBoundary from "../shared/ErrorBoundary";
@@ -336,6 +337,8 @@ export default function AppShell() {
                 </Suspense>
               </ErrorBoundary>
             </main>
+            {/* The FRED API notice, its terms link and the credits link, on every route (DataNotice.tsx). */}
+            <DataNoticeFooter style={{ maxWidth: "var(--maxw-frame, 1520px)" }} />
           </div>
 
           {/* Floating analyst panel: app shell only; the landing page stays quiet.
