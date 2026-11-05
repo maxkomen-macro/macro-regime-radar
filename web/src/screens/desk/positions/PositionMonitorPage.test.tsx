@@ -537,13 +537,14 @@ describe("Position Monitor tab", () => {
     // Switching back brings nothing back: the dropped level stays dropped.
     expect(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ }));
-    // Instrument: the same rule without the S&P's number is still offered, and its label follows it.
-    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "TLT" } });
+    // Instrument: the same rule without the S&P's number is still offered, and its label follows it. P1c: a
+    // ticker the store does not hold (NVDA; TLT is a stored ETF now, monitored on its own 50-day) stays manual.
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "NVDA" } });
     const chip = screen.getByRole("button", { name: "closes below its 50-day" });
     expect(chip).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("pm-save"));
     await waitFor(() => expect(stored()).toHaveLength(1));
-    expect(stored()[0]).toMatchObject({ instrument: "TLT", wrong_if: { id: "below_50d", label: "closes below its 50-day" }, monitoring: "manual" });
+    expect(stored()[0]).toMatchObject({ instrument: "NVDA", wrong_if: { id: "below_50d", label: "closes below its 50-day" }, monitoring: "manual" });
   });
 
   it("a size that is not a number keeps Save off and says so", async () => {
@@ -677,5 +678,77 @@ describe("the Monitored card's levels come from the API (desk/usability §14.10,
     const card = await screen.findByRole("region", { name: "Monitored" });
     await new Promise((r) => setTimeout(r, 50));
     expect(within(card).queryByTestId("dk-loading")).toBeNull();
+  });
+
+  // ── P1c: automatic room for any stored instrument or tenor (room.test.ts has the method's own cases) ──
+
+  it("P1c: a stored ETF is monitored on its own 50-day, its chips numbered from its stored closes", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "GLD" } });
+    fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
+    answer();
+    // The fixtures' GLD: 392.88 on Sep 23 under its 50-day of 394.48, so a short's level has room.
+    fireEvent.click(await screen.findByRole("button", { name: "closes above its 50-day (394.48)" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ instrument: "GLD", subject: { kind: "instrument", id: "GLD" }, monitoring: "automatic", entry_value: 392.8800048828125, trigger: { series: "etf:GLD", operator: "above", threshold: 394.4752001953125, observed_on: "2026-09-23" } });
+    const mon = screen.getByRole("region", { name: /Monitored/ });
+    expect(mon).toHaveTextContent("100% room · 0.4% to level");
+    fireEvent.click(within(within(mon).getByTestId("dk-mon-row")).getAllByRole("button")[0]);
+    await waitFor(() => expect(mon).toHaveTextContent("GLD above 394.48 · now 392.88 on Sep 23"));
+  });
+
+  it("P1c: a tenor's yield is monitored on a bp move from entry, and the form says what a long in a yield is", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "10y yield" } });
+    expect(screen.getByTestId("pm-yield-note")).toHaveTextContent("A long here is long the yield itself: it gains as the yield rises (a short in the bond).");
+    answer();
+    fireEvent.click(await screen.findByRole("button", { name: "falls 10 bp from entry (below 4.86%)" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ instrument: "10y yield", subject: { kind: "instrument", id: "yield_10y" }, monitoring: "automatic", entry_value: 4.96, trigger: { series: "yield_10y", operator: "below", observed_on: "2026-09-22" } });
+    expect(screen.getByRole("region", { name: /Monitored/ })).toHaveTextContent("100% room · 10 bp to level");
+    // A spread whose tenors the fixture store does not hold is refused, never saved as manual (B-10).
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "5s30s" } });
+    expect(screen.queryByTestId("pm-yield-note")).toBeNull();
+    answer();
+    fireEvent.click(screen.getByRole("button", { name: "falls 10 bp from entry" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    expect(screen.getByRole("status")).toHaveTextContent("The 5s30s level is not served right now, so the room at entry cannot be recorded. Nothing was saved.");
+    expect(stored()).toHaveLength(1);
+  });
+
+  it("P1c: a held ETF asks for its own stored closes only; a ticker the store does not hold is never looked up", async () => {
+    const r = RECORDS.find((p) => p.id === "ndx-vs-spx")!;
+    const held = (instrument: string, series: string, threshold: number, entry: number, observed: string) => ({ ...r, id: `held-${instrument}`, instrument, direction: "short", wrong_if: { id: "above_50d", label: "closes above its 50-day" }, subject: { kind: "instrument", id: instrument }, monitoring: "automatic", entry_value: entry, trigger: { series, operator: "above", threshold, policy: "frozen", observed_on: observed }, original_room: threshold - entry });
+    // NVDA: a valid record (any ticker is its own series), but /instruments does not store it.
+    seed([held("GLD", "etf:GLD", 394.4752001953125, 392.8800048828125, "2026-09-23"), held("NVDA", "etf:NVDA", 230, 225.5, "2026-09-23")]);
+    const { calls } = stubDesk();
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await waitFor(() => expect(within(card).getAllByTestId("dk-mon-row")[0]).toHaveTextContent("100% room · 0.4% to level"));
+    expect(calls).toContain("GET /api/desk/instruments");
+    expect(calls).toContain("GET /api/desk/technicals?symbol=GLD");
+    expect(calls.some((c) => c.includes("symbol=NVDA"))).toBe(false);
+    expect(within(card).getAllByTestId("dk-mon-row")[1]).toHaveTextContent("room —");
+  });
+
+  it("P1c: the stored list failing says Couldn't load on the card for a held ETF, never for the form's draft alone", async () => {
+    stubDesk({ "/api/desk/instruments": () => ({ status: 503, body: { detail: "forced failure" } }) });
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "GLD" } });
+    answer();
+    fireEvent.click(screen.getByRole("button", { name: "closes below its 50-day" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    expect(screen.getByRole("status")).toHaveTextContent("The list of stored instruments is not served right now, so whether GLD's 50-day can be monitored cannot be checked.");
+    expect(within(screen.getByRole("region", { name: "Monitored" })).queryByTestId("dk-failed")).toBeNull();
+  });
+
+  it("P1c: the Overview's Monitored card reads a held ETF's room the same way (it shares the view and the levels)", async () => {
+    const r = RECORDS.find((p) => p.id === "ndx-vs-spx")!;
+    seed([{ ...r, id: "held-GLD", instrument: "GLD", direction: "short", wrong_if: { id: "above_50d", label: "closes above its 50-day" }, subject: { kind: "instrument", id: "GLD" }, monitoring: "automatic", entry_value: 392.8800048828125, trigger: { series: "etf:GLD", operator: "above", threshold: 394.4752001953125, policy: "frozen", observed_on: "2026-09-23" }, original_room: 394.4752001953125 - 392.8800048828125 }]);
+    renderTab("/desk/overview");
+    const card = await screen.findByRole("region", { name: /Monitored/ });
+    await waitFor(() => expect(card).toHaveTextContent("100% room · 0.4% to level"));
   });
 });

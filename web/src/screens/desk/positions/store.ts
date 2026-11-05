@@ -18,8 +18,55 @@ export const POSITIONS_KEY = "mrr.desk.positions.v1";
 export const POSITION_HORIZONS: readonly number[] = [5, 10, 20, 60];
 
 export type Operator = "below" | "above";
-/** The two monitored quantities the Desk serves (B-10): the S&P against its 50-day, 2s10s against a bp level. */
-export type MonitoredSeries = "spx" | "curve_2s10s";
+
+/** The five Treasury tenors `/macro` serves in `curve.today` (§12.8), shortest first, with their FRED ids. */
+export const TENORS = ["3m", "2y", "5y", "10y", "30y"] as const;
+export type Tenor = (typeof TENORS)[number];
+export const TENOR_FRED: Readonly<Record<Tenor, string>> = { "3m": "DGS3MO", "2y": "DGS2", "5y": "DGS5", "10y": "DGS10", "30y": "DGS30" };
+
+/**
+ * The monitored quantities (B-10, extended by P1c): the S&P (`spx`) and any stored ETF (`etf:<SYMBOL>`, a
+ * row of `/instruments`) against its 50-day; a tenor's yield (`yield_<tenor>`) or the spread between two
+ * tenors (`curve_<name>`, `curve_2s10s` among them) against a bp level from entry.
+ */
+export type MonitoredSeries = "spx" | `etf:${string}` | `yield_${Tenor}` | `curve_${string}`;
+
+/** A monitored series, read: what it is and which served values it needs. */
+export type SeriesRef = { kind: "spx" } | { kind: "etf"; symbol: string } | { kind: "yield"; tenor: Tenor } | { kind: "spread"; short: Tenor; long: Tenor; name: string };
+
+/** A spread's market name: "2s10s", "5s30s", "10s30s"; with the 3-month bill "3m2y", "3m10y". */
+export function spreadName(short: Tenor, long: Tenor): string {
+  return short === "3m" ? `3m${long}` : `${short.replace("y", "s")}${long.replace("y", "s")}`;
+}
+
+/** Every spread between two tenors, short leg first: ten of them. */
+export const SPREADS: readonly { short: Tenor; long: Tenor; name: string }[] = TENORS.flatMap((a, i) => TENORS.slice(i + 1).map((b) => ({ short: a, long: b, name: spreadName(a, b) })));
+
+/** A stored ticker as the ETF family spells it: letters first, then letters, digits, a dot or a dash. */
+const TICKER = /^[A-Z][A-Z0-9.-]{0,9}$/;
+
+/** The series a stored trigger names, or null for one the Desk does not monitor. */
+export function parseSeries(series: unknown): SeriesRef | null {
+  if (series === "spx") return { kind: "spx" };
+  if (typeof series !== "string") return null;
+  if (series.startsWith("etf:")) {
+    const symbol = series.slice(4);
+    return TICKER.test(symbol) ? { kind: "etf", symbol } : null;
+  }
+  const tenor = TENORS.find((t) => series === `yield_${t}`);
+  if (tenor) return { kind: "yield", tenor };
+  const spread = SPREADS.find((s) => series === `curve_${s.name}`);
+  return spread ? { kind: "spread", ...spread } : null;
+}
+
+/** The two families of automatic levels: a price against its 50-day, a rate against a bp move from entry. */
+export type LevelFamily = "price" | "rate";
+
+export function familyOf(series: MonitoredSeries): LevelFamily | null {
+  const r = parseSeries(series);
+  if (!r) return null;
+  return r.kind === "spx" || r.kind === "etf" ? "price" : "rate";
+}
 
 export interface Trigger {
   series: MonitoredSeries;
@@ -83,25 +130,44 @@ export function signedDistance(value: number, t: Pick<Trigger, "operator" | "thr
 
 const norm = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 
-/** The monitored series by their names: §12.7's `/technicals` describes the registry series `spx`
- * (^GSPC) and §12.8 serves 2s10s. Exact names only (Codex R-08): SPY, an ES future or an SPX option
- * is not the index, and "2s10s steepener" is a trade, not the curve. */
-const SERIES_NAMES: Readonly<Record<MonitoredSeries, readonly string[]>> = { spx: ["s&p 500", "spx", "^gspc"], curve_2s10s: ["2s10s", "curve_2s10s"] };
+/** The named series by their names: §12.7's `/technicals` describes the registry series `spx` (^GSPC);
+ * §12.8 serves the five tenors, so each tenor's yield and each spread between two of them. Exact names
+ * only (Codex R-08): SPY, an ES future or an SPX option is not the index; "2s10s steepener" is a trade,
+ * not the curve; a bare "10y" or "10s" is not taken, since it names the bond as often as its yield. */
+const SERIES_NAMES: Readonly<Record<string, readonly string[]>> = {
+  spx: ["s&p 500", "spx", "^gspc"],
+  ...Object.fromEntries(TENORS.map((t) => [`yield_${t}`, [`${t} yield`, `ust ${t} yield`, `yield_${t}`, TENOR_FRED[t].toLowerCase()]])),
+  ...Object.fromEntries(SPREADS.map((s) => [`curve_${s.name}`, [s.name.toLowerCase(), `curve_${s.name}`.toLowerCase()]])),
+};
 
-/** The series a typed instrument is, or null for any other instrument. */
-export function monitoredSeriesOf(instrument: string): MonitoredSeries | null {
+/** The named series a typed instrument is (the S&P, a yield, a spread), or null for any other instrument. */
+export function namedSeriesOf(instrument: string): MonitoredSeries | null {
   const typed = norm(instrument);
-  return (Object.keys(SERIES_NAMES) as MonitoredSeries[]).find((k) => SERIES_NAMES[k].includes(typed)) ?? null;
+  return (Object.keys(SERIES_NAMES).find((k) => SERIES_NAMES[k].includes(typed)) as MonitoredSeries | undefined) ?? null;
 }
 
-/** The levels that monitor a series automatically, with the side of the level each falsifies on. */
-export const AUTOMATIC_LEVELS: Readonly<Record<string, { series: MonitoredSeries; operator: Operator }>> = {
-  below_50d: { series: "spx", operator: "below" },
-  above_50d: { series: "spx", operator: "above" },
-  curve_down_10: { series: "curve_2s10s", operator: "below" },
-  curve_down_25: { series: "curve_2s10s", operator: "below" },
-  curve_up_10: { series: "curve_2s10s", operator: "above" },
-  curve_up_25: { series: "curve_2s10s", operator: "above" },
+/**
+ * The series a typed instrument would be monitored on: a named series, else `etf:<TICKER>` for a typed
+ * ticker. Whether that ticker is a stored ETF is a served fact (`/instruments`), checked at Save, never
+ * here: a record's validation must not change with what is served today. Null for anything else
+ * ("NDX vs SPX", "QQQ/SPY").
+ */
+export function monitoredSeriesOf(instrument: string): MonitoredSeries | null {
+  const named = namedSeriesOf(instrument);
+  if (named) return named;
+  const ticker = instrument.trim().toUpperCase();
+  return TICKER.test(ticker) ? `etf:${ticker}` : null;
+}
+
+/** The levels that monitor a series automatically: the family they apply to, and the side of the level each
+ * falsifies on. The ids are kept from B-10 (`curve_*` now serves every rate series, a yield too). */
+export const AUTOMATIC_LEVELS: Readonly<Record<string, { family: LevelFamily; operator: Operator }>> = {
+  below_50d: { family: "price", operator: "below" },
+  above_50d: { family: "price", operator: "above" },
+  curve_down_10: { family: "rate", operator: "below" },
+  curve_down_25: { family: "rate", operator: "below" },
+  curve_up_10: { family: "rate", operator: "above" },
+  curve_up_25: { family: "rate", operator: "above" },
 };
 
 function whySubject(v: unknown): string | null {
@@ -121,7 +187,7 @@ function whyTrigger(r: Record<string, unknown>, levelId: string): string | null 
   const t = r.trigger as Trigger | null;
   if (!t || typeof t !== "object") return "an automatic position without its level";
   const rule = AUTOMATIC_LEVELS[levelId];
-  if (!rule || rule.series !== t.series || rule.operator !== t.operator) return "an automatic position on a level the Desk does not monitor";
+  if (!rule || !parseSeries(t.series) || rule.family !== familyOf(t.series) || rule.operator !== t.operator) return "an automatic position on a level the Desk does not monitor";
   // §9: automatic only when the subject's monitored quantity is the served series itself; a basket is not.
   if ((r.subject as Subject).kind === "basket") return "a basket monitored automatically";
   if ((r.subject as Subject).kind === "option") return "an option monitored automatically";
