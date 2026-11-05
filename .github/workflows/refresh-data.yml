@@ -361,28 +361,21 @@ jobs:
           gh release upload data-latest publish/validation.json --clobber --repo "$DATA_RELEASE_REPO"
 
       # Private storage cutover only (vars.DATA_RELEASE_MIRROR == 'true' while
-      # DATA_RELEASE_REPO names another repo): copy the files just published
-      # there to this repo's data-latest too, in the same order (database,
-      # snapshot, verdict), so readers not yet switched keep receiving them.
-      # Its own step, bounded, and never able to fail a published refresh.
-      - name: Mirror the published files to this repo's data-latest (cutover only)
-        if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload == 'true' && vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository
+      # DATA_RELEASE_REPO names another repo; docs/data/PRIVATE_STORAGE.md):
+      # copy the data repo's current files to this repo's data-latest, in the
+      # primary's order (database, snapshot, verdict), so readers not yet
+      # switched keep receiving them. It copies what the data repo holds, not
+      # this run's output, so it runs on unchanged refreshes too and repairs a
+      # mirror that failed earlier; matching digests are left alone. Bounded,
+      # and never able to fail a refresh.
+      - name: Mirror the data repo's files to this repo's data-latest (cutover only)
+        if: vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository
         timeout-minutes: 5
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release view data-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
-            || gh release create data-latest --repo "$GITHUB_REPOSITORY" --title "Latest data snapshot" \
-                 --notes "Rolling SQLite snapshot published by the refresh workflows. Not stored in git history."
-          gh release upload data-latest data/macro_radar.db --clobber --repo "$GITHUB_REPOSITORY"
-          if [ -f snapshot-latest.json ]; then
-            gh release upload data-latest snapshot-latest.json --clobber --repo "$GITHUB_REPOSITORY"
-          fi
-          if [ -f publish/validation.json ]; then
-            gh release upload data-latest publish/validation.json --clobber --repo "$GITHUB_REPOSITORY"
-          fi
-          echo "Mirrored the published files to this repo's data-latest."
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
+        run: bash scripts/mirror_data_release.sh
 
       # Earnings cache ledger (design EC 9.2.3): if the cache step left a final
       # state it could not upload, upload it now under its own sequenced name,
