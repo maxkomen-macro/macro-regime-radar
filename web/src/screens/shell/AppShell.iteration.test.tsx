@@ -90,7 +90,7 @@ const freshness = {
   bootstrap: null,
   relay: { feeds: { us: "off" }, feed_stale: {}, degraded: false, degraded_reasons: [], token_configured: false },
   series: [
-    { id: "market_daily", label: "Daily closes (stored)", kind: "market", cadence: "daily", as_of: DAILY, state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Official close of the last completed session." },
+    { id: "market_daily", label: "Daily closes (stored)", kind: "market", cadence: "daily", as_of: DAILY, state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Stored provider close of the last completed session." },
     { id: "DGS10", label: "10-year Treasury yield", kind: "fred", cadence: "daily", as_of: daysAgo(2), state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Observed on the newest print due." },
   ],
 };

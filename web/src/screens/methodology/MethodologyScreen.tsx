@@ -538,7 +538,7 @@ export default function MethodologyScreen() {
                 {/* Acceptance F3: the §5 words (fresh-state.ts), each in its tone's ink. */}
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--mint, var(--pos))" label="Live" detail="streaming now, in the NYSE session" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--amber)" label="Delayed 7 min" detail="a quote or stored bar that many minutes old" />
-                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Close · Sep 18" detail="the newest official market close due" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Close · Sep 18" detail="the newest stored market close due, as the data provider reported it" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Sep 17" detail="a daily FRED print, with · 1 day behind in muted ink when it is late" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Aug 2026 print" detail="the newest monthly print due" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Released, awaiting refresh" detail="a monthly print out at its scheduled release, not stored yet; stale from 06:00 UTC the next day" />

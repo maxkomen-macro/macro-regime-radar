@@ -34,7 +34,7 @@ NEWS_SLA_MIN_OFFHOURS = 6 * 60
 # One vocabulary for every number on screen, beside the four-word SLA verdict:
 #   live      streaming during the session (delay_min 0)
 #   delayed   a quote or bar N minutes old (delay_min = N)
-#   close     the newest official close or print that is due (cycles_behind 0
+#   close     the newest stored close or print that is due (cycles_behind 0
 #             for markets and monthly prints; FRED daily within DAILY_TOLERANCE business days)
 #   stale     behind the newest expected publication (cycles_behind says by how many)
 #   fallback  a stated default, not data
@@ -831,8 +831,8 @@ def assess(
     md_on_time = md is not None and (md >= exp_md or within_grace)
     series.append(_state("market_daily", "Daily closes (stored)", "market", "daily", md_str,
                          "unknown" if md is None else ("close" if md_on_time else "stale"), cycles_behind=0 if md_on_time else md_cycles,
-                         reason="No stored closes." if md is None else (f"Official close of {md_str}, the last completed session." if md >= exp_md
-                                else f"Official close of {md_str}; the last completed session ({exp_md.isoformat()}) is stored by the full refresh, which has until 06:00 UTC." if within_grace
+                         reason="No stored closes." if md is None else (f"Stored provider close of {md_str}, the last completed session." if md >= exp_md
+                                else f"Stored provider close of {md_str}; the last completed session ({exp_md.isoformat()}) is stored by the full refresh, which has until 06:00 UTC." if within_grace
                                 else f"Newest stored close {md_str} is {md_cycles} session(s) older than the last completed session ({exp_md.isoformat()}).")))
     if mi is None:
         series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", None, "unknown", reason="No stored intraday bars."))

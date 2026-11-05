@@ -105,6 +105,20 @@ def test_market_daily_behind_the_last_completed_session_says_so():
     assert fresh["state"] == "close" and fresh["cycles_behind"] == 0
 
 
+def test_market_daily_reason_names_a_stored_provider_close_never_an_official_one():
+    """Owner 2026-11-05 (section 6): market_daily rows are the provider's reported bars (Polygon, then Yahoo
+    through yfinance), not independently verified exchange data, so the reason the screen shows says so."""
+    after_close = datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc)  # Friday 17:00 ET
+    fresh = _series(_assess({}, now=after_close, fresh={**_FRESH, "market_daily_date": "2026-09-18"}))["market_daily"]
+    assert fresh["reason"] == "Stored provider close of 2026-09-18, the last completed session."
+    waiting = _series(_assess({}, now=after_close))["market_daily"]  # within the 06:00 UTC grace
+    assert waiting["reason"] == ("Stored provider close of 2026-09-17; the last completed session (2026-09-18) is stored "
+                                 "by the full refresh, which has until 06:00 UTC.")
+    stale = _series(_assess({}, now=datetime(2026, 9, 19, 6, 0, tzinfo=timezone.utc)))["market_daily"]
+    for s in (fresh, waiting, stale):
+        assert "official" not in s["reason"].lower(), s["reason"]
+
+
 def test_intraday_bars_in_session_are_delayed_by_n_minutes():
     s = _series(_assess({}))["market_intraday"]
     assert s["state"] == "delayed" and s["delay_min"] == 7  # bar 10:33 ET, now 10:40 ET

@@ -223,7 +223,7 @@ const TLT_8 = [90.4, 90.1, 89.6, 89.9, 89.2, 88.7, 88.9, 88.12];
 
 // Fixture labels in FRESHNESS_CONTRACT §5 words (Iteration 1 step 6, A3).
 const FRESH_MACRO: FreshLabel = { word: "Jul 2026 print", muted: null, tone: "neutral", reason: "Fixture: the July print is the newest due.", stale: false };
-const FRESH_MARKET: FreshLabel = { word: "Close · Sep 08", muted: null, tone: "neutral", reason: "Fixture: official close of the last completed session.", stale: false };
+const FRESH_MARKET: FreshLabel = { word: "Close · Sep 08", muted: null, tone: "neutral", reason: "Fixture: stored provider close of the last completed session.", stale: false };
 const FRESH_MACRO_DELAYED: FreshLabel = { word: "Jul 2026 · 1 release behind", muted: null, tone: "stale", reason: "Fixture: the August print is due.", stale: true };
 
 const ODDS = {

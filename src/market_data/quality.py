@@ -39,7 +39,9 @@ Checks, per stored series (one symbol and interval of one table):
   off_calendar a row dated on a day NYSE was closed, for the same series.
   cross_table  the same ETF in both tables. market_daily keeps each close as
                the provider served it when the row was written (Polygon's raw
-               closes before 2026-05-27, Yahoo's auto-adjusted ones since, a
+               closes before 2026-05-27, Yahoo's since, both not adjusted for
+               dividends; SPY before 2024-02-27 is a dividend-adjusted Yahoo
+               backfill until scripts/restate_market_daily.py is applied; a
                row rewritten when a later fetch covers it); asset_prices is
                the whole adjusted history, refetched every full run. Between
                fetches their ratio moves only on an ex-date, and then

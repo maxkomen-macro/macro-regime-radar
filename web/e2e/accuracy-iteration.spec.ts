@@ -587,7 +587,7 @@ function afterClose(): World {
       ...FRED_DAILY.map((id) => st(id, "close", "2026-09-17", { cycles_behind: 0 })),
       ...MONTHLY.map((id) => st(id, "close", "2026-08-01", { cycles_behind: 0 })),
       USSLIND_FINAL,
-      st("market_daily", "close", "2026-09-18", { cycles_behind: 0, reason: "Official close of 2026-09-18, the last completed session." }),
+      st("market_daily", "close", "2026-09-18", { cycles_behind: 0, reason: "Stored provider close of 2026-09-18, the last completed session." }),
       st("market_intraday", "close", "2026-09-18 15:55:00", { cycles_behind: 0 }),
       st("live_quotes", "close", "2026-09-18T20:00:00Z", { cycles_behind: null, reason: "US session is closed; the last tick stands as the closing print." }),
       st("vix_delayed", "delayed", "2026-09-18T20:14:00Z", { delay_min: 15, cycles_behind: null }),
@@ -636,7 +636,7 @@ function beforeOpen(): World {
     series: withSeries(
       w.series,
       ...FRED_DAILY.map((id) => st(id, "close", "2026-09-16", { cycles_behind: 0 })),
-      st("market_daily", "close", "2026-09-17", { cycles_behind: 0, reason: "Official close of 2026-09-17, the last completed session." }),
+      st("market_daily", "close", "2026-09-17", { cycles_behind: 0, reason: "Stored provider close of 2026-09-17, the last completed session." }),
       st("market_intraday", "close", "2026-09-17 15:55:00", { cycles_behind: 0 }),
       st("live_quotes", "close", "2026-09-17T20:00:00Z", { cycles_behind: null }),
     ),

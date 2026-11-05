@@ -227,13 +227,13 @@ describe("quoteFor (checklist 03 A.11): the strip's five-step ladder", () => {
 
 
 describe("withFreshTags", () => {
-  const closeL: FreshLabel = { word: "Close · Sep 18", muted: null, tone: "neutral", reason: "Official close of 2026-09-18.", stale: false };
+  const closeL: FreshLabel = { word: "Close · Sep 18", muted: null, tone: "neutral", reason: "Stored provider close of 2026-09-18.", stale: false };
   const staleL: FreshLabel = { word: "Sep 14 · 4 sessions behind", muted: null, tone: "stale", reason: "Newest stored close is 4 sessions old.", stale: true };
   const card: QuoteCardProps = { symbol: "SPY", price: "645.20", tag: { text: "CLOSE", title: "Stored close, Sep 14, 2026", tone: "amber" }, via: "close" };
 
   it("a current stored close reads a muted CLOSE tag titled with the §5 word, the price unmarked", () => {
     const out = withFreshTags(card, { daily: closeL, intraday: closeL });
-    expect(out.tag).toEqual({ text: "CLOSE", title: "Stored close · Close · Sep 18. Official close of 2026-09-18.", tone: "muted" });
+    expect(out.tag).toEqual({ text: "CLOSE", title: "Stored close · Close · Sep 18. Stored provider close of 2026-09-18.", tone: "muted" });
     expect(out.valueAttrs?.["data-stale"]).toBeUndefined();
   });
 

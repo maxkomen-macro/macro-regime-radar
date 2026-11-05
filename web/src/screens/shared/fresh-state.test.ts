@@ -144,11 +144,11 @@ describe("freshLabel · live and delayed", () => {
 
 describe("freshLabel · close", () => {
   it("market daily close reads Close · Mon DD, neutral", () => {
-    const l = freshLabel(s({ id: "market_daily", kind: "market", cadence: "daily", state: "close", as_of: "2026-09-18", cycles_behind: 0, reason: "Official close of 2026-09-18, the last completed session." }));
+    const l = freshLabel(s({ id: "market_daily", kind: "market", cadence: "daily", state: "close", as_of: "2026-09-18", cycles_behind: 0, reason: "Stored provider close of 2026-09-18, the last completed session." }));
     expect(l.word).toBe("Close · Sep 18");
     expect(l.tone).toBe("neutral");
     expect(l.stale).toBe(false);
-    expect(l.reason).toBe("Official close of 2026-09-18, the last completed session.");
+    expect(l.reason).toBe("Stored provider close of 2026-09-18, the last completed session.");
   });
 
   it("zero-pads the day (Close · Sep 04), and a date-only stamp never shifts a day in any time zone", () => {
