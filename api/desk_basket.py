@@ -526,8 +526,8 @@ STUDY_CACHE_MAX = 32        # finished answers kept
 STUDY_OUTSTANDING_MAX = 8   # computations in flight before 429 `busy`
 HINDSIGHT = ("The basket is chosen today, so its history is a backtest of names picked knowing how they did; "
              "a name that failed or was delisted cannot be in it.")
-REVISED_REGIMES = ("Regime labels are revised regime history: each full refresh rewrites them from today's FRED "
-                   "vintages of INDPRO and CPI, so a past label is not what was knowable then. "
+REVISED_REGIMES = ("Regime labels are revised regime history: each full refresh rewrites them from the FRED vintages "
+                   "of INDPRO and CPI current at that refresh, so a past label is not what was knowable then. "
                    "As-known-at-the-time labels are not built yet.")
 INDEX_RULE = {"hold": "the saved weights bought at the start and held, so each name's weight drifts with its price",
               "monthly": "rebalanced to the saved weights at each month's last session"}

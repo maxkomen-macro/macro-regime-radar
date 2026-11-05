@@ -792,6 +792,12 @@ describe("Event study on this basket (§10, §12.19; desk P1a): the engine on th
     fireEvent.click(within(c).getByTestId("dk-advanced"));
     const regimes = within(c).getByRole("region", { name: "By regime, revised regime history" });
     expect(regimes).toHaveTextContent("Revised regime history");
+    // Codex S-07: the labels are as the served data's last full refresh revised them, which may be an earlier day's;
+    // neither the caption nor the caveat dates that revision "today".
+    expect(regimes).toHaveTextContent("as this data's last full refresh revised it");
+    expect(regimes).not.toHaveTextContent(/today/i);
+    expect(caveats).toHaveTextContent("current at that refresh");
+    expect(caveats.textContent).not.toMatch(/today's FRED/);
     expect(within(regimes).getAllByRole("row")).toHaveLength(5);
     expect(within(within(c).getByRole("region", { name: "Every horizon" })).getAllByRole("row")).toHaveLength(5);
     expect(c).toHaveTextContent(`inputs ${HOLD.study.inputs_hash}`);

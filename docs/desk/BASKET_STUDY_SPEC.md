@@ -108,7 +108,8 @@ will do. The verdict is the Desk's rule v1 (§1.5) at the selected horizon, unch
 
 The by-regime rows are the engine's: each event takes the label of the regimes row stamped two months
 before its month (K−2). Those labels are **revised regime history**: every full refresh rewrites the
-table from today's FRED vintages of INDPRO and CPI, so a historical label is not what was knowable then.
+table from the FRED vintages of INDPRO and CPI current at that refresh, so a historical label is not what
+was knowable then (review S-07: the served data may be an earlier day's).
 The card says "Revised regime history". "As known at the time" labels are the point-in-time build
 (P5), not available yet; the card does not offer them.
 

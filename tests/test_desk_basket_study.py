@@ -259,6 +259,8 @@ def test_a_long_basket_is_studied_and_the_answer_names_its_index(served):
     assert s["verdict"] in ("reliable", "suggestive", "no_edge", "insufficient") and s["verdict_rule"] == "v1"
     assert s["regime_history"] == "revised" and len(s["by_regime"]) == 4
     assert d["caveats"] == [desk_basket.HINDSIGHT, desk_basket.REVISED_REGIMES]
+    # Codex S-07: the served data may be an earlier day's, so the caveat never dates the revision "today".
+    assert "today" not in desk_basket.REVISED_REGIMES and "current at that refresh" in desk_basket.REVISED_REGIMES
     assert s["slug"] == "basket-w5-z2.0-down-none-basket" and s["inputs_hash"]
     assert sorted(served["asked"]) == ["MID", "OLD"]
 

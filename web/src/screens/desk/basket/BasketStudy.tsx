@@ -65,7 +65,7 @@ function ByRegime({ a }: { a: BasketStudyResponse }) {
   return (
     <div className="bs-table-wrap" role="region" aria-label="By regime, revised regime history" tabIndex={0}>
       <table className="bs-table">
-        <caption className="bs-adv-line">By regime at a month · Revised regime history: each label is the regimes table as revised today, not what was knowable then.</caption>
+        <caption className="bs-adv-line">By regime at a month · Revised regime history: each label is the regimes table as this data's last full refresh revised it, not what was knowable then.</caption>
         <thead>
           <tr>
             <th scope="col">Regime</th>
