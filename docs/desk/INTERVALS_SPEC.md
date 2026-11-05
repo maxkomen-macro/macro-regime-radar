@@ -93,7 +93,7 @@ These fields are added to §12.2 `horizons[]`. That is the Event Study answer, t
 
 - The API serves all four on every row. The contract (tests/desk_contract.py) accepts a row with none of the four, the shape of an answer from a generation before the deploy and of the client's fixtures, but never only some, and checks the null rule whenever they are served. schema.ts reads them as statistics: an absent field stays absent, a non-finite one becomes null. An older stored answer from a generation before the deploy lacks them.
   - The page treats a missing field as "this level is not served for this answer".
-  - The switch shows 80 and 95 as unavailable, with the reason "This answer predates the 80% and 95% ranges; the next refresh serves them." 90 stays usable.
+  - The switch shows 80 and 95 as unavailable, with the reason "This answer predates the 80% and 95% ranges; they are served once the API is updated and has recomputed this study." 90 stays usable.
   - The boundary accepts the older shape, so there is no broken page between the deploy and the next worker generation.
 - §12.19 (`/basket/study`) carries `horizons[]` built by the same `horizon_row`, so it serves the four fields too. The basket card does not draw them in this PR.
 - `tests/desk_contract.py`, §12.2/§12.19, schema.ts and types.ts change together, in one commit, after P1b merges.

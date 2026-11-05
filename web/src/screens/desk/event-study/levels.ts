@@ -56,7 +56,7 @@ export function pairAt(h: StudyHorizon, level: Level): { lo: number; hi: number 
 /** Why a served 80% or 95% pair is null where the 90% one is not (DR-05). */
 export const NOT_COMPUTABLE = "This range cannot be computed for this horizon.";
 /** The reason an old answer's switch gives for 80% and 95% (§4). */
-export const PREDATES = "This answer predates the 80% and 95% ranges; the next refresh serves them.";
+export const PREDATES = "This answer predates the 80% and 95% ranges; they are served once the API is updated and has recomputed this study.";
 
 /** One rail row at the effective level: its range in words (`range`), why there is none (`why`), or that it did
  * not arrive (`await`, "Awaiting refresh"). At 90 it is the rail's rule before P1d: the engine's reason when the
