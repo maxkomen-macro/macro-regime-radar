@@ -165,9 +165,28 @@ def feeds_of(series_id: str) -> list[str]:
 
 # The provider each row declares (R-15): the registry's own source, never the
 # stored rows' provider column, so an unstored row names its provider too. The
-# strings are the inventory's (api/desk.py; parity pinned by the tests).
+# strings are the inventory's (api/desk.py; parity pinned by the tests). Kept
+# unchanged for compatibility; the page shows `policy` and `stored` (D2) instead.
 PROVIDER_DESK_FRED = "FRED (Desk daily history)"
 PROVIDER_DESK_MARKET = "EODHD first, Yahoo disclosed fallback (Desk daily history)"
+
+# D2 (2026-11-03, desk-upgrade/APPROVED.md): the intended fallback policy, per
+# series, apart from the provider of the observations actually stored. The
+# policy is the writer's own rule: api/providers/market.daily_history asks
+# EODHD first where it carries the instrument (the registry's `eodhd` code for a
+# desk_series market row, src/market_data/asset_history's for an asset_prices
+# symbol) and takes Yahoo when EODHD does not answer; with no EODHD code it asks
+# Yahoo alone. FRED rows have one source.
+POLICY_FRED = "FRED"
+POLICY_EODHD_FIRST = "EODHD first, Yahoo fallback"
+POLICY_YAHOO_ONLY = "Yahoo only (EODHD does not carry it)"
+# The stored provider column's codes in words (api/desk_items_etf.PROVIDER_WORDS, plus FRED);
+# a code outside this table is shown as stored, never renamed.
+PROVIDER_WORDS = {"fred": "FRED", "yfinance": "Yahoo", "eodhd": "EODHD"}
+# How a row's stored provider is known: each row's own provider column, or (raw_series, which has
+# none) the table's one writer, src/fetch_data.py, which stores FRED observations only.
+BASIS_ROW = "row_provider"
+BASIS_WRITER = "table_writer"
 STATE_WORD = {"close": "current", "current": "current", "delayed": "current", "stale": "stale"}
 ORDER = ("current", "stale", "missing")  # worst last
 
@@ -218,14 +237,76 @@ def _with_reader_note(series_id: str, note: str | None) -> str | None:
     return note if extra is None else (f"{note} {extra}" if note else extra)
 
 
-def _desk_row(conn: sqlite3.Connection, spec) -> dict:
+def policy_of(spec) -> str:
+    """D2: a registry row's intended fallback policy, by the writer's own rule."""
+    if spec.source == "fred":
+        return POLICY_FRED
+    if spec.source == "asset_prices":
+        from src.market_data import asset_history
+
+        code = asset_history._eodhd_code(spec.series_id)
+    else:
+        code = spec.eodhd
+    return POLICY_EODHD_FIRST if code else POLICY_YAHOO_ONLY
+
+
+def _summary(basis: str, spans: list[tuple[str, int, str, str]]) -> dict | None:
+    """The `stored` block from (code, rows, first, last) spans, earliest first;
+    `latest` names the provider of the newest observation read."""
+    if not spans:
+        return None
+    spans = sorted(spans, key=lambda s: (s[2], s[3], s[0]))
+    newest = max(spans, key=lambda s: (s[3], s[0]))
+    return {"basis": basis, "rows": sum(s[1] for s in spans), "latest": PROVIDER_WORDS.get(newest[0], newest[0]),
+            "providers": [{"code": c, "name": PROVIDER_WORDS.get(c, c), "rows": n, "first": f, "last": la}
+                          for c, n, f, la in spans]}
+
+
+def stored_providers(conn: sqlite3.Connection, spec, as_of: str) -> dict | None:
+    """D2: the providers of exactly the observations the engine's reader reads
+    for `spec` as of `as_of` (event_study.load_level's filters: committed rows
+    of a store with provenance, not dated after the as-of or the run's day,
+    ISO-dated on or after the floor, numeric, a real day), counted and dated
+    per provider; None when it reads none. Parity with load_level row for row
+    is pinned by tests/test_desk_v2_pipeline.py."""
+    from api import provenance
+    from src.desk import event_study as es
+
+    if not provenance.table_exists(conn, spec.table):
+        return None
+    prov = False
+    if spec.table == "asset_prices":
+        where, arg, col = "FROM asset_prices WHERE symbol = ? AND interval = '1d'", spec.series_id, "close"
+    else:
+        prov = provenance.is_migrated(conn)
+        where = (f"FROM desk_series d {provenance.COMMITTED_JOIN} WHERE d.series_id = ?" if prov
+                 else "FROM desk_series WHERE series_id = ?")
+        arg, col = spec.series_id, "value"
+    committed = " AND r.run_id IS NOT NULL" if prov else ""
+    in_run = " AND date <= r.as_of" if prov else ""
+    rows = conn.execute(f"SELECT date, provider {where} AND {es.ISO_DATE} AND date <= ?{committed}{in_run} "
+                        f"AND typeof({col}) {es.NUMERIC} ORDER BY date", (arg, as_of)).fetchall()
+    spans: dict[str, list] = {}
+    for d, code in rows:
+        try:
+            date.fromisoformat(d)  # '2010-02-30' is set aside, as the reader does (V-22)
+        except ValueError:
+            continue
+        code = str(code)
+        s = spans.setdefault(code, [code, 0, d, d])
+        s[1] += 1
+        s[3] = d
+    return _summary(BASIS_ROW, [tuple(s) for s in spans.values()])
+
+
+def _desk_row(conn: sqlite3.Connection, spec, as_of: str) -> dict:
     """A registry row: dated by the engine's reader; an unstored series has
     the engine's not_stored sentence as its note."""
     from api import desk as desk_mod
     from src.desk import event_study as es
 
     try:
-        s = es.load_level(conn, spec)
+        s = es.load_level(conn, spec, as_of)
         first, last, note = s.index[0].strftime("%Y-%m-%d"), s.index[-1].strftime("%Y-%m-%d"), spec.note
     except es.NotStored as exc:
         first = last = None
@@ -234,9 +315,14 @@ def _desk_row(conn: sqlite3.Connection, spec) -> dict:
         store, provider = "asset_prices", desk_mod.SOURCE_BY_ID["asset_prices"]
     else:
         store, provider = "desk_series", PROVIDER_DESK_FRED if spec.source == "fred" else PROVIDER_DESK_MARKET
-    return {"label": spec.label, "id": spec.series_id, "key": spec.key, "provider": provider, "freq": "daily",
-            "first": first, "last": last, "feeds": feeds_of(spec.series_id), "note": _with_reader_note(spec.series_id, note),
-            "store": store}
+    stored = stored_providers(conn, spec, as_of) if last is not None else None
+    if last is not None and (stored is None or stored["rows"] != len(s) or stored["providers"][0]["first"] != first
+                             or max(p["last"] for p in stored["providers"]) != last):
+        # never served: the reader and this count read different rows (a change to one and not the other)
+        raise RuntimeError(f"/pipeline: the stored providers of {spec.series_id} disagree with the engine's reader")
+    return {"label": spec.label, "id": spec.series_id, "key": spec.key, "provider": provider, "policy": policy_of(spec),
+            "stored": stored, "freq": "daily", "first": first, "last": last, "feeds": feeds_of(spec.series_id),
+            "note": _with_reader_note(spec.series_id, note), "store": store}
 
 
 def _raw_row(conn: sqlite3.Connection, sid: str, watermarks: dict, raw_table: bool) -> dict:
@@ -255,9 +341,12 @@ def _raw_row(conn: sqlite3.Connection, sid: str, watermarks: dict, raw_table: bo
     stamp = last
     if meta["cadence"] == "daily":
         last = _date_or_none((watermarks.get(f"fred:{sid}") or {}).get("last_obs")) if n else None
-    return {"label": meta["label"], "id": sid, "key": None, "provider": desk_mod.SOURCE_BY_KIND["fred"], "freq": meta["cadence"],
-            "first": first, "last": last, "feeds": feeds_of(sid), "note": _with_reader_note(sid, None), "store": "raw_series",
-            "stamp": stamp, "stored": n > 0}
+    # D2: raw_series has no provider column; its one writer (src/fetch_data.py) stores FRED only, so the
+    # block says so (basis "table_writer") and spans the stored stamps, never the watermark
+    stored = _summary(BASIS_WRITER, [("fred", n, first, stamp)]) if n and first and stamp else None
+    return {"label": meta["label"], "id": sid, "key": None, "provider": desk_mod.SOURCE_BY_KIND["fred"], "policy": POLICY_FRED,
+            "stored": stored, "freq": meta["cadence"], "first": first, "last": last, "feeds": feeds_of(sid),
+            "note": _with_reader_note(sid, None), "store": "raw_series", "stamp": stamp, "has_rows": n > 0}
 
 
 def desk_pipeline(ctx: dict) -> dict:
@@ -269,13 +358,16 @@ def desk_pipeline(ctx: dict) -> dict:
     from api import provenance
     from src.analytics import dbpath
 
+    from src.desk import event_study as es
+
     by_id = {s.series_id: s for s in desk_specs()}
+    as_of = es.resolve_as_of(None)  # one cutoff for the reader and the provider count of every row
     conn = dbpath.connect_ro(db.DB_PATH)
     try:
         watermarks = _watermarks(conn)
         desk_table = provenance.table_exists(conn, "desk_series")
         raw_table = provenance.table_exists(conn, "raw_series")
-        rows = [(_desk_row(conn, by_id[sid]) if sid in by_id else _raw_row(conn, sid, watermarks, raw_table))
+        rows = [(_desk_row(conn, by_id[sid], as_of) if sid in by_id else _raw_row(conn, sid, watermarks, raw_table))
                 for sid in row_ids()]
         releases = freshness_mod.release_times(conn)  # Codex S-05
     finally:
@@ -309,7 +401,7 @@ def statuses(item: dict, now: datetime) -> dict[str, str]:
                 rep = freshness_mod.assess(db_fresh={"asset_prices_date": r["last"]}, series_latest=[], relay=None,
                                            bootstrap=None, now=now, watermarks=wm)
                 state = next(x["verdict"] for x in rep["sla"] if x["feed"] == "asset_prices")
-        elif not r["stored"]:
+        elif not r["has_rows"]:
             state = "unknown"  # no stored observation: missing, whatever the watermark says (Codex R-01)
         else:
             state = freshness_mod.fred_series_state(r["id"], today_ny=today_ny, stored_date=r["stamp"],
@@ -323,7 +415,7 @@ def worst(states: list[str]) -> str:
     return max(states, key=ORDER.index) if states else "missing"
 
 
-ROW_FIELDS = ("label", "id", "key", "provider", "freq", "first", "last", "feeds", "status", "note")
+ROW_FIELDS = ("label", "id", "key", "provider", "policy", "stored", "freq", "first", "last", "feeds", "status", "note")
 
 
 def payload(item: dict, now: datetime, validation: str | None) -> dict:

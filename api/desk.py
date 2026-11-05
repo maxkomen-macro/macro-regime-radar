@@ -80,9 +80,22 @@ class _Engine:
     imports no heavy dependency at module import (CLAUDE.md, FastAPI section),
     so `import api.main` stays as light as it was before the Desk. The worker's
     first build (desk_assets, the presets) or the first study loads it; every
-    `es.<name>` below reads the real module, monkeypatches included."""
+    `es.<name>` below reads the real module, monkeypatches included.
+
+    The proxy holds no state of its own: no instance ``__dict__`` (empty
+    ``__slots__``), and Python's own ``__dunder__`` lookups are not forwarded,
+    so ``es.__dict__`` is not the module's namespace either. A monkeypatch
+    through ``es`` therefore records the module's real value as the one to
+    restore. pytest 9 records an instance's own ``__dict__`` entry instead
+    (pytest #10644); with an empty instance dict here it recorded "absent" and
+    its undo deleted the attribute from src.desk.event_study for the rest of
+    the session."""
+
+    __slots__ = ()
 
     def __getattr__(self, name: str) -> Any:
+        if name.startswith("__") and name.endswith("__"):
+            raise AttributeError(name)
         from src.desk import event_study
 
         return getattr(event_study, name)
@@ -390,8 +403,31 @@ def _guarded(fn: Callable[[], T]) -> T:
 # Provider per source. FRED series carry their own id as the source id; the
 # stored market tables name the pipeline client that wrote them (CLAUDE.md,
 # Data Source Rules); the relay names EODHD.
+# market_daily's `source` column splits by symbol and date. Each stored ETF's
+# bars from its Polygon.io start (2024-02-27 for 9 of the 23, 2026-02-18 for
+# the other 14) to 2026-05-26 are Polygon.io bars the earlier pipeline wrote,
+# one for every NYSE session, except one yfinance bar: SPY's 2026-03-12 close,
+# a session that run stored none for. Every other row is yfinance. These are
+# the rows' recorded sources. Nothing writes Polygon rows now. The scheduled
+# writers start after each symbol's newest date; backfill_yfinance inserts
+# only missing sessions, and every span holds every session. One path could
+# make a recorded source false: fetch_market.py --mode backfill (manual, no
+# workflow runs it) upserts over existing rows and keeps their `source`
+# while rewriting prices and `fetched_at`. tests/test_stored_provenance.py
+# checks all of this against the database, including that no Polygon row
+# was rewritten after the last Polygon write, and the web's copy
+# (web/src/screens/shared/stored-provenance.ts) against this one.
+_POLYGON_LATE = ("CPER", "EEM", "EFA", "EMB", "IEF", "SHY", "SLV", "UNG", "VIXY", "VTV", "XLE", "XLF", "XLI", "XLK")
+_POLYGON_EARLY = ("GLD", "HYG", "IWM", "LQD", "QQQ", "SPY", "TLT", "USO", "UUP")
+POLYGON_DAILY_FIRST_BY_SYMBOL: dict[str, str] = {
+    **{s: "2024-02-27" for s in _POLYGON_EARLY}, **{s: "2026-02-18" for s in _POLYGON_LATE}}
+POLYGON_DAILY_LAST = "2026-05-26"
+YFINANCE_DAILY_INSIDE: tuple[tuple[str, str], ...] = (("SPY", "2026-03-12"),)
 SOURCE_BY_ID: dict[str, str] = {
-    "market_daily": "yfinance (stored daily bars)",
+    "market_daily": ("yfinance, except Polygon.io bars kept from the earlier pipeline for each stored ETF's sessions from "
+                     f"2024-02-27 (2026-02-18 for {len(_POLYGON_LATE)} of the {len(POLYGON_DAILY_FIRST_BY_SYMBOL)}) to {POLYGON_DAILY_LAST}; "
+                     + " and ".join(f"{sym}'s {d}" for sym, d in YFINANCE_DAILY_INSIDE)
+                     + " bar is yfinance (stored daily bars)"),
     "market_intraday": "yfinance (stored 5-min bars)",
     "asset_prices": "EODHD first, Yahoo disclosed fallback (stored)",
     "live_quotes": "EODHD relay",

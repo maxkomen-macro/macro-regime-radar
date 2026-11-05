@@ -582,6 +582,28 @@ def test_codex_r05_each_release_date_is_its_own_reference_months(hermetic, monke
     assert d["next_prints"]["data"]["cpi"]["release_date"] is None or d["next_prints"]["data"]["cpi"]["release_date"] <= "2026-12-31"
 
 
+def test_p0d_the_indpro_print_is_dated_by_the_g17_rows_of_the_release_calendar(tmp_path, install_worker, monkeypatch):
+    """Desk upgrade P0d: events/calendar.csv carries the Fed's G.17 dates (FRED release 13) under
+    "Industrial Production (G.17)" at 09:15 ET, and NEXT_PRINTS reads that name, so NEXT INDPRO serves
+    its own reference month's release instead of null. The hermetic store's newest row is August: the
+    September INDPRO print is the G.17 of Fri Oct 16 2026, out from 09:15 ET (13:15 UTC)."""
+    import csv
+
+    path = store.build(tmp_path / "macro_radar.db")
+    rows = [r for r in csv.DictReader((ROOT / "events" / "calendar.csv").open()) if r["event_name"] == items.NEXT_PRINTS[1][3]]
+    assert "2026-10-16T13:15:00Z" in [r["event_datetime"] for r in rows]
+    with sqlite3.connect(path) as conn:
+        conn.executemany("INSERT INTO event_calendar (event_name, event_datetime, importance, source, created_at) VALUES (?,?,?,?,?)",
+                         [(r["event_name"], r["event_datetime"], r["importance"], "test", "t") for r in rows])
+    serve(install_worker, monkeypatch, path)
+    for now, out in ((datetime(2026, 10, 16, 13, 14, tzinfo=timezone.utc), False),
+                     (datetime(2026, 10, 16, 13, 15, tzinfo=timezone.utc), True)):
+        at(monkeypatch, now)
+        d = get_regime()["data"]["next_prints"]["data"]
+        assert (d["indpro"]["reference_month"], d["indpro"]["release_date"], d["indpro"]["released"]) == ("2026-09", "2026-10-16", out)
+        assert d["cpi"]["release_date"] == "2026-10-14"  # CPI unchanged
+
+
 def test_release_for_binds_a_reference_month_to_its_release_in_new_york_dates():
     times = ["2026-09-11T12:30:00Z", "2026-10-15T03:30:00Z", "2026-11-10 13:30:00", "not a time"]
     now = datetime(2026, 10, 1, tzinfo=timezone.utc)

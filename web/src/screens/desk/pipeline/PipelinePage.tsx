@@ -15,11 +15,11 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { deskUrl, unavailableOf, usePipeline } from "../data/api";
 import { droppedOf } from "../data/schema";
-import type { PipelineGroup } from "../data/types";
+import type { PipelineGroup, PipelineSeries } from "../data/types";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { Awaiting, DroppedNote, droppedWords, Unserved, LoadingLine, FailedScope } from "../kit/ui";
-import { dayLong, monthYear } from "../kit/format";
+import { dayLong, grouped, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
 import { SnowflakeSyncCard } from "../prototypes/SnowflakeSyncCard";
@@ -72,6 +72,38 @@ export function findSeries(groups: readonly PipelineGroup[], text: string): { gr
 /** A stored observation at its series' own frequency: "Sep 22, 2026" for a daily series, "Aug 2026" for a monthly one. */
 export function storedDay(d: string | null | undefined, freq: string | undefined): string {
   return freq === "monthly" ? monthYear(d) : dayLong(d);
+}
+
+/**
+ * D2 (desk-upgrade): who supplied the stored rows, in words, from the served `stored` block only:
+ * "Yahoo · all 9,277 rows"; mixed-source coverage names each provider with its rows and span, earliest first,
+ * and the newest row's provider; a raw_series row says its provider is the table's one writer. Null: nothing stored.
+ */
+export function storedWords(s: Pick<PipelineSeries, "stored" | "freq">): { main: string; detail: string | null } | null {
+  const st = s.stored;
+  const providers = st && Array.isArray(st.providers) ? st.providers.filter((p) => p && typeof p.name === "string") : [];
+  if (!st || !providers.length) return null;
+  if (providers.length === 1) {
+    const p = providers[0];
+    const n = typeof p.rows === "number" ? grouped(p.rows) : null;
+    const rows = n ? `all ${n} ${p.rows === 1 ? "row" : "rows"}` : null;
+    const writer = st.basis === "table_writer" ? "the table's one writer" : null;
+    return { main: [p.name, rows].filter(Boolean).join(" · "), detail: writer };
+  }
+  // Spans can interleave, so each provider's row count is the measure; its dates bound its rows.
+  const parts = providers.map((p) => {
+    const n = typeof p.rows === "number" ? `${grouped(p.rows)} ${p.rows === 1 ? "row" : "rows"}` : null;
+    const span = p.first && p.last ? `${storedDay(p.first, s.freq)} – ${storedDay(p.last, s.freq)}` : null;
+    return [p.name, [n, span].filter(Boolean).join(", ")].filter(Boolean).join(" ");
+  });
+  return { main: `Mixed: ${parts.join("; ")}`, detail: typeof st.latest === "string" ? `newest row: ${st.latest}` : null };
+}
+
+/** The declared fallback rule, printed beside the stored provider unless it only repeats it ("FRED" stored by FRED). */
+export function policyWords(s: Pick<PipelineSeries, "stored" | "policy">): string | null {
+  if (typeof s.policy !== "string" || !s.policy) return null;
+  const only = s.stored && Array.isArray(s.stored.providers) && s.stored.providers.length === 1 ? s.stored.providers[0].name : null;
+  return only === s.policy ? null : `policy: ${s.policy}`;
 }
 
 function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; onToggle: () => void; hit: string | null }) {
@@ -135,12 +167,27 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
                 </tr>
               </thead>
               <tbody>
-                {rows.map((s) => (
+                {rows.map((s) => {
+                  const stored = storedWords(s);
+                  const policy = policyWords(s);
+                  return (
                   <tr key={s.id} ref={s.id === hit ? hitRef : undefined} data-hit={s.id === hit || undefined}>
                     <th scope="row">
                       {s.label || s.id}
-                      {/* §11: provider and frequency beside the series. */}
-                      {s.provider || s.freq ? <span className="pl-prov"> · {[s.provider, s.freq].filter(Boolean).join(", ")}</span> : null}
+                      {/* §11: the frequency beside the series. */}
+                      {s.freq ? <span className="pl-prov"> · {s.freq}</span> : null}
+                      {/* D2: who supplied the stored rows, and apart from it the declared fallback rule (it fits at 601px
+                          inside this cell, where a column of its own would not). */}
+                      {/* No served block, no line: an unstored row says so in its dates and note, and an API
+                          without the field (one not yet deployed) or a row whose dates cannot be read never
+                          prints a wrong "nothing stored" (verifier V-02). */}
+                      {stored ? (
+                        <span className="pl-stored" data-mixed={(s.stored?.providers?.length ?? 0) > 1 || undefined}>
+                          {`stored by ${stored.main}`}
+                          {stored.detail ? ` · ${stored.detail}` : null}
+                        </span>
+                      ) : null}
+                      {policy ? <span className="pl-policy">{policy}</span> : null}
                     </th>
                     <td className="pl-id">{s.id}</td>
                     <td>{storedDay(s.first, s.freq) || "—"}</td>
@@ -151,7 +198,8 @@ function Group({ g, open, onToggle, hit }: { g: PipelineGroup; open: boolean; on
                       {s.note ? <span className="pl-note"> · {s.note}</span> : null}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

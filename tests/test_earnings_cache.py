@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
@@ -707,6 +708,80 @@ def test_the_step_never_raises_and_exits_0(mod, db, monkeypatch, capsys):
     assert mod.main(["--db", str(db)], now=NOW) == 0
     out = capsys.readouterr().out
     assert "failed: RuntimeError" in out and TOKEN not in out
+
+
+# ── the --report entry point (Max 2026-11-03 21:09 UTC) ──────────────────────
+# main() once bound the probe's result to a local named `report`, which made every `report` in main() local, so
+# `--report` raised UnboundLocalError before reading anything. These run the entry point itself, not report().
+
+
+def _files(directory: Path) -> dict[str, str]:
+    return {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(Path(directory).iterdir()) if p.is_file()}
+
+
+def _counts_only(out: str) -> None:
+    """The report's lines carry counts and statuses only: no symbol, no date or time, no key, no URL."""
+    assert out.strip()
+    assert "ZQ" not in out and "AAPL" not in out and "NVDA" not in out
+    assert SECRET not in out and TOKEN not in out and "http" not in out
+    assert not re.search(r"\d{4}-\d{2}-\d{2}|\d{2}:\d{2}", out)
+
+
+def test_the_report_entry_point_reads_a_real_vault_read_only_and_prints_counts_only(mod, db, monkeypatch, capsys):
+    res, _, _, _ = run(mod, db)
+    assert res.status == "passing"
+    before = _files(Path(db).parent)
+    monkeypatch.setenv(store.KEY_ENV, SECRET)
+    later = NOW + timedelta(hours=1)
+    assert mod.main(["--report", "--db", str(db)], now=later) == 0
+    out = capsys.readouterr().out
+    assert out.splitlines() == mod.report(Path(db), SECRET, later)
+    assert out.splitlines()[0].startswith(f"{mod.TAG} report: 1 runs kept; last 5: passing")
+    assert len(out.splitlines()) == 3
+    _counts_only(out)
+    assert _files(Path(db).parent) == before  # read-only: no file added or changed, the database included
+
+
+def test_the_report_entry_point_with_the_wrong_key_says_so_without_the_key(mod, db, monkeypatch, capsys):
+    run(mod, db)
+    before = _files(Path(db).parent)
+    monkeypatch.setenv(store.KEY_ENV, "another-TESTONLY-key")
+    assert mod.main(["--report", "--db", str(db)], now=NOW) == 0
+    out = capsys.readouterr().out
+    assert out.startswith(f"{mod.TAG} report: the vault is ") and "another-TESTONLY-key" not in out
+    _counts_only(out)
+    assert _files(Path(db).parent) == before
+
+
+def test_the_report_entry_point_needs_the_key_and_an_existing_database(mod, db, tmp_path, monkeypatch, capsys):
+    assert mod.main(["--report", "--db", str(db)], now=NOW) == 2  # the key is unset (autouse fixture)
+    monkeypatch.setenv(store.KEY_ENV, SECRET)
+    missing = tmp_path / "missing.db"
+    assert mod.main(["--report", "--db", str(missing)], now=NOW) == 2
+    assert not missing.exists()
+    out = capsys.readouterr().out
+    assert out.count(f"needs {store.KEY_ENV} and an existing --db") == 2
+
+
+def test_the_module_entry_point_runs_the_report(mod, db, tmp_path):
+    """`python -m src.events.earnings_cache --report` as the owner runs it, in a fresh interpreter."""
+    import os
+    import subprocess
+    import sys
+
+    run(mod, db)
+    before = _files(Path(db).parent)
+    env = {k: v for k, v in os.environ.items() if k not in ("FINNHUB_API_KEY", "GH_TOKEN", "GH_DB_TOKEN")}
+    env[store.KEY_ENV] = SECRET
+    env.setdefault("FRED_API_KEY", "placeholder-TESTONLY")
+    root = Path(__file__).resolve().parent.parent
+    p = subprocess.run([sys.executable, "-m", "src.events.earnings_cache", "--report", "--db", str(db)], cwd=root,
+                       env=env, capture_output=True, text=True, timeout=60)
+    assert p.returncode == 0, p.stderr[-2000:]
+    assert "Traceback" not in p.stderr
+    assert p.stdout.splitlines()[0].startswith(f"{mod.TAG} report: 1 runs kept; last 5: passing")
+    _counts_only(p.stdout)
+    assert _files(Path(db).parent) == before
 
 
 def test_the_vault_digest_changes_with_a_charged_call_even_when_nothing_was_answered(mod, db):
