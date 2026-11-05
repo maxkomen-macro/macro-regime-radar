@@ -9,7 +9,8 @@
  */
 
 import type { MacroResponse, TechnicalsResponse } from "../data/types";
-import { dayShort, grouped, isFiniteNumber, num, pctPlain, priceText, signed } from "../kit/format";
+import { dayLong, dayShort, grouped, isFiniteNumber, num, pctPlain, priceText, signed } from "../kit/format";
+import { dv01Number, dv01Of, hText, isSpreadPosition, mvText, type Dv01, type Leg } from "./dv01";
 import { nyDate, sessionCount } from "./sessions";
 import { parseSeries, signedDistance, TENORS, type MonitoredSeries, type PositionRecord, type Tenor, type Trigger } from "./store";
 
@@ -37,6 +38,8 @@ export interface Levels {
   etfs?: Readonly<Record<string, EtfLevel>>;
   /** P1c: the `/instruments` ETFs (the stored ones); null while that list is not served (stored or not cannot be told). */
   stored?: readonly string[] | null;
+  /** DV01 (DR-10): `/macro`'s request state; absent means answered (or not asked). */
+  rates?: "loading" | "failed";
 }
 
 /** The series' name on screen: "S&P 500", "QQQ", "10y yield", "5s30s". */
@@ -137,6 +140,10 @@ export interface PositionView {
   level_now: number | null;
   /** Why the room is not computed, or how its level was restated; null when there is nothing to say. */
   note: string | null;
+  /** The position's DV01 proxy, or why there is none (DV01_SPEC.md revision 2). */
+  dv01: Dv01;
+  /** A spread: the saved size is its reference leg's market value (the shared row says "leg", §7). */
+  reference_leg: boolean;
   /** XNYS sessions from `entry_date` (the New York date of the save) through today, both counted, so an
    * entry on a session is day 1, a save after the close included (evaluation is at the close, §9); a save
    * on a weekend or holiday is day 0 until the next session opens. Null when the calendar does not reach. */
@@ -165,7 +172,7 @@ export function restatement(t: Trigger, entryValue: number, etf: EtfLevel): { fa
 }
 
 export function viewOf(p: PositionRecord, levels: Levels, now: Date): PositionView {
-  const base = { id: p.id, name: positionName(p), size_nav: p.size_nav, monitoring: p.monitoring, day: sessionCount(p.entry_date, nyDate(now)), record: p, level_now: null, note: null };
+  const base = { id: p.id, name: positionName(p), size_nav: p.size_nav, monitoring: p.monitoring, day: sessionCount(p.entry_date, nyDate(now)), record: p, level_now: null, note: null, dv01: dv01Of(p, levels), reference_leg: isSpreadPosition(p) };
   const t = p.trigger;
   const served = t ? servedFor(levels, t.series) : null;
   if (p.monitoring !== "automatic" || !t || !served || !isFiniteNumber(p.original_room)) return { ...base, room_pct: null, to_level: null, now: p.monitoring === "automatic" ? served : null };
@@ -207,10 +214,51 @@ export function falsifiesLine(v: PositionView): string {
   return `${seriesLabel(t.series)} ${t.operator} ${levelWords(t.series, v.level_now ?? t.threshold)}${now}`;
 }
 
-/** SIZE · HORIZON: "2% NAV · DV01 — · 14 of 20 trading days · opened Sep 2" (DV01 is null, §9). */
+/** The DV01 words of the SIZE · HORIZON line (§7): "DV01 +0.0041% NAV/bp (proxy)", "DV01 unknown: no size saved",
+ * "rate sensitivity not modelled here". */
+export function dv01Words(d: Dv01): string {
+  if (d.kind === "yield") return `DV01 ${dv01Number(d.dv01, d.size)}% NAV/bp (proxy)`;
+  if (d.kind === "spread") return `DV01 ${dv01Number(d.dv01, d.size)}% NAV/bp of spread (proxy)`;
+  if (d.kind === "loading") return "DV01 loading";
+  if (d.kind === "unknown") return `DV01 unknown: ${d.why}`;
+  return "rate sensitivity not modelled here";
+}
+
+/** SIZE · HORIZON: "2% NAV · DV01 +0.0041% NAV/bp (proxy) · 14 of 20 trading days · opened Sep 2"; a spread's size is
+ * its reference leg's ("5% NAV ref. leg"), never the spread's allocation (DV01_SPEC.md §7). */
 export function sizeLine(v: PositionView): string {
-  const size = isFiniteNumber(v.size_nav) ? `${pctPlain(v.size_nav)} NAV` : "no size";
+  const spread = isSpreadPosition(v.record);
+  const size = isFiniteNumber(v.size_nav) ? `${pctPlain(v.size_nav)} NAV${spread ? " ref. leg" : ""}` : "no size";
   const day = `${isFiniteNumber(v.day) ? v.day : "—"} of ${v.record.horizon_days} trading days`;
   const opened = dayShort(v.record.entry_date);
-  return [size, "DV01 —", day, opened ? `opened ${opened}` : null].filter(Boolean).join(" · ");
+  return [size, dv01Words(v.dv01), day, opened ? `opened ${opened}` : null].filter(Boolean).join(" · ");
 }
+
+const proxyWords = (l: Leg) => (l.proxy === "bill" ? "bill (simple-interest bond-equivalent yield)" : l.proxy === "zero" ? "zero-coupon Treasury" : "par Treasury");
+
+const yieldOn = (l: Leg) => `the ${l.tenor} yield ${num(l.yield_pct, 2)}% on ${dayLong(l.date) || l.date}`;
+
+const signedMv = (frac: number) => `${frac < 0 ? "short" : "long"} ${mvText(frac)} NAV`;
+
+/** The opened row's DV01 block (§7): what the number is, its proxy and dated yields; a spread's legs, hedge ratio and
+ * gross. Null for a position with no DV01 to explain. */
+export function dv01Detail(d: Dv01): string[] | null {
+  if (d.kind === "yield") {
+    const l = d.leg;
+    return [
+      `Estimated gain for a +1 bp rise in the ${l.tenor} yield, first order, on a hypothetical constant-maturity ${proxyWords(l)} proxy (market value ${mvText(d.size)} NAV), priced at ${yieldOn(l)}. Not the DV01 of any actual bond, future or holding.`,
+    ];
+  }
+  if (d.kind === "spread") {
+    const s = d.short;
+    const l = d.long;
+    return [
+      `Estimated gain for a +1 bp widening of ${d.name} (the ${l.tenor} yield less the ${s.tenor}), first order, on two hypothetical constant-maturity Treasury proxies; the ${l.tenor} leg is the reference leg, sized at the saved ${mvText(d.size)} NAV. Not the DV01 of any actual bonds, futures or holdings.`,
+      `${s.tenor} leg ${signedMv(d.mv_short)} (${dv01Number(d.sens_short, d.size)}% NAV/bp of ${s.tenor}) · ${l.tenor} leg ${signedMv(d.mv_long)} (${dv01Number(d.sens_long, d.size)}% NAV/bp of ${l.tenor}) · h = ${hText(d.h)} · gross ${mvText(d.gross)} NAV`,
+      `Priced at ${yieldOn(s)} (${proxyWords(s)}) and ${yieldOn(l)} (${proxyWords(l)}).`,
+      "Weights recomputed from current yields: a current, rebalanced hypothetical spread proxy. Parallel DV01 is zero to first order under this weighting; a finite parallel move, curve twists and the gap to real bonds are not.",
+    ];
+  }
+  return null;
+}
+

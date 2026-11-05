@@ -68,7 +68,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
 | Signal Ledger | LIVE for the rows whose study completes, the two RSI rows included (desk/fill-compute); any row whose inputs are not stored (WTI, DXY) unavailable | v3 §2, v4 B-02 |
-| Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
+| Position Monitor | LIVE, stored in the browser; automatic room for the S&P and any stored ETF against its 50-day and for each Treasury tenor's yield and spread against a bp level; everything else manual; DV01 for a yield or spread position only, as a signed first-order sensitivity of a hypothetical constant-maturity Treasury proxy (% NAV per +1 bp, positive = gain), unknown for bond ETFs (no duration stored), not modelled otherwise | v3 §16, v4 B-10 |
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
 | Basket & Hedge: cap weight, each name's market value at the basket's start from the stored share counts; the preset's default, Equal-weight beside it | LIVE (§12.15 `weighting=cap`, §12.18; desk/cap-weight) for a basket whose every name has a stored count (the preset baskets' names); any other basket, or a database the full refresh has not reached, shows it unavailable with the reason and is priced at its own weights | share counts come from Yahoo through the full refresh: this EODHD plan carries no fundamentals |
@@ -92,7 +92,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
-- Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
+- Position Monitor: positions kept in this browser, with room for the S&P and any stored ETF against its 50-day and for each Treasury tenor's yield and the spreads between them; for a yield or a spread, DV01 as the signed sensitivity of a hypothetical Treasury proxy.
 - Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged.
 - Data Pipeline: the series inventory, generated from the registry.
 - Client view: the current study in plain words, a month out.
@@ -102,7 +102,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
-- Positions kept on a server, and DV01.
+- Positions kept on a server, and the DV01 of actual holdings and bond ETFs.
 - Option structures for a basket's hedge.
 
 #### 1.0.2 The unavailable state
@@ -933,7 +933,10 @@ Build Notes says so.
   above-level one `threshold − value`; the same orientation at entry and
   now, the threshold frozen at entry. `room_pct = distance now / original_room`;
   ≤ 0 when breached; null when the series is not served.
-- `day` counts the entry session as 1 on XNYS. `dv01` is null.
+- `day` counts the entry session as 1 on XNYS. `dv01` is computed in the browser, never stored: for a yield or
+  spread position, the signed first-order sensitivity, in % of NAV per +1 bp, of a hypothetical constant-maturity
+  Treasury proxy at the current served yields (a spread DV01-neutral on its longer-maturity reference leg, the
+  saved size being that leg's market value); unknown for bond ETFs; "rate sensitivity not modelled here" otherwise.
 - closure is an explicit stored event (`{"type":"falsified"|"expired"|"closed","ts"}`);
   an unobserved interval (the browser closed) closes nothing. The pre-mortem
   is judged by an explicit stored yes / no at close. `closed_90d` counts the
@@ -945,11 +948,12 @@ Build Notes says so.
 **Monitored** (right). Rows as on the Overview (§2), sorted by `room_pct`
 ascending, null last, then id; click expands a row: FALSIFIES AT
 (`<series> <below|above> <threshold> · now <value>`, or the typed rule for a
-manual row) · SIZE · HORIZON (`<size> NAV · DV01 — · <day> of <horizon>
-trading days · opened <entry_date>`) · VARIANT VIEW · PRE-MORTEM · RED TEAM ·
+manual row) · SIZE · HORIZON (`<size> NAV[ ref. leg] · <DV01> · <day> of <horizon>
+trading days · opened <entry_date>`, then the DV01 proxy's block for a yield or spread) · VARIANT VIEW · PRE-MORTEM · RED TEAM ·
 links `Open the study behind it →` (a study subject) and **Close…**. Footer
 `Sorted by room left · room = distance to the level as a share of the room at
-entry, same scale for every trade · size as % of NAV · <deployed>% deployed,
+entry, same scale for every trade · size as % of NAV · <deployed>% deployed (or `<sum>% NAV in saved sizes (a spread counts its
+reference leg)` while a spread is held),
 <n> positions · click a row for the gate text`. CLOSED · LAST 90D strip:
 Falsified on level · Expired at horizon · Pre-mortem was right `<yes> of
 <judged>`. While a kept record cannot be read (§1.8), the footer prints no
