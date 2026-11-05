@@ -24,7 +24,7 @@ const FRESHNESS = [
   },
   {
     noun: "Market",
-    label: freshLabel({ id: "market_daily", label: "Daily closes (stored)", kind: "market", cadence: "daily", as_of: "2026-09-08", state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Official close of 2026-09-08, the last completed session." }),
+    label: freshLabel({ id: "market_daily", label: "Daily closes (stored)", kind: "market", cadence: "daily", as_of: "2026-09-08", state: "close", delay_min: null, cycles_behind: 0, stale: false, discontinued: false, reason: "Stored provider close of 2026-09-08, the last completed session." }),
   },
 ];
 

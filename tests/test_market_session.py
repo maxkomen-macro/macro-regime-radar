@@ -132,7 +132,7 @@ def test_mid_session_incremental_never_stores_todays_bar(db):
     assert wm["last_obs"] == "2026-09-16" and wm["status"] == "ok"
 
 
-def test_post_close_incremental_stores_the_official_close(db):
+def test_post_close_incremental_stores_the_finished_session_close(db):
     fm.run_incremental(StubClient(BARS), ASSETS, now=_utc(2026, 9, 17, 14, 41))
     first = _watermark(db, "market_daily")
     fm.run_incremental(StubClient(BARS), ASSETS, now=_utc(2026, 9, 18, 0, 23))
