@@ -35,6 +35,16 @@ HORIZONS = ["1M", "3M", "6M", "12M"]
 HORIZON_ORDER = {h: i for i, h in enumerate(HORIZONS)}
 
 
+def _stored_basis(raw: pd.DataFrame) -> str:
+    """"total_return" when every displayed row records that basis
+    (src/analytics/backtest.py writes it); "unrecorded" for rows stored
+    before the column existed or left NULL, which are never labelled. Read
+    from the same loaded rows the tab shows (Codex S-01)."""
+    if raw.empty or "return_basis" not in raw.columns:
+        return "unrecorded"
+    return "total_return" if (raw["return_basis"] == "total_return").all() else "unrecorded"
+
+
 def render_backtests() -> None:
     """Main entry point — call from app.py inside the Backtests tab."""
     from utils.tab_context import register_tab_context
@@ -44,10 +54,18 @@ def render_backtests() -> None:
         "tables": ["backtest_results"],
     })
     section_header("SIGNAL & REGIME BACKTESTS")
-    st.caption("Historical SPY forward returns following signal triggers and regime periods.")
+    raw = load_backtest_results()
+    total_return = _stored_basis(raw) == "total_return"
+    if total_return:
+        st.caption("Historical SPY forward total returns (split- and dividend-adjusted closes, dividends reinvested) "
+                   "following signal triggers and regime periods.")
+    elif raw.empty:
+        st.caption("Historical SPY forward returns following signal triggers and regime periods.")
+    else:
+        st.caption("Historical SPY forward returns following signal triggers and regime periods. "
+                   "Return basis not recorded for these stored results.")
     st.divider()
 
-    raw = load_backtest_results()
     if raw.empty:
         st.info(
             "No backtest results found. "
@@ -134,7 +152,11 @@ def render_backtests() -> None:
     with c_chart2:
         _render_hit_rate_chart(filtered)
 
-    st.caption("Based on SPY historical daily returns. Signals from `signals` table, regimes from `regimes` table.")
+    if total_return:
+        st.caption("Based on SPY total returns from `asset_prices` (adjusted closes, dividends reinvested), not price "
+                   "returns. Signals from `signals` table, regimes from `regimes` table.")
+    else:
+        st.caption("Based on SPY historical daily returns. Signals from `signals` table, regimes from `regimes` table.")
 
     # ── Factor Attribution (Phase 12B — pyfolio-reloaded) ─────────────────────
     st.divider()

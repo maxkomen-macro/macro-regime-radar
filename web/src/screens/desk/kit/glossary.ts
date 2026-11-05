@@ -135,7 +135,8 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-now-firing": { forms: [], text: "Latest says whether the signal fired on its latest evaluated session and for how many days, is quiet, or is stale because an input is behind." },
   // Position Monitor (positions/monitor.ts, positions/store.ts).
   "col-room": { forms: [], text: "Room is how far the series is from the exit level now, as a share of that distance at entry: 100% at entry, zero at the level." },
-  "col-to-level": { forms: [], text: "To level is the distance left to the exit level: a percent of the price for the S&P, basis points for 2s10s." },
+  "nav-ref-leg": { forms: [], text: "For a spread, the market value of its longer-maturity (reference) leg as a share of NAV, not the spread's total: the other leg is sized to offset its DV01." },
+  "col-to-level": { forms: [], text: "To level is the distance left to the exit level: a percent of the price for the S&P and ETFs, basis points for yields and spreads." },
   "col-falsified": { forms: [], text: "Closes in the last 90 days marked falsified, the level you named as wrong reached." },
   "col-expired": { forms: [], text: "Closes in the last 90 days marked expired, the position's horizon over." },
   "col-premortem": { forms: [], text: "Of the closes in the last 90 days whose pre-mortem you judged, how many you marked right." },

@@ -363,11 +363,13 @@ describe("Position Monitor tab", () => {
     await waitFor(() => expect(mon).toHaveTextContent("40% room · 10 bp to level"));
     expect(within(mon).getAllByTestId("dk-mon-row").map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "ai-infra-hedged", "ndx-vs-spx"]);
     expect(mon).toHaveTextContent("2s10s below +15 bp · now +25 bp");
-    expect(mon).toHaveTextContent(/2% NAV · DV01 — · \d+ of 20 trading days · opened Sep 2/);
+    // DV01 (DV01_SPEC.md §7): the placeholder is replaced by the proxy, from the served 2y and 10y (Sep 22).
+    expect(mon).toHaveTextContent(/2% NAV ref\. leg · DV01 \+0\.0016% NAV\/bp of spread \(proxy\) · \d+ of 20 trading days · opened Sep 2/);
     expect(mon).toHaveTextContent("TODO(Max): the variant view for 2s10s steepener");
     expect(within(mon).getByRole("link", { name: "Open the study behind it →" })).toHaveAttribute("href", "/desk/event-study?shock=curve_2s10s&window=20&move=up2s&while=none&target=spx&horizon=20");
     expect(within(mon).queryByRole("link", { name: /Price a hedge/ })).toBeNull();
-    expect(mon).toHaveTextContent("12% deployed, 3 positions");
+    // DV01_SPEC.md §7: a spread (the 2s10s) is held, so the sum of saved sizes is not called an allocation.
+    expect(mon).toHaveTextContent("12% NAV in saved sizes (a spread counts its reference leg), 3 positions");
     fireEvent.click(within(within(mon).getAllByTestId("dk-mon-row")[2]).getAllByRole("button")[0]);
     await waitFor(() => expect(mon).toHaveTextContent("TODO(Max): the variant view for Long NDX vs SPX"));
     expect(mon).toHaveTextContent("NDX gives back 3.4% against SPX from entry");
@@ -537,13 +539,14 @@ describe("Position Monitor tab", () => {
     // Switching back brings nothing back: the dropped level stays dropped.
     expect(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ })).toHaveAttribute("aria-pressed", "false");
     fireEvent.click(screen.getByRole("button", { name: /closes below its 50-day \(7,625\)/ }));
-    // Instrument: the same rule without the S&P's number is still offered, and its label follows it.
-    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "TLT" } });
+    // Instrument: the same rule without the S&P's number is still offered, and its label follows it. P1c: a
+    // ticker the store does not hold (NVDA; TLT is a stored ETF now, monitored on its own 50-day) stays manual.
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "NVDA" } });
     const chip = screen.getByRole("button", { name: "closes below its 50-day" });
     expect(chip).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByTestId("pm-save"));
     await waitFor(() => expect(stored()).toHaveLength(1));
-    expect(stored()[0]).toMatchObject({ instrument: "TLT", wrong_if: { id: "below_50d", label: "closes below its 50-day" }, monitoring: "manual" });
+    expect(stored()[0]).toMatchObject({ instrument: "NVDA", wrong_if: { id: "below_50d", label: "closes below its 50-day" }, monitoring: "manual" });
   });
 
   it("a size that is not a number keeps Save off and says so", async () => {
@@ -677,5 +680,173 @@ describe("the Monitored card's levels come from the API (desk/usability §14.10,
     const card = await screen.findByRole("region", { name: "Monitored" });
     await new Promise((r) => setTimeout(r, 50));
     expect(within(card).queryByTestId("dk-loading")).toBeNull();
+  });
+
+  // ── P1c: automatic room for any stored instrument or tenor (room.test.ts has the method's own cases) ──
+
+  it("P1c: a stored ETF is monitored on its own 50-day, its chips numbered from its stored closes", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "GLD" } });
+    fireEvent.change(screen.getByLabelText("Direction"), { target: { value: "short" } });
+    answer();
+    // The fixtures' GLD: 392.88 on Sep 23 under its 50-day of 394.48, so a short's level has room.
+    fireEvent.click(await screen.findByRole("button", { name: "closes above its 50-day (394.48)" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ instrument: "GLD", subject: { kind: "instrument", id: "GLD" }, monitoring: "automatic", entry_value: 392.8800048828125, trigger: { series: "etf:GLD", operator: "above", threshold: 394.4752001953125, observed_on: "2026-09-23" } });
+    const mon = screen.getByRole("region", { name: /Monitored/ });
+    expect(mon).toHaveTextContent("100% room · 0.4% to level");
+    fireEvent.click(within(within(mon).getByTestId("dk-mon-row")).getAllByRole("button")[0]);
+    await waitFor(() => expect(mon).toHaveTextContent("GLD above 394.48 · now 392.88 on Sep 23"));
+  });
+
+  it("P1c: a tenor's yield is monitored on a bp move from entry, and the form says what a long in a yield is", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "10y yield" } });
+    expect(screen.getByTestId("pm-yield-note")).toHaveTextContent("A long here is long the yield itself: it gains as the yield rises (a short in the bond).");
+    answer();
+    fireEvent.click(await screen.findByRole("button", { name: "falls 10 bp from entry (below 4.86%)" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    await waitFor(() => expect(stored()).toHaveLength(1));
+    expect(stored()[0]).toMatchObject({ instrument: "10y yield", subject: { kind: "instrument", id: "yield_10y" }, monitoring: "automatic", entry_value: 4.96, trigger: { series: "yield_10y", operator: "below", observed_on: "2026-09-22" } });
+    expect(screen.getByRole("region", { name: /Monitored/ })).toHaveTextContent("100% room · 10 bp to level");
+    // A spread whose tenors the fixture store does not hold is refused, never saved as manual (B-10).
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "5s30s" } });
+    expect(screen.queryByTestId("pm-yield-note")).toBeNull();
+    answer();
+    fireEvent.click(screen.getByRole("button", { name: "falls 10 bp from entry" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    expect(screen.getByRole("status")).toHaveTextContent("The 5s30s level is not served right now, so the room at entry cannot be recorded. Nothing was saved.");
+    expect(stored()).toHaveLength(1);
+  });
+
+  it("P1c: a held ETF asks for its own stored closes only; a ticker the store does not hold is never looked up", async () => {
+    const r = RECORDS.find((p) => p.id === "ndx-vs-spx")!;
+    const held = (instrument: string, series: string, threshold: number, entry: number, observed: string) => ({ ...r, id: `held-${instrument}`, instrument, direction: "short", wrong_if: { id: "above_50d", label: "closes above its 50-day" }, subject: { kind: "instrument", id: instrument }, monitoring: "automatic", entry_value: entry, trigger: { series, operator: "above", threshold, policy: "frozen", observed_on: observed }, original_room: threshold - entry });
+    // NVDA: a valid record (any ticker is its own series), but /instruments does not store it.
+    seed([held("GLD", "etf:GLD", 394.4752001953125, 392.8800048828125, "2026-09-23"), held("NVDA", "etf:NVDA", 230, 225.5, "2026-09-23")]);
+    const { calls } = stubDesk();
+    renderTab("/desk/position-monitor");
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    await waitFor(() => expect(within(card).getAllByTestId("dk-mon-row")[0]).toHaveTextContent("100% room · 0.4% to level"));
+    expect(calls).toContain("GET /api/desk/instruments");
+    expect(calls).toContain("GET /api/desk/technicals?symbol=GLD");
+    expect(calls.some((c) => c.includes("symbol=NVDA"))).toBe(false);
+    expect(within(card).getAllByTestId("dk-mon-row")[1]).toHaveTextContent("room —");
+  });
+
+  it("P1c: the stored list failing says Couldn't load on the card for a held ETF, never for the form's draft alone", async () => {
+    stubDesk({ "/api/desk/instruments": () => ({ status: 503, body: { detail: "forced failure" } }) });
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "GLD" } });
+    answer();
+    fireEvent.click(screen.getByRole("button", { name: "closes below its 50-day" }));
+    fireEvent.click(screen.getByTestId("pm-save"));
+    expect(screen.getByRole("status")).toHaveTextContent("The list of stored instruments is not served right now, so whether GLD's 50-day can be monitored cannot be checked.");
+    expect(within(screen.getByRole("region", { name: "Monitored" })).queryByTestId("dk-failed")).toBeNull();
+  });
+
+  it("P1c: the Overview's Monitored card reads a held ETF's room the same way (it shares the view and the levels)", async () => {
+    const r = RECORDS.find((p) => p.id === "ndx-vs-spx")!;
+    seed([{ ...r, id: "held-GLD", instrument: "GLD", direction: "short", wrong_if: { id: "above_50d", label: "closes above its 50-day" }, subject: { kind: "instrument", id: "GLD" }, monitoring: "automatic", entry_value: 392.8800048828125, trigger: { series: "etf:GLD", operator: "above", threshold: 394.4752001953125, policy: "frozen", observed_on: "2026-09-23" }, original_room: 394.4752001953125 - 392.8800048828125 }]);
+    renderTab("/desk/overview");
+    const card = await screen.findByRole("region", { name: /Monitored/ });
+    await waitFor(() => expect(card).toHaveTextContent("100% room · 0.4% to level"));
+  });
+});
+
+// ── DV01 (desk-upgrade/dv01-spec/DV01_SPEC.md revision 2, §7 and §9 V9): the proxy on the screen ──
+describe("Position Monitor DV01", () => {
+  const macroFixture = () => JSON.parse(deskFixture("GET", "/api/desk/macro")!.body) as { data: { curve: { data: { today: Record<string, unknown> } } } } & Record<string, unknown>;
+  const base = RECORDS.find((p) => p.id === "ndx-vs-spx")!;
+  /** A position held by hand on a typed instrument (DR-03: a yield's DV01 does not depend on its level). */
+  /** Opens one row (the SIZE · HORIZON line and the DV01 block are in the opened row). */
+  const openRow = async (id: string) => {
+    const card = await screen.findByRole("region", { name: "Monitored" });
+    const row = await waitFor(() => within(card).getAllByTestId("dk-mon-row").find((r) => r.getAttribute("data-id") === id)!);
+    fireEvent.click(within(row).getAllByRole("button")[0]);
+    return card;
+  };
+  const held = (id: string, instrument: string, subjectId: string, size: number | null = 0.05, direction: "long" | "short" = "long") => ({ ...base, id, instrument, direction, size_nav: size, subject: { kind: "instrument", id: subjectId }, monitoring: "manual", trigger: null, entry_value: null, original_room: null });
+
+  it("V9: a yield shows its signed proxy DV01 and the opened row says what it is, with dated yields; a bond ETF is unknown and the rest not modelled", async () => {
+    seed([held("y10", "10y yield", "yield_10y"), held("tlt", "TLT", "TLT"), base]);
+    renderTab("/desk/position-monitor");
+    const card = await openRow("y10");
+    // The fixtures' 10y: 4.96% on Sep 22, 2026; 5% NAV long the yield → +0.05 × 7.81 × 0.01.
+    await waitFor(() => expect(card).toHaveTextContent("5% NAV · DV01 +0.0039% NAV/bp (proxy)"));
+    const block = await screen.findByTestId("pm-dv01");
+    expect(block).toHaveTextContent("Estimated gain for a +1 bp rise in the 10y yield, first order, on a hypothetical constant-maturity par Treasury proxy (market value 5.0% NAV), priced at the 10y yield 4.96% on Sep 22, 2026. Not the DV01 of any actual bond, future or holding.");
+    expect(card).toHaveTextContent(/% deployed, 3 positions/);
+    await openRow("tlt");
+    await waitFor(() => expect(card).toHaveTextContent("DV01 unknown: the fund's duration is not stored"));
+    await openRow("ndx-vs-spx");
+    await waitFor(() => expect(card).toHaveTextContent("rate sensitivity not modelled here"));
+  });
+
+  it("V9e: with only a manual yield held, /macro loading shows the card's loading line and DV01 loading", async () => {
+    seed([held("y10", "10y yield", "yield_10y")]);
+    stubDesk({ "/api/desk/macro": () => new Promise(() => {}) });
+    renderTab("/desk/position-monitor");
+    const card = await openRow("y10");
+    await waitFor(() => expect(card).toHaveTextContent("DV01 loading"));
+    expect(within(card).getByTestId("dk-loading")).toBeTruthy();
+  });
+
+  it("V9e: /macro failing shows Couldn't load · Retry and says the yields could not be loaded", async () => {
+    seed([held("y10", "10y yield", "yield_10y")]);
+    stubDesk({ "/api/desk/macro": () => ({ status: 503, body: { detail: "forced failure" } }) });
+    renderTab("/desk/position-monitor");
+    const card = await openRow("y10");
+    await waitFor(() => expect(within(card).getByTestId("dk-failed")).toHaveTextContent("Couldn't load · Retry"), { timeout: 4000 });
+    expect(card).toHaveTextContent("DV01 unknown: the yields could not be loaded");
+  });
+
+  it("V9e: /macro served without the tenor says which yield is not served", async () => {
+    seed([held("y30", "30y yield", "yield_30y")]);
+    renderTab("/desk/position-monitor");
+    const card = await openRow("y30");
+    await waitFor(() => expect(card).toHaveTextContent("DV01 unknown: the 30y yield is not served"));
+    expect(within(card).queryByTestId("dk-failed")).toBeNull();
+  });
+
+  it("V9 / V9d: a spread is sized on its reference leg, said in the form before Save and on the row, with both legs, h and gross", async () => {
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "2s10s" } });
+    // 2y 4.71%, 10y 4.96% on Sep 22, 2026: h = 4.14, so both legs come to 5.1 × the size.
+    await waitFor(() => expect(screen.getByTestId("pm-spread-size")).toHaveTextContent("For a spread, the size is the market value of the 10y leg. The 2y leg is sized to offset its DV01, so both legs together come to about 5.1 times the size at the yields served for Sep 22, 2026."));
+    expect(screen.getByLabelText("Size · % NAV of the longer-maturity (reference) leg")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "10y yield" } });
+    expect(screen.queryByTestId("pm-spread-size")).toBeNull();
+    expect(screen.getByLabelText("Size · % NAV")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Instrument"), { target: { value: "QQQ" } });
+    expect(screen.queryByTestId("pm-spread-size")).toBeNull();
+  });
+
+  it("V9d: legs served on different dates give no multiple in the form", async () => {
+    const m = macroFixture();
+    m.data.curve.data.today = { ...m.data.curve.data.today, date: null, dates: { "3m": null, "2y": "2026-09-21", "5y": null, "10y": "2026-09-22", "30y": null } };
+    stubDesk({ "/api/desk/macro": () => m });
+    renderTab();
+    fireEvent.change(await screen.findByLabelText("Instrument"), { target: { value: "2s10s" } });
+    await waitFor(() => expect(screen.getByTestId("pm-spread-size")).toHaveTextContent("The 2y leg is sized to offset its DV01; the combined exposure cannot be estimated from the currently served yields."));
+  });
+
+  it("V9: a held spread relabels the sum of saved sizes and its row shows the reference leg", async () => {
+    seed([held("s", "2s10s", "curve_2s10s", 0.02), base]);
+    renderTab("/desk/position-monitor");
+    const card = await openRow("s");
+    await waitFor(() => expect(card).toHaveTextContent("2% NAV ref. leg · DV01 +0.0016% NAV/bp of spread (proxy)"));
+    expect(card).toHaveTextContent("6% NAV in saved sizes (a spread counts its reference leg), 2 positions");
+    const block = await screen.findByTestId("pm-dv01");
+    expect(block).toHaveTextContent("2y leg long 8.3% NAV (−0.0016% NAV/bp of 2y) · 10y leg short 2.0% NAV (+0.0016% NAV/bp of 10y) · h = 4.14 · gross 10.3% NAV");
+    expect(block).toHaveTextContent("Weights recomputed from current yields: a current, rebalanced hypothetical spread proxy.");
+    // The collapsed rows: the spread's size cell says "leg" with the reference-leg definition; a single position's stays NAV.
+    const rows = within(card).getAllByTestId("dk-mon-row");
+    const [spread, single] = [rows.find((r) => r.getAttribute("data-id") === "s")!, rows.find((r) => r.getAttribute("data-id") === base.id)!];
+    expect(within(spread).getByText("2% leg").getAttribute("data-term")).toBe("nav-ref-leg");
+    expect(spread.querySelector(".dk-mon-row")?.getAttribute("aria-describedby")).toMatch(/^dk-def-nav-ref-leg /);
+    expect(within(single).getByText("4% NAV").getAttribute("data-term")).toBe("nav");
+    expect(document.getElementById("dk-def-nav-ref-leg")?.textContent).toMatch(/not the spread's total/);
   });
 });

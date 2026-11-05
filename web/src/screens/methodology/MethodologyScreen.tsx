@@ -38,6 +38,7 @@ import ScrollTable from "../shared/ScrollTable";
 import { Caption, StateNote, eyebrowStyle, mono, useHashScroll } from "../shared/screen-ui";
 import { SIGNAL_INPUT_IDS, referenceLabel } from "../shared/fresh-state";
 import { Stamp } from "../shared/Stamp";
+import { CBOE_CREDIT, FRED_API_NOTICE, FRED_API_TERMS_STATEMENT, FRED_API_TERMS_URL, FRED_SOURCE_CREDITS, ICE_CREDIT } from "../shared/DataNotice";
 import { useFreshReport } from "../shared/useFreshReport";
 
 /** A1: the methodology's figures are fixed model rules and thresholds, not
@@ -272,7 +273,9 @@ export default function MethodologyScreen() {
             <Caption>
               Freshness words state what the server judged for each series, never an age worked out in the browser:
               Live; Delayed 7 min; Close · Sep 18 for a market close; Sep 17 for a daily FRED print, adding · 1 day
-              behind when it is late; Aug 2026 print for a monthly one; Final value for a discontinued series. A stale
+              behind when it is late; Aug 2026 print for a monthly one, and Released, awaiting refresh for a monthly print
+              out at its scheduled release and not stored yet, until the full refresh's 06:00 UTC deadline; Final value
+              for a discontinued series. A stale
               value is marked on the number itself with its date and lag (Sep 04 · 8 days behind), and Stated default,
               As of unknown and Snapshot · as of mark a stated default, a date that cannot be established and a saved
               snapshot.
@@ -482,8 +485,11 @@ export default function MethodologyScreen() {
           <Stamp block source="Model rules" label={RULES_LABEL} style={STAMP_UNDER_HEAD} />
           <Card>
             <p style={prose}>
-              Backtests measure SPY forward returns over trading-day horizons (1M = 21 days … 12M = 252 days) after
-              each regime began or each signal fired, from the stored monthly classifier history. Fragile cells (four
+              Backtests measure SPY total returns over trading-day horizons (1M = 21 days … 12M = 252 days) after
+              each regime began or each signal fired, from the stored monthly classifier history. Total return reads
+              split- and dividend-adjusted closes, so each dividend is reinvested in SPY on its ex-dividend date
+              (no taxes or trading costs). They are not price returns, which leave dividends out. The backtests table says
+              which basis its stored numbers carry. Fragile cells (four
               or fewer samples, or a perfect 100% / 0% hit rate) are flagged in the table; a 50% hit rate is a coin
               flip. Factor returns by regime use long/short ETF proxies for Value, Momentum, Quality, Size and Low
               Volatility, labeled as proxies. Historical analogues score regime match (40), HY-spread percentile
@@ -535,6 +541,7 @@ export default function MethodologyScreen() {
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Close · Sep 18" detail="the newest official market close due" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Sep 17" detail="a daily FRED print, with · 1 day behind in muted ink when it is late" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Aug 2026 print" detail="the newest monthly print due" />
+                <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Released, awaiting refresh" detail="a monthly print out at its scheduled release, not stored yet; stale from 06:00 UTC the next day" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-2)" label="Final value" detail="a series the source no longer publishes, never marked stale" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--warn-hot)" label="Sep 04 · 8 days behind" detail="stale: behind the newest publication due, marked on the number itself" />
                 <LegendRow labelW={FRESH_LABEL_W} swatch="var(--text-muted)" label="Stated default" detail="a stated default, not data" />
@@ -603,6 +610,38 @@ export default function MethodologyScreen() {
               Every surface states its own as-of date and falls back to latest-available data with its date instead of
               an empty screen. Regimes and signals are monthly; market bars daily; intraday 5-minute for SPY and QQQ;
               news hourly with a rolling window.
+            </Caption>
+          </Card>
+          <Card style={{ marginTop: 12 }}>
+            <div id="notices" style={eyebrowStyle}>
+              Notices and credits
+            </div>
+            <p style={{ ...prose, marginTop: 8 }}>
+              {FRED_API_NOTICE} {FRED_API_TERMS_STATEMENT}{" "}
+              <a href={FRED_API_TERMS_URL} target="_blank" rel="noreferrer" style={{ color: "var(--link)" }}>
+                FRED® API Terms of Use ↗
+              </a>
+            </p>
+            <p style={{ ...prose, marginTop: 10 }}>
+              FRED series are retrieved from FRED®, Federal Reserve Bank of St. Louis. Each is credited to its original
+              publisher:
+            </p>
+            <ul style={{ ...prose, marginTop: 6, paddingLeft: 18 }}>
+              {FRED_SOURCE_CREDITS.map(([publisher, what]) => (
+                <li key={publisher}>
+                  <b style={{ color: "var(--text)", fontWeight: 600 }}>Source: {publisher} via FRED®</b>: {what}.
+                </li>
+              ))}
+            </ul>
+            <p style={{ ...prose, marginTop: 10 }}>
+              {ICE_CREDIT} Reproduction of this data in any form is prohibited except with the prior written permission
+              of ICE Data Indices. ICE® is a registered trademark of ICE Data or its affiliates and BofA® is a registered
+              trademark of Bank of America Corporation.
+            </p>
+            <p style={{ ...prose, marginTop: 10 }}>{CBOE_CREDIT}</p>
+            <Caption>
+              A credit names where data comes from; it does not grant anyone a right to reuse it. Third-party series
+              remain subject to their owners&apos; terms.
             </Caption>
           </Card>
         </section>

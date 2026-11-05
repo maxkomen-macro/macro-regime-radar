@@ -18,7 +18,9 @@ from api import freshness
 
 STATES = {"live", "delayed", "close", "stale", "fallback", "unknown"}
 # fix/site-audit D7: `late` judges a delayed state against the source's expected lag (null otherwise).
-KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason", "late"}
+# Release-aware freshness (2026-11-04): `word`, a delayed state's own screen word ("Released, awaiting refresh"), null otherwise.
+KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason", "late",
+        "word"}
 
 _FRESH = {
     "regimes_date": "2026-08-01", "signals_date": "2026-08-01", "market_daily_date": "2026-09-17",

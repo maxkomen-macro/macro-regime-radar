@@ -30,7 +30,8 @@ LIVE = ("/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/r
         "/basket/price", "/basket/hedge",  # desk/books
         "/instruments",  # desk/usability (§12.17)
         "/basket/shares",  # desk/cap-weight (§12.18)
-        "/options/finder")  # the Options Finder (design F3)
+        "/options/finder",  # the Options Finder (design F3)
+        "/basket/study")  # desk P1a (§12.19)
 
 
 def test_the_contract_covers_every_enveloped_route():
@@ -254,7 +255,8 @@ FIXTURE_FILES = {"/overview": "overview.json", "/study": "study.json", "/study/c
                  "/basket/price": "basket-price.json", "/basket/hedge": "basket-hedge.json",  # desk/books
                  "/instruments": "instruments.json",  # desk/usability
                  "/basket/shares": "basket-shares.json",  # desk/cap-weight
-                 "/options/finder": "options-finder.json"}  # the Options Finder (synthetic chain)
+                 "/options/finder": "options-finder.json",  # the Options Finder (synthetic chain)
+                 "/basket/study": "basket-study.json"}  # desk P1a: stored ETF closes run through the route's own functions
 
 
 def _wire(route: str, payload: dict) -> dict:
@@ -273,7 +275,7 @@ def _wire(route: str, payload: dict) -> dict:
 
 
 # desk/books: a basket route's fixture holds one answer per request the page makes (`answers`).
-MULTI = {"/basket/price", "/basket/hedge", "/options/finder"}  # the Options Finder: one answer per view
+MULTI = {"/basket/price", "/basket/hedge", "/options/finder", "/basket/study"}  # the Options Finder: one answer per view
 
 
 @pytest.mark.parametrize("route", LIVE)

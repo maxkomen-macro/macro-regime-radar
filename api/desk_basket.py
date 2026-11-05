@@ -34,6 +34,9 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
+import time
+from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Mapping
 
@@ -500,3 +503,409 @@ def shares(params: list[tuple[str, str]]) -> dict:
         "counts": [{"symbol": s, **c} for s, c in counts.items()],
         "excluded": item["excluded"],
     }
+
+
+# ── desk/basket-study (P1a): the event study on this basket ─────────────────
+#
+# docs/desk/BASKET_STUDY_SPEC.md is the method. The basket's index is the page's rule
+# (price_basket, through _priced) over each name's EODHD daily closes since
+# market.STUDY_HISTORY_FROM, handed to the existing engine as a supplied series
+# (src/desk/event_study.run_on_supplied_traced): the basket is the shock and the target.
+# Computed on request in this module's pool, pinned to the request's generation (its
+# regime table and as-of), cached per generation, completed session, basket and question.
+
+STUDY_PARAMS = ("legs", "method", "weighting", "window", "move", "horizon")
+STUDY_MOVES = {"down2s": "-", "up2s": "+"}
+STUDY_Z = 2.0
+STUDY_DEFAULTS = {"window": 5, "move": "down2s", "horizon": 20}
+STUDY_KEY = "basket"
+STUDY_LABEL = "Basket index"
+STUDY_SOURCE = "EODHD daily closes since 1995, split- and dividend-adjusted"
+STUDY_TIMEOUT_S = 8.0       # under the browser's 15 s abort, as api/desk.COMPUTE_TIMEOUT_S
+STUDY_CACHE_MAX = 32        # finished answers kept
+STUDY_OUTSTANDING_MAX = 8   # computations in flight before 429 `busy`
+HINDSIGHT = ("The basket is chosen today, so its history is a backtest of names picked knowing how they did; "
+             "a name that failed or was delisted cannot be in it.")
+REVISED_REGIMES = ("Regime labels are revised regime history: each full refresh rewrites them from the FRED vintages "
+                   "of INDPRO and CPI current at that refresh, so a past label is not what was knowable then. "
+                   "As-known-at-the-time labels are not built yet.")
+INDEX_RULE = {"hold": "the saved weights bought at the start and held, so each name's weight drifts with its price",
+              "monthly": "rebalanced to the saved weights at each month's last session"}
+
+_study_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="mrr-basket-study")
+_study_lock = threading.Lock()
+_study_cache: "OrderedDict[tuple, Any]" = OrderedDict()
+
+
+class StudyGenerationExpired(RuntimeError):
+    """The generation a basket study was submitted under was released before it ran."""
+
+
+def parse_study_params(params: list[tuple[str, str]]) -> tuple[list[tuple[str, float | None]], str, str, int, str, int]:
+    """The basket (parse_params' legs, method and weighting; no notional, which the index's returns do not
+    depend on) and the question: `window` (5, 20 or 60 sessions), `move` (down2s or up2s) and `horizon`
+    (5, 10, 20 or 60). Anything else is refused naming it (§12.0)."""
+    from src.desk import event_study as es
+
+    keys = [k for k, _ in params]
+    unknown = sorted({k for k in keys if k not in STUDY_PARAMS})
+    if unknown:
+        if "notional" in unknown:
+            raise env.Unsupported("A study reads the basket's index, whose returns do not depend on the notional: leave notional out.")
+        raise env.Unsupported(f"There is no {' or '.join(unknown)} parameter.")
+    basket = [(k, v) for k, v in params if k in PARAMS]
+    question = dict((k, v) for k, v in params if k not in PARAMS)
+    repeated = sorted({k for k in keys if keys.count(k) > 1})
+    if repeated:
+        raise env.Unsupported(f"The {' and '.join(repeated)} parameter is given more than once.")
+    legs, method, _notional, weighting = parse_params(basket)
+
+    def integer(name: str, allowed: tuple[int, ...]) -> int:
+        raw = question.get(name)
+        if raw is None:
+            return STUDY_DEFAULTS[name]
+        if raw.strip() not in {str(a) for a in allowed}:
+            raise env.Unsupported(f"The {name} {raw!r} is not one of {', '.join(str(a) for a in allowed)} sessions.")
+        return int(raw.strip())
+
+    window = integer("window", es.WINDOWS)
+    move = question.get("move", STUDY_DEFAULTS["move"])
+    if move not in STUDY_MOVES:
+        raise env.Unsupported(f"The move {move!r} is not down2s or up2s.")
+    horizon = integer("horizon", es.HORIZONS)
+    return legs, method, weighting, window, move, horizon
+
+
+def study_history(cols: Mapping[str, Any], symbol: str = "") -> Any:
+    """An engine History from market.daily_closes_since_1995's columns: the adjusted closes, the close as
+    traded beside them (cap weight's market values), no dollar volume (the study prices no liquidity). A
+    session EODHD served without an adjusted close is left out and counted (`unadjusted`), never priced
+    from its raw close (Codex R-07); a name with none at all is refused."""
+    from src.desk import basket as bk
+
+    dates, close, traded = [], [], []
+    left_out = 0
+    for d, adj, raw in zip(cols["dates"], cols["adjusted"], cols["close_raw"]):
+        if not (math.isfinite(adj) and adj > 0):
+            left_out += 1
+            continue
+        dates.append(str(d))
+        close.append(float(adj))
+        traded.append(float(raw) if math.isfinite(raw) and raw > 0 else None)
+    if not dates:
+        raise env.Refused(502, "provider", f"{symbol}: EODHD served no adjusted closes; a basket reads adjusted closes only.")
+    h = bk.History(tuple(dates), tuple(close), tuple([None] * len(dates)), tuple(traded))
+    object.__setattr__(h, "unadjusted", left_out)
+    return h
+
+
+def fetch_study(symbols: list[str]) -> dict[str, Any]:
+    """Every name's daily closes since 1995, four at a time, refused as `fetch` refuses."""
+    from api.providers import market
+    from api.providers.errors import EmptyResult, ProviderError, UnknownSymbol
+
+    def one(sym: str) -> Any:
+        return study_history(market.daily_closes_since_1995(sym), sym)
+
+    out: dict[str, Any] = {}
+    with ThreadPoolExecutor(max_workers=FETCH_WORKERS, thread_name_prefix="mrr-basket-hist") as pool:
+        futures = {s: pool.submit(one, s) for s in symbols}
+        for s, fut in futures.items():
+            try:
+                out[s] = fut.result()
+            except (UnknownSymbol, EmptyResult) as exc:
+                raise env.Refused(422, "unknown_symbol", f"{s}: {exc.public}") from exc
+            except ProviderError as exc:
+                raise env.Refused(exc.http_status, "provider", f"{s}: {exc.public}") from exc
+    return out
+
+
+def index_block(priced: Mapping[str, Any], histories: Mapping[str, Any], legs: list[tuple[str, float | None]],
+                counts: Mapping[str, Mapping[str, Any]] | None, provider: str, source: str,
+                session: str | None = None, sessions: list[str] | None = None) -> dict:
+    """What the studied index is (spec §2): its provider, its start and the name that sets it, its span,
+    the sessions it lacks, the closes left out, its rule in words, and the cap weights' source. `session`
+    is the completed New York session the closes were asked through; `last_close` is each name's newest
+    adjusted close as served, so a provider that has not published that session yet shows (spec §3).
+    `off_session` counts each name's bars dated off the XNYS calendar, left out before the index is formed
+    (the engine never sees them); `moved_rebalances` lists a monthly basket's rebalances held on an earlier
+    session because a name had no close on the month's last session (spec §3, Timing)."""
+    from api.providers import market
+    from src.desk import basket as bk
+
+    symbols = [s for s, _ in legs]
+    moved: list[str] = []
+    if priced["method"] == "monthly" and priced["weighting"] == "target" and sessions is not None:
+        ends = bk.month_end_sessions(sessions)
+        moved = [p["from"] for p in priced["periods"][1:] if p["from"] not in ends]
+    return {
+        "provider": provider,
+        "source": source,
+        "requested_from": market.STUDY_HISTORY_FROM,
+        "first_close": {l["symbol"]: l["first_close"] for l in priced["legs"]},
+        "session": session,
+        "last_close": {s: histories[s].dates[-1] for s in symbols},
+        "method": priced["method"],
+        "weighting": priced["weighting"],
+        "rule": (INDEX_RULE[priced["method"]] if priced["weighting"] == "target" else
+                 "cap-weighted: market value at the start from today's share counts, each dividend reinvested across the basket"),
+        "start": priced["start"],
+        "start_kind": priced["start_kind"],
+        "start_binding": priced["start_binding"],
+        "end": priced["end"],
+        "sessions": priced["sessions"],
+        "missing_sessions": len(priced["missing_sessions"]),
+        "off_session": {s: int(priced["off_session"].get(s, 0)) for s in symbols},
+        "moved_rebalances": moved,
+        "excluded": excluded(histories, symbols),
+        "cap_weights": cap_block(priced, counts),
+    }
+
+
+def _study_cutoff(gen: Any) -> str:
+    from src.desk import event_study as es
+
+    return es.resolve_as_of(getattr(gen, "as_of", None) or None)
+
+
+def _study_job(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], method: str, weighting: str,
+               counts: Mapping[str, Mapping[str, Any]] | None, w: int, move: str, *,
+               provider: str = PROVIDER, source: str = STUDY_SOURCE, histories: Mapping[str, Any] | None = None,
+               session: str | None = None) -> dict:
+    """One basket study on its generation's copy: fetch, price the index, run the engine. The engine's
+    StudyError (too little history for the question) is a value, `ok` False with its words. Every answer
+    carries `late` (the names whose newest close is older than `session`, the completed session the
+    closes were asked through) and `computed_at`, so study_item asks a late answer again on the
+    provider's retry interval (spec §9)."""
+    item = _study_answer(gen, cutoff, legs, method, weighting, counts, w, move, provider=provider, source=source,
+                         histories=histories, session=session)
+    last = item["index"]["last_close"]
+    item["late"] = sorted(s for s, d in last.items() if session is not None and d < session)
+    item["computed_at"] = time.monotonic()
+    return item
+
+
+def _study_answer(gen: Any, cutoff: str, legs: list[tuple[str, float | None]], method: str, weighting: str,
+                  counts: Mapping[str, Mapping[str, Any]] | None, w: int, move: str, *,
+                  provider: str, source: str, histories: Mapping[str, Any] | None, session: str | None) -> dict:
+    import pandas as pd
+
+    from src.analytics import dbpath
+    from src.desk import event_study as es
+
+    symbols = [s for s, _ in legs]
+    if histories is None:
+        histories = fetch_study(symbols)
+    sessions = calendar_for({s: histories[s] for s in symbols})
+    priced = _priced(histories, legs, method, 1.0, counts, sessions)
+    block = index_block(priced, histories, legs, counts, provider, source, session, sessions)
+    # No z-score can exist before the (Z_MIN_PRESENT + w)th session of the index's calendar span (sessions
+    # some name lacks counted): the window needs Z_MIN_PRESENT moves and the first move reads the session w
+    # before it. A span that long goes to the engine, whose own masks decide the rest (spec §2, Codex DR-08).
+    need = es.Z_MIN_PRESENT + w
+    span = priced["sessions"] + len(priced["missing_sessions"])
+    if span < need:
+        binding = ", ".join(priced["start_binding"])
+        if priced["start_kind"] == "first_close":
+            whose = f"{binding}'s first close"
+        elif priced["start_kind"] == "gap":
+            whose = f"the first session every name has a close; {binding} had none on {priced['start_gap_session']}"
+        else:
+            whose = "the first session every name has a close"
+        return {"ok": False, "index": block,
+                "reason": (f"Not enough history yet: the index starts {priced['start']} ({whose}) and spans {span} "
+                           f"sessions; the first 2σ move over {w} sessions can be judged on its {need}th session "
+                           f"({es.Z_MIN_PRESENT} {w}-session moves in a {es.Z_WINDOW}-session window).")}
+    level = pd.Series(priced["index"], index=pd.DatetimeIndex(priced["dates"]))
+    spec = es.supplied_spec(STUDY_KEY, STUDY_LABEL, f"basket:{','.join(symbols)}", priced["dates"][0],
+                            note="A basket's index from its names' daily closes (src/desk/basket.price_basket).")
+    provenance = {
+        "kind": "basket_index", "provider": provider, "source": source, "rule": "src/desk/basket.price_basket",
+        "legs": [[s, w_] for s, w_ in legs], "method": method, "weighting": weighting,
+        "counts": None if counts is None else {s: [counts[s]["shares_outstanding"], counts[s]["as_of"]] for s in symbols},
+        "requested_from": block["requested_from"], "first_close": block["first_close"],
+        "excluded": block["excluded"], "off_session": block["off_session"],
+        "moved_rebalances": block["moved_rebalances"],
+    }
+    sup = es.Supplied(spec, level, provenance)
+    q = es.Query(kind="shock", shock=STUDY_KEY, target=STUDY_KEY, w=w, z=STUDY_Z, sign=STUDY_MOVES[move])
+    conn = dbpath.open_generation(gen)
+    if conn is None:
+        raise StudyGenerationExpired()
+    try:
+        native, table, trace = es.run_on_supplied_traced(conn, q, sup, generation=gen.key, as_of=cutoff)
+    except es.StudyError as exc:
+        return {"ok": False, "index": block, "reason": f"The engine cannot run this question on the index: {exc}"}
+    finally:
+        conn.close()
+    return {"ok": True, "index": block, "native": native, "events": table, "trace": trace}
+
+
+def _study_submit(gen: Any, key_tail: tuple, job: Any) -> tuple[tuple, Any]:
+    """The job's future, cached by what determines its answer: the generation (its id and file key), its
+    as-of cutoff, the completed session the closes run to, the basket and the question. Finished entries of
+    another generation expire here; a full queue is `Busy`."""
+    key = (getattr(gen, "id", None), gen.key) + key_tail
+    with _study_lock:
+        fut = _study_cache.get(key)
+        if fut is not None:
+            _study_cache.move_to_end(key)
+            return key, fut
+        for stale in [k for k, f in _study_cache.items() if k[:2] != key[:2] and f.done()]:
+            _study_cache.pop(stale, None)
+        if sum(1 for f in _study_cache.values() if not f.done()) >= STUDY_OUTSTANDING_MAX:
+            raise env.Busy(f"{STUDY_OUTSTANDING_MAX} basket studies are computing; retry in a few seconds.")
+        fut = _study_pool.submit(job)
+        _study_cache[key] = fut
+        done = [k for k, f in _study_cache.items() if f.done()]
+        while len(_study_cache) > STUDY_CACHE_MAX and done:
+            _study_cache.pop(done.pop(0), None)
+    return key, fut
+
+
+def clear_study_cache() -> None:
+    with _study_lock:
+        _study_cache.clear()
+
+
+def study_item(gen: Any, legs: list[tuple[str, float | None]], method: str, weighting: str,
+               counts: Mapping[str, Mapping[str, Any]] | None, w: int, move: str) -> dict:
+    """The job's item, or `Computing` while it runs past STUDY_TIMEOUT_S. A generation released before the
+    job ran re-submits under the current one and answers `Computing`, so the client's retry lands there."""
+    from concurrent.futures import TimeoutError as FutureTimeout
+
+    from api.providers import market
+
+    def submit(g: Any) -> tuple[tuple, Any]:
+        cutoff = _study_cutoff(g)
+        session = market.last_session()
+        tail = (cutoff, session, tuple(legs), method, weighting,
+                None if counts is None else tuple(sorted((s, c["shares_outstanding"], c["as_of"]) for s, c in counts.items())),
+                w, move)
+        return _study_submit(g, tail, lambda: _study_job(g, cutoff, legs, method, weighting, counts, w, move,
+                                                         session=session))
+
+    key, fut = submit(gen)
+    if fut.done() and fut.exception() is None:
+        # a name's close for the session was not published yet when this answer was computed: ask again
+        # once the provider's own retry interval has passed (market.DAILY_RETRY_S), as daily_bars does
+        done = fut.result()
+        if done.get("late") and time.monotonic() - done["computed_at"] > market.DAILY_RETRY_S:
+            with _study_lock:
+                if _study_cache.get(key) is fut:
+                    _study_cache.pop(key, None)
+            key, fut = submit(gen)
+    try:
+        return fut.result(timeout=STUDY_TIMEOUT_S)
+    except FutureTimeout:
+        raise env.Computing() from None
+    except StudyGenerationExpired:
+        with _study_lock:
+            _study_cache.pop(key, None)
+        from api.worker import get_worker
+
+        cur = get_worker().generation()
+        if cur is not None and getattr(cur, "id", None) != getattr(gen, "id", None):
+            submit(cur)
+        raise env.Computing() from None
+    except BaseException:
+        with _study_lock:
+            _study_cache.pop(key, None)  # a failure is not kept: the next request asks again
+        raise
+
+
+def study_projection(item: dict, legs: list[tuple[str, float | None]], method: str, weighting: str,
+                     w: int, move: str, h: int) -> dict:
+    """§12.19's payload from a job's item: the basket and the question, the index's provenance, and the
+    study in §12.2's shape for the horizons the engine computes (null with the reason when not run)."""
+    from api import desk_v2 as v2
+    from src.desk import event_study as es
+
+    question = {"shock": STUDY_KEY, "window": w, "move": move, "while": "none", "target": STUDY_KEY, "horizon": h,
+                "target_unit": "log_return", "display_unit": "percent"}
+    out = {
+        "basket": {"legs": [{"symbol": s, "weight": wt} for s, wt in legs], "method": method, "weighting": weighting},
+        "question": question,
+        "index": item["index"],
+        "study": None,
+        "not_run": None,
+        "caveats": [HINDSIGHT, REVISED_REGIMES],
+    }
+    if item.get("late"):
+        ix = item["index"]
+        out["caveats"].append(f"EODHD had not published {ix['session']}'s close for {', '.join(item['late'])} when this "
+                              f"was computed, so the index runs through {ix['end']}; a request 15 minutes later asks again.")
+    moved = item["index"].get("moved_rebalances") or []
+    if moved:
+        out["caveats"].append(
+            f"{len(moved)} monthly rebalance{'s were' if len(moved) != 1 else ' was'} held on an earlier session "
+            f"because a name had no close on the month's last session (latest {moved[-1]}). That session was only "
+            "known to be the month's last index session afterwards, so the index's next return is not one an "
+            "investor could have held at the time.")
+    if not item["ok"]:
+        out["not_run"] = item["reason"]
+        return out
+    native, table = item["native"], item["events"]
+    P = native["provenance"]
+    if len(table) != P["n_events"]:
+        raise ValueError(f"the event table has {len(table)} events, the run {P['n_events']}")
+    unit = "log_return"
+    by_h = {H["h"]: H for H in native["horizons"]}
+    rows = [v2.horizon_row(H, table, v2.verdict_v1(by_h, H["h"])) for H in native["horizons"]]
+    sel = next(r for r in rows if r["h"] == h)
+    verdict = sel["verdict"]
+    k = len(table)
+    year = P["sample_start"][:4]
+    empty_state = None
+    if sel["n"] < v2.MIN_VERDICT_N:
+        empty_state = {"horizon": h,
+                       "sentence": (f"Only {sel['n']} events complete at {v2.HORIZON_LABEL[h]} since {year}, fewer than "
+                                    "the ten a verdict other than Too few needs."),
+                       "fixes": ["widen_window"] if w < max(es.WINDOWS) else []}
+    out["study"] = {
+        "slug": native["study"]["slug"],
+        "label": native["study"]["label"],
+        "selected_horizon": h,
+        "matched_n": P["n_events"],
+        "data_start": P["data_start"], "sample_start": P["sample_start"], "sample_end": P["sample_end"],
+        "first_event": table.sessions[int(table.event_idx[0])] if k else None,
+        "last_event": table.sessions[int(table.event_idx[-1])] if k else None,
+        "verdict": verdict, "verdict_rule": v2.VERDICT_RULE, "verdict_confidence": P["ci"],
+        "headline": f"{v2.VERDICT_LABEL[verdict]} at {v2.HORIZON_LABEL[h]}: {v2.VERDICT_DEFINITION[verdict]}",
+        "why": v2.why_sentence(sel, unit),
+        "horizons": rows,
+        "by_regime": [{"h": 20, "regime": r["regime"], "n": c["n"], "up_pct": c["hit_rate"], "median": c["median"]}
+                      for r in native["regimes"] if r["regime"] in es.REGIME_LABELS for c in r["horizons"] if c["h"] == 20],
+        "regime_history": "revised",
+        "unlabeled_n": P["n_unlabeled"],
+        "last_events": [
+            {"event_date": table.sessions[int(table.event_idx[i])],
+             "entry_date": table.sessions[int(table.entry_idx[i])] if table.entry_idx[i] >= 0 else None,
+             "regime": table.regime[i],
+             "value_20": None if math.isnan(table.value[20][i]) else float(table.value[20][i])}
+            for i in range(k - 1, max(-1, k - 6), -1)],
+        "provenance": {"entry_rule": v2.entry_rule_words(P["entry_rule"]), "cooldown": P["cooldown_sessions"], "seed": P["seed"],
+                       "engine_version": env.ENGINE_VERSION, "as_of_cutoff": P["as_of_cutoff"],
+                       "regimes_last": P["regimes_last"], "calendar": P["calendar"]},
+        "warnings": list(P["warnings"]),
+        "empty_state": empty_state,
+        "inputs_hash": P["inputs_hash"],
+    }
+    return out
+
+
+def study(params: list[tuple[str, str]], t0: float | None = None) -> dict:
+    """§12.19 (desk/basket-study, P1a): the event study on a basket kept in the browser."""
+
+    t0 = time.perf_counter() if t0 is None else t0
+    legs, method, weighting, w, move, h = parse_study_params(params)
+    counts = cap_counts([s for s, _ in legs]) if weighting == "cap" else None
+    gen = env._generation()
+    if gen is None:
+        from api.worker import Warming
+
+        raise Warming()
+    item = study_item(gen, legs, method, weighting, counts, w, move)
+    out = study_projection(item, legs, method, weighting, w, move, h)
+    out["elapsed_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    return out

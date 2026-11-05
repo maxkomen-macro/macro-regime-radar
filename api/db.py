@@ -689,10 +689,15 @@ def event_calendar(days: int, include_earnings: bool = False) -> list[dict]:
 
 def backtests() -> list[dict]:
     """backtest_results pivoted long→wide: one row per (test_name, cohort,
-    horizon) with metric columns, mirroring db_helpers.pivot_backtest."""
+    horizon) with metric columns, mirroring db_helpers.pivot_backtest.
+    `return_basis` is the row's stored basis ("total_return"), or None where
+    the column is absent or NULL: rows computed before the total-return
+    switch, whose basis was never recorded."""
     with closing(_connect()) as conn:
+        has_basis = "return_basis" in {r[1] for r in conn.execute("PRAGMA table_info(backtest_results)")}
+        basis = "return_basis" if has_basis else "NULL AS return_basis"
         rows = conn.execute(
-            "SELECT test_name, cohort, horizon, metric, value, computed_at "
+            f"SELECT test_name, cohort, horizon, metric, value, computed_at, {basis} "
             "FROM backtest_results ORDER BY test_name, cohort, horizon, metric"
         ).fetchall()
     grouped: dict[tuple, dict] = {}
@@ -709,8 +714,11 @@ def backtests() -> list[dict]:
                 "hit_rate": None,
                 "n": None,
                 "computed_at": r["computed_at"],
+                "return_basis": r["return_basis"],
             },
         )
+        if rec["return_basis"] != r["return_basis"]:
+            rec["return_basis"] = None  # rows of one cell disagree: never claim a basis
         if r["metric"] in ("avg_return", "median_return", "hit_rate", "n"):
             rec[r["metric"]] = r["value"]
     return sorted(

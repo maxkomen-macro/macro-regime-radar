@@ -25,6 +25,7 @@ import technicals from "./technicals.json" with { type: "json" };
 import basketPrice from "./basket-price.json" with { type: "json" };
 import basketHedge from "./basket-hedge.json" with { type: "json" };
 import basketShares from "./basket-shares.json" with { type: "json" };
+import basketStudy from "./basket-study.json" with { type: "json" };
 import optionsFinder from "./options-finder.json" with { type: "json" };
 import technicalsGLD from "./technicals-GLD.json" with { type: "json" };
 import technicalsNVDA from "./technicals-NVDA.json" with { type: "json" };
@@ -157,6 +158,13 @@ export const OPTIONS_FINDER_ANSWERS: Readonly<Record<string, unknown>> = Object.
   Object.entries((optionsFinder as { answers: Record<string, unknown> }).answers).map(([k, v]) => [sortedQuery(new URLSearchParams(k)), v]),
 );
 
+/** §12.19 (desk P1a): the basket studies the fixtures carry (scripts/desk_basket_study_fixture.py: stored ETF closes run
+ * through the route's own functions), by the request's parameters. Any other basket, the preset's included, has no
+ * fixture: never a made-up study. */
+export const BASKET_STUDY_ANSWERS: Readonly<Record<string, unknown>> = Object.fromEntries(
+  Object.entries((basketStudy as { answers: Record<string, unknown> }).answers).map(([k, v]) => [sortedQuery(new URLSearchParams(k)), v]),
+);
+
 /** The one study the fixtures carry (§12.2's gold example), by the question it answers. */
 const STUDY_Q = (study as { question: Record<string, string | number> }).question;
 /** The five slots besides the horizon, which selects the answer rather than the study (§12.2). */
@@ -247,6 +255,10 @@ function rawReply(method: string, u: URL, path: string, _body?: string, accept?:
   if (method.toUpperCase() === "GET" && path in BASKET_ANSWERS) {
     const answer = BASKET_ANSWERS[path][basketKey(u)];
     return answer ? json(200, answer) : json(404, { error: "no fixture for this basket" });
+  }
+  if (method.toUpperCase() === "GET" && path === "/basket/study") {
+    const answer = BASKET_STUDY_ANSWERS[sortedQuery(u.searchParams)];
+    return answer ? json(200, answer) : json(404, { error: "no_fixture", message: "The fixtures carry no study for this basket; the API computes it on request." });
   }
   if (method.toUpperCase() === "GET" && path === "/options/finder") {
     const answer = OPTIONS_FINDER_ANSWERS[sortedQuery(u.searchParams)];

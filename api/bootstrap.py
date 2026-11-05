@@ -53,6 +53,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 import httpx
@@ -293,6 +294,109 @@ def _verify_published(client: httpx.Client, auth: dict, assets: list[dict], path
         return None
 
 
+# Release-aware freshness F-3 (api/refresh_status.py): the refresh-attempt status the full refresh
+# publishes beside the database, read on every release check, apart from the database's own check and
+# swap (a failure here never touches them). None until a check has run (no token: never), so
+# api/freshness reads it as unknown and keeps today's states.
+_refresh_status: dict | None = None
+
+
+def refresh_attempts() -> dict | None:
+    """{"doc": the parsed refresh-status.json or None, "fetched_at": datetime of this check,
+    "error": None | "missing" | "unreadable" | "fetch failed"}; None before any check."""
+    return dict(_refresh_status) if _refresh_status is not None else None
+
+
+def reset_refresh_status_for_tests() -> None:
+    global _refresh_status
+    _refresh_status = None
+
+
+# Codex DR-15: the status read sits before the database check, so it is bounded in total time and
+# size, not only per read: a response that trickles bytes, or never ends, cannot hold the check.
+STATUS_READ_DEADLINE_S = 15.0  # body pieces; _status_body adds a 1 s wall-clock margin for the rest
+STATUS_READ_MAX_BYTES = 256 * 1024
+_clock = time.monotonic  # tests replace it to stand for a slow response
+
+
+class _StatusReadLimit(Exception):
+    """The status read passed its total deadline or its byte cap."""
+
+
+def _bounded_get(client: httpx.Client, url: str, headers: dict, *, deadline_s: float | None = None,
+                 max_bytes: int | None = None) -> bytes | None:
+    """The body of `url`, or None when it is larger than `max_bytes`. Raises on an HTTP error, a
+    network error, or `deadline_s` passing: checked on every piece the transport yields, and each read
+    waits at most the per-read timeout, so the whole read ends within deadline_s plus one read timeout."""
+    deadline_s = STATUS_READ_DEADLINE_S if deadline_s is None else deadline_s
+    max_bytes = STATUS_READ_MAX_BYTES if max_bytes is None else max_bytes
+    clock = _clock
+    end = clock() + deadline_s
+    per_read = httpx.Timeout(min(10.0, deadline_s))
+    buf = bytearray()
+    with client.stream("GET", url, headers=headers, timeout=per_read) as resp:
+        resp.raise_for_status()
+        # no chunk_size: each piece is handed over as the transport yields it. A chunk_size buffers
+        # until that many bytes arrive, so a trickle would pass the deadline unseen (Codex S-01).
+        for chunk in resp.iter_bytes():
+            buf += chunk
+            if len(buf) > max_bytes:
+                return None
+            if clock() > end:
+                raise _StatusReadLimit("status read passed its deadline")
+    if clock() > end:
+        raise _StatusReadLimit("status read passed its deadline")
+    return bytes(buf)
+
+
+def _status_body(client: httpx.Client, url: str, headers: dict) -> bytes | None:
+    """`_bounded_get` under a wall-clock watchdog (verifier V-01): its deadline is checked per body
+    piece, so connecting, a redirect or slowly sent headers are bounded only per read. The read runs
+    on a daemon thread and this waits at most the deadline plus a second; a read still going is
+    abandoned as a failed fetch, and it ends when refresh_db closes the client on leaving."""
+    box: dict = {}
+
+    def run() -> None:
+        try:
+            box["body"] = _bounded_get(client, url, headers)
+        except Exception as exc:  # noqa: BLE001 - re-raised in the caller's thread (verifier V-08: never SystemExit)
+            box["exc"] = exc
+
+    t = threading.Thread(target=run, name="refresh-status-read", daemon=True)
+    t.start()
+    t.join(STATUS_READ_DEADLINE_S + 1.0)
+    if t.is_alive():
+        raise _StatusReadLimit("status read passed its deadline")
+    if "exc" in box:
+        raise box["exc"]
+    return box.get("body")
+
+
+def _read_refresh_status(client: httpx.Client | None, auth: dict, assets: list[dict] | None) -> None:
+    """Hold this check's view of refresh-status.json. A failed listing, a missing asset, a failed
+    download or an invalid document holds no document (never the last one's), with the reason."""
+    from api import refresh_status as rs
+
+    global _refresh_status
+    now = datetime.now(timezone.utc)
+    doc, error = None, None
+    if client is None or assets is None:
+        error = "fetch failed"
+    else:
+        asset = next((a for a in assets if a.get("name") == rs.ASSET_NAME), None)
+        if asset is None:
+            error = "missing"
+        else:
+            try:
+                body = _status_body(client, asset["url"], {**auth, "Accept": "application/octet-stream"})
+                doc = rs.parse_doc(body) if body is not None else None
+                error = None if doc is not None else "unreadable"
+            except Exception as exc:  # noqa: BLE001 - this read must never affect the database check
+                log.warning("refresh-status.json could not be read (%s); monthly prints read conservatively", public_error(exc))
+                error = "fetch failed"
+    _refresh_status = {"doc": doc, "fetched_at": now, "error": error}
+
+
 def _poke_worker() -> None:
     from api import worker as worker_mod
 
@@ -329,7 +433,9 @@ def refresh_db(force: bool = False) -> bool:
             # a failed check is this attempt's result, never the last one's
             _state["last_result"] = "error"
             _state["last_error"] = public_error(exc)
+            _read_refresh_status(None, auth, None)
             raise
+        _read_refresh_status(client, auth, assets)
         asset = next(
             (a for a in assets if a["name"] == _DB_ASSET_NAME),
             None,

@@ -229,8 +229,11 @@ describe("every Desk column head carries its definition (desk/pdf-polish item 7)
     renderAt("/desk/position-monitor");
     const mon = await screen.findByRole("region", { name: "Monitored" });
     await waitFor(() => expect(within(mon).getAllByTestId("dk-mon-row").length).toBeGreaterThan(0));
-    const row = within(mon).getAllByTestId("dk-mon-row")[0];
-    expect(row.querySelector(".dk-mon-nav .dk-term")?.getAttribute("data-def")).toBe(GLOSSARY.nav.text);
+    // A single position's size is a share of NAV; a spread's is its reference leg's (DV01_SPEC.md §7).
+    const rows = within(mon).getAllByTestId("dk-mon-row");
+    const byId = (id: string) => rows.find((r) => r.getAttribute("data-id") === id)!;
+    expect(byId("ndx-vs-spx").querySelector(".dk-mon-nav .dk-term")?.getAttribute("data-def")).toBe(GLOSSARY.nav.text);
+    expect(byId("2s10s-steepener").querySelector(".dk-mon-nav .dk-term")?.getAttribute("data-def")).toBe(GLOSSARY["nav-ref-leg"].text);
     const closed = screen.getByRole("region", { name: "Closed in the last 90 days" });
     expect([...closed.querySelectorAll("dt .dk-term")].map((t) => [t.textContent, t.getAttribute("data-def"), t.getAttribute("tabindex")])).toEqual([
       ["Falsified on level", GLOSSARY["col-falsified"].text, "0"],

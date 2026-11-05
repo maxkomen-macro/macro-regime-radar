@@ -116,7 +116,8 @@ function renderShell(route = "/app/dashboard") {
 const toggle = () => screen.getByTestId("sidebar-toggle");
 const stripRegion = () => screen.queryByRole("region", { name: "Market strip" });
 /** Shell nav links (anything linking to an /app/ route outside <main>). */
-const shellNavLinks = () => Array.from(document.querySelectorAll("a[href^='/app/']")).filter((a) => !a.closest("main"));
+// The data-notice footer's credits link (DataNotice.tsx) is not navigation.
+const shellNavLinks = () => Array.from(document.querySelectorAll("a[href^='/app/']")).filter((a) => !a.closest("main") && !a.closest("[data-testid='data-notice']"));
 const stored = () => {
   const raw = window.localStorage.getItem(KEY);
   return raw == null ? null : (JSON.parse(raw) as unknown);

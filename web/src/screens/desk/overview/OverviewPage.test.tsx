@@ -237,16 +237,20 @@ describe("Overview tab", () => {
     expect(rows.map((r) => r.getAttribute("data-id"))).toEqual(["2s10s-steepener", "spx-long", "ndx-vs-spx"]);
     // A name cut with an ellipsis stays readable whole in its title.
     expect(rows.map((r) => r.querySelector(".dk-mon-name")?.getAttribute("title"))).toEqual(["Long 2s10s", "Long S&P 500", "Long NDX vs SPX"]);
-    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% NAV29% room · 10 bp to level");
+    expect(rows[0].textContent?.replace(/\s+/g, " ")).toContain("Long 2s10s2% leg29% room · 10 bp to level");
     expect(rows[1].textContent?.replace(/\s+/g, " ")).toContain("Long S&P 5003% NAV60% room · 1.1% to level");
     expect(rows[2].textContent?.replace(/\s+/g, " ")).toContain("Long NDX vs SPX4% NAVmanual");
     expect(within(rows[0]).getByText(/29% room/).closest(".dk-mon-room")).toHaveAttribute("data-tone", "amber");
     expect(within(rows[1]).getByText(/60% room/).closest(".dk-mon-room")).toHaveAttribute("data-tone", "green");
     // desk/pdf-polish 7: the row's figures carry their definitions; the button names them for a screen reader.
-    expect(within(rows[0]).getByText("2% NAV").getAttribute("data-term")).toBe("nav");
+    // A spread's size is its reference leg, said as such (DV01_SPEC.md §7); a single position's size stays a share of NAV.
+    expect(within(rows[0]).getByText("2% leg").getAttribute("data-term")).toBe("nav-ref-leg");
+    expect(document.getElementById("dk-def-nav-ref-leg")?.textContent).toMatch(/longer-maturity \(reference\) leg as a share of NAV, not the spread's total/);
+    expect(within(rows[1]).getByText("3% NAV").getAttribute("data-term")).toBe("nav");
+    expect(rows[1].querySelector(".dk-mon-row")).toHaveAttribute("aria-describedby", "dk-def-nav dk-def-col-room dk-def-col-to-level");
     expect(within(rows[0]).getByText("29% room").getAttribute("data-term")).toBe("col-room");
     expect(within(rows[0]).getByText("10 bp to level").getAttribute("data-term")).toBe("col-to-level");
-    expect(rows[0].querySelector(".dk-mon-row")).toHaveAttribute("aria-describedby", "dk-def-nav dk-def-col-room dk-def-col-to-level");
+    expect(rows[0].querySelector(".dk-mon-row")).toHaveAttribute("aria-describedby", "dk-def-nav-ref-leg dk-def-col-room dk-def-col-to-level");
     // Inside the row's button a term is no Tab stop of its own: the row is.
     expect(within(rows[0]).getByText("29% room")).not.toHaveAttribute("tabindex");
     expect(rows[2].querySelector(".dk-mon-bar")?.children).toHaveLength(0);

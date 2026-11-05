@@ -18,7 +18,12 @@ Two checks:
   online (needs FRED_API_KEY): each family with a FRED release against FRED's
       release dates (fred/release/dates, include_release_dates_with_no_data, so
       scheduled dates count), from --start on.
-        - every row's New York date must be a FRED release date (error);
+        - every row's New York date up to FRED's last listed date must be a FRED
+          release date (error). Rows after it (the next year's dates, which FRED
+          lists late) are reported as not yet checkable (note): they come from
+          the agency's own published schedule, and the check holds them to FRED
+          once FRED lists that far. Rows for a release FRED lists no dates for at
+          all from --start are an error (a wrong id or a bad answer), never a pass;
         - for the strict families (CPI, the jobs report, G.17) every FRED date
           must have a row (error). Retail sales, GDP and PCE are advisory the
           other way: FRED also lists revision-only dates for them (the retail
@@ -73,19 +78,27 @@ class Family:
     fred_release: int | None    # FRED release id; None: no FRED release dates the event
     strict: bool                # every FRED date must have a row
     source: str
+    schedule: str = ""          # the agency's own published schedule
 
 
 FAMILIES: tuple[Family, ...] = (
-    Family("cpi", re.compile(r"^CPI Release$"), time(8, 30), 10, True, "BLS Consumer Price Index (FRED release 10)"),
-    Family("jobs", re.compile(r"^Jobs Report \(NFP\)$"), time(8, 30), 50, True, "BLS Employment Situation (FRED release 50)"),
+    Family("cpi", re.compile(r"^CPI Release$"), time(8, 30), 10, True, "BLS Consumer Price Index (FRED release 10)",
+           "https://www.bls.gov/schedule/2027/home.htm"),
+    Family("jobs", re.compile(r"^Jobs Report \(NFP\)$"), time(8, 30), 50, True, "BLS Employment Situation (FRED release 50)",
+           "https://www.bls.gov/schedule/2027/home.htm"),
     Family("g17", re.compile(r"^Industrial Production \(G\.17\)$"), time(9, 15), 13, True,
-           "Fed G.17 Industrial Production and Capacity Utilization (FRED release 13)"),
+           "Fed G.17 Industrial Production and Capacity Utilization (FRED release 13)",
+           "https://www.federalreserve.gov/releases/g17/release_dates.htm"),
     Family("retail", re.compile(r"^Retail Sales$"), time(8, 30), 9, False,
-           "Census Advance Monthly Retail Trade (FRED release 9)"),
+           "Census Advance Monthly Retail Trade (FRED release 9)",
+           "https://www.census.gov/economic-indicators/calendar-listview.html"),
     Family("gdp", re.compile(r"^GDP (Advance|Second Estimate|Third Estimate) Q[1-4] \d{4}$"), time(8, 30), 53, False,
-           "BEA Gross Domestic Product (FRED release 53)"),
-    Family("pce", re.compile(r"^PCE Inflation$"), time(8, 30), 54, False, "BEA Personal Income and Outlays (FRED release 54)"),
-    Family("fomc", re.compile(r"^FOMC Meeting$"), time(14, 0), None, False, "Federal Reserve FOMC calendar (no FRED release)"),
+           "BEA Gross Domestic Product (FRED release 53)",
+           "https://www.bea.gov/news/schedule"),
+    Family("pce", re.compile(r"^PCE Inflation$"), time(8, 30), 54, False, "BEA Personal Income and Outlays (FRED release 54)",
+           "https://www.bea.gov/news/schedule"),
+    Family("fomc", re.compile(r"^FOMC Meeting$"), time(14, 0), None, False, "Federal Reserve FOMC calendar (no FRED release)",
+           "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm"),
 )
 
 
@@ -188,9 +201,20 @@ def check_online(rows: list[Row], rep: Report, *, key: str, start: date, today: 
         else:
             fred = fetch(fam.fred_release, start, key)
             fred_set = set(fred)
+            fred_last = fred[-1] if fred else None
+            if mine and fred_last is None:
+                # rows to check and no FRED date at all from --start: a wrong release id or a bad answer, never
+                # "FRED has not listed this far" (that would pass every row unchecked)
+                rep.errors.append(f"{fam.key}: FRED lists no release dates for release {fam.fred_release} from "
+                                  f"{start}; {len(mine)} rows cannot be checked ({fam.source})")
+            ahead = [d for d in mine if fred_last is not None and d > fred_last]
             for d in mine:
-                if d not in fred_set:
+                if fred_last is not None and d not in fred_set and d not in ahead:
                     rep.errors.append(f"{fam.key}: a row on {d} is not a FRED release date ({fam.source})")
+            if ahead:
+                rep.notes.append(f"{fam.key}: {len(ahead)} rows after FRED's last listed date "
+                                 f"({fred_last}), {ahead[0]} to {ahead[-1]}: not checkable against FRED "
+                                 f"until it lists them; they come from the agency's own schedule ({fam.schedule})")
             missing = [d for d in fred if d not in set(mine)]
             beyond = [d for d in missing if last is None or d > last]
             within = [d for d in missing if d not in beyond]

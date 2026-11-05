@@ -15,6 +15,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { MixedGenerations, usePageAsOf, usePageGenerations } from "./data/generations";
 import { dayLong } from "./kit/format";
 import ErrorBoundary from "../shared/ErrorBoundary";
+import { DataNoticeFooter } from "../shared/DataNotice";
 import DeskSidebar from "./DeskSidebar";
 import DeskTopBar from "./DeskTopBar";
 import { PipelineBadge } from "./pipeline/badge";
@@ -128,6 +129,8 @@ export default function DeskShell() {
                 answers disagree; the ids ride on <main> (data-generations), never in words an MD reads (desk/usability
                 §14.13). S-32: the Client view prints its snapshot date. */}
             {client ? <SnapshotFooter /> : null}
+            {/* The FRED API notice, its terms link and the credits link, on every Desk page (DataNotice.tsx). */}
+            <DataNoticeFooter style={{ padding: "8px 0 0" }} />
           </main>
           {tour ? <TourStrip step={tour} /> : null}
         </div>
