@@ -56,7 +56,7 @@ Each step is reversible until step 4. Check the result before moving on.
 
 | From | Do | Effect |
 |---|---|---|
-| Step 1 | first make this repo's copy current: run `scripts/mirror_data_release.sh` with the same environment and require it to exit 0, then check that both releases list the same digest for `macro_radar.db` (a mirror step that failed leaves the refresh green, so a green run is not proof). Only then delete the `DATA_RELEASE_REPO` variable | writers build on and publish to this repo's copy again from the next run, with no private history lost |
+| Step 1 | pause the writers (disable Refresh Data and Intraday Refresh in Actions, then wait until none is queued or running: a manual mirror sits outside their `data-write` group). Make this repo's copy current: run `scripts/mirror_data_release.sh` with the same environment, require exit 0, and check that both releases list the same non-empty `sha256:` digest for `macro_radar.db` (exit 0 alone is not proof, and a failed mirror step leaves the refresh green). Then delete the `DATA_RELEASE_REPO` variable and re-enable the two workflows | writers build on and publish to this repo's copy again from the next run, with no private history lost |
 | Step 2 | unset `DATA_RELEASE_REPO` (Render, Streamlit, Vercel; and `SNAPSHOT_REPO` on Vercel if it was used) and restart or redeploy | the reader goes back to this repo's copy, which the mirror kept current |
 | Step 3 | set `DATA_RELEASE_MIRROR=true` again | the next run, whatever it publishes, brings this repo's copy current; until then it is stale |
 | Step 4 | upload the current files from `<data-repo>` back to this repo's `data-latest`, then follow the step 1 rollback | restores the public copy. Anything downloaded while it was public stays downloaded |
