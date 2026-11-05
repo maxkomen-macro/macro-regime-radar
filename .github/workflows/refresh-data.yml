@@ -35,6 +35,13 @@ concurrency:
   group: data-write
   cancel-in-progress: false
 
+env:
+  # Private storage (Change 1): the repo whose data-latest release holds the
+  # database, validation.json and snapshot-latest.json. Unset, it is this repo,
+  # exactly as before. A different repo needs the DATA_RELEASE_TOKEN secret.
+  # The earnings ledger steps never read it: the sealed ledger stays here.
+  DATA_RELEASE_REPO: ${{ vars.DATA_RELEASE_REPO || github.repository }}
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -109,10 +116,12 @@ jobs:
       - name: Fetch current DB snapshot from data-latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
         run: |
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
           mkdir -p data
-          if gh release view data-latest >/dev/null 2>&1; then
-            gh release download data-latest --pattern macro_radar.db --dir data --clobber
+          if gh release view data-latest --repo "$DATA_RELEASE_REPO" >/dev/null 2>&1; then
+            gh release download data-latest --pattern macro_radar.db --dir data --clobber --repo "$DATA_RELEASE_REPO"
             cp data/macro_radar.db data/previous.db
             echo "DB snapshot: $(du -h data/macro_radar.db | cut -f1)"
           else
@@ -321,14 +330,16 @@ jobs:
         if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
         run: |
-          gh release view data-latest >/dev/null 2>&1 \
-            || gh release create data-latest --title "Latest data snapshot" \
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
+          gh release view data-latest --repo "$DATA_RELEASE_REPO" >/dev/null 2>&1 \
+            || gh release create data-latest --repo "$DATA_RELEASE_REPO" --title "Latest data snapshot" \
                  --notes "Rolling SQLite snapshot published by the refresh workflows. Not stored in git history."
-          gh release upload data-latest data/macro_radar.db --clobber
+          gh release upload data-latest data/macro_radar.db --clobber --repo "$DATA_RELEASE_REPO"
           echo "Uploaded DB snapshot ($(du -h data/macro_radar.db | cut -f1)) to data-latest."
           if [ -f snapshot-latest.json ]; then
-            gh release upload data-latest snapshot-latest.json --clobber
+            gh release upload data-latest snapshot-latest.json --clobber --repo "$DATA_RELEASE_REPO"
             echo "Uploaded snapshot-latest.json ($(du -h snapshot-latest.json | cut -f1))."
           fi
 
@@ -343,9 +354,35 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
         run: |
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
           python scripts/validation_asset.py validation.json data/macro_radar.db publish/validation.json
-          gh release upload data-latest publish/validation.json --clobber
+          gh release upload data-latest publish/validation.json --clobber --repo "$DATA_RELEASE_REPO"
+
+      # Private storage cutover only (vars.DATA_RELEASE_MIRROR == 'true' while
+      # DATA_RELEASE_REPO names another repo): copy the files just published
+      # there to this repo's data-latest too, in the same order (database,
+      # snapshot, verdict), so readers not yet switched keep receiving them.
+      # Its own step, bounded, and never able to fail a published refresh.
+      - name: Mirror the published files to this repo's data-latest (cutover only)
+        if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload == 'true' && vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view data-latest --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create data-latest --repo "$GITHUB_REPOSITORY" --title "Latest data snapshot" \
+                 --notes "Rolling SQLite snapshot published by the refresh workflows. Not stored in git history."
+          gh release upload data-latest data/macro_radar.db --clobber --repo "$GITHUB_REPOSITORY"
+          if [ -f snapshot-latest.json ]; then
+            gh release upload data-latest snapshot-latest.json --clobber --repo "$GITHUB_REPOSITORY"
+          fi
+          if [ -f publish/validation.json ]; then
+            gh release upload data-latest publish/validation.json --clobber --repo "$GITHUB_REPOSITORY"
+          fi
+          echo "Mirrored the published files to this repo's data-latest."
 
       # Earnings cache ledger (design EC 9.2.3): if the cache step left a final
       # state it could not upload, upload it now under its own sequenced name,

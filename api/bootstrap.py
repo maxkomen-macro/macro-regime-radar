@@ -1,4 +1,4 @@
-"""api/bootstrap.py — DB snapshot bootstrap from the private data-latest Release.
+"""api/bootstrap.py — DB snapshot bootstrap from the data-latest Release.
 
 Ports the proven dashboard pattern (dashboard/app.py:_refresh_db_snapshot) to
 the FastAPI service: when GH_DB_TOKEN is set, resolve the `macro_radar.db`
@@ -10,6 +10,12 @@ a fresh read-only connection per request and tolerates the swap).
 Behavior knobs (all env; the token is never logged):
 - GH_DB_TOKEN               read-only Contents PAT. Absent → no-op: dev keeps
                             whatever DB is on disk, untouched.
+- DATA_RELEASE_REPO         "owner/name" of the repo whose data-latest release
+                            holds the database and validation.json (private
+                            storage, Change 1). Unset → this repo, as before;
+                            malformed → the refresh fails with that reason and
+                            the served file stays. The earnings ledger reader
+                            keeps reading this repo (_GH_API_REPO).
 - BOOTSTRAP_DB_REFRESH_MIN  if > 0, a lifespan task checks the release every N
                             minutes (default 0 = disabled).
 - BOOTSTRAP_DB_MAX_AGE_MIN  legacy: reported in status(), decides nothing.
@@ -98,8 +104,28 @@ def status() -> dict:
         out["db_size"] = None
     return out
 
+# This repo. The sealed earnings ledger stays on its release whatever DATA_RELEASE_REPO says
+# (api/earnings_ledger_reader.py imports this name).
 _GH_API_REPO = "https://api.github.com/repos/maxkomen-macro/macro-regime-radar"
+DEFAULT_DATA_REPO = "maxkomen-macro/macro-regime-radar"
 _DB_ASSET_NAME = "macro_radar.db"
+_REPO_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
+
+
+class DataRepoError(ValueError):
+    """DATA_RELEASE_REPO is set but is not "owner/name"."""
+
+
+def data_release_repo() -> str:
+    """The repo whose data-latest release holds the database and its verdict:
+    DATA_RELEASE_REPO when set (stripped), else this repo. Read at each refresh,
+    so a changed setting needs only a restart, never a code change."""
+    raw = os.environ.get("DATA_RELEASE_REPO", "").strip()
+    if not raw:
+        return DEFAULT_DATA_REPO
+    if not _REPO_NAME.fullmatch(raw) or raw.split("/", 1)[1] in (".", ".."):
+        raise DataRepoError("DATA_RELEASE_REPO is not owner/name")
+    return raw
 # Tests inject an httpx.MockTransport here; None means the real network.
 _transport: httpx.BaseTransport | None = None
 
@@ -117,6 +143,8 @@ def public_error(exc: BaseException) -> str:
     can carry a signed download URL or a header value."""
     if isinstance(exc, httpx.HTTPStatusError):
         return f"HTTP {exc.response.status_code} from GitHub"
+    if isinstance(exc, DataRepoError):
+        return "DATA_RELEASE_REPO is not owner/name"
     if isinstance(exc, ValueError) and str(exc).startswith("downloaded "):
         return str(exc)  # _validate_sqlite's own sentences
     return type(exc).__name__
@@ -415,6 +443,12 @@ def refresh_db(force: bool = False) -> bool:
         log.info("GH_DB_TOKEN not set — DB bootstrap skipped; serving the on-disk DB as-is")
         return False
     DB_PATH = db.DB_PATH
+    try:
+        data_api = f"https://api.github.com/repos/{data_release_repo()}"
+    except DataRepoError as exc:
+        _state["last_result"] = "error"
+        _state["last_error"] = public_error(exc)
+        raise
 
     auth = {
         "Authorization": f"Bearer {token}",
@@ -424,7 +458,7 @@ def refresh_db(force: bool = False) -> bool:
         # 1) resolve the current asset on data-latest (its id changes per upload)
         try:
             meta = client.get(
-                f"{_GH_API_REPO}/releases/tags/data-latest",
+                f"{data_api}/releases/tags/data-latest",
                 headers={**auth, "Accept": "application/vnd.github+json"},
             )
             meta.raise_for_status()
