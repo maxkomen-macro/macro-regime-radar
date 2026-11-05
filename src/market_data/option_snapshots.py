@@ -8,6 +8,11 @@ module writes nothing to the database and nothing inside the repository.
 
 What one run does, in order, and where it stops:
 
+  0. Collects only when the owner has switched it on: OPTION_SNAPSHOT_ENABLED must be "true" (a GitHub
+     Actions repository variable, Max's amendment of 2026-11-05). Missing, empty or "false": "held
+     detail=disabled"; any other value: "held detail=disabled_invalid_setting". Either way no EODHD call, no
+     private-store call and no write. Checked again at the start of every run, so switching it off stops
+     future runs; it does not cancel a run already in progress. --report is read-only and ignores it.
   1. Reads EODHD_OPTIONS_TOKEN from the environment, and nothing else for EODHD: never EODHD_API_TOKEN, never
      .env. Setting this secret therefore cannot switch asset_history or desk_history from Yahoo to EODHD,
      which read EODHD_API_TOKEN (api/providers/market._load_token). No token: "held", no call made.
@@ -52,8 +57,9 @@ step exits 0 on every end so it cannot fail the refresh; a failure state also pr
     python -m src.market_data.option_snapshots                     the refresh step (GitHub store from env)
     python -m src.market_data.option_snapshots --report [...]      stored history, counts only, no EODHD call
 
-Before the first live run (D3): the secrets, and D1's check of EODHD's retention, storage and call-limit
-terms for the options dataset. Setup: docs/RUNBOOK.md section 9.
+Before the first live run (D3): the secrets, D1's check of EODHD's retention, storage and call-limit terms for
+the options dataset, and then the owner's switch (OPTION_SNAPSHOT_ENABLED=true). Setup: docs/RUNBOOK.md
+section 9.
 """
 
 from __future__ import annotations
@@ -87,6 +93,7 @@ UNDERLYING = "SPY"
 TOKEN_ENV = "EODHD_OPTIONS_TOKEN"
 REPO_ENV = "OPTION_SNAPSHOT_REPO"
 GH_TOKEN_ENV = "OPTION_SNAPSHOT_GH_TOKEN"
+ENABLE_ENV = "OPTION_SNAPSHOT_ENABLED"  # the owner's on/off switch; collection is off unless it reads "true"
 PUBLIC_REPO = "maxkomen-macro/macro-regime-radar"
 
 SCHEMA = 1
@@ -603,6 +610,16 @@ def options_token(env: dict | None = None) -> str | None:
     return tok.strip() or None
 
 
+def activation(env: dict | None = None) -> str | None:
+    """None when the owner has switched collection on (OPTION_SNAPSHOT_ENABLED is "true", any case, spaces
+    trimmed); otherwise the held detail: "disabled" for a missing, empty or "false" value,
+    "disabled_invalid_setting" for anything else. Off is the default: only an explicit "true" collects."""
+    value = ((env if env is not None else os.environ).get(ENABLE_ENV) or "").strip().lower()
+    if value == "true":
+        return None
+    return "disabled" if value in ("", "false") else "disabled_invalid_setting"
+
+
 def store_from_env(env: dict | None = None, *, transport: httpx.BaseTransport | None = None) -> GitHubReleaseStore | None:
     env = env if env is not None else os.environ
     repo, tok = (env.get(REPO_ENV) or "").strip(), (env.get(GH_TOKEN_ENV) or "").strip()
@@ -621,7 +638,12 @@ def _utcnow() -> datetime:
 
 def run(*, token: str | None, store: Store | None, now: datetime | None = None,
         client: eod.EodhdClient | None = None, sleep: Callable[[float], None] = time.sleep,
-        clock: Callable[[], datetime] = _utcnow) -> Result:
+        clock: Callable[[], datetime] = _utcnow, enabled: bool | None = None) -> Result:
+    """One collection run. enabled=None reads the owner's switch from the environment (activation()); a
+    caller may pass True or False. Off: held before any provider or store call."""
+    off = activation() if enabled is None else (None if enabled is True else "disabled")
+    if off is not None:
+        return Result("held", detail=off)
     now = now or clock()
     if not token:
         return Result("held", detail="no_options_token")

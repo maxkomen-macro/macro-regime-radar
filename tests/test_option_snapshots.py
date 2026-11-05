@@ -108,7 +108,8 @@ def client_for(fake: FakeEodhd) -> eod.EodhdClient:
 
 
 def go(fake, store, now=NOW):
-    return osn.run(token=TOKEN, store=store, now=now, client=client_for(fake), sleep=lambda s: None, clock=lambda: now)
+    return osn.run(token=TOKEN, store=store, now=now, client=client_for(fake), sleep=lambda s: None, clock=lambda: now,
+                   enabled=True)
 
 
 class DirStore:
@@ -172,14 +173,111 @@ def read_stored(root: Path, session: str, attempt: int = 1) -> tuple[list[dict],
 
 def test_no_token_holds_without_a_call(tmp_path):
     fake = FakeEodhd(make_chain(SPEC))
-    r = osn.run(token=None, store=DirStore(tmp_path / "out"), now=NOW, client=client_for(fake))
+    r = osn.run(token=None, store=DirStore(tmp_path / "out"), now=NOW, client=client_for(fake), enabled=True)
     assert (r.state, r.detail, r.requests, fake.calls) == ("held", "no_options_token", 0, [])
 
 
 def test_no_private_store_holds_without_a_call():
     fake = FakeEodhd(make_chain(SPEC))
-    r = osn.run(token=TOKEN, store=None, now=NOW, client=client_for(fake))
+    r = osn.run(token=TOKEN, store=None, now=NOW, client=client_for(fake), enabled=True)
     assert (r.state, r.detail, fake.calls) == ("held", "no_private_store", [])
+
+
+# ── the owner's switch (Max's amendment, 2026-11-05): off unless it reads "true" ──
+
+
+OFF_VALUES = [None, "", "  ", "false", "False", " FALSE "]
+INVALID_VALUES = ["1", "yes", "on", "enabled", "tru", "true!", "'true'"]
+
+
+def _no_network(monkeypatch):
+    """Any HTTP request at all, provider or store, fails the test."""
+    def boom(self, request, *a, **k):
+        raise AssertionError(f"an HTTP request was made: {request.method} {request.url.host}")
+    monkeypatch.setattr(httpx.Client, "send", boom)
+
+
+@pytest.mark.parametrize("value", OFF_VALUES + INVALID_VALUES)
+def test_collection_is_off_unless_the_switch_reads_true(value, monkeypatch, tmp_path):
+    """Missing, empty, false or invalid: held before any provider or store call, nothing written, with the
+    secrets all present."""
+    if value is None:
+        monkeypatch.delenv(osn.ENABLE_ENV, raising=False)
+    else:
+        monkeypatch.setenv(osn.ENABLE_ENV, value)
+    fake, gh = FakeEodhd(make_chain(SPEC)), FakeGitHub()
+    folder = DirStore(tmp_path / "out")
+    for store in (gh_store(gh), folder):
+        r = osn.run(token=TOKEN, store=store, now=NOW, client=client_for(fake), sleep=lambda s: None, clock=lambda: NOW)
+        want = "disabled" if value in OFF_VALUES else "disabled_invalid_setting"
+        assert (r.state, r.detail, r.requests, r.session, r.manifest) == ("held", want, 0, None, None)
+    assert fake.calls == [] and gh.calls == [] and gh.releases == {} and gh.assets == {}
+    assert not (tmp_path / "out").exists() or list((tmp_path / "out").rglob("*")) == []
+    assert "held" not in osn.FAILURE_STATES
+
+
+@pytest.mark.parametrize("value", ["true", "TRUE", " True "])
+def test_only_an_explicit_true_switches_it_on(value):
+    assert osn.activation({osn.ENABLE_ENV: value}) is None
+    assert osn.activation({}) == "disabled"
+    assert osn.activation({osn.ENABLE_ENV: "false"}) == "disabled"
+    assert osn.activation({osn.ENABLE_ENV: "1"}) == "disabled_invalid_setting"
+
+
+def test_a_caller_cannot_switch_it_on_with_a_truthy_non_bool(monkeypatch):
+    monkeypatch.setenv(osn.ENABLE_ENV, "true")
+    fake = FakeEodhd(make_chain(SPEC))
+    for enabled in (False, 1, "true"):
+        r = osn.run(token=TOKEN, store=FakeGitHubStoreless(), now=NOW, client=client_for(fake), enabled=enabled)
+        assert (r.state, r.detail) == ("held", "disabled"), enabled
+    assert fake.calls == []
+
+
+class FakeGitHubStoreless:
+    """A store that fails the test if the run touches it at all."""
+    def __getattr__(self, name):
+        raise AssertionError(f"the store was touched: {name}")
+
+
+def test_switched_on_the_run_is_unchanged(monkeypatch, tmp_path):
+    """Explicitly enabled through the environment, a run stores exactly what enabled=True stores."""
+    monkeypatch.setenv(osn.ENABLE_ENV, "true")
+    chain = make_chain(SPEC)
+    a, b = FakeGitHub(), FakeGitHub()
+    ra = osn.run(token=TOKEN, store=gh_store(a), now=NOW, client=client_for(FakeEodhd(chain)), sleep=lambda s: None,
+                 clock=lambda: NOW)
+    rb = go(FakeEodhd(chain), gh_store(b))
+    assert (ra.state, ra.session, ra.requests) == (rb.state, rb.session, rb.requests) == ("stored", "2026-11-02", rb.requests)
+    assert ra.manifest["complete"] is True and rb.requests > 0
+    blobs = lambda g: sorted((g.assets[i]["name"], g.blobs[i]) for i in g.blobs)
+    da, db = dict(blobs(a)), dict(blobs(b))
+    data = [n for n in da if n.endswith(".jsonl.gz")]
+    assert data and all(da[n] == db[n] for n in data)
+
+
+def test_the_cli_switched_off_makes_no_request_and_writes_nothing(monkeypatch, capsys, tmp_path):
+    """The refresh step's own entrypoint, with all three secrets set and the switch unset: one held line."""
+    monkeypatch.setenv(osn.TOKEN_ENV, TOKEN)
+    monkeypatch.setenv(osn.REPO_ENV, ARCHIVE)
+    monkeypatch.setenv(osn.GH_TOKEN_ENV, GH_TOKEN)
+    monkeypatch.delenv(osn.ENABLE_ENV, raising=False)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    monkeypatch.chdir(tmp_path)
+    _no_network(monkeypatch)
+    assert osn.main([]) == 0
+    assert capsys.readouterr().out.strip() == "option_snapshots: held underlying=SPY session=- requests=0 detail=disabled"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_report_stays_available_while_switched_off(monkeypatch, capsys):
+    gh = FakeGitHub()
+    go(FakeEodhd(make_chain(SPEC)), gh_store(gh))
+    monkeypatch.delenv(osn.ENABLE_ENV, raising=False)
+    monkeypatch.setattr(osn, "store_from_env", lambda env=None, transport=None: gh_store(gh))
+    before = len(gh.calls)
+    assert osn.main(["--report"]) == 0
+    assert "sessions=1 attempts=1 complete=1 first_complete=2026-11-02" in capsys.readouterr().out
+    assert all(m == "GET" for m, _ in gh.calls[before:])
 
 
 def test_the_token_is_the_collectors_own_and_never_the_apis():
@@ -510,6 +608,7 @@ def test_the_report_cli_makes_no_eodhd_call(tmp_path, monkeypatch, capsys):
 def test_the_cli_without_configuration_is_held_and_exits_zero(monkeypatch, capsys):
     for k in (osn.TOKEN_ENV, osn.REPO_ENV, osn.GH_TOKEN_ENV):
         monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv(osn.ENABLE_ENV, "true")  # switched on, so the missing secrets are what holds it
     assert osn.main([]) == 0
     assert capsys.readouterr().out.strip() == "option_snapshots: held underlying=SPY session=- requests=0 detail=no_options_token"
 
@@ -659,7 +758,8 @@ def test_the_workflow_step_is_scoped_bounded_and_cannot_fail_the_refresh():
     assert step["name"] == "Collect private SPY option snapshot (Desk D3)"
     assert step["if"] == "steps.mode.outputs.mode == 'full'"
     assert step["continue-on-error"] is True and step["timeout-minutes"] == 10
-    assert step["env"] == {"EODHD_OPTIONS_TOKEN": "${{ secrets.EODHD_OPTIONS_TOKEN }}",
+    assert step["env"] == {"OPTION_SNAPSHOT_ENABLED": "${{ vars.OPTION_SNAPSHOT_ENABLED }}",
+                           "EODHD_OPTIONS_TOKEN": "${{ secrets.EODHD_OPTIONS_TOKEN }}",
                            "OPTION_SNAPSHOT_REPO": "${{ secrets.OPTION_SNAPSHOT_REPO }}",
                            "OPTION_SNAPSHOT_GH_TOKEN": "${{ secrets.OPTION_SNAPSHOT_GH_TOKEN }}"}
     assert step["run"].strip() == "python -m src.market_data.option_snapshots"
@@ -676,6 +776,9 @@ def test_the_three_secrets_appear_only_in_that_step():
             if s["name"] != "Collect private SPY option snapshot (Desk D3)":
                 assert secret not in json.dumps(s), (secret, s["name"])
     assert "EODHD_API_TOKEN" not in text
+    # the owner's switch: a repository variable (not a secret), read by that step alone, never set in a file
+    assert text.count("OPTION_SNAPSHOT_ENABLED: ${{ vars.OPTION_SNAPSHOT_ENABLED }}") == 1
+    assert text.count("vars.OPTION_SNAPSHOT_ENABLED") == 1 and "secrets.OPTION_SNAPSHOT_ENABLED" not in text
     for wf in (ROOT / ".github/workflows").glob("*.yml"):
         if wf.name != "refresh-data.yml":
             assert "EODHD_OPTIONS_TOKEN" not in wf.read_text() and "OPTION_SNAPSHOT" not in wf.read_text(), wf.name
