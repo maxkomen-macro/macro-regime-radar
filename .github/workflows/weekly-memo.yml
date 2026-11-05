@@ -19,6 +19,14 @@ permissions:
   contents: write
   actions: read
 
+env:
+  # Private storage (Change 1, docs/data/PRIVATE_STORAGE.md): the repo whose
+  # data-latest release holds the database, validation.json,
+  # snapshot-latest.json and the full refresh's attempt status. Unset, it is
+  # this repo, exactly as before. A different repo needs the DATA_RELEASE_TOKEN secret.
+  # The earnings ledger steps never read it: the sealed ledger stays here.
+  DATA_RELEASE_REPO: ${{ vars.DATA_RELEASE_REPO || github.repository }}
+
 jobs:
   email-memo:
     runs-on: ubuntu-latest
@@ -74,6 +82,7 @@ jobs:
         if: steps.gate.outputs.go == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
           RUN_ID: ${{ github.event.inputs.run_id }}
         run: |
           mkdir -p data
@@ -81,7 +90,8 @@ jobs:
             cp validated/macro_radar.db data/macro_radar.db
             echo "Using the validated artifact from run $RUN_ID"
           else
-            gh release download data-latest --pattern macro_radar.db --dir data --clobber
+            [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
+            gh release download data-latest --pattern macro_radar.db --dir data --clobber --repo "$DATA_RELEASE_REPO"
             echo "Manual run: using the current data-latest asset"
           fi
           python scripts/validate_db.py data/macro_radar.db --mode verify-only --allow-stale "memo input: validated upstream"

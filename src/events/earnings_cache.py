@@ -50,7 +50,8 @@ or P2 finds malformed rows), otherwise ambiguous. A run stopped by a 429 or an
 error part-way is ambiguous unless P1 already failed.
 
 The cross-check reads event_calendar from --db, or from a temporary copy of the
-public data-latest database that is deleted afterwards. Output is counts and
+data-latest database (this repo's public copy, or DATA_RELEASE_REPO's with
+GH_DB_TOKEN) that is deleted afterwards. Output is counts and
 pass/fail lines; tickers are printed only for the 12 tape names the cross-check
 misses, and no date, key or URL is ever printed.
 """
@@ -61,6 +62,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sqlite3
 import sys
 import tempfile
@@ -101,6 +103,10 @@ TRADING_START, TRADING_END = time(9, 0), time(17, 0)  # weekday New York hours t
 BAND_DAYS = 30
 RELEASE_CODES = {"bmo", "amc", "dmh"}
 PUBLIC_DB_URL = "https://github.com/maxkomen-macro/macro-regime-radar/releases/download/data-latest/macro_radar.db"
+# Private storage (docs/data/PRIVATE_STORAGE.md): DATA_RELEASE_REPO naming another repo moves the probe's
+# download to that repo's release, read through the API with GH_DB_TOKEN (or GH_TOKEN). Unset: PUBLIC_DB_URL.
+HOME_DATA_REPO = "maxkomen-macro/macro-regime-radar"
+_REPO_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
 DOWNLOAD_TIMEOUT_S = 120
 
 
@@ -224,11 +230,37 @@ def stored_dates(db_path: Path, today: date, now: datetime) -> dict[str, set[dat
         conn.close()
 
 
-def _download_public_db(dest: Path, get=None) -> None:
+def _download_public_db(dest: Path, get=None, env: Mapping[str, str] | None = None) -> None:
     get = get or requests.get
-    resp = get(PUBLIC_DB_URL, timeout=DOWNLOAD_TIMEOUT_S)
+    env = os.environ if env is None else env
+    repo = (env.get("DATA_RELEASE_REPO") or "").strip()
+    if not repo or repo == HOME_DATA_REPO:
+        resp = get(PUBLIC_DB_URL, timeout=DOWNLOAD_TIMEOUT_S)
+        if resp.status_code != 200:
+            raise RuntimeError(f"public database download answered HTTP {resp.status_code}")
+        dest.write_bytes(resp.content)
+        return
+    _download_release_db(dest, repo, get, env)
+
+
+def _download_release_db(dest: Path, repo: str, get, env: Mapping[str, str]) -> None:
+    """The database from `repo`'s data-latest release through the GitHub API (private storage)."""
+    if not _REPO_NAME.fullmatch(repo) or repo.split("/", 1)[1] in (".", ".."):
+        raise RuntimeError("DATA_RELEASE_REPO is not owner/name")
+    token = (env.get("GH_DB_TOKEN") or env.get("GH_TOKEN") or "").strip()
+    if not token:
+        raise RuntimeError("DATA_RELEASE_REPO names another repo; set GH_DB_TOKEN to read it")
+    auth = {"Authorization": f"Bearer {token}", "X-GitHub-Api-Version": "2022-11-28"}
+    meta = get(f"https://api.github.com/repos/{repo}/releases/tags/data-latest",
+               headers={**auth, "Accept": "application/vnd.github+json"}, timeout=30)
+    if meta.status_code != 200:
+        raise RuntimeError(f"release lookup answered HTTP {meta.status_code}")
+    asset = next((a for a in meta.json().get("assets") or [] if a.get("name") == "macro_radar.db"), None)
+    if asset is None:
+        raise RuntimeError("the data-latest release has no macro_radar.db")
+    resp = get(asset["url"], headers={**auth, "Accept": "application/octet-stream"}, timeout=DOWNLOAD_TIMEOUT_S)
     if resp.status_code != 200:
-        raise RuntimeError(f"public database download answered HTTP {resp.status_code}")
+        raise RuntimeError(f"database download answered HTTP {resp.status_code}")
     dest.write_bytes(resp.content)
 
 
@@ -967,7 +999,7 @@ def main(argv: list[str] | None = None, *, now: datetime | None = None) -> int:
     ap.add_argument("--publish-ledger", action="store_true", help="the workflow's always-run step: upload a final "
                                                                  "ledger state still pending (design 9.2)")
     ap.add_argument("--db", help="the database (the step: data/macro_radar.db; the probe: default a temporary copy "
-                                 "of the public data-latest database)")
+                                 "of the data-latest database: this repo's, or DATA_RELEASE_REPO's with GH_DB_TOKEN)")
     args = ap.parse_args(argv)
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     if args.fetch_ledger or args.publish_ledger:
@@ -1016,7 +1048,7 @@ def main(argv: list[str] | None = None, *, now: datetime | None = None) -> int:
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 db = Path(tmp) / "data-latest.db"
-                print("[earnings-cache probe] downloading the public data-latest database for the cross-check ...")
+                print("[earnings-cache probe] downloading the data-latest database for the cross-check ...")
                 _download_public_db(db)
                 found = _announced(key, db, now)
     except Exception as exc:  # never print a message that could carry a URL or the key

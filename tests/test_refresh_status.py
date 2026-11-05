@@ -488,7 +488,10 @@ def _steps():
 def test_the_status_steps_run_in_full_mode_only_bounded_and_unable_to_fail_the_refresh():
     steps = _steps()
     names = [s["name"] for s in steps]
-    start, finish = steps[names.index("Upload refresh-attempt status (started)")], steps[-1]
+    # private storage (docs/data/PRIVATE_STORAGE.md): only the cutover mirror, which copies the data repo's
+    # files and writes no status of its own, may follow the finished status
+    tail = steps[-2] if steps[-1]["name"].startswith("Mirror the data repo's files") else steps[-1]
+    start, finish = steps[names.index("Upload refresh-attempt status (started)")], tail
     rec = steps[names.index("Record the attempt start")]
     assert finish["name"] == "Upload refresh-attempt status (finished)"
     assert names.index("Resolve refresh mode") < names.index("Record the attempt start") < names.index(start["name"]) \
@@ -498,8 +501,10 @@ def test_the_status_steps_run_in_full_mode_only_bounded_and_unable_to_fail_the_r
     assert finish["if"] == "always() && steps.mode.outputs.mode == 'full'"
     for s in (start, finish):
         assert s["continue-on-error"] is True and s["timeout-minutes"] <= 2
-        assert s["env"] == {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
-        assert "gh release upload data-latest refresh-status.json --clobber" in s["run"]
+        # the status lives beside the database: DATA_RELEASE_REPO's release (this repo unless set)
+        assert s["env"] == {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "DATA_RELEASE_TOKEN": "${{ secrets.DATA_RELEASE_TOKEN }}"}
+        assert 'gh release upload data-latest refresh-status.json --clobber --repo "$DATA_RELEASE_REPO"' in s["run"]
+        assert 'refresh-status.json -D status-prev --clobber --repo "$DATA_RELEASE_REPO" ||' in s["run"]
         assert "macro_radar.db" not in s["run"] and "validation.json" not in s["run"]
         assert "--started-at \"${{ steps.attempt.outputs.started_at }}\"" in s["run"]
     for arg in ('--fred "${{ steps.fred.outcome }}"', '--validate "${{ steps.validate.outcome }}"',

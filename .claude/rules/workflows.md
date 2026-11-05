@@ -6,6 +6,7 @@ paths:
   - "scripts/validation_asset.py"
   - "scripts/sync_data.sh"
   - "scripts/publish_artifacts.sh"
+  - "scripts/mirror_data_release.sh"
   - "tests/test_publish_artifacts.py"
   - ".gitattributes"
 ---
@@ -91,4 +92,8 @@ Still contains `data/macro_radar.db merge=ours`. Harmless, left in place. Do not
 
 ## Refresh-attempt status (F-3, Max 2026-11-04)
 
-`refresh-data.yml` full runs upload `refresh-status.json` to the `data-latest` release twice: "Upload refresh-attempt status (started)" after the mode step, and "Upload refresh-attempt status (finished)" as the last step (`always()`). Both are `continue-on-error` with a two-minute timeout, use the job's `GITHUB_TOKEN`, and never touch `macro_radar.db` or `validation.json`; the DB is still published only by "Publish validated DB snapshot" when validation sets `upload`. The steps are named "Upload…" because `tests/test_workflows.py` takes the first step whose name starts with "Publish" as the DB upload. No other workflow writes the status (`tests/test_refresh_status.py`). The API reads it (`api/refresh_status.py`); see `.claude/rules/api.md`.
+`refresh-data.yml` full runs upload `refresh-status.json` to the `data-latest` release twice: "Upload refresh-attempt status (started)" after the mode step, and "Upload refresh-attempt status (finished)" after every other step except the cutover mirror (`always()`). Both are `continue-on-error` with a two-minute timeout, use the job's `GITHUB_TOKEN` unless `DATA_RELEASE_REPO` names another repo (below), and never touch `macro_radar.db` or `validation.json`; the DB is still published only by "Publish validated DB snapshot" when validation sets `upload`. The steps are named "Upload…" because `tests/test_workflows.py` takes the first step whose name starts with "Publish" as the DB upload. No other workflow writes the status (`tests/test_refresh_status.py`). The API reads it (`api/refresh_status.py`); see `.claude/rules/api.md`.
+
+### Which repo holds data-latest (private storage)
+
+Every database, snapshot, verdict and refresh-status release command takes `--repo "$DATA_RELEASE_REPO"`, from the workflow-level env `${{ vars.DATA_RELEASE_REPO || github.repository }}`: unset = this repo, exactly as before. Its first run line is the token switch (the `DATA_RELEASE_TOKEN` secret only when the repo differs). The earnings ledger steps never read it. A new step that touches `data-latest` follows the same pattern, and `tests/test_data_release_repo.py` checks every `gh release` line. The cutover mirror (`scripts/mirror_data_release.sh`) runs only while `vars.DATA_RELEASE_MIRROR == 'true'`. Procedure: `docs/data/PRIVATE_STORAGE.md`.

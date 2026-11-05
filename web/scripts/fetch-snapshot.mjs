@@ -17,7 +17,10 @@
 import { mkdir, writeFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
-const REPO = process.env.SNAPSHOT_REPO ?? "maxkomen-macro/macro-regime-radar";
+// SNAPSHOT_REPO wins; else the shared DATA_RELEASE_REPO (private storage,
+// docs/data/PRIVATE_STORAGE.md); else this repo, as before. Blank counts as unset.
+const REPO =
+  process.env.SNAPSHOT_REPO?.trim() || process.env.DATA_RELEASE_REPO?.trim() || "maxkomen-macro/macro-regime-radar";
 const TAG = process.env.SNAPSHOT_TAG ?? "data-latest";
 const ASSET = process.env.SNAPSHOT_ASSET ?? "snapshot-latest.json";
 const OUT_DIR = join(process.cwd(), "public", "snapshot");

@@ -9,7 +9,7 @@
 # file behind; a failed validation keeps the current file untouched.
 set -euo pipefail
 
-REPO="${MRR_REPO:-maxkomen-macro/macro-regime-radar}"
+REPO="${DATA_RELEASE_REPO:-${MRR_REPO:-maxkomen-macro/macro-regime-radar}}"
 TARGET="${MRR_DB_PATH:-data/macro_radar.db}"
 PY="${PYTHON:-.venv/bin/python}"
 [ -x "$PY" ] || PY=python3
