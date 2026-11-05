@@ -87,6 +87,8 @@ MARGIN_S = 10
 MIN_LEFT_S = 30
 TRY_PAUSES_S = (10, 30)
 CHUNK_S = 30 * 60
+OWN_WAIT_S = 120         # how long the dispatch step waits for its own reservation to be listed
+OWN_POLL_S = 15
 ACTIVE_WAIT_S = 5 * 60
 PER_PAGE = 100
 MAX_PAGES = 50
@@ -160,8 +162,11 @@ def market_symbols() -> list[str]:
     """config/assets.yml `daily`: the same expression fetch_market._load_assets() uses."""
     import yaml
 
-    with open(ROOT / "config" / "assets.yml") as f:
-        daily = (yaml.safe_load(f) or {}).get("daily")
+    try:
+        with open(ROOT / "config" / "assets.yml") as f:
+            daily = (yaml.safe_load(f) or {}).get("daily")
+    except (OSError, yaml.YAMLError, AttributeError) as exc:
+        raise ValueError(f"config/assets.yml could not be read: {exc}") from exc
     if not isinstance(daily, list) or not daily or not all(isinstance(s, str) and s for s in daily):
         raise ValueError("config/assets.yml has no daily symbol list")
     return list(dict.fromkeys(daily))
@@ -350,7 +355,7 @@ class Gh:
             for k, v in params.items():
                 args += ["-f", f"{k}={v}"]
             body = self.tries(lambda a=args: json.loads(self._run(a)))
-            batch = body[key]
+            batch = body.get(key) if isinstance(body, dict) else None
             if not isinstance(batch, list):
                 raise GhError(f"{path}: {key} is not a list")
             items.extend(batch)
@@ -476,6 +481,9 @@ def _write_output(env: dict, line: str) -> None:
 
 def run_plan(env: dict, clock: Clock, runner: Runner = subprocess.run, coverage_factory: Callable[[Gh], Coverage] = Coverage,
              reservation_path: Path | None = None) -> int:
+    if str(env.get("GITHUB_RUN_ATTEMPT") or "1") != "1":
+        print("a re-run of a watcher never plans (its reservation could not be told apart); the next watcher decides")
+        return 0
     budget = Budget(clock, PLAN_BUDGET_S)
     start = clock.now()
     window_end = start + WAIT_WINDOW
@@ -532,6 +540,9 @@ def run_plan(env: dict, clock: Clock, runner: Runner = subprocess.run, coverage_
 
 def run_dispatch(env: dict, clock: Clock, s: date, runner: Runner = subprocess.run,
                  coverage_factory: Callable[[Gh], Coverage] = Coverage) -> int:
+    if str(env.get("GITHUB_RUN_ATTEMPT") or "1") != "1":
+        print("::error::a re-run of a watcher never dispatches; nothing is dispatched")
+        return 1
     budget = Budget(clock, DISPATCH_BUDGET_S)
     try:
         gh = Gh(env, budget, runner)
@@ -542,17 +553,24 @@ def run_dispatch(env: dict, clock: Clock, s: date, runner: Runner = subprocess.r
         print(f"::error::{exc}")
         return 1
     try:
-        res = gh.reservations(s)
+        # the upload just finished; give the repository listing up to OWN_WAIT_S to show it
+        listed_by = clock.mono() + OWN_WAIT_S
+        while True:
+            res = gh.reservations(s)
+            own = [a for a in res if str((a.get("workflow_run") or {}).get("id")) == gh.run_id]
+            if own or clock.mono() >= listed_by or budget.exhausted():
+                break
+            budget.sleep(min(OWN_POLL_S, listed_by - clock.mono()))
         if len(res) > MAX_DISPATCHES:
             print(f"::error::{len(res)} reservations for {s} (cap {MAX_DISPATCHES}); nothing is dispatched")
             return 1
-        own = [a for a in res if str((a.get("workflow_run") or {}).get("id")) == gh.run_id]
         if not own:
-            print(f"::error::this run's reservation for {s} is not listed yet; nothing is dispatched")
+            print(f"::error::this run's reservation for {s} is not listed after {OWN_WAIT_S}s; nothing is dispatched (it stays counted)")
             return 1
         h = coverage_factory(gh).read()
         published = bool(h and h.covers(s))
         active = gh.active_runs()
+        seen = {r.get("id") for r in gh.sentinel_runs(s)}  # earlier dispatches for s, so the confirmation names only the new run
     except OutOfTime:
         print("::error::no time left to recheck; nothing is dispatched")
         return 1
@@ -584,6 +602,7 @@ def run_dispatch(env: dict, clock: Clock, s: date, runner: Runner = subprocess.r
         except GhError as exc:
             print(f"  confirm: {exc}")
             runs = []
+        runs = [r for r in runs if r.get("id") not in seen]
         if runs:
             newest = max(runs, key=lambda r: r.get("created_at") or "")
             print(f"confirmed: {newest.get('html_url')}")

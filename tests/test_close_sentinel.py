@@ -603,6 +603,80 @@ def test_a_reservation_not_listed_yet_never_dispatches(tmp_path):
     assert dispatch(fake, clock, "2026-11-05") == 1 and fake.dispatches == []
 
 
+def test_a_reservation_listed_a_little_late_still_dispatches(tmp_path):
+    clock = FakeClock(utc(2026, 11, 5, 22, 32))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    listings = []
+
+    def appear_on_second(f, rest):
+        listings.append(clock.t)
+        if len(listings) == 2:
+            f.reserve("2026-11-05")
+    fake.hooks["artifacts"] = appear_on_second
+    assert dispatch(fake, clock, "2026-11-05") == 0 and len(fake.dispatches) == 1
+    assert listings[1] - listings[0] <= cs.OWN_POLL_S
+
+
+def test_a_reservation_never_listed_waits_a_bounded_time_and_never_dispatches(tmp_path):
+    clock = FakeClock(utc(2026, 11, 5, 22, 32))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    assert dispatch(fake, clock, "2026-11-05") == 1 and fake.dispatches == []
+    assert cs.OWN_WAIT_S <= clock.t <= cs.OWN_WAIT_S + cs.OWN_POLL_S
+
+
+def test_the_confirmation_names_only_the_new_run(tmp_path, capsys):
+    clock = FakeClock(utc(2026, 11, 5, 23, 40))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    first = fake.add_run(title=cs.TITLE.format("2026-11-05"), event="workflow_dispatch", created=utc(2026, 11, 5, 22, 31),
+                         updated=utc(2026, 11, 5, 22, 39))
+    fake.reserve("2026-11-05", run_id="111")
+    fake.reserve("2026-11-05")
+    fake.visible = False
+    assert dispatch(fake, clock, "2026-11-05") == 0
+    out = capsys.readouterr().out
+    assert first["html_url"] not in out and "not listed yet" in out and len(fake.dispatches) == 1
+
+
+@pytest.mark.parametrize("attempt", ["2", "3"])
+def test_a_rerun_watcher_never_plans_or_dispatches(tmp_path, attempt):
+    clock = FakeClock(utc(2026, 11, 5, 23, 0))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    fake.reserve("2026-11-05")
+    env = {**fake.env(), "GITHUB_RUN_ATTEMPT": attempt}
+    assert plan(fake, clock, tmp_path, env=env) == (0, None)
+    assert dispatch(fake, clock, "2026-11-05", env=env) == 1
+    assert fake.calls == [] and len(fake.artifacts) == 1
+    assert plan(fake, clock, tmp_path, env={**fake.env(), "GITHUB_RUN_ATTEMPT": "1"}) == (0, "2026-11-05")
+
+
+def test_a_missing_or_broken_symbol_config_stops_cleanly(tmp_path, monkeypatch):
+    monkeypatch.setattr(cs, "ROOT", tmp_path)
+    with pytest.raises(ValueError, match="could not be read"):
+        cs.market_symbols()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "assets.yml").write_text("daily: [SPY\n")
+    with pytest.raises(ValueError, match="could not be read"):
+        cs.market_symbols()
+    clock = FakeClock(utc(2026, 11, 5, 23, 0))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    out = tmp_path / "o"
+    out.write_text("")
+    rc = cs.run_plan({**fake.env(), "GITHUB_OUTPUT": str(out)}, clock, runner=fake,
+                     coverage_factory=lambda gh: cs.Coverage(gh, cs.market_symbols, lambda: list(ASSETS)), reservation_path=tmp_path / "r")
+    assert rc == 1 and out.read_text() == "" and "dispatch" not in fake.kinds()
+
+
+def test_a_listing_without_its_items_is_an_error_not_an_empty_list(tmp_path):
+    clock = FakeClock(utc(2026, 11, 5, 23, 0))
+
+    def runner(args, **kw):
+        return subprocess.CompletedProcess(args, 0, json.dumps({"message": "Not Found"}), "")
+
+    gh = cs.Gh(FakeGitHub(clock, None).env(), cs.Budget(clock, 3600), runner)
+    with pytest.raises(cs.GhError):
+        gh.reservations(date(2026, 11, 5))
+
+
 def test_the_final_recheck_finding_the_session_published_releases_the_reservation(tmp_path):
     clock = FakeClock(utc(2026, 11, 5, 22, 32))
     fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-05")))
