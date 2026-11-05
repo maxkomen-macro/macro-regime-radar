@@ -181,6 +181,8 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
         ("/api/desk/basket/shares", ["GET"]),
         # the Options Finder (design F3)
         ("/api/desk/options/finder", ["GET"]),
+        # desk/basket-study (§12.19, P1a)
+        ("/api/desk/basket/study", ["GET"]),
     ])
     for path, _ in routes:
         route = env.route_of(re.sub(r"\{[^}]+\}", "x", path)[len(desk_v2.PREFIX):])
@@ -189,10 +191,11 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
 
 def test_basket_price_is_not_read_as_a_basket_id():
     order = [r.path for r in desk_v2.router.routes if isinstance(r, APIRoute)]
-    for live in ("/api/desk/basket/price", "/api/desk/basket/hedge", "/api/desk/basket/shares"):
+    for live in ("/api/desk/basket/price", "/api/desk/basket/hedge", "/api/desk/basket/shares", "/api/desk/basket/study"):
         assert order.index(live) < order.index("/api/desk/basket/{basket_id}"), live
     assert env.route_of("/basket/hedge") == "/basket/hedge" and env.route_of("/basket/ai-infra") == "/basket"
     assert env.route_of("/basket/shares") == "/basket/shares"
+    assert env.route_of("/basket/study") == "/basket/study"  # desk/basket-study
 
 
 def test_the_v2_routes_share_no_path_with_api_desk():

@@ -1,10 +1,10 @@
 /**
- * "Positioning" and "Event study on this basket" are drawn for desk/books' first-visit preset, AI Infrastructure 10
- * (DESK_FRAME3_SPEC §10, §1.0.3): both fixtures carry exactly its names, and any other basket is told so in one line.
+ * "Positioning" is drawn for desk/books' first-visit preset, AI Infrastructure 10 (DESK_FRAME3_SPEC §10, §1.0.3): its
+ * fixture carries exactly its names, and any other basket is told so in one line. ("Event study on this basket" is
+ * served since desk P1a, §12.19.)
  */
 import { describe, expect, it } from "vitest";
 import p from "../../../fixtures/desk/proto-positioning.json";
-import st from "../../../fixtures/desk/proto-basket-study.json";
 import baskets from "../../../fixtures/desk/baskets.json";
 import { PRESET, type SavedBasket } from "../basket/weights";
 import { DRAWN_FOR, isDrawnFor, OTHER_BASKET_LINE } from "./drawn-for";
@@ -12,13 +12,12 @@ import { DRAWN_FOR, isDrawnFor, OTHER_BASKET_LINE } from "./drawn-for";
 const symbols = PRESET.legs.map((l) => l.symbol);
 
 describe("the basket the prototypes are drawn for", () => {
-  it("is the preset: ten names at 10%, and both fixtures carry exactly its names", () => {
+  it("is the preset: ten names at 10%, and the fixture carries exactly its names", () => {
     expect(DRAWN_FOR).toBe(PRESET);
     expect(symbols).toEqual(["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]);
     expect(PRESET.legs.every((l) => Number(l.weight) === 10)).toBe(true);
     expect(Object.keys(p.names)).toEqual(symbols);
     expect(p.basket).toBe(PRESET.name);
-    expect(st.basket).toEqual({ id: PRESET.id, name: PRESET.name, legs: PRESET.legs });
     expect(OTHER_BASKET_LINE).toBe("Illustrative values are shown for the AI Infrastructure 10 preset.");
   });
 

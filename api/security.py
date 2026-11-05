@@ -55,7 +55,8 @@ DESK_CATALOG_SLUGS = frozenset(desk_catalog.CATALOG_SLUGS)
 PROVIDER_PREFIX = "/api/market/"
 # desk/books: Basket & Hedge prices a visitor's basket from EODHD's daily bars on request,
 # so its routes share the provider calls' ceiling, never the stored-data one.
-DESK_BASKET_PATHS = {"/api/desk/basket/price", "/api/desk/basket/hedge"}
+# desk/basket-study (P1a): the event study on a basket fetches its names' closes from EODHD on request too.
+DESK_BASKET_PATHS = {"/api/desk/basket/price", "/api/desk/basket/hedge", "/api/desk/basket/study"}
 DESK_TECHNICALS_PATH = "/api/desk/technicals"
 DESK_OPTIONS_PATH = "/api/desk/options/finder"  # the Options Finder reads EODHD options on request
 # Everything else under the API prefixes is a stored-data read: bounded by

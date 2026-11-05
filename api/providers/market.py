@@ -131,6 +131,8 @@ def clear_caches() -> None:
         c.clear()
     # the Options Finder's (design F3): its chain windows
     _window_cache.clear()
+    # desk/basket-study (P1a): the basket study's daily closes since 1995
+    _study_cache.clear()
 
 
 def _now_iso() -> str:
@@ -310,10 +312,75 @@ def daily_bars(symbol: str) -> dict:
         raise UnknownSymbol("api", str(exc)) from exc
     session = last_session()
     key = f"{inst.canonical}:{DAILY_RANGE}:{session}"
-    # An answer still missing the session's close is asked again after DAILY_RETRY_S; the decision and the
-    # refresh happen under the key's own single-flight lock (Codex R-13), so concurrent requests make one call.
+    # An answer still missing the session's close, or its adjusted close (a bar the basket leaves out, Codex
+    # S-05), is asked again after DAILY_RETRY_S; the decision and the refresh happen under the key's own
+    # single-flight lock (Codex R-13), so concurrent requests make one call.
     return _daily_cache.get(key, lambda: _daily_compute(inst, session),
-                            stale=lambda v, age: v["bars"][-1]["ts"][:10] < session and age > DAILY_RETRY_S)
+                            stale=lambda v, age: _last_adjusted_bar(v["bars"]) < session and age > DAILY_RETRY_S)
+
+
+def _last_adjusted_bar(bars: list[dict]) -> str:
+    """The newest bar's date that carries an adjusted close ("" when none does)."""
+    return next((b["ts"][:10] for b in reversed(bars) if b.get("adjusted") is True), "")
+
+
+# desk/basket-study (P1a): the basket event study reads each name's daily closes from this date, the same
+# end-of-day request as the two-year range (one API call per request, whatever the span), kept apart from
+# the two-year cache and compact (arrays, never bar dicts): a name's thirty years are ~8,000 rows.
+STUDY_HISTORY_FROM = "1995-01-01"
+_study_cache = KeyedTTLCache(DAILY_TTL, 64)
+
+
+def _study_compute(inst: Instrument, session: str) -> dict:
+    import numpy as np
+
+    blocked = entitlements.is_blocked("historical")
+    if blocked is not None:
+        raise Unauthorized(eod.PROVIDER, blocked.reason, status=blocked.status)
+    try:
+        rows = _with_slot(lambda: client().eod(inst.eodhd, from_=STUDY_HISTORY_FROM, to=session, period="d"))
+    except ProviderError as exc:
+        if exc.kind in ("unauthorized", "missing_token"):
+            entitlements.record_live("historical", False, exc.status, f"{exc.kind}: {exc.public}")
+        if exc.kind == "unknown_symbol":
+            raise UnknownSymbol("api", f"No listing found for '{inst.canonical}' on EODHD.", status=exc.status, detail=repr(exc)) from exc
+        raise
+    entitlements.record_live("historical", True, 200, "ok")
+    dates, adjusted, raw = [], [], []
+    for r in rows:
+        d, close = r.get("date"), _f(r.get("close"))
+        if not d or close is None or str(d)[:10] > session:  # completed sessions only (the B6 rule)
+            continue
+        adj = _f(r.get("adjusted_close"))
+        dates.append(str(d)[:10])
+        # the two-year bars' arithmetic exactly (close × adjusted/close, to six places), so the two indices agree
+        adjusted.append(round(close * (adj / close), 6) if adj is not None and adj > 0 and close else np.nan)
+        raw.append(close)
+    if not dates:
+        raise EmptyResult(eod.PROVIDER, f"EODHD holds no completed daily bars for {inst.canonical} since {STUDY_HISTORY_FROM}.")
+    # The newest session with an adjusted close: the last one the basket can price (Codex S-04). EODHD can post a
+    # session's bar before its adjusted close, so the newest bar's date alone does not say the answer is complete.
+    usable = next((d for d, a in zip(reversed(dates), reversed(adjusted)) if a == a), None)
+    return {"symbol": inst.canonical, "provider": eod.PROVIDER, "session": session, "from": STUDY_HISTORY_FROM,
+            "dates": np.array(dates, dtype="datetime64[D]"), "adjusted": np.array(adjusted, dtype=float),
+            "close_raw": np.array(raw, dtype=float), "last_adjusted": usable}
+
+
+def daily_closes_since_1995(symbol: str) -> dict:
+    """desk/basket-study (P1a): one name's daily closes from STUDY_HISTORY_FROM through the last completed
+    New York session, from EODHD, cached per ticker per session like daily_bars: `dates` (datetime64[D],
+    ascending as served), `adjusted` (split- and dividend-adjusted close, NaN where EODHD served none) and
+    `close_raw` (EODHD's own close). Never Yahoo."""
+    try:
+        inst = parse(symbol)
+    except SymbolError as exc:
+        raise UnknownSymbol("api", str(exc)) from exc
+    session = last_session()
+    key = f"{inst.canonical}:since:{STUDY_HISTORY_FROM}:{session}"
+    # An answer whose newest adjusted close precedes the session (the close, or its adjustment, not posted yet) is
+    # asked again after DAILY_RETRY_S, under the key's single-flight lock as daily_bars.
+    return _study_cache.get(key, lambda: _study_compute(inst, session),
+                            stale=lambda v, age: (v.get("last_adjusted") or "") < session and age > DAILY_RETRY_S)
 
 
 def refresh_candles(symbol: str, range_key: str, margin_s: float) -> bool:

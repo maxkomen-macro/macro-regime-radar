@@ -76,12 +76,14 @@ ENVELOPED_ROUTES: tuple[str, ...] = (
     "/instruments",
     "/basket/shares",
     "/options/finder",
+    "/basket/study",
     "/vol", "/positions", "/basket", "/hedge",
 )
 # The live routes' count: the nine of §12.1–§12.9, /sectors (desk/fill-etf), Basket & Hedge's two (desk/books), then
 # /instruments (desk/usability §12.17, the stock search's fallback), then /basket/shares (desk/cap-weight §12.18),
-# then /options/finder (the Options Finder, design F3; its page ships unlisted).
-LIVE_ROUTES = 15
+# then /options/finder (the Options Finder, design F3; its page ships unlisted), then /basket/study (desk/basket-study
+# §12.19, the event study on a basket).
+LIVE_ROUTES = 16
 
 # The only paths that carry block envelopes (§12.0, v4 B-08, C-01). Every
 # other object and array in a payload is an ordinary field.
@@ -95,7 +97,7 @@ NESTED_PATHS: dict[str, tuple[str, ...]] = {
 }
 
 
-BASKET_ROUTES = ("/basket/price", "/basket/hedge", "/basket/shares")
+BASKET_ROUTES = ("/basket/price", "/basket/hedge", "/basket/shares", "/basket/study")
 
 
 def route_of(path: str) -> str:

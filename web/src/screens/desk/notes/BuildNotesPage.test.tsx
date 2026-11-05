@@ -17,6 +17,7 @@ import { BYLINE, BuildNotesView, NOTES_MD, SCOPE_ID, figureUrl, leadWithoutBylin
 import { BUILT_AFTER, BUILT_ID, BUILT_PARAGRAPHS, BUILT_TITLE } from "./built";
 import { HELD_HEADING, HELD_MARK, holdBanned, readNotes, sentences } from "./notes";
 import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
+import { PROTOTYPES } from "../prototypes/registry";
 
 const SPEC = Object.values(import.meta.glob<string>("../../../../../docs/desk/DESK_FRAME3_SPEC.md", { query: "?raw", import: "default", eager: true }))[0] ?? "";
 const BANNED_WORD = /(?<![\p{L}\p{N}])(established|significant)(?![\p{L}\p{N}])/iu;
@@ -350,5 +351,19 @@ describe("How this was built: the page's own section, mirrored in the notes file
     expect(sectionOrder([s("A"), s(BUILT_AFTER), s(BUILT_TITLE), s("B")]).map((x) => x.title)).toEqual(["A", BUILT_AFTER, BUILT_TITLE, "B"]);
     expect(sectionOrder([s("A"), s("B")]).map((x) => x.title)).toEqual(["A", "B", BUILT_TITLE]);
     expect(sectionOrder([]).map((x) => x.id)).toEqual([BUILT_ID]);
+  });
+});
+
+describe("the notes' prototypes are the registry's (Codex S-06)", () => {
+  it("the count and the cards described under Prototypes are exactly the PROTOTYPE cards, so a served card leaves the notes when it leaves the registry", () => {
+    const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+    const start = NOTES_MD.indexOf(`## ${BUILT_AFTER}`);
+    expect(start).toBeGreaterThan(-1);
+    const rest = NOTES_MD.slice(start + 3);
+    const section = rest.slice(0, rest.search(/\n## /) === -1 ? undefined : rest.search(/\n## /));
+    const count = section.match(/(\w+) cards? (?:is|are) drawn as prototypes/i)?.[1]?.toLowerCase();
+    expect(count).toBe(words[PROTOTYPES.length]);
+    const described = [...section.matchAll(/^\*\*(.+?) \(([^)]+)\)\.\*\*/gm)].map((m) => `${m[1]} (${m[2]})`);
+    expect(described.sort()).toEqual(PROTOTYPES.map((p) => `${p.title} (${deskPageBySlug(p.page)!.label})`).sort());
   });
 });

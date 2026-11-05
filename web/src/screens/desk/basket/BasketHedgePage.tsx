@@ -39,7 +39,7 @@ import BasketHedgeStep from "./BasketHedgeStep";
 import BasketTrades, { type BasketRange } from "./BasketTrades";
 import { checkTicker } from "./check";
 import { PositioningCard } from "../prototypes/PositioningCard";
-import { BasketStudyCard } from "../prototypes/BasketStudyCard";
+import { BasketStudyCard } from "./BasketStudy";
 import {
   DEFAULT_METHOD,
   DEFAULT_NOTIONAL,
@@ -855,11 +855,11 @@ function StepThree({ local, params, q, priceAsOf, optionsBasket }: { local: Save
         </p>
       ) : null}
       <BasketHedgeStep h={q.data} state={state} basket={optionsBasket} />
-      {/* §10, §1.0.3: Positioning and the event study, PROTOTYPE cards for the saved basket (none when none is open). */}
+      {/* §10: Positioning (PROTOTYPE, §1.0.3) and the event study on the basket's index (§12.19), for the saved basket (none when none is open). */}
       {local?.legs.length ? (
         <div className="pr-below">
           <PositioningCard basket={local} held={optionsBasket ?? local} />
-          <BasketStudyCard basket={local} />
+          <BasketStudyCard basket={local} params={params} />
         </div>
       ) : null}
     </section>
