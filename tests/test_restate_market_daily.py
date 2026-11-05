@@ -1,14 +1,22 @@
-"""B6 (2026-09-18): scripts/restate_market_daily.py, written and never run here.
+"""scripts/restate_market_daily.py: written and tested here, never run against
+the published database by a session.
 
-Four stored daily "closes" are mid-session prices (2026-09-01, 09-02, 09-03 and
-09-10 for all 23 symbols). The owner decided: write a restatement script, do
-not run it and leave the published rows alone. These tests pin its behaviour
-on a temporary database with a stubbed fetch: dry-run by default, --apply
-overwrites only the named rows that exist, and an unfinished session is refused.
+B6 (2026-09-18): four stored daily "closes" are mid-session prices (2026-09-01,
+09-02, 09-03 and 09-10 for all 23 symbols). Owner decision 2026-11-04 (option
+A): market_daily is one consistently unadjusted history, so the restatement
+fetches unadjusted bars, and SPY's 1993-01-29..2024-02-26 dividend-adjusted
+backfill (the provider splice) is replaced the same way. These tests pin the
+behaviour on a temporary database with a stubbed fetch: dry run by default, a
+basis check against neighbouring stored rows, no partial runs, never an
+insert, a byte-identical snapshot before any write, and an unfinished session
+refused.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 import sqlite3
 from datetime import datetime, timezone
 
@@ -19,76 +27,544 @@ from scripts import restate_market_daily as rs
 
 COLS = ["symbol", "date", "open", "high", "low", "close", "volume", "vwap"]
 AFTER_CLOSE = datetime(2026, 9, 19, 0, 30, tzinfo=timezone.utc)
+DIV = 0.98   # a dividend-adjusted fetch scales earlier closes by this
 
 
-class Official:
-    """Official daily bars as the vendor serves them after the close."""
+class Provider:
+    """Unadjusted daily bars as the provider (Yahoo) reports them after the close.
 
-    def __init__(self):
-        self.bars = {
+    `adjusted` imitates auto_adjust=True: rows before `ex_date` are scaled by
+    DIV whatever the caller asks for, the way a wrong-basis fetch looks."""
+
+    def __init__(self, bars=None, adjusted=False, ex_date="2026-09-04"):
+        self.bars = bars if bars is not None else {
+            ("SPY", "2026-08-31"): 765.0,
             ("SPY", "2026-09-02"): 766.0,
             ("SPY", "2026-09-03"): 773.11,
+            ("SPY", "2026-09-04"): 770.0,
+            ("QQQ", "2026-08-31"): 636.0,
             ("QQQ", "2026-09-03"): 640.5,
+            ("QQQ", "2026-09-04"): 641.0,
         }
+        self.adjusted, self.ex_date = adjusted, ex_date
+        self.calls: list[tuple] = []
 
-    def fetch_daily(self, symbol, start, end):
-        rows = [(s, d, c, c, c, c, 1.0, None) for (s, d), c in self.bars.items() if s == symbol and start <= d <= end]
+    def fetch_daily(self, symbol, start, end, auto_adjust=True):
+        self.calls.append((symbol, start, end, auto_adjust))
+        rows = []
+        for (s, d), c in sorted(self.bars.items()):
+            if s == symbol and start <= d <= end:
+                c = c * DIV if self.adjusted and d < self.ex_date else c
+                rows.append((s, d, c, c, c, c, 10.0, None))
         return pd.DataFrame(rows, columns=COLS)
 
 
-@pytest.fixture()
-def db(tmp_path):
-    path = tmp_path / "md.db"
+def _make(path, rows):
     conn = sqlite3.connect(path)
     conn.execute(
         "CREATE TABLE market_daily (symbol TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,"
         " volume REAL, vwap REAL, source TEXT, fetched_at TEXT, UNIQUE(symbol, date))"
     )
     conn.executemany(
-        "INSERT INTO market_daily (symbol, date, open, high, low, close, volume, source, fetched_at) VALUES (?,?,?,?,?,?,?,?,?)",
-        [
-            ("SPY", "2026-09-03", 770.0, 771.0, 767.0, 768.66, 5.0, "yfinance", "2026-09-03T17:47:00"),
-            ("SPY", "2026-09-04", 770.0, 772.0, 769.0, 770.0, 9.0, "yfinance", "2026-09-05T04:00:00"),
-            ("QQQ", "2026-09-03", 639.0, 640.0, 637.0, 638.0, 4.0, "yfinance", "2026-09-03T17:47:00"),
-        ],
-    )
+        "INSERT INTO market_daily (symbol, date, open, high, low, close, volume, source, fetched_at)"
+        " VALUES (?,?,?,?,?,?,?,?,?)", rows)
     conn.commit()
     conn.close()
     return path
 
 
-def _close(path, symbol, day):
+def _bar(symbol, day, close, volume=10.0, fetched="2026-09-05T04:00:00"):
+    return (symbol, day, close, close, close, close, volume, "yfinance", fetched)
+
+
+@pytest.fixture()
+def db(tmp_path):
+    return _make(tmp_path / "md.db", [
+        _bar("SPY", "2026-08-31", 765.0),
+        ("SPY", "2026-09-03", 770.0, 771.0, 767.0, 768.66, 5.0, "yfinance", "2026-09-03T17:47:00"),
+        _bar("SPY", "2026-09-04", 770.0),
+        _bar("QQQ", "2026-08-31", 636.0),
+        ("QQQ", "2026-09-03", 639.0, 640.0, 637.0, 638.0, 4.0, "yfinance", "2026-09-03T17:47:00"),
+        _bar("QQQ", "2026-09-04", 641.0),
+    ])
+
+
+def _row(path, symbol, day):
     conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
     try:
-        row = conn.execute("SELECT close FROM market_daily WHERE symbol=? AND date=?", (symbol, day)).fetchone()
-        return row[0] if row else None
+        r = conn.execute("SELECT * FROM market_daily WHERE symbol=? AND date=?", (symbol, day)).fetchone()
+        return dict(r) if r else None
     finally:
         conn.close()
 
 
+def _close(path, symbol, day):
+    r = _row(path, symbol, day)
+    return r["close"] if r else None
+
+
+def _sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def test_dry_run_reports_and_writes_nothing(db):
-    plan = rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=Official(), apply=False, now=AFTER_CLOSE)
-    diffs = {(p["symbol"], p["date"]): p for p in plan}
-    assert diffs[("SPY", "2026-09-03")]["stored_close"] == 768.66
-    assert diffs[("SPY", "2026-09-03")]["official_close"] == 773.11
-    assert _close(db, "SPY", "2026-09-03") == 768.66  # untouched
+    before = _sha(db)
+    client = Provider()
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=client, apply=False, now=AFTER_CLOSE)
+    rows = {(r["symbol"], r["date"]): r for r in rep["rows"]}
+    assert rows[("SPY", "2026-09-03")]["stored_close"] == 768.66
+    assert rows[("SPY", "2026-09-03")]["provider_close"] == 773.11
+    assert not any("official" in k for k in rows[("SPY", "2026-09-03")])  # provider-reported, never "official"
+    assert rows[("SPY", "2026-09-03")]["changed"] and rows[("SPY", "2026-09-03")]["kind"] == "mid-session"
+    assert rep["applied"] is False and rep["db_sha256"] == before and "snapshot" not in rep
+    assert "not an independent or exchange-official source check" in rep["source_check"]
+    assert {(a["symbol"], a["date"]) for a in rep["anchors"]} == {
+        ("SPY", "2026-08-31"), ("SPY", "2026-09-04"), ("QQQ", "2026-08-31"), ("QQQ", "2026-09-04")}
+    assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
+
+
+def test_every_fetch_asks_for_unadjusted_bars(db):
+    client = Provider()
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=client, now=AFTER_CLOSE)
+    assert client.calls and all(c[3] is False for c in client.calls)
 
 
 def test_apply_overwrites_only_the_named_rows_that_exist(db):
-    rs.restate(db, dates=["2026-09-02", "2026-09-03"], symbols=["SPY"], client=Official(), apply=True, now=AFTER_CLOSE)
-    assert _close(db, "SPY", "2026-09-03") == 773.11
+    rep = rs.restate(db, dates=["2026-09-02", "2026-09-03"], symbols=["SPY"], client=Provider(), apply=True,
+                     now=AFTER_CLOSE)
+    assert rep["applied"] is True
+    got = _row(db, "SPY", "2026-09-03")
+    assert (got["open"], got["high"], got["low"], got["close"], got["volume"]) == (773.11, 773.11, 773.11, 773.11, 10.0)
+    assert got["fetched_at"] == "2026-09-19T00:30:00"
     assert _close(db, "QQQ", "2026-09-03") == 638.0  # not named
     assert _close(db, "SPY", "2026-09-04") == 770.0  # not named
+    assert _row(db, "SPY", "2026-09-04")["fetched_at"] == "2026-09-05T04:00:00"  # an anchor is read, never written
     assert _close(db, "SPY", "2026-09-02") is None  # never inserted: restating is not backfilling
 
 
+def test_apply_keeps_a_byte_identical_snapshot_first(db, tmp_path):
+    before_bytes = db.read_bytes()
+    snap = tmp_path / "keep.db"
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE,
+                     snapshot=snap)
+    assert snap.read_bytes() == before_bytes
+    assert rep["snapshot"] == str(snap) and rep["snapshot_sha256"] == hashlib.sha256(before_bytes).hexdigest()
+    assert _close(snap, "SPY", "2026-09-03") == 768.66 and _close(db, "SPY", "2026-09-03") == 773.11
+
+
+def test_the_default_snapshot_sits_beside_the_database_and_is_never_overwritten(db):
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE)
+    snaps = list(db.parent.glob("md.pre-restate-20260919T003000Z.db"))
+    assert len(snaps) == 1 and _close(snaps[0], "SPY", "2026-09-03") == 768.66
+    after = _sha(db)
+    with pytest.raises(SystemExit, match="already exists"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE)
+    assert _sha(db) == after and _close(snaps[0], "SPY", "2026-09-03") == 768.66
+
+
 def test_an_unfinished_session_is_refused(db):
+    before = _sha(db)
     mid_session = datetime(2026, 9, 18, 15, 0, tzinfo=timezone.utc)
-    with pytest.raises(SystemExit):
-        rs.restate(db, dates=["2026-09-18"], symbols=["SPY"], client=Official(), apply=True, now=mid_session)
+    with pytest.raises(SystemExit, match="not complete"):
+        rs.restate(db, dates=["2026-09-18"], symbols=["SPY"], client=Provider(), apply=True, now=mid_session)
+    assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
 
 
-def test_the_cli_defaults_to_a_dry_run():
+def test_a_fetch_on_another_basis_is_refused_before_anything_is_written(db):
+    """The old script fetched auto_adjust=True: dividend-adjusted closes, up to
+    0.59% off on the real September rows. The anchors catch it."""
+    before = _sha(db)
+    with pytest.raises(SystemExit, match="not on the stored basis"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=Provider(adjusted=True), apply=True,
+                   now=AFTER_CLOSE)
+    assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
+
+
+def test_an_anchor_inside_the_tolerance_passes_and_one_outside_refuses(db):
+    inside = Provider()
+    inside.bars[("SPY", "2026-08-31")] = 765.0 * math.exp(rs.BASIS_TOL * 0.5)
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=inside, now=AFTER_CLOSE)
+    assert max(abs(a["log_diff"]) for a in rep["anchors"]) == pytest.approx(rs.BASIS_TOL * 0.5)
+    outside = Provider()
+    outside.bars[("SPY", "2026-08-31")] = 765.0 * math.exp(rs.BASIS_TOL * 2)
+    with pytest.raises(SystemExit, match="2026-08-31"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=outside, now=AFTER_CLOSE)
+
+
+def test_one_missing_bar_refuses_the_whole_run(db):
+    """No partial restatement: QQQ's bar is missing, so SPY is not written either."""
+    before = _sha(db)
+    client = Provider()
+    del client.bars[("QQQ", "2026-09-03")]
+    with pytest.raises(SystemExit, match="QQQ 2026-09-03"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY", "QQQ"], client=client, apply=True, now=AFTER_CLOSE)
+    assert _sha(db) == before
+
+
+def test_a_missing_anchor_bar_or_no_neighbour_at_all_is_refused(tmp_path, db):
+    client = Provider()
+    del client.bars[("SPY", "2026-09-04")]
+    with pytest.raises(SystemExit, match="anchor row has no fetched bar"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=client, now=AFTER_CLOSE)
+    lonely = _make(tmp_path / "lonely.db", [_bar("SPY", "2026-09-03", 768.66)])
+    with pytest.raises(SystemExit, match="no stored neighbour"):
+        rs.restate(lonely, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), now=AFTER_CLOSE)
+
+
+def test_a_bad_fetched_close_is_refused(db):
+    for bad in (0.0, -1.0, float("nan"), float("inf")):
+        client = Provider()
+        client.bars[("SPY", "2026-09-03")] = bad
+        with pytest.raises(SystemExit, match="no usable fetched bar"):
+            rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=client, apply=True, now=AFTER_CLOSE)
+    assert _close(db, "SPY", "2026-09-03") == 768.66
+
+
+def test_uncheckpointed_writes_are_refused(db):
+    wal = db.with_name(db.name + "-wal")
+    wal.write_bytes(b"x")
+    with pytest.raises(SystemExit, match="uncheckpointed"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE)
+    assert _close(db, "SPY", "2026-09-03") == 768.66 and not list(db.parent.glob("*.pre-restate-*"))
+
+
+def test_an_unchanged_row_is_reported_but_not_rewritten(db):
+    client = Provider()
+    client.bars[("SPY", "2026-09-03")] = 768.66
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE market_daily SET open=768.66, high=768.66, low=768.66, volume=10.0"
+                 " WHERE symbol='SPY' AND date='2026-09-03'")
+    conn.commit()
+    conn.close()
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=client, apply=True, now=AFTER_CLOSE)
+    assert [r["changed"] for r in rep["rows"]] == [False]
+    assert _row(db, "SPY", "2026-09-03")["fetched_at"] == "2026-09-03T17:47:00"
+
+
+# ── the SPY splice ────────────────────────────────────────────────────────────
+# Stored like the published copy: a dividend-adjusted Yahoo block up to
+# 2024-02-26, then Polygon's traded closes. Numbers are the real closes
+# (Yahoo unadjusted 2024-02-22..26, Polygon 2024-02-27..29); the stored block
+# is the 2026-03-13 adjusted backfill, 1/1.0247211 of the traded close.
+RAW = {"2024-02-22": 507.50, "2024-02-23": 507.85, "2024-02-26": 505.99,
+       "2024-02-27": 506.93, "2024-02-28": 506.26, "2024-02-29": 508.08}
+K = 1.0247211
+
+
+@pytest.fixture()
+def splice_db(tmp_path):
+    rows = []
+    for d, c in RAW.items():
+        stored = c / K if d <= "2024-02-26" else c
+        rows.append(_bar("SPY", d, stored, fetched="2026-03-13T12:00:00"))
+    rows.append(_bar("QQQ", "2024-02-23", 437.0))
+    return _make(tmp_path / "splice.db", rows)
+
+
+def _splice_client():
+    return Provider(bars={("SPY", d): c for d, c in RAW.items()})
+
+
+def test_the_splice_replaces_the_adjusted_block_and_fixes_the_boundary_return(splice_db):
+    before = math.log(_close(splice_db, "SPY", "2024-02-27") / _close(splice_db, "SPY", "2024-02-26"))
+    assert before == pytest.approx(math.log(506.93 / 505.99) + math.log(K))  # the false +2.6% day
+    rep = rs.restate(splice_db, dates=[], symbols=["SPY", "QQQ"], client=_splice_client(), ranges=[rs.SPY_SPLICE],
+                     apply=True, now=AFTER_CLOSE)
+    assert sorted(r["date"] for r in rep["rows"]) == ["2024-02-22", "2024-02-23", "2024-02-26"]
+    assert {r["kind"] for r in rep["rows"]} == {"splice"}
+    assert {a["date"] for a in rep["anchors"]} == {"2024-02-27", "2024-02-28", "2024-02-29"}
+    after = math.log(_close(splice_db, "SPY", "2024-02-27") / _close(splice_db, "SPY", "2024-02-26"))
+    assert after == pytest.approx(math.log(506.93 / 505.99))  # +0.19%
+    for d, c in RAW.items():
+        assert _close(splice_db, "SPY", d) == pytest.approx(c)
+    assert _row(splice_db, "SPY", "2024-02-27")["fetched_at"] == "2026-03-13T12:00:00"  # Polygon rows untouched
+    assert _close(splice_db, "QQQ", "2024-02-23") == 437.0  # another symbol's rows inside the dates: untouched
+
+
+def test_each_row_says_why_it_is_restated_when_both_modes_run(tmp_path):
+    rows = [_bar("SPY", d, c / K if d <= "2024-02-26" else c) for d, c in RAW.items()]
+    rows += [_bar("SPY", "2026-08-31", 765.0), _bar("SPY", "2026-09-03", 768.66), _bar("SPY", "2026-09-04", 770.0)]
+    both = _make(tmp_path / "both.db", rows)
+    client = _splice_client()
+    client.bars.update({("SPY", "2026-08-31"): 765.0, ("SPY", "2026-09-03"): 773.11, ("SPY", "2026-09-04"): 770.0})
+    rep = rs.restate(both, dates=["2026-09-03"], symbols=["SPY"], client=client, ranges=[rs.SPY_SPLICE],
+                     now=AFTER_CLOSE)
+    assert {(r["date"], r["kind"]) for r in rep["rows"]} == {
+        ("2024-02-22", "splice"), ("2024-02-23", "splice"), ("2024-02-26", "splice"), ("2026-09-03", "mid-session")}
+
+
+def test_the_splice_refuses_an_adjusted_fetch(splice_db):
+    """Fetching the block dividend-adjusted again would rewrite the same mixed basis."""
+    before = _sha(splice_db)
+    client = _splice_client()
+    client.adjusted, client.ex_date = True, "2024-03-15"  # every fetched row is scaled, anchors included
+    with pytest.raises(SystemExit, match="not on the stored basis"):
+        rs.restate(splice_db, dates=[], symbols=[], client=client, ranges=[rs.SPY_SPLICE], apply=True, now=AFTER_CLOSE)
+    assert _sha(splice_db) == before
+
+
+def test_the_splice_with_nothing_stored_in_range_is_refused(tmp_path):
+    empty = _make(tmp_path / "e.db", [_bar("SPY", "2024-02-27", 506.93)])
+    with pytest.raises(SystemExit, match="no stored rows"):
+        rs.restate(empty, dates=[], symbols=[], client=_splice_client(), ranges=[rs.SPY_SPLICE], now=AFTER_CLOSE)
+
+
+def test_the_splice_constant_names_the_published_block():
+    assert rs.SPY_SPLICE == ("SPY", "1993-01-29", "2024-02-26")
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def test_the_cli_defaults_to_a_dry_run_of_the_four_dates():
     args = rs.parse_args(["--dates", "2026-09-01,2026-09-02", "--db", "x.db"])
-    assert args.apply is False and args.dates == ["2026-09-01", "2026-09-02"]
+    assert args.apply is False and args.dates == ["2026-09-01", "2026-09-02"] and args.spy_splice is False
+    assert rs.parse_args([]).dates == rs.BAD_CLOSE_DATES
     assert rs.BAD_CLOSE_DATES == ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-10"]
+    a = rs.parse_args(["--no-dates", "--spy-splice", "--symbols", "spy, qqq"])
+    assert a.dates == [] and a.spy_splice is True and a.symbols == ["SPY", "QQQ"]
+
+
+def test_the_cli_writes_the_report_and_returns_2_on_a_refusal(monkeypatch, db, tmp_path, capsys):
+    import src.market_data.yfinance_client as yc
+
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
+    out = tmp_path / "rep.json"
+    assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--report", str(out)]) == 0
+    rep = json.loads(out.read_text())
+    assert rep["rows"][0]["provider_close"] == 773.11 and rep["applied"] is False
+    assert "dry run, nothing written" in capsys.readouterr().out
+    assert _close(db, "SPY", "2026-09-03") == 768.66
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider(adjusted=True))
+    assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply"]) == 2
+    assert "refusing, nothing written" in capsys.readouterr().err
+    assert _close(db, "SPY", "2026-09-03") == 768.66
+
+
+# ── the pipeline's own fetches stay on the same basis ─────────────────────────
+
+def test_the_daily_client_fetches_unadjusted_bars_by_default(monkeypatch):
+    import src.market_data.yfinance_client as yc
+
+    seen = {}
+
+    class Ticker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kw):
+            seen.update(kw)
+            return pd.DataFrame()
+
+    monkeypatch.setattr(yc.yf, "Ticker", Ticker)
+    yc.YFinanceClient().fetch_daily("SPY", "2026-09-01", "2026-09-04")
+    assert seen["auto_adjust"] is False
+
+
+def test_the_history_backfill_fetches_unadjusted_bars(monkeypatch):
+    import src.market_data.backfill_yfinance as bf
+
+    seen = {}
+
+    class Ticker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kw):
+            seen.update(kw)
+            return pd.DataFrame()
+
+    monkeypatch.setattr(bf.yf, "Ticker", Ticker)
+    assert bf.fetch_and_insert("SPY", "1993-01-29", conn=None) == 0
+    assert seen["auto_adjust"] is False
+
+
+# ── the report: returns, and a path that can never replace a kept file ───────
+
+def test_the_report_lists_every_return_the_restatement_changes(db):
+    rep = rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), now=AFTER_CLOSE)
+    got = {(r["date"], r["prev_date"]): (r["before_pct"], r["after_pct"]) for r in rep["returns"]}
+    assert set(got) == {("2026-09-03", "2026-08-31"), ("2026-09-04", "2026-09-03")}
+    assert got[("2026-09-03", "2026-08-31")] == pytest.approx(((768.66 / 765 - 1) * 100, (773.11 / 765 - 1) * 100))
+    assert got[("2026-09-04", "2026-09-03")] == pytest.approx(((770 / 768.66 - 1) * 100, (770 / 773.11 - 1) * 100))
+
+
+def test_the_splice_report_changes_only_the_boundary_return_when_the_block_is_a_constant_rescale(splice_db):
+    rep = rs.restate(splice_db, dates=[], symbols=[], client=_splice_client(), ranges=[rs.SPY_SPLICE], now=AFTER_CLOSE)
+    assert [(r["date"], round(r["before_pct"], 2), round(r["after_pct"], 2)) for r in rep["returns"]] == [
+        ("2024-02-27", 2.66, 0.19)]
+
+
+@pytest.mark.parametrize("name", ["md.db", "md.db-wal", "md.db-shm", "md.pre-restate-20260919T003000Z.db", "keep.db"])
+def test_the_cli_refuses_a_report_path_that_could_replace_a_kept_file(monkeypatch, db, tmp_path, name, capsys):
+    import src.market_data.yfinance_client as yc
+
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
+    before = _sha(db)
+    rc = rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply",
+                  "--snapshot", str(tmp_path / "keep.db"), "--report", str(tmp_path / name)])
+    assert rc == 2 and "refusing, nothing written" in capsys.readouterr().err
+    assert _sha(db) == before and not (tmp_path / "keep.db").exists()
+
+
+def test_the_cli_refuses_an_existing_report_file_and_a_link_to_the_database(monkeypatch, db, tmp_path):
+    import src.market_data.yfinance_client as yc
+
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
+    old = tmp_path / "old.json"
+    old.write_text("keep")
+    link = tmp_path / "link.json"
+    link.symlink_to(db)
+    for target in (old, link):
+        assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--report", str(target)]) == 2
+    assert old.read_text() == "keep" and _close(db, "SPY", "2026-09-03") == 768.66
+
+
+# ── scripts/restate_impact.py: the before/after comparison ────────────────────
+
+def test_the_impact_comparison_reports_prices_returns_and_each_consumer(tmp_path, db):
+    from scripts import restate_impact as ri
+
+    before = tmp_path / "before.db"
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE, snapshot=before)
+    shas = (_sha(before), _sha(db))
+
+    def spy_close(path):
+        c = sqlite3.connect(path)
+        try:
+            v = c.execute("SELECT close FROM market_daily WHERE symbol='SPY' AND date='2026-09-03'").fetchone()[0]
+            c.execute("UPDATE market_daily SET close = -1")   # a consumer's writes land in its copy only
+            c.commit()
+        finally:
+            c.close()
+        return pd.DataFrame([{"name": "spy_0903", "date": "2026-09-03", "value": v},
+                             {"name": "constant", "date": "2026-09-03", "value": 1.0}])
+
+    def broken(path):
+        raise RuntimeError("no table")
+
+    rep = ri.compare(before, db, consumers={"stub": spy_close, "broken": broken})
+    assert rep["prices"]["rows_changed"] == 1 and rep["prices"]["rows_only_on_one_side"] == 0
+    assert rep["prices"]["rows"][0]["close_after"] == 773.11
+    assert rep["returns"]["changed"] == 2 and rep["returns"]["by_symbol"] == {"SPY": 2}
+    stub = rep["downstream"]["stub"]
+    assert stub["rows_changed"] == 1 and set(stub["by_name"]) == {"spy_0903"}
+    assert stub["by_name"]["spy_0903"]["latest"] == {"date": "2026-09-03", "before": 768.66, "after": 773.11}
+    assert rep["downstream"]["broken"]["error_before"] == "RuntimeError: no table"
+    assert "W-FRI" in rep["weekly_label"]
+    assert (_sha(before), _sha(db)) == shas  # both inputs only read
+
+
+def test_the_impact_cli_never_replaces_an_existing_report(tmp_path, db):
+    from scripts import restate_impact as ri
+
+    old = tmp_path / "r.json"
+    old.write_text("keep")
+    assert ri.main(["--before", str(db), "--after", str(db), "--report", str(old)]) == 2
+    assert old.read_text() == "keep"
+
+
+def test_the_impact_comparison_runs_every_registered_consumer_and_reports_what_fails(tmp_path, db):
+    from scripts import restate_impact as ri
+
+    assert set(ri.CONSUMERS) == {"surprise", "backtest", "risk", "garch"}
+    before = tmp_path / "before.db"
+    rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE, snapshot=before)
+    rep = ri.compare(before, db)
+    assert set(rep["downstream"]) == set(ri.CONSUMERS)
+    for label, d in rep["downstream"].items():
+        assert ("rows_compared" in d) or (d.get("error_before") or d.get("error_after")), label
+
+
+def test_the_garch_consumer_flattens_numbers_sparkline_and_labels(monkeypatch, tmp_path):
+    from scripts import restate_impact as ri
+    from src.analytics import volatility
+
+    seen = {}
+
+    def fake():
+        seen["db"] = volatility.DB_PATH
+        return {"status": "ok", "conditional_vol_annual_pct": 14.5, "regime": "LOW", "spark_60d": [1.0, 2.0], "n_obs": 3}
+
+    monkeypatch.setattr(volatility, "compute_garch_signal", fake)
+    df = ri._garch(tmp_path / "x.db")
+    assert seen["db"] == tmp_path / "x.db" and volatility.DB_PATH != tmp_path / "x.db"
+    assert dict(zip(df["name"], df["value"])) == {"status=ok": 1.0, "conditional_vol_annual_pct": 14.5, "regime=LOW": 1.0,
+                                                 "spark_60d[0]": 1.0, "spark_60d[1]": 2.0, "n_obs": 3.0}
+
+
+def test_the_history_backfill_holds_back_an_unfinished_session(monkeypatch):
+    import src.market_data.backfill_yfinance as bf
+
+    idx = pd.DatetimeIndex(["2026-09-17", "2026-09-18"], name="Date").tz_localize("America/New_York")
+    frame = pd.DataFrame({"Open": [1.0, 2.0], "High": [1.0, 2.0], "Low": [1.0, 2.0], "Close": [700.0, 701.5],
+                          "Volume": [9.0, 3.0]}, index=idx)
+
+    class Ticker:
+        def __init__(self, symbol):
+            pass
+
+        def history(self, **kw):
+            return frame
+
+    monkeypatch.setattr(bf.yf, "Ticker", Ticker)
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE market_daily (symbol TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,"
+                 " volume REAL, vwap REAL, source TEXT, fetched_at TEXT, UNIQUE(symbol, date))")
+    mid_session = datetime(2026, 9, 18, 15, 0, tzinfo=timezone.utc)
+    assert bf.fetch_and_insert("SPY", "2026-09-17", conn, now=mid_session) == 1
+    assert conn.execute("SELECT date, close FROM market_daily").fetchall() == [("2026-09-17", 700.0)]
+    assert bf.fetch_and_insert("SPY", "2026-09-17", conn, now=AFTER_CLOSE) == 1  # the finished bar, once complete
+    assert conn.execute("SELECT date, close FROM market_daily ORDER BY date").fetchall() == [
+        ("2026-09-17", 700.0), ("2026-09-18", 701.5)]
+
+
+def test_a_garch_card_that_did_not_compute_is_an_error_not_unchanged(monkeypatch, tmp_path, db):
+    from scripts import restate_impact as ri
+    from src.analytics import volatility
+
+    monkeypatch.setattr(volatility, "compute_garch_signal", lambda: {"status": "error", "reason": "db read failed: x"})
+    with pytest.raises(RuntimeError, match="db read failed"):
+        ri._garch(tmp_path / "x.db")
+    rep = ri.downstream(db, db, consumers={"garch": ri._garch})
+    assert "db read failed" in rep["garch"]["error_before"] and "rows_compared" not in rep["garch"]
+
+
+@pytest.mark.parametrize("field,bad", [("open", float("nan")), ("high", 0.0), ("low", -1.0), ("volume", float("nan")),
+                                       ("volume", -5.0)])
+def test_every_written_field_is_checked_before_anything_is_written(db, field, bad):
+    before = _sha(db)
+
+    class Bad(Provider):
+        def fetch_daily(self, symbol, start, end, auto_adjust=True):
+            df = super().fetch_daily(symbol, start, end, auto_adjust)
+            df.loc[df["date"] == "2026-09-03", field] = bad
+            return df
+
+    with pytest.raises(SystemExit, match="no usable fetched bar"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Bad(), apply=True, now=AFTER_CLOSE)
+    assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
+
+
+def test_a_report_in_a_missing_folder_is_refused_before_anything_is_written(monkeypatch, db, tmp_path):
+    import src.market_data.yfinance_client as yc
+    from scripts import restate_impact as ri
+
+    monkeypatch.setattr(yc, "YFinanceClient", lambda: Provider())
+    before = _sha(db)
+    missing = tmp_path / "no-such-dir" / "r.json"
+    assert rs.main(["--db", str(db), "--dates", "2026-09-03", "--symbols", "SPY", "--apply", "--report", str(missing)]) == 2
+    assert _sha(db) == before and not list(db.parent.glob("*.pre-restate-*"))
+    assert ri.main(["--before", str(db), "--after", str(db), "--report", str(missing)]) == 2
+
+
+@pytest.mark.parametrize("name", ["md.db-wal", "md.db-shm", "md.db-journal", "md.db", "no-such-dir/s.db"])
+def test_a_snapshot_path_that_is_the_database_or_a_sidecar_is_refused(db, tmp_path, name):
+    before = _sha(db)
+    with pytest.raises(SystemExit, match="refusing, nothing written"):
+        rs.restate(db, dates=["2026-09-03"], symbols=["SPY"], client=Provider(), apply=True, now=AFTER_CLOSE,
+                   snapshot=tmp_path / name)
+    assert _sha(db) == before and _close(db, "SPY", "2026-09-03") == 768.66
+    for x in ("-wal", "-shm", "-journal"):
+        p = db.with_name(db.name + x)
+        assert not p.exists() or p.stat().st_size == 0

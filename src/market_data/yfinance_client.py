@@ -36,9 +36,17 @@ class YFinanceClient:
         symbol: str,
         from_date: str,  # YYYY-MM-DD (inclusive)
         to_date: str,    # YYYY-MM-DD (inclusive)
+        auto_adjust: bool = False,
     ) -> pd.DataFrame:
         """
         Fetch daily OHLCV bars for `symbol` between from_date and to_date inclusive.
+
+        Bars are unadjusted for distributions (Yahoo's Close, which Yahoo
+        adjusts for splits only): market_daily holds one price basis, the
+        traded close, for every symbol and date (owner decision 2026-11-04,
+        option A). auto_adjust=True (dividend-adjusted, as of the fetch day)
+        would make a row's basis depend on when it was written: a window that
+        spans an ex-date would store the earlier rows adjusted.
 
         Returns a DataFrame with the same column shape as PolygonClient.fetch_daily:
             symbol (str), date (str "YYYY-MM-DD"),
@@ -56,7 +64,7 @@ class YFinanceClient:
 
         try:
             ticker = yf.Ticker(symbol)
-            df = ticker.history(start=from_date, end=end_exclusive, auto_adjust=True)
+            df = ticker.history(start=from_date, end=end_exclusive, auto_adjust=auto_adjust)
         except Exception as exc:
             logger.warning("[yfinance_client] %s: history() failed: %s", symbol, exc)
             return pd.DataFrame(columns=_EMPTY_DAILY_COLUMNS)

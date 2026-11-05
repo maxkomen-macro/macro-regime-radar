@@ -143,7 +143,7 @@ The SQLite store holds, among others:
 | `asset_prices`, `desk_series` | Long daily histories for allocation and the Desk's engine |
 | `news_feed` | Headlines with significance scores, Claude interpretations and cited research |
 | `event_calendar` | Upcoming macro releases |
-| `backtest_results` | Regime backtests |
+| `backtest_results` | Regime and signal backtests (SPY total return, dividends reinvested) |
 | `source_watermarks` | The true date of each source's newest observation |
 
 ---

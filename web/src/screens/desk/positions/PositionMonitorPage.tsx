@@ -11,8 +11,9 @@
  * (variant view, pre-mortem, a "wrong if" level) and an optional red team,
  * the WORDING check whose certainty words alone block, and Save, disabled
  * until the gate is complete, naming what is left. Save applies §9's rule
- * and keeps the position in this browser: automatic room for the S&P against
- * its 50-day and for 2s10s against a bp level, manual for everything else.
+ * and keeps the position in this browser: automatic room for the S&P and any
+ * stored ETF against its 50-day, and for any tenor's yield or spread (2s10s
+ * among them) against a bp level (P1c); manual for everything else.
  *
  * Right: the monitored rows (the Overview's format), sorted by room left; a
  * row opens to its gate text and Close…, and `?open=<id>` opens one from a
@@ -35,10 +36,11 @@ import { useDeskView, withParam } from "../desk-view";
 import { MonitoredRow, sortByRoom } from "../kit/MonitoredRows";
 import { apiParams, askFromSearch, questionWords, searchFor, slotsOf, targetLabel, type Ask } from "../event-study/question";
 import { readSaved, recordedLegs } from "../basket/weights";
-import { planFor, planRefusal, seriesOf, suggestions, underlyingName } from "./levels";
-import { falsifiesLine, sizeLine, viewOf, type PositionView } from "./monitor";
+import { isYield, planFor, planRefusal, suggestions, underlyingName } from "./levels";
+import { dv01Detail, falsifiesLine, sizeLine, viewOf, type PositionView } from "./monitor";
+import { isSpreadPosition, rateSeriesOf, spreadSizeHelp } from "./dv01";
 import { nyDate } from "./sessions";
-import { closed90d, exportPositions, importPositions, isOpen, newPositionId, whyUnreadable, withClose, type CloseType, type PositionRecord, type PositionStore, type Subject } from "./store";
+import { closed90d, exportPositions, importPositions, isOpen, namedSeriesOf, newPositionId, whyUnreadable, withClose, type CloseType, type PositionRecord, type PositionStore, type Subject } from "./store";
 import { saveWords, useLevels, usePositionStore } from "./usePositionStore";
 import { optionFromSearch, optionInstrument, optionLine } from "./option";
 import { CERTAINTY_WORDS, REPLACEMENTS, context, gateState, replaceFlag, type Flag } from "./wording";
@@ -140,6 +142,11 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
         <div>
           <p className="dk-stat-label">Falsifies at</p>
           <p>{falsifiesLine(v)}</p>
+          {v.note ? (
+            <p className="pm-manual" data-testid="pm-level-note">
+              {v.note}
+            </p>
+          ) : null}
           {p.monitoring === "manual" ? <p className="pm-manual">Monitored by hand: close it when the level is reached.</p> : null}
         </div>
         <div>
@@ -147,6 +154,16 @@ function Expanded({ v, pathTo, onClose }: { v: PositionView; pathTo: (slug: stri
           <p>{sizeLine(v)}</p>
         </div>
       </div>
+      {dv01Detail(v.dv01) ? (
+        <div data-testid="pm-dv01">
+          <p className="dk-stat-label">DV01 · proxy</p>
+          {dv01Detail(v.dv01)!.map((line) => (
+            <p key={line} className="pm-manual">
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
       {option ? (
         <>
           <p className="dk-stat-label">Option</p>
@@ -190,7 +207,10 @@ function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, l
   const deployed = sized && !unreadable ? views.reduce((a, r) => a + (r.size_nav as number), 0) : null;
   // §14.10, §14.12: an automatic row's level is the API's; while it is asked the card says so, and when the
   // request failed it says Couldn't load · Retry (a row would read "now not served" either way).
-  const live = views.some((r) => r.monitoring === "automatic");
+  // DV01 (DR-10): a yield or spread position reads `/macro` whether it is monitored automatically or by hand.
+  const live = views.some((r) => r.monitoring === "automatic" || rateSeriesOf(r.record) !== null);
+  // DV01_SPEC.md §7: a spread's saved size is its reference leg, so a sum with one in it is not an allocation.
+  const spreads = views.some((r) => isSpreadPosition(r.record));
   return (
     <FailedScope q={live ? reads : IDLE}>
       <section className="dk-card pm-mon" aria-labelledby="pm-mon-title">
@@ -227,7 +247,7 @@ function Monitored({ views, unreadable = 0, openId, onToggle, pathTo, onClose, l
         {views.length ? (
           <p className="pm-note">
             Sorted by room left · room = distance to the level as a share of the room at entry, same scale for every trade · size as % of NAV ·{" "}
-            {deployed != null ? `${Math.round(deployed * 1000) / 10}% deployed, ` : ""}
+            {deployed != null ? (spreads ? `${Math.round(deployed * 1000) / 10}% NAV in saved sizes (a spread counts its reference leg), ` : `${Math.round(deployed * 1000) / 10}% deployed, `) : ""}
             {unreadable ? (
               <>{`${views.length} readable position${views.length === 1 ? "" : "s"}`} · click a row for the gate text</>
             ) : (
@@ -401,8 +421,9 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
   const capNotServed = sent && sent.legs === null ? `${sent.name} is cap-weighted, and no cap weights have been served for it in this browser yet: open it on Basket & Hedge until it is priced, then send it again.` : null;
   const tech = useTechnicals();
   const [store, change] = usePositionStore();
-  const levels = useLevels(store, true);
   const [draft, setDraft] = useState<Draft>(EMPTY);
+  // P1c: the form's instrument too, so a stored ETF's chips carry its own averages.
+  const levels = useLevels(store, true, draft.instrument);
   // The answer to a save, with its tone: a refusal is a caution (amber), a save is plain (P-3).
   const [saveNote, setSaveNoteState] = useState<{ text: string; tone: "saved" | "refused" } | null>(null);
   const [closeNote, setCloseNote] = useState<string | null>(null);
@@ -512,8 +533,18 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
     // A position records a basket's weights as numbers (§9); a saved basket keeps its exact digits (Codex R-20).
     if (sent && !carriedAsk && sent.legs?.length) return { kind: "basket", legs: sent.legs.map((l) => ({ symbol: l.symbol, weight: Number(l.weight) })), benchmark: null };
     if (optionAttached) return optionAttached;
-    return { kind: "instrument", id: seriesOf(draft.instrument) ?? draft.instrument.trim() };
+    // A named series records its id (spx, curve_5s30s, yield_10y); a ticker, stored ETF or not, records itself.
+    return { kind: "instrument", id: namedSeriesOf(draft.instrument) ?? draft.instrument.trim() };
   };
+
+  // DV01_SPEC.md §7 (DR-08, DR-13): a spread's size is its longer-maturity reference leg, said before it is saved,
+  // for the position as Save would record it (its subject, and automatic on the plan's series or manual).
+  const prospective = (() => {
+    const subj = subject();
+    const plan = planFor(picked?.id ?? null, draft.instrument, levels, subj.kind);
+    return plan.kind === "manual" ? { subject: subj, monitoring: "manual" as const, trigger: null } : { subject: subj, monitoring: "automatic" as const, trigger: { series: plan.series } };
+  })();
+  const sizeHelp = spreadSizeHelp(prospective, levels);
 
   const save = () => {
     if (!ready) return;
@@ -683,9 +714,14 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
             </div>
             <div className="pm-field">
               <label htmlFor={`${uid}-size`} className="dk-stat-label">
-                Size · % NAV
+                {sizeHelp ? "Size · % NAV of the longer-maturity (reference) leg" : "Size · % NAV"}
               </label>
-              <input id={`${uid}-size`} className="pm-input pm-mono" inputMode="decimal" value={draft.size} onChange={(e) => set("size", e.target.value)} autoComplete="off" />
+              <input id={`${uid}-size`} className="pm-input pm-mono" inputMode="decimal" value={draft.size} onChange={(e) => set("size", e.target.value)} autoComplete="off" aria-describedby={sizeHelp ? `${uid}-size-help` : undefined} />
+              {sizeHelp ? (
+                <p id={`${uid}-size-help`} className="pm-step-hint" data-testid="pm-spread-size">
+                  {sizeHelp}
+                </p>
+              ) : null}
             </div>
             <div className="pm-field">
               <label htmlFor={`${uid}-hz`} className="dk-stat-label">
@@ -730,6 +766,11 @@ export default function PositionMonitorPage({ page }: { page: DeskPage }) {
                 <p className="pm-step-label" id={`${uid}-wrong`} data-tone={gate.level ? "green" : "amber"}>
                   3 · Wrong if <span className="pm-step-hint">· suggested for {underlyingName(draft.instrument)} · changes with the instrument</span>
                 </p>
+                {isYield(draft.instrument) ? (
+                  <p className="pm-step-hint" data-testid="pm-yield-note">
+                    A long here is long the yield itself: it gains as the yield rises (a short in the bond).
+                  </p>
+                ) : null}
                 <div className="pm-chips">
                   {sug.top.map((c) => (
                     <button key={c.id} type="button" className="dk-chip pm-chip" aria-pressed={picked?.id === c.id} onClick={() => pickLevel(picked?.id === c.id ? null : c)}>

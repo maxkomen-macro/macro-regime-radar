@@ -25,6 +25,8 @@ export interface MonitoredRowData {
   /** Distance now over the room at entry; ≤ 0 once through the level; null when not computed. */
   room_pct: number | null;
   to_level: { value: number; unit: "%" | "bp" } | null;
+  /** A spread: its size is the longer-maturity reference leg's market value, not the spread's total (DV01_SPEC.md §7). */
+  reference_leg?: boolean;
 }
 
 export function roomTone(room: number | null | undefined): "green" | "amber" | undefined {
@@ -61,6 +63,8 @@ export function sortByRoom<T extends { room_pct: number | null; id: string }>(ro
  * Desk's tooltip shows them when the row takes the focus. */
 const ROW_DEFS = ["nav", "col-room", "col-to-level"] as const;
 const ROW_DESCRIBED = ROW_DEFS.map((id) => `dk-def-${id}`).join(" ");
+// A spread's size cell says "leg" and points at the reference-leg definition instead of NAV's (DV01_SPEC.md §7).
+const LEG_DESCRIBED = ROW_DEFS.map((id) => `dk-def-${id === "nav" ? "nav-ref-leg" : id}`).join(" ");
 
 export function MonitoredRow({
   row,
@@ -79,13 +83,17 @@ export function MonitoredRow({
   const words = roomWords(row);
   return (
     <li className={cx("dk-mon", open && "dk-mon-open")} data-testid="dk-mon-row" data-id={row.id} data-monitoring={row.monitoring}>
-      <button type="button" className="dk-mon-row" onClick={onClick} aria-expanded={children !== undefined ? Boolean(open) : undefined} aria-controls={controls} aria-describedby={ROW_DESCRIBED}>
+      <button type="button" className="dk-mon-row" onClick={onClick} aria-expanded={children !== undefined ? Boolean(open) : undefined} aria-controls={controls} aria-describedby={row.reference_leg ? LEG_DESCRIBED : ROW_DESCRIBED}>
         {/* A long name is cut with an ellipsis (desk2.css); the title carries it whole. */}
         <span className="dk-mon-name" title={row.name}>
           {row.name}
         </span>
         <span className="dk-mon-nav">
-          <Term ids={["nav"]}>{`${fin(row.size_nav) ? pctPlain(row.size_nav) : "—"} NAV`}</Term>
+          {row.reference_leg ? (
+            <Term ids={["nav-ref-leg"]}>{`${fin(row.size_nav) ? pctPlain(row.size_nav) : "—"} leg`}</Term>
+          ) : (
+            <Term ids={["nav"]}>{`${fin(row.size_nav) ? pctPlain(row.size_nav) : "—"} NAV`}</Term>
+          )}
         </span>
         <span className="dk-mon-room" data-tone={tone}>
           {row.monitoring === "manual" ? words.room : <Term ids={["col-room"]}>{words.room}</Term>}

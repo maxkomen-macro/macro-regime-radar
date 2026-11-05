@@ -203,9 +203,13 @@ def test_the_regime_and_the_sla_read_the_same_dated_release():
     assert freshness.expected_month("CPIAUCSL", datetime(2026, 9, 14, 15, 0, tzinfo=timezone.utc), times) == date(2026, 8, 1)
     assert freshness.expected_month("CPIAUCSL", datetime(2026, 10, 14, 13, 0, tzinfo=timezone.utc), times) == date(2026, 8, 1)
     assert freshness.expected_month("CPIAUCSL", datetime(2026, 10, 14, 13, 30, tzinfo=timezone.utc), times) == date(2026, 9, 1)
-    # A month the calendar does not date keeps the approximate rule (the 15th at 08:30 ET + the buffer).
-    assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 14, 16, 0, tzinfo=timezone.utc), times) == date(2026, 11, 1)
-    assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 15, 16, 0, tzinfo=timezone.utc), times) == date(2026, 12, 1)
+    # BLS's 2027 schedule dates December's CPI on Wed Jan 13 2027, 08:30 EST (13:30 UTC), due an hour later.
+    assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 13, 14, 0, tzinfo=timezone.utc), times) == date(2026, 11, 1)
+    assert freshness.expected_month("CPIAUCSL", datetime(2027, 1, 13, 14, 30, tzinfo=timezone.utc), times) == date(2026, 12, 1)
+    # A month the calendar does not date keeps the approximate rule (the 15th at 08:30 ET + the buffer). The
+    # calendar runs through December 2027, so January 2028 is the first undated month.
+    assert freshness.expected_month("CPIAUCSL", datetime(2028, 1, 14, 16, 0, tzinfo=timezone.utc), times) == date(2027, 11, 1)
+    assert freshness.expected_month("CPIAUCSL", datetime(2028, 1, 15, 16, 0, tzinfo=timezone.utc), times) == date(2027, 12, 1)
 
 
 def test_the_drawer_says_awaiting_opening_bars_in_the_opening_window():

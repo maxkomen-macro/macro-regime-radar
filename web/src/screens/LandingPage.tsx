@@ -22,6 +22,7 @@ import type { Regime } from "../api/types";
 import LineChart, { type ChartSeries } from "./dashboard/LineChart";
 import { SIGNALS_META, SIGNAL_ORDER } from "./dashboard/signals-meta";
 import { mono } from "./shared/screen-ui";
+import { DataNoticeLine } from "./shared/DataNotice";
 
 /** Last good regime payload — "dated beats empty" for the one-visit visitor. */
 const CACHE_KEY = "mrr:last-regime";
@@ -423,6 +424,9 @@ export default function LandingPage() {
       >
         <span>Data: FRED · EODHD · Finnhub · NewsAPI · RSS</span>
         <span>Automated briefing from Macro Regime Radar. Not investment advice.</span>
+        <span style={{ flexBasis: "100%" }}>
+          <DataNoticeLine />
+        </span>
       </footer>
     </div>
   );

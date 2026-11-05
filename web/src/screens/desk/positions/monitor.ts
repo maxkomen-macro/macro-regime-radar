@@ -2,14 +2,17 @@
  * What a stored position looks like on the monitor today (DESK_FRAME3_SPEC
  * §2, §9): room left from the served levels, the distance to the level, the
  * day of the horizon on XNYS. An automatic position reads its series now
- * (the S&P from `/technicals`, 2s10s from `/macro`) against the threshold
- * frozen at entry; a manual one has no room and says so. Pure.
+ * against the threshold frozen at entry: the S&P from `/technicals`, a
+ * stored ETF from `/technicals?symbol=` (its stored closes only), 2s10s from
+ * `/macro`'s served spread, and any other tenor's yield or spread from
+ * `/macro`'s curve (P1c). A manual one has no room and says so. Pure.
  */
 
 import type { MacroResponse, TechnicalsResponse } from "../data/types";
-import { dayShort, grouped, isFiniteNumber, pctPlain, signed } from "../kit/format";
+import { dayLong, dayShort, grouped, isFiniteNumber, num, pctPlain, priceText, signed } from "../kit/format";
+import { dv01Number, dv01Of, hText, isSpreadPosition, mvText, type Dv01, type Leg } from "./dv01";
 import { nyDate, sessionCount } from "./sessions";
-import { signedDistance, type MonitoredSeries, type PositionRecord } from "./store";
+import { parseSeries, signedDistance, TENORS, type MonitoredSeries, type PositionRecord, type Tenor, type Trigger } from "./store";
 
 /** A served level: its value and the date it was observed on. */
 export interface Served {
@@ -17,13 +20,37 @@ export interface Served {
   date: string;
 }
 
-/** Today's served levels for the two monitored series; null where the series is not served. */
+/** A stored ETF's newest close with its averages, and every close the served three years hold, by date
+ * (the closes the entry level is checked against, since stored closes are restated, P1c). */
+export interface EtfLevel extends Served {
+  ma50: number | null;
+  ma200: number | null;
+  closes: Readonly<Record<string, number>>;
+}
+
+/** Today's served levels for the monitored series; null (or absent) where a series is not served. */
 export interface Levels {
   spx: (Served & { ma50: number | null; ma200: number | null }) | null;
   curve: Served | null;
+  /** P1c: each tenor's yield (percent) with its date; absent when `/macro` was not read. */
+  tenors?: Partial<Record<Tenor, Served>>;
+  /** P1c: the stored ETFs asked for, by symbol; a symbol whose answer is not its stored closes is absent. */
+  etfs?: Readonly<Record<string, EtfLevel>>;
+  /** P1c: the `/instruments` ETFs (the stored ones); null while that list is not served (stored or not cannot be told). */
+  stored?: readonly string[] | null;
+  /** DV01 (DR-10): `/macro`'s request state; absent means answered (or not asked). */
+  rates?: "loading" | "failed";
 }
 
-export const SERIES_LABEL: Record<MonitoredSeries, string> = { spx: "S&P 500", curve_2s10s: "2s10s" };
+/** The series' name on screen: "S&P 500", "QQQ", "10y yield", "5s30s". */
+export function seriesLabel(series: MonitoredSeries): string {
+  const r = parseSeries(series);
+  if (!r) return series;
+  if (r.kind === "spx") return "S&P 500";
+  if (r.kind === "etf") return r.symbol;
+  if (r.kind === "yield") return `${r.tenor} yield`;
+  return r.name;
+}
 
 /** The levels from `/technicals` (every field describes `spx`, §12.7) and `/macro`'s curve (§12.8). */
 export function levelsFrom(t: TechnicalsResponse | undefined, m: MacroResponse | undefined): Levels {
@@ -38,12 +65,64 @@ export function levelsFrom(t: TechnicalsResponse | undefined, m: MacroResponse |
   };
 }
 
-export const servedFor = (levels: Levels, series: MonitoredSeries): Served | null => (series === "spx" ? levels.spx : levels.curve);
-
-/** A value in its series' own unit: "6,280" for the S&P, "+38 bp" for 2s10s. */
-export function levelWords(series: MonitoredSeries, v: number): string {
-  return series === "spx" ? grouped(v) : `${signed(v, Number.isInteger(v) ? 0 : 1)} bp`;
+/** P1c: each tenor of `/macro`'s `curve.today` with its date, the snapshot's shared one or, without it, the
+ * tenor's own (§12.8, S-24); a tenor not stored, or served without a date, is left out. */
+export function tenorsFrom(m: MacroResponse | undefined): Partial<Record<Tenor, Served>> {
+  const today = m?.curve?.today;
+  const out: Partial<Record<Tenor, Served>> = {};
+  if (!today) return out;
+  for (const t of TENORS) {
+    const v = today[t];
+    const date = today.date ?? today.dates?.[t];
+    if (isFiniteNumber(v) && typeof date === "string") out[t] = { value: v, date };
+  }
+  return out;
 }
+
+/** P1c: a stored ETF's level from its `/technicals?symbol=` answer, only when the answer is that symbol read
+ * from its stored closes (`source` "asset_prices <SYM>"); the provider's candles are not a stored instrument. */
+export function etfLevelFrom(symbol: string, t: TechnicalsResponse | undefined): EtfLevel | null {
+  if (!t || t.symbol !== symbol || t.source !== `asset_prices ${symbol}` || !isFiniteNumber(t.price) || typeof t.date !== "string") return null;
+  const closes: Record<string, number> = {};
+  for (const p of t.series?.["3y"] ?? []) if (p && typeof p.date === "string" && isFiniteNumber(p.close)) closes[p.date] = p.close;
+  return { value: t.price, date: t.date, ma50: isFiniteNumber(t.ma50) ? t.ma50 : null, ma200: isFiniteNumber(t.ma200) ? t.ma200 : null, closes };
+}
+
+/** The series' value now, or null where it is not served. A spread other than 2s10s (served as `2s10s_bp`) is
+ * the long tenor less the short, in bp, only when both are served on the same date: never two dates mixed. */
+export function servedFor(levels: Levels, series: MonitoredSeries): Served | null {
+  const r = parseSeries(series);
+  if (!r) return null;
+  if (r.kind === "spx") return levels.spx;
+  if (r.kind === "etf") return levels.etfs?.[r.symbol] ?? null;
+  if (r.kind === "yield") return levels.tenors?.[r.tenor] ?? null;
+  if (r.short === "2y" && r.long === "10y") return levels.curve;
+  const a = levels.tenors?.[r.short];
+  const b = levels.tenors?.[r.long];
+  // FRED serves yields to two decimals, so a spread is whole bp; the rounding (to a millionth of a bp) only
+  // removes the float noise of the subtraction, as 4.96 − 4.71 = 0.2500000000000004.
+  return a && b && a.date === b.date ? { value: bpRound((b.value - a.value) * 100), date: a.date } : null;
+}
+
+/** A value in its series' own unit: "6,280" for the S&P, "512.30" for an ETF, "4.86%" for a yield, "+38 bp" for a spread. */
+export function levelWords(series: MonitoredSeries, v: number): string {
+  const r = parseSeries(series);
+  if (r?.kind === "spx") return grouped(v);
+  if (r?.kind === "etf") return priceText(v);
+  if (r?.kind === "yield") return `${num(v, 2)}%`;
+  return `${signed(v, Number.isInteger(v) ? 0 : 1)} bp`;
+}
+
+/** The distance left in the unit the row prints: percent of the level now for a price, bp for a rate (a yield
+ * is served in percent, so its distance is ×100). */
+function toLevelOf(series: MonitoredSeries, d: number, now: number): { value: number; unit: "%" | "bp" } {
+  const r = parseSeries(series);
+  if (r?.kind === "spx" || r?.kind === "etf") return { value: (d / now) * 100, unit: "%" };
+  return { value: r?.kind === "yield" ? bpRound(d * 100) : d, unit: "bp" };
+}
+
+/** A bp figure to a millionth of a bp: the float noise of percent arithmetic, never a served digit. */
+const bpRound = (x: number) => Math.round(x * 1e6) / 1e6;
 
 export interface PositionView {
   id: string;
@@ -57,6 +136,14 @@ export interface PositionView {
   to_level: { value: number; unit: "%" | "bp" } | null;
   /** The series now, for FALSIFIES AT; null for a manual row or a series not served now. */
   now: Served | null;
+  /** The level the room is measured to now: the frozen threshold, restated with a stored ETF's closes (P1c); null when no room is computed. */
+  level_now: number | null;
+  /** Why the room is not computed, or how its level was restated; null when there is nothing to say. */
+  note: string | null;
+  /** The position's DV01 proxy, or why there is none (DV01_SPEC.md revision 2). */
+  dv01: Dv01;
+  /** A spread: the saved size is its reference leg's market value (the shared row says "leg", §7). */
+  reference_leg: boolean;
   /** XNYS sessions from `entry_date` (the New York date of the save) through today, both counted, so an
    * entry on a session is day 1, a save after the close included (evaluation is at the close, §9); a save
    * on a weekend or holiday is day 0 until the next session opens. Null when the calendar does not reach. */
@@ -68,28 +155,110 @@ export function positionName(p: Pick<PositionRecord, "direction" | "instrument">
   return `${p.direction === "short" ? "Short" : "Long"} ${p.instrument.trim()}`;
 }
 
+/**
+ * The level a stored ETF position is checked against now (P1c). Stored ETF closes are split- and
+ * dividend-adjusted and restated through history on every refresh, so the frozen level is restated with
+ * them: f = the close on `observed_on` as served now ÷ `entry_value` (the same close at entry). Null, with
+ * the reason, when that close is not among the served closes: no room is shown that cannot be checked.
+ */
+export function restatement(t: Trigger, entryValue: number, etf: EtfLevel): { factor: number } | { why: string } {
+  const close = etf.closes[t.observed_on];
+  if (!isFiniteNumber(close)) return { why: `the close of ${t.observed_on} is not among the served closes (through ${etf.date}), so the level cannot be checked against them` };
+  // A price is positive: a record (an import) whose entry value is not, or a factor that does not come out a
+  // finite positive number, is not restated into a room (design review DR-03).
+  const factor = close / entryValue;
+  if (!(entryValue > 0) || !(close > 0) || !Number.isFinite(factor) || !(factor > 0)) return { why: "the value at entry and the stored close of that day do not give a usable restatement" };
+  return { factor };
+}
+
 export function viewOf(p: PositionRecord, levels: Levels, now: Date): PositionView {
-  const base = { id: p.id, name: positionName(p), size_nav: p.size_nav, monitoring: p.monitoring, day: sessionCount(p.entry_date, nyDate(now)), record: p };
+  const base = { id: p.id, name: positionName(p), size_nav: p.size_nav, monitoring: p.monitoring, day: sessionCount(p.entry_date, nyDate(now)), record: p, level_now: null, note: null, dv01: dv01Of(p, levels), reference_leg: isSpreadPosition(p) };
   const t = p.trigger;
   const served = t ? servedFor(levels, t.series) : null;
   if (p.monitoring !== "automatic" || !t || !served || !isFiniteNumber(p.original_room)) return { ...base, room_pct: null, to_level: null, now: p.monitoring === "automatic" ? served : null };
-  const d = signedDistance(served.value, t);
-  const toLevel = d > 0 ? (t.series === "spx" ? { value: (d / served.value) * 100, unit: "%" as const } : { value: d, unit: "bp" as const }) : null;
-  return { ...base, room_pct: d / p.original_room, to_level: toLevel, now: served };
+  let threshold = t.threshold;
+  let room = p.original_room;
+  let note: string | null = null;
+  const ref = parseSeries(t.series);
+  if (ref?.kind === "etf") {
+    const r = isFiniteNumber(p.entry_value) ? restatement(t, p.entry_value, levels.etfs![ref.symbol]) : { why: "the record has no value at entry" };
+    if ("why" in r) return { ...base, room_pct: null, to_level: null, now: served, note: `Room not computed: ${r.why}.` };
+    threshold = t.threshold * r.factor;
+    room = p.original_room * r.factor;
+    if (!Number.isFinite(threshold) || !Number.isFinite(room) || !(room > 0)) return { ...base, room_pct: null, to_level: null, now: served, note: "Room not computed: the restated level is not a usable number." };
+    if (Math.abs(r.factor - 1) > 1e-6) note = `The level was ${levelWords(t.series, t.threshold)} at entry; the stored closes have been restated ×${num(r.factor, 4)} since (a distribution or a split), and the level with them.`;
+  }
+  const d = signedDistance(served.value, { operator: t.operator, threshold });
+  const toLevel = d > 0 ? toLevelOf(t.series, d, served.value) : null;
+  const roomPct = d / room;
+  // Design review DR-05: on a series P1c added, a distance, room or distance-to-level that does not come out a
+  // finite number is not shown as one; the S&P and 2s10s keep their arithmetic unchanged.
+  const added = t.series !== "spx" && t.series !== "curve_2s10s";
+  if (added && (!Number.isFinite(d) || !Number.isFinite(roomPct) || (toLevel && !Number.isFinite(toLevel.value))))
+    return { ...base, room_pct: null, to_level: null, now: served, note: "Room not computed: the distance to the level is not a usable number." };
+  return { ...base, room_pct: roomPct, to_level: toLevel, now: served, level_now: threshold, note };
 }
 
 /** FALSIFIES AT: "2s10s below +38 bp · now +41 bp", or the typed rule for a manual row. */
 export function falsifiesLine(v: PositionView): string {
   const t = v.record.trigger;
   if (v.monitoring !== "automatic" || !t) return v.record.wrong_if.label;
-  const now = v.now ? ` · now ${levelWords(t.series, v.now.value)}` : " · now not served";
-  return `${SERIES_LABEL[t.series]} ${t.operator} ${levelWords(t.series, t.threshold)}${now}`;
+  // P1c (design review DR-04): a series P1c added says the date of the value it calls now; the S&P and 2s10s
+  // lines keep §9's words.
+  const dated = t.series !== "spx" && t.series !== "curve_2s10s" && v.now ? ` on ${dayShort(v.now.date) || v.now.date}` : "";
+  const now = v.now ? ` · now ${levelWords(t.series, v.now.value)}${dated}` : " · now not served";
+  // Final review S-03: an ETF level that could not be restated is the entry's, on the entry day's price scale; it
+  // is never printed beside today's close as if it were the level now.
+  if (parseSeries(t.series)?.kind === "etf" && v.level_now === null && v.now)
+    return `${seriesLabel(t.series)} ${t.operator} ${levelWords(t.series, t.threshold)} at entry; the level now is not known${now}`;
+  return `${seriesLabel(t.series)} ${t.operator} ${levelWords(t.series, v.level_now ?? t.threshold)}${now}`;
 }
 
-/** SIZE · HORIZON: "2% NAV · DV01 — · 14 of 20 trading days · opened Sep 2" (DV01 is null, §9). */
+/** The DV01 words of the SIZE · HORIZON line (§7): "DV01 +0.0041% NAV/bp (proxy)", "DV01 unknown: no size saved",
+ * "rate sensitivity not modelled here". */
+export function dv01Words(d: Dv01): string {
+  if (d.kind === "yield") return `DV01 ${dv01Number(d.dv01, d.size)}% NAV/bp (proxy)`;
+  if (d.kind === "spread") return `DV01 ${dv01Number(d.dv01, d.size)}% NAV/bp of spread (proxy)`;
+  if (d.kind === "loading") return "DV01 loading";
+  if (d.kind === "unknown") return `DV01 unknown: ${d.why}`;
+  return "rate sensitivity not modelled here";
+}
+
+/** SIZE · HORIZON: "2% NAV · DV01 +0.0041% NAV/bp (proxy) · 14 of 20 trading days · opened Sep 2"; a spread's size is
+ * its reference leg's ("5% NAV ref. leg"), never the spread's allocation (DV01_SPEC.md §7). */
 export function sizeLine(v: PositionView): string {
-  const size = isFiniteNumber(v.size_nav) ? `${pctPlain(v.size_nav)} NAV` : "no size";
+  const spread = isSpreadPosition(v.record);
+  const size = isFiniteNumber(v.size_nav) ? `${pctPlain(v.size_nav)} NAV${spread ? " ref. leg" : ""}` : "no size";
   const day = `${isFiniteNumber(v.day) ? v.day : "—"} of ${v.record.horizon_days} trading days`;
   const opened = dayShort(v.record.entry_date);
-  return [size, "DV01 —", day, opened ? `opened ${opened}` : null].filter(Boolean).join(" · ");
+  return [size, dv01Words(v.dv01), day, opened ? `opened ${opened}` : null].filter(Boolean).join(" · ");
 }
+
+const proxyWords = (l: Leg) => (l.proxy === "bill" ? "bill (simple-interest bond-equivalent yield)" : l.proxy === "zero" ? "zero-coupon Treasury" : "par Treasury");
+
+const yieldOn = (l: Leg) => `the ${l.tenor} yield ${num(l.yield_pct, 2)}% on ${dayLong(l.date) || l.date}`;
+
+const signedMv = (frac: number) => `${frac < 0 ? "short" : "long"} ${mvText(frac)} NAV`;
+
+/** The opened row's DV01 block (§7): what the number is, its proxy and dated yields; a spread's legs, hedge ratio and
+ * gross. Null for a position with no DV01 to explain. */
+export function dv01Detail(d: Dv01): string[] | null {
+  if (d.kind === "yield") {
+    const l = d.leg;
+    return [
+      `Estimated gain for a +1 bp rise in the ${l.tenor} yield, first order, on a hypothetical constant-maturity ${proxyWords(l)} proxy (market value ${mvText(d.size)} NAV), priced at ${yieldOn(l)}. Not the DV01 of any actual bond, future or holding.`,
+    ];
+  }
+  if (d.kind === "spread") {
+    const s = d.short;
+    const l = d.long;
+    return [
+      `Estimated gain for a +1 bp widening of ${d.name} (the ${l.tenor} yield less the ${s.tenor}), first order, on two hypothetical constant-maturity Treasury proxies; the ${l.tenor} leg is the reference leg, sized at the saved ${mvText(d.size)} NAV. Not the DV01 of any actual bonds, futures or holdings.`,
+      `${s.tenor} leg ${signedMv(d.mv_short)} (${dv01Number(d.sens_short, d.size)}% NAV/bp of ${s.tenor}) · ${l.tenor} leg ${signedMv(d.mv_long)} (${dv01Number(d.sens_long, d.size)}% NAV/bp of ${l.tenor}) · h = ${hText(d.h)} · gross ${mvText(d.gross)} NAV`,
+      `Priced at ${yieldOn(s)} (${proxyWords(s)}) and ${yieldOn(l)} (${proxyWords(l)}).`,
+      "Weights recomputed from current yields: a current, rebalanced hypothetical spread proxy. Parallel DV01 is zero to first order under this weighting; a finite parallel move, curve twists and the gap to real bonds are not.",
+    ];
+  }
+  return null;
+}
+
