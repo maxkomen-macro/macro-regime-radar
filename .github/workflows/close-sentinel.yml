@@ -1,0 +1,102 @@
+name: Close Sentinel
+
+# CS-1 (Max, 2026-11-05): GitHub starts this repo's scheduled runs 5-9.5 hours
+# late, so the after-close full refresh (refresh-data's 00:23 UTC cron) keeps
+# finishing after the 06:00 UTC freshness deadline. A workflow_dispatch starts
+# within seconds. Whichever of these low-frequency weekday crons GitHub
+# delivers first waits until 17:30 New York time on the session day and, only
+# if the published database does not hold that session's closes yet,
+# dispatches the existing full refresh once (scripts/close_sentinel.py has the
+# rules). A measured improvement, not a scheduler guarantee: refresh-data's
+# own crons, the data-write group, validation and the deadline are unchanged.
+#
+# Off unless the repository variable CLOSE_SENTINEL_ENABLED is "true". Keep it
+# off until the once-per-session memo fix (CS-2) is merged: under today's memo
+# rule a sentinel full refresh that starts before 18:00 UTC would dispatch a
+# memo too.
+#
+# It writes nothing but its own reservation artifact (counted against the cap
+# of two dispatches per session) and the dispatch: no database, release or git.
+
+on:
+  schedule:
+    - cron: "7 12 * * 1-5"    # weekdays; with GitHub's delay these land through the US afternoon and night
+    - cron: "37 14 * * 1-5"
+    - cron: "7 17 * * 1-5"
+    - cron: "37 19 * * 1-5"
+  workflow_dispatch:
+
+permissions:
+  actions: write    # dispatches refresh-data and releases its own reservation
+  contents: read
+
+concurrency:
+  group: close-sentinel
+  cancel-in-progress: false
+
+env:
+  # Private storage (Change 1, docs/data/PRIVATE_STORAGE.md): the repo whose
+  # data-latest release holds the database. Unset, it is this repo. Another
+  # repo needs the DATA_RELEASE_TOKEN secret, used for the release reads only.
+  DATA_RELEASE_REPO: ${{ vars.DATA_RELEASE_REPO || github.repository }}
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+
+    steps:
+      - name: Hold unless the sentinel is switched on
+        if: vars.CLOSE_SENTINEL_ENABLED != 'true'
+        timeout-minutes: 1
+        run: |
+          echo 'held: CLOSE_SENTINEL_ENABLED is not "true"; nothing is read or dispatched.' | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Checkout repo
+        if: vars.CLOSE_SENTINEL_ENABLED == 'true'
+        timeout-minutes: 5
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        if: vars.CLOSE_SENTINEL_ENABLED == 'true'
+        timeout-minutes: 3
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: requirements-api.lock
+
+      - name: Install the API dependencies (the symbol lists import asset_history)
+        if: vars.CLOSE_SENTINEL_ENABLED == 'true'
+        timeout-minutes: 5
+        run: pip install -r requirements-api.lock
+
+      - name: Wait for the close and decide
+        id: plan
+        if: vars.CLOSE_SENTINEL_ENABLED == 'true'
+        timeout-minutes: 320
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
+        run: python scripts/close_sentinel.py plan
+
+      - name: Reserve the dispatch
+        if: vars.CLOSE_SENTINEL_ENABLED == 'true' && steps.plan.outputs.session != ''
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: close-sentinel-dispatch-${{ steps.plan.outputs.session }}
+          path: reservation.json
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Dispatch the full refresh for the session
+        if: vars.CLOSE_SENTINEL_ENABLED == 'true' && steps.plan.outputs.session != ''
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
+          SESSION: ${{ steps.plan.outputs.session }}
+        run: python scripts/close_sentinel.py dispatch --session "$SESSION"

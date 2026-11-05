@@ -10,6 +10,11 @@ name: Refresh Data
 # database (scripts/validate_db.py) before publishing; a failed validation
 # leaves the previous Release asset — the last-known-good snapshot — in place.
 
+# A close-sentinel.yml dispatch names its session in the run's title, which is
+# how the sentinel counts and confirms its dispatches; every other run keeps
+# the plain title.
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.close_session != '' && format('Refresh Data (close {0})', inputs.close_session) || 'Refresh Data' }}
+
 on:
   schedule:
     - cron: "17 11 * * *"   # full · 11:17 UTC daily, before the US open (off the top of the hour)
@@ -24,6 +29,10 @@ on:
         default: full
       allow_stale_reason:
         description: "Documented reason to publish a snapshot that is outside its freshness SLA (leave empty to enforce)"
+        type: string
+        default: ""
+      close_session:
+        description: "Set by close-sentinel.yml: the NYSE session this full refresh is for (a label only; leave empty)"
         type: string
         default: ""
 

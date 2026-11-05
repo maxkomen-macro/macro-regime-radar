@@ -630,3 +630,63 @@ def test_the_probe_refuses_without_a_token_or_with_a_malformed_setting_and_asks_
     with pytest.raises(RuntimeError, match=why):
         ec._download_public_db(tmp_path / "probe.db", get=_probe_get(asked), env=env)
     assert asked == [] and not (tmp_path / "probe.db").exists()
+
+
+# ── the close sentinel (CS-1): its release reads follow the same setting ────────
+
+
+def test_the_close_sentinel_reads_the_named_repo_with_its_token_and_keeps_github_calls_on_this_repo(tmp_path):
+    """close-sentinel.yml reads the published database in Python (scripts/close_sentinel.py), not in a
+    YAML gh line, so the WRITERS check above cannot see it: the workflow keeps #49's default, both
+    steps that reach GitHub get both tokens, and every release call names DATA_RELEASE_REPO and uses
+    DATA_RELEASE_TOKEN only when that is another repo; run listing and the dispatch stay on this repo."""
+    import subprocess
+    from datetime import date
+
+    from scripts import close_sentinel as cs
+
+    doc = yaml.safe_load((WF / "close-sentinel.yml").read_text())
+    assert doc["env"]["DATA_RELEASE_REPO"] == DEFAULT_EXPR
+    by_name = {s["name"]: s for s in _steps("close-sentinel.yml")}
+    for name in ("Wait for the close and decide", "Dispatch the full refresh for the session"):
+        assert by_name[name]["env"]["GH_TOKEN"] == "${{ secrets.GITHUB_TOKEN }}", name
+        assert by_name[name]["env"]["DATA_RELEASE_TOKEN"] == "${{ secrets.DATA_RELEASE_TOKEN }}", name
+    for step in _steps("close-sentinel.yml"):
+        assert not _gh_release_lines(step.get("run") or ""), step["name"]
+
+    calls: list[tuple[list[str], str]] = []
+
+    def runner(args, env=None, **kw):
+        calls.append((args[1:], env.get("GH_TOKEN")))
+        if args[1:3] == ["release", "view"]:
+            out = '{"assets": [{"name": "macro_radar.db", "updatedAt": "t"}]}'
+        elif args[1] == "api":
+            out = '{"workflow_runs": [], "artifacts": []}'
+        else:
+            out = ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+    class Clock(cs.Clock):
+        def mono(self):
+            return 0.0
+
+    base = {"GITHUB_REPOSITORY": HOME, "GITHUB_RUN_ID": "1", "GH_TOKEN": "builtin"}
+    for setting, token, release_token in ((PRIVATE, "data-secret", "data-secret"), (HOME, "data-secret", "builtin"), ("", "", "builtin")):
+        calls.clear()
+        gh = cs.Gh({**base, "DATA_RELEASE_REPO": setting, "DATA_RELEASE_TOKEN": token}, cs.Budget(Clock(), 600), runner)
+        gh.db_updated_at()
+        gh.download_db(tmp_path)
+        gh.active_runs()
+        gh.reservations(date(2026, 11, 5))
+        gh.dispatch(date(2026, 11, 5))
+        expect_repo = setting or HOME
+        for args, used in calls:
+            if args[0] == "release":
+                assert args[args.index("--repo") + 1] == expect_repo and used == release_token, (setting, args)
+            else:
+                assert used == "builtin", (setting, args)
+                assert ("--repo" not in args or args[args.index("--repo") + 1] == HOME) and all(PRIVATE not in a for a in args)
+    with pytest.raises(cs.SetupError, match="DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set"):
+        cs.Gh({**base, "DATA_RELEASE_REPO": PRIVATE}, cs.Budget(Clock(), 600), runner)
+    with pytest.raises(cs.SetupError, match="not owner/name"):
+        cs.Gh({**base, "DATA_RELEASE_REPO": "a/b/c", "DATA_RELEASE_TOKEN": "t"}, cs.Budget(Clock(), 600), runner)
