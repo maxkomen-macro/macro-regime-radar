@@ -540,6 +540,48 @@ BASKET_SHARES = obj(
 )
 
 
+# ── §12.19 GET /basket/study (desk P1a; docs/desk/BASKET_STUDY_SPEC.md) ─────
+
+# The event-study engine run on the basket's own index (the page's rule over EODHD closes since 1995): the
+# basket and the question, the index's provenance, and the study in §12.2's shape for its one question, or
+# null with the reason (`not_run`) when the index is too short for it.
+BASKET_STUDY_INDEX = obj(
+    provider=STR, source=STR, requested_from=DATE, first_close=MapOf(DATE),
+    session=DATE, last_close=MapOf(DATE),  # the completed session asked through; each name's newest close
+    method=E("hold", "monthly"), weighting=E("target", "cap"), rule=STR,
+    start=DATE, start_kind=E("first_close", "history", "gap"), start_binding=Arr(STR, min=1),
+    end=DATE, sessions=INT, missing_sessions=INT, off_session=MapOf(INT), moved_rebalances=Arr(DATE),
+    excluded=Arr(obj(symbol=STR, n=INT, reason=STR)), cap_weights=null(CAP_WEIGHTS),
+)
+BASKET_STUDY_RUN = obj(
+    slug=STR, label=STR, selected_horizon=HORIZON,
+    matched_n=INT, data_start=DATE, sample_start=DATE, sample_end=DATE,
+    first_event=null(DATE), last_event=null(DATE),
+    verdict=VERDICT, verdict_rule=Const("v1"), verdict_confidence=Const(0.90),
+    headline=STR, why=STR,
+    horizons=Arr(HORIZON_ROW, min=4, max=4),
+    by_regime=Arr(obj(h=Const(20), regime=REGIME, n=INT, up_pct=null(FRAC), median=null(NUM)), min=4, max=4),
+    regime_history=Const("revised"),  # P-1: the regimes table's revised history, labelled as such
+    unlabeled_n=INT,
+    last_events=Arr(obj(event_date=DATE, entry_date=null(DATE), regime=REGIME, value_20=null(NUM)), max=5),
+    provenance=obj(entry_rule=STR, cooldown=INT, seed=INT, engine_version=STR, as_of_cutoff=DATE,
+                   regimes_last=null(DATE), calendar=STR),
+    warnings=Arr(STR),
+    empty_state=null(obj(horizon=HORIZON, sentence=STR, fixes=Arr(E("widen_window")))),
+    inputs_hash=STR,
+)
+BASKET_STUDY = obj(
+    basket=obj(legs=Arr(obj(symbol=STR, weight=null(NUM)), min=1), method=E("hold", "monthly"), weighting=E("target", "cap")),
+    question=obj(shock=Const("basket"), window=WINDOW, move=E("down2s", "up2s"), target=Const("basket"), horizon=HORIZON,
+                 target_unit=Const("log_return"), display_unit=Const("percent"), **{"while": Const("none")}),
+    index=BASKET_STUDY_INDEX,
+    study=null(BASKET_STUDY_RUN),
+    not_run=null(STR),
+    caveats=Arr(STR, min=2),
+    elapsed_ms=NUM,
+)
+
+
 # ── GET /options/finder (the Options Finder, design F3 §5; engine method finder-2) ─
 
 OPTION_TYPE = E("call", "put")
@@ -628,6 +670,7 @@ ROUTES: dict[str, Obj] = {
     "/instruments": INSTRUMENTS,  # desk/usability (§12.17)
     "/basket/shares": BASKET_SHARES,  # desk/cap-weight (§12.18)
     "/options/finder": OPTIONS_FINDER,  # the Options Finder (design F3; its page ships unlisted)
+    "/basket/study": BASKET_STUDY,  # desk P1a (§12.19)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons

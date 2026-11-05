@@ -293,6 +293,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m src.events.earnings_cache
 
+      # Desk D3 (2026-11-03): the private SPY option-chain snapshot, raw EODHD end-of-day rows written as
+      # release assets to a separate private repository (src/market_data/option_snapshots.py), never to the
+      # database, this repository or the data-latest release. Its own EODHD secret, here only, so the
+      # stored price histories above stay on Yahoo; never written to .env. Without the three secrets it
+      # prints "held" and makes no call. One line of counts, at most 200 requests, exits 0 on every end.
+      # Off by default (2026-11-05): it collects only when the repository variable OPTION_SNAPSHOT_ENABLED
+      # is "true"; unset, "false" or anything else prints "held detail=disabled..." with no call. Switching
+      # it off affects later runs, not one already running.
+      - name: Collect private SPY option snapshot (Desk D3)
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          OPTION_SNAPSHOT_ENABLED: ${{ vars.OPTION_SNAPSHOT_ENABLED }}
+          EODHD_OPTIONS_TOKEN: ${{ secrets.EODHD_OPTIONS_TOKEN }}
+          OPTION_SNAPSHOT_REPO: ${{ secrets.OPTION_SNAPSHOT_REPO }}
+          OPTION_SNAPSHOT_GH_TOKEN: ${{ secrets.OPTION_SNAPSHOT_GH_TOKEN }}
+        run: python -m src.market_data.option_snapshots
+
       - name: Trim intraday data to last 30 days (prevent DB bloat)
         if: steps.mode.outputs.mode == 'full'
         run: |
