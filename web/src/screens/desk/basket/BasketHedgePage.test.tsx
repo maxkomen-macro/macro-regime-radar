@@ -856,6 +856,22 @@ describe("Event study on this basket (§10, §12.19; desk P1a): the engine on th
     expect(c).not.toHaveTextContent(/no regime label/);
   });
 
+  it("Codex S-01: an answer without the last-events list says Awaiting refresh under its label, and the rest of Advanced stands", async () => {
+    seed(CHIPS);
+    const { last_events: _dropped, ...study } = HOLD.study;
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study }) });
+    renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    const last = within(c).getByRole("region", { name: "Last events" });
+    expect(last).toHaveTextContent("Last events · the basket a month later · regime as revised");
+    expect(within(last).getByRole("status")).toHaveTextContent("Awaiting refresh");
+    expect(within(last).queryAllByRole("listitem")).toHaveLength(0);
+    expect(within(within(c).getByRole("region", { name: "Every horizon" })).getAllByRole("row")).toHaveLength(5);
+    expect(within(c).getByRole("region", { name: "By regime, revised regime history" })).toBeInTheDocument();
+  });
+
   it("an index too short for the question: the route's reason, the index line and the caveats, no number", async () => {
     seed(CHIPS);
     const reason = "Not enough history yet: the index starts 2025-03-28 (CRWV's first close) and spans 150 sessions; the first 2σ move over 5 sessions can be judged on its 245th session (240 5-session moves in a 252-session window).";

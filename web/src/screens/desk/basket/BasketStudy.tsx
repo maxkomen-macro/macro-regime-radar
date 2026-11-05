@@ -15,7 +15,7 @@ import type { BasketStudyResponse, StudyHorizon } from "../data/types";
 import { Bars, horizonPhrase, normalStretch } from "../event-study/AnswerCard";
 import { dayLong, numberWord, pctPlain, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
-import { AdvancedPanel, FailedLine, FailedScope, Signed, Stat, StatRow, UnservedLine, useAdvanced, VerdictPill } from "../kit/ui";
+import { AdvancedPanel, Awaiting, FailedLine, FailedScope, Signed, Stat, StatRow, UnservedLine, useAdvanced, VerdictPill } from "../kit/ui";
 import { indexLine, questionLine, selectedRow, studyParams } from "./study";
 
 const TITLE = "Event study on this basket";
@@ -92,11 +92,16 @@ function ByRegime({ a }: { a: BasketStudyResponse }) {
 /** The last events (≤ 5, newest first, §12.19's `last_events`): the event's date, its revised regime label and the
  * index's log move 20 sessions on. A retained event always carries a label; an unlabeled one is counted, not listed. */
 function LastEvents({ a }: { a: BasketStudyResponse }) {
-  const rows = a.study!.last_events;
+  // Codex S-01: a list that did not arrive says so under its label, as the Event Study's rail does (StudyRail).
+  const rows = Array.isArray(a.study!.last_events) ? a.study!.last_events : null;
   return (
     <div role="region" aria-label="Last events">
-      <p className="bs-adv-line">Last {rows.length === 1 ? "event" : `${numberWord(rows.length)} events`} · the basket a month later · regime as revised</p>
-      {rows.length ? (
+      <p className="bs-adv-line">
+        {rows ? `Last ${rows.length === 1 ? "event" : `${numberWord(rows.length)} events`}` : "Last events"} · the basket a month later · regime as revised
+      </p>
+      {!rows ? (
+        <Awaiting />
+      ) : rows.length ? (
         <ul className="bs-events">
           {rows.map((e) => (
             <li key={e.event_date}>
