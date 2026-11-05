@@ -326,7 +326,7 @@ def run_intraday_only(now: datetime | None = None, client=None, assets: dict | N
     Does NOT require POLYGON_API_KEY.
 
     B6 (2026-09-18): once today's session is complete, the same run captures
-    the official daily close (session-complete bars only), so every run after
+    the provider's finished-session daily bar (session-complete bars only), so every run after
     the close is another chance to store it; the 00:23Z and 11:17Z full runs
     remain the backstop. Before the close the daily path is not touched.
     """
@@ -365,7 +365,7 @@ def run_intraday_only(now: datetime | None = None, client=None, assets: dict | N
         session_day = today_ny(now)
         if is_trading_day(session_day) and bar_is_complete(session_day, now):
             n = _fetch_daily_incremental(conn, client, assets.get("daily", []), now)
-            logger.info("[fetch_market] post-close capture: %d official daily bar(s) stored.", n)
+            logger.info("[fetch_market] post-close capture: %d finished-session daily bar(s) stored.", n)
     finally:
         conn.close()
 
