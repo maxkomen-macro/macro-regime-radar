@@ -36,6 +36,10 @@ def secrets(monkeypatch):
         monkeypatch.setenv(k, v)
     logsafe.install()
     yield SENTINELS
+    # monkeypatch restores the environment, but a Finnhub client built while
+    # the sentinel key was set (the startup block builds one) would outlive
+    # it, and a later test would send real requests with that key.
+    fh.set_client_for_tests(None)
 
 
 def _assert_clean(text: str) -> None:
