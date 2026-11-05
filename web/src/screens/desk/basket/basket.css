@@ -732,6 +732,12 @@ td.bh-live[data-tone="down"] {
 .bs-caveats { margin: 8px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.45; color: var(--dk-t3); }
 .bs-caveats li + li { margin-top: 2px; }
 .bs-adv-line { margin-top: 8px; font-size: 12.5px; line-height: 1.45; color: var(--dk-t2); }
+/* The last events (§12.19's last_events): date · revised regime · the move a month on; the Event Study rail's rows. */
+.bs-events { list-style: none; margin: 4px 0 0; padding: 0; }
+.bs-events li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: 16px; min-height: 27px; border-bottom: 1px solid var(--dk-row); font-size: 13px; }
+.bs-events li:last-child { border-bottom: 0; }
+.bs-events li > :last-child { font-family: var(--dk-mono); text-align: right; min-width: 60px; }
+.bs-events-regime { color: var(--dk-t3); }
 .bs-table-wrap { margin-top: 6px; overflow-x: auto; }
 .bs-table-wrap:focus-visible { outline: 2px solid var(--dk-blue); outline-offset: 2px; }
 .bs-table { width: 100%; border-collapse: collapse; font-size: 13px; }

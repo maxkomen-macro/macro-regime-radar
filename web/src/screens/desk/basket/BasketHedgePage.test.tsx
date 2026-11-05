@@ -23,6 +23,8 @@ import basketStudy from "../../../fixtures/desk/basket-study.json";
 import { PRESET, SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
 import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
 import { GLOSSARY } from "../kit/glossary";
+import { dayLong } from "../kit/format";
+import { moveText } from "../kit/units";
 
 const BASKETS = (sample as { baskets: SavedBasket[] }).baskets;
 
@@ -801,6 +803,73 @@ describe("Event study on this basket (§10, §12.19; desk P1a): the engine on th
     expect(within(regimes).getAllByRole("row")).toHaveLength(5);
     expect(within(within(c).getByRole("region", { name: "Every horizon" })).getAllByRole("row")).toHaveLength(5);
     expect(c).toHaveTextContent(`inputs ${HOLD.study.inputs_hash}`);
+  });
+
+  it("Advanced lists the last events, newest first, each with its revised regime and its move a month on; the unlabeled count reads in agreeing words (§10, §12.19)", async () => {
+    seed(CHIPS);
+    stubDesk();
+    renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    const last = within(c).getByRole("region", { name: "Last events" });
+    const served = HOLD.study.last_events as { event_date: string; regime: string; value_20: number | null }[];
+    expect(served.length).toBe(5);
+    expect(last).toHaveTextContent("Last five events · the basket a month later · regime as revised");
+    const items = within(last).getAllByRole("listitem");
+    expect(items).toHaveLength(served.length);
+    served.forEach((e, i) => {
+      expect(items[i]).toHaveTextContent(dayLong(e.event_date));
+      expect(items[i]).toHaveTextContent(e.regime);
+      expect(items[i]).toHaveTextContent(moveText(e.value_20, "log_return")!);
+    });
+    // The fixture's one unlabeled event, in the singular (the verifier's P3).
+    expect(HOLD.study.unlabeled_n).toBe(1);
+    expect(c).toHaveTextContent("1 event has no regime label yet and is counted in none.");
+    expect(c).not.toHaveTextContent("1 events");
+  });
+
+  it("the last events: none served says so; a move not a month on yet is a dash; three unlabeled events read in the plural", async () => {
+    seed(CHIPS);
+    const one = [{ event_date: "2026-09-21", entry_date: "2026-09-22", regime: "Goldilocks", value_20: null }];
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study: { ...HOLD.study, last_events: one, unlabeled_n: 3 } }) });
+    const first = renderTab();
+    let c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    let last = within(c).getByRole("region", { name: "Last events" });
+    expect(last).toHaveTextContent("Last event · the basket a month later · regime as revised");
+    const [row] = within(last).getAllByRole("listitem");
+    expect(row).toHaveTextContent(dayLong("2026-09-21"));
+    expect(row).toHaveTextContent("Goldilocks");
+    expect(row.lastElementChild).toHaveTextContent(/^—$/);
+    expect(c).toHaveTextContent("3 events have no regime label yet and are counted in none.");
+    first.unmount();
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study: { ...HOLD.study, last_events: [], unlabeled_n: 0 } }) });
+    renderTab();
+    c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    last = within(c).getByRole("region", { name: "Last events" });
+    expect(last).toHaveTextContent("No events.");
+    expect(within(last).queryAllByRole("listitem")).toHaveLength(0);
+    expect(c).not.toHaveTextContent(/no regime label/);
+  });
+
+  it("Codex S-01: an answer without the last-events list says Awaiting refresh under its label, and the rest of Advanced stands", async () => {
+    seed(CHIPS);
+    const { last_events: _dropped, ...study } = HOLD.study;
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study }) });
+    renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    const last = within(c).getByRole("region", { name: "Last events" });
+    expect(last).toHaveTextContent("Last events · the basket a month later · regime as revised");
+    expect(within(last).getByRole("status")).toHaveTextContent("Awaiting refresh");
+    expect(within(last).queryAllByRole("listitem")).toHaveLength(0);
+    expect(within(within(c).getByRole("region", { name: "Every horizon" })).getAllByRole("row")).toHaveLength(5);
+    expect(within(c).getByRole("region", { name: "By regime, revised regime history" })).toBeInTheDocument();
   });
 
   it("an index too short for the question: the route's reason, the index line and the caveats, no number", async () => {
