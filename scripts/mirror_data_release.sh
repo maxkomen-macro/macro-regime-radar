@@ -31,15 +31,22 @@ digest_of() {  # listing name -> digest ("" when listed without one); fails when
   awk -F'\t' -v n="$2" '$1 == n { print $2; found = 1 } END { exit !found }' <<<"$1"
 }
 
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
 src_list="$(listing "$SRC" "$SRC_TOKEN")"
-dst_list="$(listing "$DST" "$DST_TOKEN" 2>/dev/null)" || {
+# This repo's release is created only when GitHub says it does not exist (404);
+# any other failure (403, rate limit, 5xx) stops here with GitHub's own message.
+if ! dst_list="$(listing "$DST" "$DST_TOKEN" 2>"$work/dst.err")"; then
+  if ! grep -q "(HTTP 404)" "$work/dst.err"; then
+    echo "mirror: could not list this repo's data-latest:" >&2
+    cat "$work/dst.err" >&2
+    exit 1
+  fi
   GH_TOKEN="$DST_TOKEN" gh release create data-latest --repo "$DST" --title "Latest data snapshot" \
     --notes "Rolling SQLite snapshot published by the refresh workflows. Not stored in git history."
   dst_list=""
-}
-
-work="$(mktemp -d)"
-trap 'rm -rf "$work"' EXIT
+fi
 copied=0
 for name in "${FILES[@]}"; do
   if ! src_digest="$(digest_of "$src_list" "$name")"; then
@@ -53,12 +60,14 @@ for name in "${FILES[@]}"; do
   fi
   rm -f "$work/$name"
   GH_TOKEN="$SRC_TOKEN" gh release download data-latest --repo "$SRC" --pattern "$name" --dir "$work" --clobber
-  if [ -n "$src_digest" ]; then
-    got="sha256:$(sha256sum "$work/$name" | cut -d' ' -f1)"
-    if [ "$got" != "$src_digest" ]; then
-      echo "mirror: $name did not match its listed digest; stopped before uploading it" >&2
-      exit 1
-    fi
+  got="sha256:$(sha256sum "$work/$name" | cut -d' ' -f1)"
+  if [ -n "$src_digest" ] && [ "$got" != "$src_digest" ]; then
+    echo "mirror: $name did not match its listed digest; stopped before uploading it" >&2
+    exit 1
+  fi
+  if [ "$got" = "$dst_digest" ]; then  # listed without a digest on the data repo, but the bytes match
+    echo "mirror: $name already current"
+    continue
   fi
   GH_TOKEN="$DST_TOKEN" gh release upload data-latest "$work/$name" --clobber --repo "$DST"
   copied=$((copied + 1))

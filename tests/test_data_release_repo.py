@@ -339,11 +339,14 @@ def opt(name):
 
 if args[:1] == ["api"]:
     repo = args[1].split("/")[1] + "/" + args[1].split("/")[2]
+    if (state / f"busy-{repo.replace('/', '__')}").exists():
+        print("gh: Service Unavailable (HTTP 503)", file=sys.stderr)
+        sys.exit(1)
     if (state / f"deny-{repo.replace('/', '__')}").exists() or not rel(repo).is_dir():
         print("gh: Not Found (HTTP 404)", file=sys.stderr)
         sys.exit(1)
     for f in sorted(rel(repo).iterdir()):
-        digest = "" if (state / f"nodigest-{f.name}").exists() else "sha256:" + hashlib.sha256(f.read_bytes()).hexdigest()
+        digest = "" if (state / f"nodigest-{repo.replace('/', '__')}-{f.name}").exists() else "sha256:" + hashlib.sha256(f.read_bytes()).hexdigest()
         print(f"{f.name}\t{digest}")
 elif args[:2] == ["release", "create"]:
     rel(opt("--repo")).mkdir(parents=True)
@@ -456,13 +459,37 @@ def test_the_mirror_repairs_a_stale_copy_on_a_later_run_and_leaves_current_files
 def test_a_file_missing_from_the_data_repo_is_skipped_and_one_without_a_digest_is_copied(tmp_path):
     m = Mirror(tmp_path)
     m.release(PRIVATE, {"macro_radar.db": b"database v3", "validation.json": b'{"v": 3}'})
-    m.release(HOME, {"macro_radar.db": b"database v3", "validation.json": b'{"v": 3}'})
-    m.flag("nodigest-validation.json")
+    m.release(HOME, {"macro_radar.db": b"database v3", "validation.json": b'{"v": 2}'})
+    m.flag(f"nodigest-{PRIVATE.replace('/', '__')}-validation.json")
     done = m.run()
     assert done.returncode == 0, done.stderr
     assert "snapshot-latest.json is not on the data repo; skipped" in done.stdout
     uploads = [Path(c["args"][3]).name for c in m.calls() if c["args"][:2] == ["release", "upload"]]
-    assert uploads == ["validation.json"], "no digest to compare, so it is copied rather than assumed current"
+    assert uploads == ["validation.json"], "no digest to compare, so it is downloaded, hashed and copied"
+    assert m.files(HOME)["validation.json"] == b'{"v": 3}'
+
+
+def test_a_file_without_a_digest_whose_bytes_already_match_is_not_uploaded_again(tmp_path):
+    m = Mirror(tmp_path)
+    m.release(PRIVATE, {"macro_radar.db": b"database v3"})
+    m.release(HOME, {"macro_radar.db": b"database v3"})
+    m.flag(f"nodigest-{PRIVATE.replace('/', '__')}-macro_radar.db")  # an older asset on the data repo
+    for _ in range(2):  # hourly runs: hashed after download, never re-uploaded
+        done = m.run()
+        assert done.returncode == 0, done.stderr
+        assert "macro_radar.db already current" in done.stdout
+    assert [c for c in m.calls() if c["args"][:2] == ["release", "upload"]] == []
+
+
+def test_a_failure_other_than_404_listing_this_repo_stops_without_creating_anything(tmp_path):
+    m = Mirror(tmp_path)
+    m.release(PRIVATE, PUBLISHED)
+    m.release(HOME, {"macro_radar.db": b"database v1"})
+    m.flag(f"busy-{HOME.replace('/', '__')}")
+    done = m.run()
+    assert done.returncode != 0 and "could not list this repo's data-latest" in done.stderr and "HTTP 503" in done.stderr
+    assert not [c for c in m.calls() if c["args"][0] == "release"]
+    assert m.files(HOME) == {"macro_radar.db": b"database v1"}
 
 
 def test_a_download_that_does_not_match_its_digest_is_never_uploaded(tmp_path):
