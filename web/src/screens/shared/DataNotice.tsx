@@ -55,7 +55,9 @@ const lineStyle: CSSProperties = {
   fontSize: 11,
   lineHeight: 1.6,
   letterSpacing: ".03em",
-  color: "var(--text-3)",
+  // The app's quiet text color, unless the page sets --mrr-notice-color: Desk pages set one of
+  // their §1.3 neutrals (styles/desk2.css), since --text-3 is not a Desk palette color.
+  color: "var(--mrr-notice-color, var(--text-3))",
 };
 
 /** The one quiet line at the bottom of every page: the FRED API notice
