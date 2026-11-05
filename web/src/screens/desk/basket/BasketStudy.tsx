@@ -13,7 +13,7 @@ import type { BasketParams, SavedBasket } from "./weights";
 import { unavailableOf, useBasketStudy } from "../data/api";
 import type { BasketStudyResponse, StudyHorizon } from "../data/types";
 import { Bars, horizonPhrase, normalStretch } from "../event-study/AnswerCard";
-import { dayLong, pctPlain, year } from "../kit/format";
+import { dayLong, numberWord, pctPlain, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import { AdvancedPanel, FailedLine, FailedScope, Signed, Stat, StatRow, UnservedLine, useAdvanced, VerdictPill } from "../kit/ui";
 import { indexLine, questionLine, selectedRow, studyParams } from "./study";
@@ -87,6 +87,41 @@ function ByRegime({ a }: { a: BasketStudyResponse }) {
       </table>
     </div>
   );
+}
+
+/** The last events (≤ 5, newest first, §12.19's `last_events`): the event's date, its revised regime label and the
+ * index's log move 20 sessions on. A retained event always carries a label; an unlabeled one is counted, not listed. */
+function LastEvents({ a }: { a: BasketStudyResponse }) {
+  const rows = a.study!.last_events;
+  return (
+    <div role="region" aria-label="Last events">
+      <p className="bs-adv-line">Last {rows.length === 1 ? "event" : `${numberWord(rows.length)} events`} · the basket a month later · regime as revised</p>
+      {rows.length ? (
+        <ul className="bs-events">
+          {rows.map((e) => (
+            <li key={e.event_date}>
+              <span>{dayLong(e.event_date)}</span>
+              <span className="bs-events-regime">{e.regime ?? "—"}</span>
+              {e.value_20 != null && Number.isFinite(e.value_20) ? (
+                <Signed value={e.value_20} title={TIP}>
+                  {move(e.value_20)}
+                </Signed>
+              ) : (
+                <span className="bs-events-none">—</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="bs-adv-line">No events.</p>
+      )}
+    </div>
+  );
+}
+
+/** "1 event has", "3 events have": the unlabeled count in words that agree with it. */
+export function unlabeledLine(n: number): string {
+  return n === 1 ? "1 event has no regime label yet and is counted in none." : `${n} events have no regime label yet and are counted in none.`;
 }
 
 /** What the index is and what it left out, in counts, for the Advanced panel. */
@@ -191,11 +226,12 @@ function Answer({ basket, a }: { basket: SavedBasket; a: BasketStudyResponse }) 
       <p className="bs-prov">{indexLine(a)}</p>
       <Caveats a={a} />
       <div className="dk-card-foot">
-        <AdvancedPanel enabled adv={adv} items="every horizon · by regime · the index">
+        <AdvancedPanel enabled adv={adv} items="every horizon · by regime · the last events · the index">
           <Horizons rows={s.horizons} />
           <p className="bs-adv-line">Verdict: {s.headline} (rule {s.verdict_rule} at {Math.round((s.verdict_confidence ?? 0.9) * 100)}%, the engine's).</p>
           <ByRegime a={a} />
-          {s.unlabeled_n ? <p className="bs-adv-line">{s.unlabeled_n} events have no regime label yet and are counted in none.</p> : null}
+          {s.unlabeled_n ? <p className="bs-adv-line">{unlabeledLine(s.unlabeled_n)}</p> : null}
+          <LastEvents a={a} />
           <IndexDetail a={a} />
         </AdvancedPanel>
       </div>

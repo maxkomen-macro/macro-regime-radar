@@ -865,6 +865,8 @@ test.describe("desk v2", () => {
     await study.getByTestId("dk-advanced").click();
     await expect(study.getByRole("region", { name: "By regime, revised regime history" })).toBeVisible();
     await expect(study.getByRole("region", { name: "Every horizon" }).getByRole("row")).toHaveCount(5);
+    await expect(study.getByRole("region", { name: "Last events" }).getByRole("listitem")).toHaveCount(5);
+    await expect(study).toContainText("1 event has no regime label yet and is counted in none.");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     for (const width of [1440, 1101, 390]) {
