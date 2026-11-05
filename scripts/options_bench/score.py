@@ -187,8 +187,11 @@ def classify(rec: dict) -> dict:
         out["iv_status"] = iv["status"]
         if iv["status"] == "solved":
             vega = iv.get("vega")
-            # identifiable: one volatility point moves the price by at least one tolerance
-            out["iv_identifiable"] = vega is not None and abs(vega) * 0.01 >= tol
+            # identifiable: one volatility point moves the price by at least one tolerance; unknown (None) when the
+            # work cap refused the bench's vega measurement after the solve (Codex S-02)
+            out["iv_identifiable"] = None if "vega_refused" in iv else (vega is not None and abs(vega) * 0.01 >= tol)
+            if "vega_refused" in iv or "back_refused" in iv:
+                out["iv_measure_refused"] = [k[:-len("_refused")] for k in ("vega_refused", "back_refused") if k in iv]
             out["iv_sigma_err"] = abs(iv["sigma_err"])
             if vega:
                 out["iv_err_vega_tol"] = abs(iv["sigma_err"]) * abs(vega) / tol
@@ -294,10 +297,12 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
                          "sigma_err_p50": _q(se, 0.5), "sigma_err_p99": _q(se, 0.99), "sigma_err_max": max(se) if se else None,
                          "residual_tol_max": max(rs) if rs else None,
                          "identifiable": sum(bool(r.get("iv_identifiable")) for r in ivs),
-                         "unidentifiable_sigma_err_max": max((r["iv_sigma_err"] for r in ivs if "iv_sigma_err" in r and not r.get("iv_identifiable")), default=None),
+                         "unidentifiable_sigma_err_max": max((r["iv_sigma_err"] for r in ivs if "iv_sigma_err" in r and r.get("iv_identifiable") is False), default=None),
                          "err_vega_tol_max": max(ev) if ev else None,
                          # the Finder's own refusal (request work cap) during the solve: a refusal, not a crash
-                         "refused_ids": [r["id"] for r in ivs if r["iv_status"] == "refused"]}
+                         "refused_ids": [r["id"] for r in ivs if r["iv_status"] == "refused"],
+                         # solved, but the work cap refused a later bench measurement (vega or back-pricing)
+                         "measure_refused_ids": [r["id"] for r in ivs if r.get("iv_measure_refused")]}
     dv = [r for r in rows if "divsens" in r]
     s["divsens"] = {"attempted": len(dv), "outcome": dict(Counter(r["divsens"] for r in dv)),
                     "err_tol_max": max((r["divsens_err_tol"] for r in dv if "divsens_err_tol" in r), default=None),
@@ -680,7 +685,8 @@ def markdown(sc: dict) -> str:
             L.append(f"- {g}: {iv['attempted']} attempted, " + ", ".join(f"{k} {v}" for k, v in sorted(iv["status"].items()))
                      + f"; identifiable {iv['identifiable']}: sigma error p50 {_f(iv['sigma_err_p50'], 6)}, p99 {_f(iv['sigma_err_p99'], 6)}, max {_f(iv['sigma_err_max'], 6)}, max error × vega {_f(iv['err_vega_tol_max'], 3)} tol; "
                      f"not identifiable: max sigma error {_f(iv['unidentifiable_sigma_err_max'], 4)}; residual max {_f(iv['residual_tol_max'], 4)} tol"
-                     + (f"; refused by the Finder's work cap: {', '.join(iv['refused_ids'])}" if iv.get("refused_ids") else ""))
+                     + (f"; solve refused by the Finder's work cap: {', '.join(iv['refused_ids'])}" if iv.get("refused_ids") else "")
+                     + (f"; solved, but the work cap refused a later measurement (identifiability or residual not measured): {', '.join(iv['measure_refused_ids'])}" if iv.get("measure_refused_ids") else ""))
     L += ["", "## Dividend sensitivity (provisional gate, decision 11)", "",
           "Every owed dividend scaled by 1.1 and by 0.9: the engine's price change between the two must match the reference's within one price tolerance (the reference uncertainties of both states counted against it).", ""]
     for g, s in sc["groups"].items():

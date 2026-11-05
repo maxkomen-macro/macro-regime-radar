@@ -103,6 +103,44 @@ def test_any_other_exception_in_the_iv_solve_still_raises(monkeypatch):
         engine.iv_roundtrip(ENGINE, _case(), 5.0)
 
 
+@needs_engine
+@pytest.mark.parametrize("refuse", ["vega", "back"])
+def test_a_cap_refusal_after_the_solve_keeps_the_solved_sigma(monkeypatch, refuse):
+    # Codex S-02: the vega and back-pricing calls are the bench's measurements, not the Finder's solve; a work-cap
+    # refusal there must not turn a solved IV into a refusal or drop the sigma
+    om, of = engine.load(ENGINE)
+    monkeypatch.setattr(om, "drive", lambda *a, **k: {0: (0.31, 5)})
+    real_many, calls = of.Pricer.many, []
+
+    def many(self, ctxs):
+        calls.append(len(ctxs))
+        if (refuse == "vega") == (len(calls) == 1):
+            raise of.FinderError("Too much to price at once")
+        return real_many(self, ctxs)
+
+    monkeypatch.setattr(of.Pricer, "many", many)
+    got = engine.iv_roundtrip(ENGINE, _case(), 5.0)
+    assert got["status"] == "solved" and got["sigma"] == 0.31 and got["evals"] == 5
+    assert got[f"{refuse}_refused"] == "Too much to price at once"
+    other = {"vega": "back", "back": "vega"}[refuse]
+    assert f"{other}_refused" not in got
+    if refuse == "vega":
+        assert got["vega"] is None and got["residual"] is not None
+    else:
+        assert got["vega"] is not None and got["residual"] is None and "back_reason" not in got
+
+
+def test_the_scorer_lists_a_measurement_refusal_apart_from_a_solve_refusal():
+    iv = {"status": "solved", "sigma": 0.31, "sigma_err": 0.01, "evals": 5, "vega": None,
+          "in_finder_range": True, "vega_refused": "Too much to price at once", "residual": 1e-6}
+    out = score.classify(_rec(**iv))
+    assert out["iv_status"] == "solved" and out["iv_identifiable"] is None
+    assert out["iv_measure_refused"] == ["vega"]
+    s = score._summary([out])["iv_roundtrip"]
+    assert s["status"] == {"solved": 1} and s["refused_ids"] == [] and s["measure_refused_ids"] == ["G6-long/1"]
+    assert s["identifiable"] == 0 and s["unidentifiable_sigma_err_max"] is None   # unknown is not unidentifiable
+
+
 def _rec(**iv):
     tol = reference.tolerance(10.0, 100.0)
     return {"case": {"id": "G6-long/1", "group": "G6-long", "kind": "random"},
