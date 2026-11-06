@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-06T07:06:15.398989",
+  "generated_at": "2026-11-06T18:05:20.194618",
   "as_of": "2026-09-01",
   "regime": "Overheating",
   "confidence": 0.5456,
@@ -8,7 +8,7 @@
     "Because SPY equity momentum is below trend in the latest reading (week of 2026-11-06, z=-1.56).",
     "Because VIX volatility is above trend in the latest reading (week of 2026-11-06, z=+2.25).",
     "Because CPI inflation is above trend in the latest reading (week of 2026-09-04, z=+1.69).",
-    "Because unemployment labor conditions is above trend in the latest reading (week of 2026-09-04, z=+2.01).",
+    "Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99).",
     "Because today 10Y real yield is positive at 2.64%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.88%."
   ],
