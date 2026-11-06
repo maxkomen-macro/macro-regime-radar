@@ -96,9 +96,78 @@ Each change accounts for an intended change in behaviour. No test was removed, s
   at its (N, 2N) pair rather than (2N, 4N). Its value is still checked against QuantLib. Refinement charging
   is now checked on B8, which still refines to (2N, 4N) on its delta test.
 
-## Evidence still to come
+## Held-out evidence
 
-- The fresh held-out bench run on a seed registered before the run, scored on its seven components.
-- The request matrix and the dashboard latency check, both against main.
+These are empirical results on sampled cases. They are not proved bounds and not a claim about real chains or
+whole requests. Numerical acceptance and the merge are Max's separate decisions.
 
-Both are reported here when they are done. Until then, every figure above is development evidence.
+### First registered run (seed 20261117): not met, not accepted
+
+[HELD_OUT_REGISTRATION.md](options-dividend-smoothing/HELD_OUT_REGISTRATION.md), frozen `44a7f74`, 17,223 cases.
+- Engine: 0 price, delta or dividend-scenario failures.
+- Three components were open, all from the benchmark:
+  - Price accuracy was insufficient: G0-exempt was registered at 300 cases, below the scorer's 1,000 target.
+  - One European delta control was 1.07 u from Black-76. A low-order refinement study had applied an
+    extrapolation its own order test did not trust.
+  - One crash: the IV round trip diagnostic hit the 300 M request cap and the bench did not catch the Finder's
+    refusal. The same crash happens on main's engine.
+- Max did not accept the run (2026-11-05 19:14 UTC). It stays on record unchanged, and its cases are exposed.
+
+### Benchmark repair (design B), bench only
+
+Commits `7d4f6d8` and `1a4bad4`. Nothing under `src/` changed.
+- **Low-order studies.** A study whose observed order fails the order test no longer extrapolates. Its
+  uncertainty is the larger of the old estimate and the wide estimate the other non-asymptotic kinds use.
+- **IV work cap.** The IV round trip records the Finder's work-cap refusal as a refusal. A refusal of the bench's
+  later vega or back-pricing measurement keeps the solved sigma and is listed apart. Any other exception still
+  crashes the case, and a crash still fails run integrity.
+- **QuantLib FD arbiter.** For each QdFp comparison outside the reference's stated uncertainty, QuantLib's
+  Crank-Nicolson FD runs on three grids and is read with the reference's own refinement rule, then reported in
+  five categories. It is a diagnostic: not a gate, and it assigns no cause.
+- **Unresolved references** are counted by reason.
+
+Tolerances, gates, caps and the domain are unchanged. Codex approved the design on its fourth pass, and code
+review round 3 had no findings.
+
+Max authorized a diagnostic recomputation of every record of seed 20261026 (engine `addf0dc`) under the final
+bench, compared with the unrepaired bench on the same cases. It is kept apart from the original evidence and is
+not acceptance (review-loop/dividend-fix/rerun-S26/COMPARISON.md):
+- engine outputs identical
+- all seven component verdicts identical
+- 176 references moved by at most 0.0076 tol, none changed status
+- arbiter: 310 of 315 reference-consistent
+
+### Second registered run (seed 20261111): all seven components met
+
+[HELD_OUT_REGISTRATION_2.md](options-dividend-smoothing/HELD_OUT_REGISTRATION_2.md), frozen `1a4bad4` (engine files
+identical to `44a7f74`), 18,423 cases, registered before any case was drawn. Scored by `score.py` at `1a4bad4`.
+
+| Component | Verdict | Evidence |
+|---|---|---|
+| Price accuracy | pass | 16,300 scored (at least 1,000 in every in-domain group, G0-exempt 1,500), 0 failures, 0 indeterminate; error p50 0.0002 tol, p99 0.046 tol, max 0.368 tol (G3-carry-itm/335) |
+| Displayed delta | pass | 13,255 scored, 0 failures, 0 indeterminate; 3,047 withheld (withholding an unvalidated delta is not an accuracy failure) |
+| Early-exercise bound | pass | 2,276 checked: 813 covered, 0 violated, 0 indeterminate, 1,463 unscored |
+| Dividend scenario | pass | 2,741 scored in domain; all groups: pass 2,765, refused 91, no failure or indeterminate |
+| Reference controls | pass | 1,863 European controls (max 0.35 u) and 150 exempt cases, all within their uncertainty; 0 lattice disputes |
+| Named regressions | pass | 23 of 23 |
+| Run integrity | pass | 18,423 of 18,423 cases, 0 crashes |
+
+Coverage, reported against the full population:
+- **Refusals:** 186 not-converged refusals in the random in-domain groups (133 in G5-extreme-vol), and 10 in
+  T1-near-boundary.
+- **Unresolved references:** 17 in-domain values, unscored and never counted as passes (G5-extreme-vol 12,
+  G6-long 4, G3-carry-itm 1), and 46 in X1-outside, mostly convection-dominated.
+- **IV round trip:** no work-cap refusal. 3,232 of 3,270 solved, 21 no root, 17 unpriceable.
+- **QuantLib QdFp comparisons outside u:** 237 in domain. The arbiter put them at:
+  - reference-consistent: 235
+  - arbiter-unresolved: 1 (G6-long/2312)
+  - neither: 1 (G1-nodiv/1647)
+
+The request matrix and dashboard latency measure the engine. They were run against main with the `44a7f74`
+engine, whose files are identical:
+- no request newly over the 300 M cap (5 of 24 over on both)
+- Finder time +3.1% pooled, within 10%
+- dashboard latency the same as main, including the existing stall of up to about 0.8 s on the big chain
+
+Evidence: review-loop/dividend-fix/held-out-2/ (run, scorecard, sha256 manifest), final-requests/ and
+final-latency/.
