@@ -133,8 +133,8 @@ MODE_TABLES = {
              "desk_series_runs", "share_counts", "earnings_cache_vault"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
-    # B6 (2026-09-18): intraday runs also capture the official close after the
-    # session ends, so a daily close can be their change too.
+    # B6 (2026-09-18): intraday runs also store the provider's finished-session
+    # daily bar after the session ends, so a daily close can be their change too.
     "intraday": ["market_intraday", "market_daily", "source_watermarks"],
     "verify-only": [],
 }

@@ -20,6 +20,7 @@ The two deploy surfaces are the **API image** (the `Dockerfile`, served on Rende
 | `EODHD_API_TOKEN` | yes | no | no | no | repo-root `.env` (dev relay) |
 | `GH_DB_TOKEN` (fine-grained PAT, Contents: Read) | yes | no (workflows use the built-in `GITHUB_TOKEN`) | no | yes | no |
 | `GH_SNAPSHOT_TOKEN` (fine-grained PAT, Contents: Read) | no | no | yes | no | no |
+| `DATA_RELEASE_TOKEN` (fine-grained PAT, Contents: Read and write on the private data repo; only once private storage is on, `docs/data/PRIVATE_STORAGE.md`) | no | yes (refresh-data, intraday-refresh, daily-memo, weekly-memo) | no | no | no |
 | `OPS_ACCESS_KEY` | yes | no | no | no | no |
 | `ASSISTANT_ACCESS_KEY` (only in the assistant's key mode) | if used | no | no | no | no |
 | `ANTHROPIC_API_KEY` | yes | yes (refresh-data, daily-memo) | no | yes | optional |
@@ -53,6 +54,7 @@ The process never imports `src.config`, so it does not read `FRED_API_KEY` or th
 **Configuration (not secret)**
 
 - Posture: `DEPLOY_PUBLIC`, `CORS_ORIGINS`, `CSP_CONNECT_SRC`
+- Data release: `DATA_RELEASE_REPO` (`owner/name` of the repo whose `data-latest` holds the database; unset = this repo; `docs/data/PRIVATE_STORAGE.md`)
 - Assistant: `ASSISTANT_ACCESS`, `ASSISTANT_DAILY_CAP_USD`, `ASSISTANT_LEDGER_PATH`, `ASSISTANT_MAX_CONCURRENCY`,
   `ASSISTANT_FREEFORM_SQL` (off unless `1`, `true`, `yes` or `on`: the free-form SQL tool; desk/hardening)
 - Client address: `CLIENT_IP_HEADER`, `TRUSTED_PROXY_HOPS`, `TRUST_X_FORWARDED_FOR` (legacy)
@@ -73,6 +75,7 @@ The process never imports `src.config`, so it does not read `FRED_API_KEY` or th
 | `GH_SNAPSHOT_TOKEN` | secret | `web/scripts/fetch-snapshot.mjs` (the Vercel build command) |
 | `GH_TOKEN` | secret | `web/scripts/fetch-snapshot.mjs`, used when `GH_SNAPSHOT_TOKEN` is unset |
 | `SNAPSHOT_REPO`, `SNAPSHOT_TAG`, `SNAPSHOT_ASSET` | non-secret | `web/scripts/fetch-snapshot.mjs` (optional, with defaults) |
+| `DATA_RELEASE_REPO` | non-secret | `web/scripts/fetch-snapshot.mjs`, the snapshot's repository when `SNAPSHOT_REPO` is unset (optional; private storage) |
 | `VITE_API_BASE` | non-secret | `web/src/api/client.ts`, `web/src/screens/shell/AssistantPanel.tsx` |
 | `VITE_WS_BASE` | non-secret | `web/src/live/quotes.ts` |
 | `VITE_SNAPSHOT_URL` | non-secret | `web/src/api/snapshot.ts` |
@@ -120,6 +123,9 @@ refresh pipeline's stored histories fall back to Yahoo and say so.
 | `FRED_API_KEY`, `ANTHROPIC_API_KEY`, `FINNHUB_API_KEY`, `NEWS_API_KEY`, `PERPLEXITY_API_KEY` | secret | repository secrets | the pipeline steps (`main.py`, `src/config.py`, `src/daily_memo.py`, `src/events/earnings.py`, `src/memo.py`) |
 | `VERCEL_DEPLOY_HOOK` | secret | repository secret | `refresh-data.yml`'s deploy-hook step |
 | `GH_TOKEN` | secret | the built-in `GITHUB_TOKEN` | the `gh` CLI (release view, create, download and upload; `refresh-data.yml` dispatching the memo workflows) |
+| `DATA_RELEASE_REPO` | non-secret | repository variable `DATA_RELEASE_REPO`, else `github.repository` | every database, snapshot, verdict and refresh-status release command (`--repo`); the ledger steps never read it |
+| `DATA_RELEASE_TOKEN` | secret | repository secret (unset until private storage) | those same steps, only when `DATA_RELEASE_REPO` names another repo; `scripts/mirror_data_release.sh` |
+| `DATA_RELEASE_MIRROR` | non-secret | repository variable, read in an `if:` | the cutover mirror step in `refresh-data.yml` and `intraday-refresh.yml` (on only when `true`) |
 | `EVENT_NAME` | non-secret | `github.event_name` | `refresh-data.yml`, passed to `scripts/workflow_mode.py` |
 | `SCHEDULE` | non-secret | `github.event.schedule` | `refresh-data.yml`, passed to `scripts/workflow_mode.py` |
 | `INPUT_MODE` | non-secret | the dispatch input `mode` | `refresh-data.yml`, passed to `scripts/workflow_mode.py` |
@@ -145,6 +151,7 @@ It runs locally only: no deploy or workflow calls it.
 | Name | Kind | Read by |
 |---|---|---|
 | `GH_TOKEN` | secret | the `gh` CLI that `scripts/sync_data.sh` runs (lines 21, 31 and 34); needed only when `gh auth login` has not been done |
+| `DATA_RELEASE_REPO` | non-secret | `scripts/sync_data.sh:12`, the repository that holds the release, read before `MRR_REPO` (optional) |
 | `MRR_REPO` | non-secret | `scripts/sync_data.sh:12`, the repository that holds the release (optional, with a default) |
 | `MRR_DB_PATH` | non-secret | `scripts/sync_data.sh:13`, the local database path to replace (optional, with a default) |
 | `PYTHON` | non-secret | `scripts/sync_data.sh:14`, the interpreter that runs `scripts/validate_db.py` (optional, with a default) |

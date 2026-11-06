@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS backtest_results (
     horizon     TEXT    NOT NULL,             -- "1M" | "3M" | "6M" | "12M"
     metric      TEXT    NOT NULL,             -- "avg_return" | "median_return" | "hit_rate" | "n"
     value       REAL    NOT NULL,
-    computed_at TEXT    NOT NULL
+    computed_at TEXT    NOT NULL,
+    return_basis TEXT                         -- "total_return" (src/analytics/backtest.py); NULL = not recorded
 );
 """ + EVENT_CALENDAR_DDL + """
 CREATE TABLE IF NOT EXISTS factor_data (

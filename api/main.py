@@ -643,6 +643,9 @@ class BacktestRow(BaseModel):
     hit_rate: float | None
     n: float | None
     computed_at: str | None
+    # Additive (backtest total return, 2026-11-04): "total_return" on rows src/analytics/backtest.py
+    # computed from asset_prices' adjusted closes; None on rows stored before it (basis not recorded).
+    return_basis: str | None = None
 
 
 class DatedValue(BaseModel):
@@ -1423,7 +1426,8 @@ def api_freshness() -> Freshness:
     base = _guarded(db.freshness)
     series = _guarded(db.latest_series_all)
     marks = _guarded(db.watermarks)
-    report = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks)
+    report = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks,
+                                  attempts=bootstrap.refresh_attempts())
     gen = worker_mod.get_worker().generation()
     report["generation"] = {
         "id": gen.id if gen else None,
@@ -1582,7 +1586,9 @@ def _series_states() -> dict[str, dict]:
     base = _guarded(db.freshness)
     series = _guarded(db.latest_series_all)
     marks = _guarded(db.watermarks)
-    rep = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=None, watermarks=marks)
+    # F-3: the same refresh-attempt status as /api/freshness, so a payload's block reads what the drawer reads
+    rep = freshness_mod.assess(db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=None, watermarks=marks,
+                               attempts=bootstrap.refresh_attempts())
     return {s["id"]: s for s in rep["series"]}
 
 

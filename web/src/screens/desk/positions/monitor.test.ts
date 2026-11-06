@@ -10,7 +10,7 @@ import sample from "../../../fixtures/desk/positions.json";
 import macro from "../../../fixtures/desk/macro.json";
 import type { MacroResponse, TechnicalsResponse } from "../data/types";
 import { planFor, planRefusal, seriesOf, suggestions } from "./levels";
-import { falsifiesLine, levelsFrom, sizeLine, viewOf } from "./monitor";
+import { falsifiesLine, levelsFrom, sizeLine, tenorsFrom, viewOf } from "./monitor";
 import type { PositionRecord } from "./store";
 import { completeTechnicals } from "../../../test/desk-variants";
 
@@ -36,7 +36,8 @@ describe("the levels a position reads", () => {
     expect(seriesOf(" s&p  500 ")).toBe("spx");
     expect(seriesOf("spx")).toBe("spx");
     expect(seriesOf("^GSPC")).toBe("spx");
-    expect(seriesOf("SPY")).toBeNull();
+    // P1c: SPY is never the index; a ticker is its own ETF series, monitored only when /instruments stores it.
+    expect(seriesOf("SPY")).toBe("etf:SPY");
     expect(seriesOf("SPX Dec 26 call spread")).toBeNull();
     expect(seriesOf("2s10s")).toBe("curve_2s10s");
     expect(seriesOf("2s10s steepener")).toBeNull();
@@ -62,8 +63,11 @@ describe("the plan Save follows (B-10)", () => {
     expect(planFor("below_50d", "S&P 500", LEVELS, "basket")).toEqual({ kind: "manual" });
     expect(planFor("below_50d", "S&P 500", LEVELS, "study")).toMatchObject({ kind: "automatic" });
   });
-  it("saves every other subject and rule as manual: the 200-day, a custom level, SPY, NDX vs SPX", () => {
-    for (const [id, inst] of [["below_200d", "S&P 500"], [null, "S&P 500"], ["regime_changes", "S&P 500"], ["below_50d", "SPY"], ["below_50d", "NDX vs SPX"]] as const) expect(planFor(id, inst, LEVELS), `${id} ${inst}`).toEqual({ kind: "manual" });
+  it("saves every other subject and rule as manual: the 200-day, a custom level, a ticker the store does not hold, NDX vs SPX", () => {
+    // P1c: SPY was in this list as an unserved subject; it is a stored ETF now (its own block below), so the
+    // unserved ticker here is NVDA, against the served list of stored ETFs.
+    const withList = { ...LEVELS, stored: ["SPY", "GLD"] };
+    for (const [id, inst] of [["below_200d", "S&P 500"], [null, "S&P 500"], ["regime_changes", "S&P 500"], ["below_50d", "NVDA"], ["below_200d", "SPY"], ["below_50d", "NDX vs SPX"]] as const) expect(planFor(id, inst, withList), `${id} ${inst}`).toEqual({ kind: "manual" });
   });
   it("refuses a level already crossed at entry, and one whose series is not served, with a sentence", () => {
     const through = planFor("above_50d", "S&P 500", LEVELS);
@@ -81,7 +85,12 @@ describe("the monitor's view of a stored position (§2, §9)", () => {
     // The sample's 2s10s entry is the audit's Q11 (+40 bp on 2026-09-02); falls 25 bp → +15; now +25: 10 of 25 bp left.
     expect([v.name, v.room_pct, v.to_level, v.day]).toEqual(["Long 2s10s", 0.4, { value: 10, unit: "bp" }, 14]);
     expect(falsifiesLine(v)).toBe("2s10s below +15 bp · now +25 bp");
-    expect(sizeLine(v)).toBe("2% NAV · DV01 — · 14 of 20 trading days · opened Sep 2");
+    // DV01 (DV01_SPEC.md §7): the placeholder "DV01 —" is replaced; these levels carry no tenors, so a spread's
+    // DV01 says which yield is missing, and its size is the reference leg's.
+    expect(sizeLine(v)).toBe("2% NAV ref. leg · DV01 unknown: the 2y yield is not served · 14 of 20 trading days · opened Sep 2");
+    expect(sizeLine(viewOf(RECORDS.find((p) => p.id === "2s10s-steepener")!, { ...LEVELS, tenors: tenorsFrom(M) }, NOW))).toBe(
+      "2% NAV ref. leg · DV01 +0.0016% NAV/bp of spread (proxy) · 14 of 20 trading days · opened Sep 2",
+    );
     const s = viewOf({ ...RECORDS[1], instrument: "S&P 500", wrong_if: { id: "below_50d", label: "closes below its 50-day (7,625)" }, entry_value: 7811.3, original_room: 186.46, trigger: { series: "spx", operator: "below", threshold: 7624.84, policy: "frozen", observed_on: "2026-09-02" } }, LEVELS, NOW);
     expect(s.room_pct).toBeCloseTo((7706.02978515625 - 7624.84) / 186.46, 9);
     expect(s.to_level?.unit).toBe("%");
@@ -99,6 +108,7 @@ describe("the monitor's view of a stored position (§2, §9)", () => {
     const v = viewOf(RECORDS.find((p) => p.id === "ndx-vs-spx")!, LEVELS, NOW);
     expect([v.monitoring, v.room_pct, v.to_level]).toEqual(["manual", null, null]);
     expect(falsifiesLine(v)).toBe("NDX gives back 3.4% against SPX from entry");
-    expect(sizeLine({ ...v, size_nav: null, day: null })).toBe("no size · DV01 — · — of 60 trading days · opened Aug 24");
+    // DV01 (DV01_SPEC.md §2): "NDX vs SPX" is not a yield or spread; its rate sensitivity is not modelled.
+    expect(sizeLine({ ...v, size_nav: null, day: null })).toBe("no size · rate sensitivity not modelled here · — of 60 trading days · opened Aug 24");
   });
 });

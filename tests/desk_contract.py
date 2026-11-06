@@ -397,6 +397,32 @@ CURVE_SNAP = Obj(dict(
     dates=Obj({t: null(DATE) for t in TENORS}),
 ))
 LEVEL = obj(value=NUM, date=DATE, freq=Const("daily"), source=STR)
+# Desk P1b (docs/desk/CORRELATION_VIEWS.md): the 20-, 60- and 120-return views and the correlation by regime.
+CORR_HORIZONS = ("20", "60", "120")
+SB_FIELDS = dict(
+    today=null(NUM), today_date=null(DATE), today_reason=null(STR),
+    year_ago=null(NUM), year_ago_date=null(DATE),
+    flipped=null(MONTH), flipped_on=null(DATE), flipped_to=null(E("positive", "negative")),
+    series=Arr(obj(date=DATE, corr=null(NUM))), window=SPAN, line_window=SPAN,
+)
+SB_HORIZON = Obj(dict(SB_FIELDS, horizon=INT, noise_band=FRAC))
+PAIR_HORIZON = obj(horizon=INT, noise_band=FRAC, corr=null(NUM), window=SPAN, reason=null(STR))
+REGIME_NAMES = ("Goldilocks", "Overheating", "Stagflation", "Recession Risk")
+REGIME_STAT = dict(corr=null(NUM), n=INT, first=null(DATE), last=null(DATE), reason=null(STR))
+BY_REGIME = obj(
+    regime_history=Const("revised"), rule=STR, lag_months=Const(2), as_known=null(STR), as_known_reason=STR,
+    min_n=Const(60), current=null(E(*REGIME_NAMES)), current_row=null(MONTH),
+    sample=null(obj(start=DATE, end=DATE)), unlabeled_n=null(INT), incomplete_n=null(INT),
+    regimes=Arr(Obj(dict(REGIME_STAT, regime=E(*REGIME_NAMES), spells=INT, largest_spell_share=null(FRAC))), max=4),
+    all=null(Obj(REGIME_STAT)), reason=null(STR),
+)
+MATRIX_LEAD = obj(text=null(STR), rule=Const("matrix-lead-v1"), hedging=null(BOOL), spy_tlt=null(NUM),
+                  highest=null(obj(a=STR, b=STR, corr=NUM)), lowest=null(obj(a=STR, b=STR, corr=NUM)))
+MATRIX_GRID = dict(
+    no_data=Arr(obj(symbol=STR, reason=STR), max=12),
+    values=Arr(Arr(null(NUM), min=12, max=12), min=12, max=12), window=SPAN,
+    coverage=Arr(null(INT), min=12, max=12), lead=MATRIX_LEAD,
+)
 MACRO = obj(
     curve=Block(Obj({
         "today": CURVE_SNAP, "month_ago": CURVE_SNAP,
@@ -411,30 +437,28 @@ MACRO = obj(
         reason=null(STR), band=null(E("tight", "normal", "wide")), band_edges=Const([0.30, 0.70]),
         series=Arr(obj(date=DATE, hy=NUM)), line_window=SPAN, peak_12m=null(obj(date=DATE, hy=NUM)),
     )),
-    stock_bond=Block(obj(
-        today=null(NUM), today_date=null(DATE), today_reason=null(STR),
-        year_ago=null(NUM), year_ago_date=null(DATE),
-        flipped=null(MONTH), flipped_on=null(DATE), flipped_to=null(E("positive", "negative")),
-        series=Arr(obj(date=DATE, corr=null(NUM))), window=SPAN, line_window=SPAN,
+    stock_bond=Block(Obj(dict(
+        SB_FIELDS,
         stock=obj(etf=Const("SPY"), name=STR), bond=obj(etf=Const("TLT"), name=STR),
         transform=Const("daily log return"), unit=Const("correlation"), date=DATE, freq=Const("daily"),
         source=Const("asset_prices"), providers=Arr(STR),
-    )),
+        horizons=Const([20, 60, 120]), by_horizon=Obj({h: SB_HORIZON for h in CORR_HORIZONS}),
+    ))),
     correlations=Block(Arr(obj(
         asset=STR, symbol=STR, quantity=STR, transform=E("daily log return", "daily log change"),
         corr=null(NUM), date=null(DATE), window=null(SPAN), reason=null(STR),
+        by_horizon=null(Obj({h: PAIR_HORIZON for h in CORR_HORIZONS})), by_regime=null(BY_REGIME),
     ), min=1, max=9)),
-    # desk/matrix: every pair of the twelve assets over one 60-date window
-    matrix=Block(obj(
+    # desk/matrix: every pair of the twelve assets over one 60-date window (Desk P1b: and over 20 and 120)
+    matrix=Block(Obj(dict(
+        MATRIX_GRID,
         assets=Const(["SPY", "QQQ", "IWM", "SMH", "XLE", "TLT", "IEF", "HYG", "LQD", "GLD", "UUP", "^VIX"]),
-        labels=Arr(STR, min=12, max=12), no_data=Arr(obj(symbol=STR, reason=STR), max=12),
-        values=Arr(Arr(null(NUM), min=12, max=12), min=12, max=12), window=SPAN,
-        horizon=Const(60), coverage=Arr(null(INT), min=12, max=12),
-        lead=obj(text=null(STR), rule=Const("matrix-lead-v1"), hedging=null(BOOL), spy_tlt=null(NUM),
-                 highest=null(obj(a=STR, b=STR, corr=NUM)), lowest=null(obj(a=STR, b=STR, corr=NUM))),
+        labels=Arr(STR, min=12, max=12), horizon=Const(60),
         quantity=STR, transform=STR, unit=Const("correlation"), date=DATE, freq=Const("daily"),
         source=Const("asset_prices"), providers=Arr(STR),
-    )),
+        horizons=Const([20, 60, 120]),
+        by_horizon=Obj({h: Obj(dict(MATRIX_GRID, horizon=INT, noise_band=FRAC)) for h in CORR_HORIZONS}),
+    ))),
 )
 
 # ── §12.9 GET /pipeline ─────────────────────────────────────────────────────
@@ -540,6 +564,48 @@ BASKET_SHARES = obj(
 )
 
 
+# ── §12.19 GET /basket/study (desk P1a; docs/desk/BASKET_STUDY_SPEC.md) ─────
+
+# The event-study engine run on the basket's own index (the page's rule over EODHD closes since 1995): the
+# basket and the question, the index's provenance, and the study in §12.2's shape for its one question, or
+# null with the reason (`not_run`) when the index is too short for it.
+BASKET_STUDY_INDEX = obj(
+    provider=STR, source=STR, requested_from=DATE, first_close=MapOf(DATE),
+    session=DATE, last_close=MapOf(DATE),  # the completed session asked through; each name's newest close
+    method=E("hold", "monthly"), weighting=E("target", "cap"), rule=STR,
+    start=DATE, start_kind=E("first_close", "history", "gap"), start_binding=Arr(STR, min=1),
+    end=DATE, sessions=INT, missing_sessions=INT, off_session=MapOf(INT), moved_rebalances=Arr(DATE),
+    excluded=Arr(obj(symbol=STR, n=INT, reason=STR)), cap_weights=null(CAP_WEIGHTS),
+)
+BASKET_STUDY_RUN = obj(
+    slug=STR, label=STR, selected_horizon=HORIZON,
+    matched_n=INT, data_start=DATE, sample_start=DATE, sample_end=DATE,
+    first_event=null(DATE), last_event=null(DATE),
+    verdict=VERDICT, verdict_rule=Const("v1"), verdict_confidence=Const(0.90),
+    headline=STR, why=STR,
+    horizons=Arr(HORIZON_ROW, min=4, max=4),
+    by_regime=Arr(obj(h=Const(20), regime=REGIME, n=INT, up_pct=null(FRAC), median=null(NUM)), min=4, max=4),
+    regime_history=Const("revised"),  # P-1: the regimes table's revised history, labelled as such
+    unlabeled_n=INT,
+    last_events=Arr(obj(event_date=DATE, entry_date=null(DATE), regime=REGIME, value_20=null(NUM)), max=5),
+    provenance=obj(entry_rule=STR, cooldown=INT, seed=INT, engine_version=STR, as_of_cutoff=DATE,
+                   regimes_last=null(DATE), calendar=STR),
+    warnings=Arr(STR),
+    empty_state=null(obj(horizon=HORIZON, sentence=STR, fixes=Arr(E("widen_window")))),
+    inputs_hash=STR,
+)
+BASKET_STUDY = obj(
+    basket=obj(legs=Arr(obj(symbol=STR, weight=null(NUM)), min=1), method=E("hold", "monthly"), weighting=E("target", "cap")),
+    question=obj(shock=Const("basket"), window=WINDOW, move=E("down2s", "up2s"), target=Const("basket"), horizon=HORIZON,
+                 target_unit=Const("log_return"), display_unit=Const("percent"), **{"while": Const("none")}),
+    index=BASKET_STUDY_INDEX,
+    study=null(BASKET_STUDY_RUN),
+    not_run=null(STR),
+    caveats=Arr(STR, min=2),
+    elapsed_ms=NUM,
+)
+
+
 # ── GET /options/finder (the Options Finder, design F3 §5; engine method finder-2) ─
 
 OPTION_TYPE = E("call", "put")
@@ -628,6 +694,7 @@ ROUTES: dict[str, Obj] = {
     "/instruments": INSTRUMENTS,  # desk/usability (§12.17)
     "/basket/shares": BASKET_SHARES,  # desk/cap-weight (§12.18)
     "/options/finder": OPTIONS_FINDER,  # the Options Finder (design F3; its page ships unlisted)
+    "/basket/study": BASKET_STUDY,  # desk P1a (§12.19)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons

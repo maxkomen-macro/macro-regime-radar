@@ -582,7 +582,8 @@ def pipeline_inventory() -> PipelineInventory:
     marks = _guarded(db.watermarks)
     now = datetime.now(timezone.utc)
     report = freshness_mod.assess(
-        db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks, now=now
+        db_fresh=base, series_latest=series, relay=stream.hub.debug(), bootstrap=bootstrap.status(), watermarks=marks, now=now,
+        attempts=bootstrap.refresh_attempts(),
     )
     # desk/integration: the Desk's daily history, one row per desk_series
     # series, after the rows /api/freshness serves (which carries none of them:

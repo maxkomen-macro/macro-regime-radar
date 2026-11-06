@@ -68,13 +68,13 @@ drawn finished with illustrative values and a footnote saying so.
 | Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
 | Signal Ledger | LIVE for the rows whose study completes, the two RSI rows included (desk/fill-compute); any row whose inputs are not stored (WTI, DXY) unavailable | v3 §2, v4 B-02 |
-| Position Monitor | LIVE, stored in the browser; automatic room only for the S&P against its 50-day and for 2s10s against a bp level; everything else manual; DV01 null | v3 §16, v4 B-10 |
+| Position Monitor | LIVE, stored in the browser; automatic room for the S&P and any stored ETF against its 50-day and for each Treasury tenor's yield and spread against a bp level; everything else manual; DV01 for a yield or spread position only, as a signed first-order sensitivity of a hypothetical constant-maturity Treasury proxy (% NAV per +1 bp, positive = gain), unknown for bond ETFs (no duration stored), not modelled otherwise | v3 §16, v4 B-10 |
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
 | Basket & Hedge: cap weight, each name's market value at the basket's start from the stored share counts; the preset's default, Equal-weight beside it | LIVE (§12.15 `weighting=cap`, §12.18; desk/cap-weight) for a basket whose every name has a stored count (the preset baskets' names); any other basket, or a database the full refresh has not reached, shows it unavailable with the reason and is priced at its own weights | share counts come from Yahoo through the full refresh: this EODHD plan carries no fundamentals |
 | Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
 | Basket & Hedge: "Positioning" (step 3, below the options slot, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | short interest, open interest and 13F holdings not ingested |
-| Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | PROTOTYPE (§1.0.3), drawn for the AI Infrastructure 10 preset; one line for any other basket | no basket index series is stored for the engine to run on |
+| Basket & Hedge: "Event study on this basket" (step 3, beside Positioning, §10) | LIVE (§12.19, desk P1a): the event-study engine on the saved basket's own index, computed on request from EODHD's daily closes since 1995; a basket whose index is too short for the question says so | the index's history is a backtest of names chosen today (hindsight); by-regime rows read revised regime history |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
 | Data Pipeline: "Sync to Snowflake" (§11) | PROTOTYPE (§1.0.3); the bridge's "Generate Snowflake DDL" and "Export current study → CSV" stay LIVE | no Snowflake account or sync job exists; the schema is proposed |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
@@ -92,8 +92,8 @@ Build Notes prints these two lists as their own section, word for word.
 - Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
-- Position Monitor: positions kept in this browser, with room for the S&P against its 50-day and for 2s10s.
-- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged.
+- Position Monitor: positions kept in this browser, with room for the S&P and any stored ETF against its 50-day and for each Treasury tenor's yield and the spreads between them; for a yield or a spread, DV01 as the signed sensitivity of a hypothetical Treasury proxy.
+- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged; an event study on the basket's own index.
 - Data Pipeline: the series inventory, generated from the registry.
 - Client view: the current study in plain words, a month out.
 
@@ -102,7 +102,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
 - Confidence levels other than 90%.
 - The comparison with the study's condition dropped.
-- Positions kept on a server, and DV01.
+- Positions kept on a server, and the DV01 of actual holdings and bond ETFs.
 - Option structures for a basket's hedge.
 
 #### 1.0.2 The unavailable state
@@ -933,7 +933,10 @@ Build Notes says so.
   above-level one `threshold − value`; the same orientation at entry and
   now, the threshold frozen at entry. `room_pct = distance now / original_room`;
   ≤ 0 when breached; null when the series is not served.
-- `day` counts the entry session as 1 on XNYS. `dv01` is null.
+- `day` counts the entry session as 1 on XNYS. `dv01` is computed in the browser, never stored: for a yield or
+  spread position, the signed first-order sensitivity, in % of NAV per +1 bp, of a hypothetical constant-maturity
+  Treasury proxy at the current served yields (a spread DV01-neutral on its longer-maturity reference leg, the
+  saved size being that leg's market value); unknown for bond ETFs; "rate sensitivity not modelled here" otherwise.
 - closure is an explicit stored event (`{"type":"falsified"|"expired"|"closed","ts"}`);
   an unobserved interval (the browser closed) closes nothing. The pre-mortem
   is judged by an explicit stored yes / no at close. `closed_90d` counts the
@@ -945,11 +948,12 @@ Build Notes says so.
 **Monitored** (right). Rows as on the Overview (§2), sorted by `room_pct`
 ascending, null last, then id; click expands a row: FALSIFIES AT
 (`<series> <below|above> <threshold> · now <value>`, or the typed rule for a
-manual row) · SIZE · HORIZON (`<size> NAV · DV01 — · <day> of <horizon>
-trading days · opened <entry_date>`) · VARIANT VIEW · PRE-MORTEM · RED TEAM ·
+manual row) · SIZE · HORIZON (`<size> NAV[ ref. leg] · <DV01> · <day> of <horizon>
+trading days · opened <entry_date>`, then the DV01 proxy's block for a yield or spread) · VARIANT VIEW · PRE-MORTEM · RED TEAM ·
 links `Open the study behind it →` (a study subject) and **Close…**. Footer
 `Sorted by room left · room = distance to the level as a share of the room at
-entry, same scale for every trade · size as % of NAV · <deployed>% deployed,
+entry, same scale for every trade · size as % of NAV · <deployed>% deployed (or `<sum>% NAV in saved sizes (a spread counts its
+reference leg)` while a spread is held),
 <n> positions · click a row for the gate text`. CLOSED · LAST 90D strip:
 Falsified on level · Expired at horizon · Pre-mortem was right `<yes> of
 <judged>`. While a kept record cannot be read (§1.8), the footer prints no
@@ -1141,18 +1145,25 @@ name in their top ten, else "none". A name without data reads "no data"
 across the row and is in no count. Footnote: "Illustrative values · In production: exchange
 short-interest files, OCC open interest, 13F holdings."
 
-**Event study on this basket** (in step 3, below the options slot, right): PROTOTYPE
-(§1.0.3), from `proto-basket-study.json`, styled as an Event Study answer
-(§4): the question in serif, naming the basket as saved, "After AI
-Infrastructure 10 falls 2σ over 5 days, it was higher a month later <up>% of
-the time."; EVENTS · UP A MONTH LATER (against
-a normal month) · MEDIAN AT A MONTH (against a normal month, §1.9's log
-display) · VERDICT (§1.5's rule v1 on the card's own numbers at h = 20); the
-Event Study's horizon chart; §12.2's why over the month's row; the
-provenance line (the index from Aug 2009, once half the preset's weight is
-listed). Footnote:
-"Illustrative values · In production: the existing engine run on the basket
-index series."
+**Event study on this basket** (in step 3, below the options slot, right): LIVE
+(§12.19, desk P1a; method `docs/desk/BASKET_STUDY_SPEC.md`), styled as an Event
+Study answer (§4). The question in serif, naming the basket as saved: "After
+<basket> falls 2σ over 5 days, it was higher a month later <up>% of the time."
+EVENTS · UP A MONTH LATER (against a normal month) · MEDIAN AT A MONTH (against
+a normal month, §1.9's log display) · VERDICT (§1.5's rule v1, the engine's, at
+h = 20); the Event Study's horizon chart; §12.2's why. The index line states
+the page's basket definition: its names and weighting (the saved weights, or cap
+weight from the stored counts), its rebalancing in words, the provider, its start
+and the name that sets it, and its last session. The caveats print below it: the
+hindsight sentence (the basket is chosen today), "Revised regime history" for the
+by-regime rows (P-1; as-known-at-the-time labels are not built), and, when they
+apply, a close the provider had not published yet and a monthly rebalance held
+early. Advanced: every horizon, the by-regime rows, the last events, the index's
+rule and counts. A basket whose index is too short for the question prints the
+route's `not_run` sentence (its start and why it is there) and no number; while
+the route computes, "Computing the study…"; a refused or failed request prints the
+route's words. A basket not yet saved at 100% (or whose cap weight is still
+reading its counts) asks nothing.
 
 ---
 
@@ -1787,6 +1798,12 @@ DGS10 (v2 §12). Until then those tenors are null.
 | `matrix.data.no_data[]` | `{symbol, reason}` | required | — | — | N: the assets without a window, in `assets` order: "Awaiting refresh: the full refresh stores <symbol>; this database predates it.", "no valid close among its <n> stored rows (each must be a finite, positive close on an XNYS session)" (Codex R-03), "only <coverage> of 60 daily returns in the window to <date>: <the first gap's reason>" (or ": the stored calendar starts <date>" when the window begins before it), or "no variation in the window to <date>" |
 | `matrix.data.lead` | `{text, rule, hedging, spy_tlt, highest, lowest}` | required | — | — | N, rule `matrix-lead-v1`: `hedging` is `spy_tlt` < 0 (the SPY–TLT cell), null without it; `highest` and `lowest` the off-diagonal pairs with the largest and smallest r served, `{a, b, corr}`; `text` "Treasuries are [not ]hedging equities (SPY and TLT at <r>); the highest pair is <a> and <b> at <r> and the lowest <a> and <b> at <r>." (the hedge clause left out without the SPY–TLT cell; "The one pair served is …" with one pair; null with none), every number a served cell to two decimals |
 | `matrix.data.quantity`, `transform`, `unit`, `freq`, `source`, `providers` | string, string, `"correlation"`, `"daily"`, `"asset_prices"`, string[] | required | — | — | A, S |
+| `stock_bond.data.horizons`, `matrix.data.horizons` | `[20, 60, 120]` | required | return dates | — | A (Desk P1b, docs/desk/CORRELATION_VIEWS.md §3) |
+| `stock_bond.data.by_horizon` | object `"20"`, `"60"`, `"120"` → `{today, today_date, today_reason, year_ago, year_ago_date, flipped, flipped_on, flipped_to, series, window, line_window, horizon, noise_band}` | required | correlation | as the block's own fields | N (P1b §3): the block's own rules over `horizon` return dates ending at the same `today_date`; `"60"` equals the block's own fields; `today_reason` "fewer than <horizon> complete daily return pairs in the window to <date>" |
+| `correlations.data[].by_horizon` | object `"20"`, `"60"`, `"120"` → `{horizon, noise_band, corr, window, reason}` | required, nullable (null exactly when the row has no `date`) | correlation | the row's `date` | N (P1b §3): the row's rule over `horizon` return dates ending at its `date`; `"60"` equals the row's own `corr`, `window` and `reason` |
+| `correlations.data[].by_regime` | `{regime_history, rule, lag_months, as_known, as_known_reason, min_n, current, current_row, sample, unlabeled_n, incomplete_n, regimes, all, reason}` | required, nullable (as `by_horizon`) | correlation | `sample` · daily · `asset_prices`, `regimes` | N (P1b §4): `regime_history` `"revised"` (the stored regimes, P-1); a return dated in month K takes the row stamped K−2 (`event_study.regime_at`), Unlabeled without one (`unlabeled_n`, left out); `regimes[]` Goldilocks, Overheating, Stagflation, Recession Risk, each `{regime, corr, n, first, last, reason, spells, largest_spell_share}`: Pearson's r of the pooled returns with that label from the pair's first common return through `date`, null below `min_n` (60) returns with "only <n> daily returns in <regime>; a correlation needs 60"; `all` the same over every labelled return; `current` and `current_row` the label and row month governing `date`; `as_known` null with `as_known_reason` until the point-in-time history exists; `reason` non-null exactly when no regime is computed, with `regimes` `[]` and `all`, `current`, `current_row` and `sample` null: "no regime history is stored in this database", "no daily return both series hold through <date>", or "the stored regime history could not be read (<error>)"; no interval |
+| `matrix.data.by_horizon` | object `"20"`, `"60"`, `"120"` → `{values, no_data, window, coverage, lead, horizon, noise_band}` | required | correlation | `date` | N (P1b §3): the matrix rules over `horizon` return dates ending at the same `date`; an asset is in `no_data` at the horizons whose window it does not fill ("only <coverage> of <horizon> daily returns …"); `"60"` equals the block's own grid |
+| `*.by_horizon.*.noise_band` | fraction | required | correlation | — | A (P1b §3, rule `fisher-z-90-iid`): tanh(1.6448536 / √(horizon − 3)), Fisher's approximate 90% band of a sample correlation around a true zero for independent, identically distributed normal returns; real returns can be more or less noisy; never an interval for the served value |
 
 ### 12.9 `GET /pipeline` and `GET /pipeline/ddl`
 
@@ -2061,6 +2078,33 @@ database yet; the next full refresh reads them from Yahoo."
 | `counts_as_of` | date | required | — | the oldest read | S (a payload's top-level `as_of` would be the envelope's) |
 | `counts[]` | `{symbol, shares_outstanding, as_of, source}` | required, at least one | shares, in the unit of the listing's price | `as_of`: the New York date the full refresh read it | S `share_counts`, each row checked on its own |
 | `excluded[]` | `{symbol, reason}` | required, may be empty | — | — | S: a stored row set aside (a count that is not a positive number, a read date that is malformed or after today, no source), with why |
+
+### 12.19 `GET /basket/study` (desk P1a)
+
+The event-study engine (`src/desk/event_study.py`, unchanged) run on the saved
+basket's own index: the page's rule (`src/desk/basket.price_basket`, as §12.15
+prices) over each name's EODHD adjusted closes since 1995-01-01, handed to the
+engine as a supplied series that is both the shock and the target. The method
+is `docs/desk/BASKET_STUDY_SPEC.md`. Computed on request behind the provider
+ceiling, one job per (generation, completed session, basket, question): 202
+`computing` past 8 s, 429 `busy` when eight are in flight, a repeat a lookup; an
+answer built before the provider published a name's newest close is computed
+again on a request 15 minutes later. Parameters: §12.15's `legs`, `method` and
+`weighting` (no `notional`: the index's returns do not depend on it), `window`
+(5, 20 or 60; default 5), `move` (`down2s` or `up2s`; default `down2s`) and
+`horizon` (5, 10, 20 or 60; default 20). Anything else, or a repeated parameter,
+is refused 422 `unsupported` naming it; a name EODHD does not list is 422
+`unknown_symbol`; cap weight without stored counts is awaiting, as §12.15.
+
+| Field | Type | Presence | Unit | Date · freq · source | Engine basis |
+|---|---|---|---|---|---|
+| `basket` | `{legs: [{symbol, weight}], method, weighting}` | required | weight in percent; null for cap weight | — | A: the request |
+| `question` | `{shock: "basket", window, move, while: "none", target: "basket", horizon, target_unit: "log_return", display_unit: "percent"}` | required | — | — | A: the request |
+| `index` | `{provider, source, requested_from, first_close{sym: date}, session, last_close{sym: date}, method, weighting, rule, start, start_kind, start_binding[], end, sessions, missing_sessions, off_session{sym: n}, moved_rebalances[], excluded[], cap_weights}` | required | — | `session`: the completed New York session the closes were asked through; `end`: the index's last session | E `price_basket` over the fetched closes; `start_kind`, `start_binding` as §12.15; `missing_sessions` a count; `off_session` each name's bars dated off the XNYS calendar, left out; `moved_rebalances` a monthly basket's rebalances held before a month-end some name lacked |
+| `study` | §12.2's fields that apply to one supplied question: `slug, label, selected_horizon, matched_n, data_start, sample_start, sample_end, first_event, last_event, verdict, verdict_rule, verdict_confidence, headline, why, horizons[4], by_regime[4], regime_history: "revised", unlabeled_n, last_events[≤5], provenance{entry_rule, cooldown, seed, engine_version, as_of_cutoff, regimes_last, calendar}, warnings[], empty_state, inputs_hash` | nullable: null when not run | as §12.2 | as §12.2 | E: the engine's output, verdict rule v1 at `horizon`; as §12.2, a listed event carries its K−2 label and an unlabeled one is counted in `unlabeled_n`, never listed |
+| `not_run` | string | nullable | — | — | A: why the study is not run (the index's calendar span is shorter than 240 + `window` sessions, or the engine refuses), with the index's start and why it is there |
+| `caveats[]` | string | required, at least two | — | — | A: the hindsight sentence, the revised-regime sentence, then a late close and a moved rebalance when they apply |
+| `elapsed_ms` | number | required | ms | — | A |
 
 ## 13. Build order, engine scope and acceptance
 

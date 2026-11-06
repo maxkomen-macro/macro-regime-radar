@@ -129,6 +129,9 @@ export interface BacktestRow {
   hit_rate: number | null;
   n: number | null;
   computed_at: string | null;
+  /** "total_return" on rows computed from SPY's split- and dividend-adjusted
+   * closes; absent or null on rows stored before that (basis not recorded). */
+  return_basis?: string | null;
 }
 
 export interface DatedValue {
@@ -307,6 +310,11 @@ export interface SeriesState {
    * the source's expected lag: false within it (neutral), true past it
    * (amber); null for other states and absent from an older API (amber). */
   late?: boolean | null;
+  /** Release-aware freshness (2026-11-04): a "delayed" state's own word for
+   * the screen in place of "Delayed" ("Released, awaiting refresh": a monthly
+   * print out at its scheduled release and not stored yet, before the full
+   * refresh's 06:00 UTC deadline); null otherwise and absent from an older API. */
+  word?: string | null;
 }
 
 /* ── Regime Lab (night-2 endpoints) ────────────────────────────────────── */

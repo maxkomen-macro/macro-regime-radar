@@ -18,7 +18,9 @@ from api import freshness
 
 STATES = {"live", "delayed", "close", "stale", "fallback", "unknown"}
 # fix/site-audit D7: `late` judges a delayed state against the source's expected lag (null otherwise).
-KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason", "late"}
+# Release-aware freshness (2026-11-04): `word`, a delayed state's own screen word ("Released, awaiting refresh"), null otherwise.
+KEYS = {"id", "label", "kind", "cadence", "as_of", "state", "delay_min", "cycles_behind", "stale", "discontinued", "reason", "late",
+        "word"}
 
 _FRESH = {
     "regimes_date": "2026-08-01", "signals_date": "2026-08-01", "market_daily_date": "2026-09-17",
@@ -101,6 +103,20 @@ def test_market_daily_behind_the_last_completed_session_says_so():
     assert stale["state"] == "stale" and stale["cycles_behind"] == 1 and stale["as_of"] == "2026-09-17"
     fresh = _series(_assess({}, now=after_close, fresh={**_FRESH, "market_daily_date": "2026-09-18"}))["market_daily"]
     assert fresh["state"] == "close" and fresh["cycles_behind"] == 0
+
+
+def test_market_daily_reason_names_a_stored_provider_close_never_an_official_one():
+    """Owner 2026-11-05 (section 6): market_daily rows are the provider's reported bars (Polygon, then Yahoo
+    through yfinance), not independently verified exchange data, so the reason the screen shows says so."""
+    after_close = datetime(2026, 9, 18, 21, 0, tzinfo=timezone.utc)  # Friday 17:00 ET
+    fresh = _series(_assess({}, now=after_close, fresh={**_FRESH, "market_daily_date": "2026-09-18"}))["market_daily"]
+    assert fresh["reason"] == "Stored provider close of 2026-09-18, the last completed session."
+    waiting = _series(_assess({}, now=after_close))["market_daily"]  # within the 06:00 UTC grace
+    assert waiting["reason"] == ("Stored provider close of 2026-09-17; the last completed session (2026-09-18) is stored "
+                                 "by the full refresh, which has until 06:00 UTC.")
+    stale = _series(_assess({}, now=datetime(2026, 9, 19, 6, 0, tzinfo=timezone.utc)))["market_daily"]
+    for s in (fresh, waiting, stale):
+        assert "official" not in s["reason"].lower(), s["reason"]
 
 
 def test_intraday_bars_in_session_are_delayed_by_n_minutes():

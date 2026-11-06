@@ -35,6 +35,14 @@ concurrency:
   group: data-write
   cancel-in-progress: false
 
+env:
+  # Private storage (Change 1, docs/data/PRIVATE_STORAGE.md): the repo whose
+  # data-latest release holds the database, validation.json,
+  # snapshot-latest.json and refresh-status.json. Unset, it is this repo,
+  # exactly as before. A different repo needs the DATA_RELEASE_TOKEN secret.
+  # The earnings ledger steps never read it: the sealed ledger stays here.
+  DATA_RELEASE_REPO: ${{ vars.DATA_RELEASE_REPO || github.repository }}
+
 jobs:
   refresh:
     runs-on: ubuntu-latest
@@ -69,6 +77,33 @@ jobs:
           echo "Resolved mode: $MODE (event=$EVENT_NAME schedule='$SCHEDULE')"
           if [ "$(date -u +%H)" -lt 18 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi
 
+      # Release-aware freshness F-3 (Max, 2026-11-04): a full refresh records its attempt in the
+      # refresh-status.json release asset even when it fails, so the API never shows a monthly print as
+      # "Released, awaiting refresh" over a failed refresh (api/refresh_status.py). Full mode only, so no
+      # other mode can mark a macro release failed. These steps never touch the database, its verdict or
+      # their upload conditions, and cannot fail or block the refresh (continue-on-error, bounded).
+      - name: Record the attempt start
+        id: attempt
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        run: echo "started_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload refresh-attempt status (started)
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
+        run: |
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
+          rm -rf status-prev && mkdir -p status-prev
+          gh release download data-latest -p refresh-status.json -D status-prev --clobber --repo "$DATA_RELEASE_REPO" || echo "No previous refresh status could be read; this one starts its own."
+          python scripts/refresh_status.py start --prev status-prev/refresh-status.json --out refresh-status.json \
+            --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}" --event "${{ github.event_name }}" \
+            --started-at "${{ steps.attempt.outputs.started_at }}"
+          gh release upload data-latest refresh-status.json --clobber --repo "$DATA_RELEASE_REPO"
+
       - name: Install dependencies (full)
         if: steps.mode.outputs.mode == 'full'
         run: pip install -r requirements.txt -r requirements-snapshot.txt
@@ -84,12 +119,18 @@ jobs:
       - name: Fetch current DB snapshot from data-latest release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
         run: |
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
           mkdir -p data
-          if gh release view data-latest >/dev/null 2>&1; then
-            gh release download data-latest --pattern macro_radar.db --dir data --clobber
+          if gh release view data-latest --repo "$DATA_RELEASE_REPO" >/dev/null 2>&1; then
+            gh release download data-latest --pattern macro_radar.db --dir data --clobber --repo "$DATA_RELEASE_REPO"
             cp data/macro_radar.db data/previous.db
             echo "DB snapshot: $(du -h data/macro_radar.db | cut -f1)"
+          elif [ "$DATA_RELEASE_REPO" != "$GITHUB_REPOSITORY" ]; then
+            # another repo must already hold the database (seeded at cutover step 1): never build without its history
+            echo "::error::Could not read data-latest on DATA_RELEASE_REPO; nothing built or published."
+            exit 1
           else
             echo "No data-latest release yet; proceeding without a prior DB."
           fi
@@ -112,6 +153,7 @@ jobs:
           } > .env
 
       - name: Run FRED pipeline (fetch + regimes + signals)
+        id: fred
         if: steps.mode.outputs.mode == 'full'
         run: python main.py
 
@@ -251,6 +293,25 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python -m src.events.earnings_cache
 
+      # Desk D3 (2026-11-03): the private SPY option-chain snapshot, raw EODHD end-of-day rows written as
+      # release assets to a separate private repository (src/market_data/option_snapshots.py), never to the
+      # database, this repository or the data-latest release. Its own EODHD secret, here only, so the
+      # stored price histories above stay on Yahoo; never written to .env. Without the three secrets it
+      # prints "held" and makes no call. One line of counts, at most 200 requests, exits 0 on every end.
+      # Off by default (2026-11-05): it collects only when the repository variable OPTION_SNAPSHOT_ENABLED
+      # is "true"; unset, "false" or anything else prints "held detail=disabled..." with no call. Switching
+      # it off affects later runs, not one already running.
+      - name: Collect private SPY option snapshot (Desk D3)
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          OPTION_SNAPSHOT_ENABLED: ${{ vars.OPTION_SNAPSHOT_ENABLED }}
+          EODHD_OPTIONS_TOKEN: ${{ secrets.EODHD_OPTIONS_TOKEN }}
+          OPTION_SNAPSHOT_REPO: ${{ secrets.OPTION_SNAPSHOT_REPO }}
+          OPTION_SNAPSHOT_GH_TOKEN: ${{ secrets.OPTION_SNAPSHOT_GH_TOKEN }}
+        run: python -m src.market_data.option_snapshots
+
       - name: Trim intraday data to last 30 days (prevent DB bloat)
         if: steps.mode.outputs.mode == 'full'
         run: |
@@ -291,17 +352,20 @@ jobs:
         run: python scripts/build_snapshot.py --out snapshot-latest.json
 
       - name: Publish validated DB snapshot to data-latest release
+        id: publish
         if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
         run: |
-          gh release view data-latest >/dev/null 2>&1 \
-            || gh release create data-latest --title "Latest data snapshot" \
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
+          gh release view data-latest --repo "$DATA_RELEASE_REPO" >/dev/null 2>&1 \
+            || gh release create data-latest --repo "$DATA_RELEASE_REPO" --title "Latest data snapshot" \
                  --notes "Rolling SQLite snapshot published by the refresh workflows. Not stored in git history."
-          gh release upload data-latest data/macro_radar.db --clobber
+          gh release upload data-latest data/macro_radar.db --clobber --repo "$DATA_RELEASE_REPO"
           echo "Uploaded DB snapshot ($(du -h data/macro_radar.db | cut -f1)) to data-latest."
           if [ -f snapshot-latest.json ]; then
-            gh release upload data-latest snapshot-latest.json --clobber
+            gh release upload data-latest snapshot-latest.json --clobber --repo "$DATA_RELEASE_REPO"
             echo "Uploaded snapshot-latest.json ($(du -h snapshot-latest.json | cut -f1))."
           fi
 
@@ -316,9 +380,11 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
         run: |
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
           python scripts/validation_asset.py validation.json data/macro_radar.db publish/validation.json
-          gh release upload data-latest publish/validation.json --clobber
+          gh release upload data-latest publish/validation.json --clobber --repo "$DATA_RELEASE_REPO"
 
       # Earnings cache ledger (design EC 9.2.3): if the cache step left a final
       # state it could not upload, upload it now under its own sequenced name,
@@ -407,3 +473,42 @@ jobs:
           # Five attempts with backoff; a moved main rebuilds on the newer main;
           # an unchanged playbook makes no commit. See scripts/publish_artifacts.sh.
           bash scripts/publish_artifacts.sh "Update playbook [skip ci]" output/playbook.json
+
+      # F-3: the attempt's outcome, whatever happened above (always(): failures and cancellations too).
+      # The macro outcome comes from the FRED, validation and publish steps only (api/refresh_status.py
+      # macro_status); later ancillary steps never turn it into a failure.
+      - name: Upload refresh-attempt status (finished)
+        if: always() && steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
+        run: |
+          [ "$DATA_RELEASE_REPO" = "$GITHUB_REPOSITORY" ] || export GH_TOKEN="${DATA_RELEASE_TOKEN:?DATA_RELEASE_REPO names another repo but the DATA_RELEASE_TOKEN secret is not set}"
+          rm -rf status-prev && mkdir -p status-prev
+          gh release download data-latest -p refresh-status.json -D status-prev --clobber --repo "$DATA_RELEASE_REPO" || echo "No previous refresh status could be read; this one starts its own."
+          python scripts/refresh_status.py finish --prev status-prev/refresh-status.json --out refresh-status.json \
+            --run-id "${{ github.run_id }}" --run-attempt "${{ github.run_attempt }}" --event "${{ github.event_name }}" \
+            --started-at "${{ steps.attempt.outputs.started_at }}" --job-status "${{ job.status }}" \
+            --fred "${{ steps.fred.outcome }}" --validate "${{ steps.validate.outcome }}" --publish "${{ steps.publish.outcome }}" \
+            --verdict "${{ steps.validate.outputs.verdict }}" --upload "${{ steps.validate.outputs.upload }}"
+          gh release upload data-latest refresh-status.json --clobber --repo "$DATA_RELEASE_REPO"
+
+      # Private storage cutover only (vars.DATA_RELEASE_MIRROR == 'true' while
+      # DATA_RELEASE_REPO names another repo; docs/data/PRIVATE_STORAGE.md):
+      # copy the data repo's current files to this repo's data-latest, in the
+      # primary's order (database, snapshot, verdict, refresh status), so
+      # readers not yet switched keep receiving them. It copies what the data
+      # repo holds, not this run's output, so it runs on unchanged and failed
+      # refreshes too (not cancelled ones) and repairs a mirror that failed
+      # earlier; matching digests are left alone. Last, after the finished
+      # status. Bounded, and never able to fail a refresh.
+      - name: Mirror the data repo's files to this repo's data-latest (cutover only)
+        if: ${{ !cancelled() && vars.DATA_RELEASE_MIRROR == 'true' && env.DATA_RELEASE_REPO != github.repository }}
+        timeout-minutes: 5
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DATA_RELEASE_TOKEN: ${{ secrets.DATA_RELEASE_TOKEN }}
+        run: bash scripts/mirror_data_release.sh

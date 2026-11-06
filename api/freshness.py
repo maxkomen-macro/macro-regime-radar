@@ -21,7 +21,8 @@ from api import provenance
 # month after which last month's print is expected). UNRATE is the Employment
 # Situation (first Friday); CPI ~10th–15th; INDPRO mid-month (G.17).
 MONTHLY_INPUTS: dict[str, dict[str, Any]] = {
-    "INDPRO": {"label": "Industrial production", "rule": "day", "day": 18, "release_et": "09:15"},
+    "INDPRO": {"label": "Industrial production", "rule": "day", "day": 18, "release_et": "09:15",
+               "event": "Industrial Production (G.17)"},
     "CPIAUCSL": {"label": "CPI (all items)", "rule": "day", "day": 15, "event": "CPI Release"},
     "UNRATE": {"label": "Unemployment rate", "rule": "first_friday", "event": "Jobs Report (NFP)"},
 }
@@ -33,7 +34,7 @@ NEWS_SLA_MIN_OFFHOURS = 6 * 60
 # One vocabulary for every number on screen, beside the four-word SLA verdict:
 #   live      streaming during the session (delay_min 0)
 #   delayed   a quote or bar N minutes old (delay_min = N)
-#   close     the newest official close or print that is due (cycles_behind 0
+#   close     the newest stored close or print that is due (cycles_behind 0
 #             for markets and monthly prints; FRED daily within DAILY_TOLERANCE business days)
 #   stale     behind the newest expected publication (cycles_behind says by how many)
 #   fallback  a stated default, not data
@@ -56,7 +57,8 @@ SERIES_REGISTRY: dict[str, dict[str, Any]] = {
     "DFII10": {"label": "10-year TIPS yield", "cadence": "daily", "calendar": "bond"},
     "DFII5": {"label": "5-year TIPS yield", "cadence": "daily", "calendar": "bond"},
     "SOFR": {"label": "SOFR", "cadence": "daily", "calendar": "bond"},
-    "INDPRO": {"label": "Industrial production", "cadence": "monthly", "rule": "day", "day": 18, "release_et": "09:15"},
+    "INDPRO": {"label": "Industrial production", "cadence": "monthly", "rule": "day", "day": 18, "release_et": "09:15",
+               "event": "Industrial Production (G.17)"},
     "CPIAUCSL": {"label": "CPI (all items)", "cadence": "monthly", "rule": "day", "day": 15, "event": "CPI Release"},
     "UNRATE": {"label": "Unemployment rate", "cadence": "monthly", "rule": "first_friday", "event": "Jobs Report (NFP)"},
     "FEDFUNDS": {"label": "Fed funds (effective, monthly)", "cadence": "monthly", "rule": "day", "day": 3},
@@ -77,12 +79,22 @@ RELEASE_BUFFER = timedelta(minutes=60)
 # Codex S-05: a series with an `event` is due at its dated release in the event calendar (events/calendar.csv,
 # loaded into event_calendar by the refresh), passed in as db_fresh["release_times"] {event_name: [UTC ISO, …]};
 # a month the calendar does not date, or a store without the table, keeps the approximate day rule above.
-RELEASE_EVENTS = ("CPI Release", "Jobs Report (NFP)")
+# Release-aware freshness (Max, 2026-11-04): INDPRO is dated by the Fed's G.17 rows too; its day-18 rule is the
+# fallback for a month the calendar does not date.
+RELEASE_EVENTS = ("CPI Release", "Jobs Report (NFP)", "Industrial Production (G.17)")
 INTRADAY_ON_TIME_MIN = 20
 # fix/site-audit D-c: a stored daily row within the D4 grace (the previous session's close, before the full refresh's
 # 06:00 UTC deadline) is on schedule. Its verdict stays "delayed" (the four-word contract overall, validate_db and
 # the smoke check read); the drawer prints this word in the neutral tone in its place.
 GRACE_WORD = "Awaiting daily refresh"
+# Release-aware freshness (Max, 2026-11-04; design F): a monthly input one release behind, from its dated release
+# plus RELEASE_BUFFER until close_grace_until(the release's New York date), is the normal wait for the full
+# refresh, not an alarm. Its per-series state is "delayed" with late false (neutral) and this word; the SLA
+# verdict stays "delayed" and its row carries the word. Past the deadline it is stale, as before. A failed
+# refresh publishes nothing, so before the deadline the store cannot tell it from a refresh still to run; the
+# reason says so. Never said: that FRED has not posted (a watermark records when a read completed, not when it
+# was sent, so it cannot establish that; Codex DR-03, DR-04).
+AWAITING_WORD = "Released, awaiting refresh"
 INTRADAY_LATE_MIN = 60
 OPENING_GRACE_MIN = 30
 
@@ -124,13 +136,16 @@ SHARE_COUNTS_READABLE_SQL = (
 
 
 def _state(sid: str, label: str, kind: str, cadence: str, as_of: str | None, state: str, *, delay_min: int | None = None,
-           cycles_behind: int | None = None, discontinued: bool = False, reason: str = "", late: bool | None = None) -> dict:
+           cycles_behind: int | None = None, discontinued: bool = False, reason: str = "", late: bool | None = None,
+           word: str | None = None) -> dict:
     """`late` (fix/site-audit D7) is the server's judgement of a delayed state against the source's
     expected lag: false within it (the screen reads neutral), true past it (amber); null for every
-    other state."""
+    other state. `word` (release-aware freshness) is a delayed state's own word for the screen in place
+    of "Delayed" (AWAITING_WORD); null otherwise."""
     return {"id": sid, "label": label, "kind": kind, "cadence": cadence, "as_of": as_of, "state": state,
             "delay_min": delay_min, "cycles_behind": cycles_behind, "stale": state == "stale",
-            "discontinued": discontinued, "reason": reason, "late": late if state == "delayed" else None}
+            "discontinued": discontinued, "reason": reason, "late": late if state == "delayed" else None,
+            "word": word if state == "delayed" else None}
 
 
 def share_counts_state(as_of: str | None, *, today_ny: date, watermark: dict | None = None, stored_rows: int | None = None) -> dict:
@@ -216,6 +231,77 @@ def _released(meta: dict, when: date | datetime, releases: dict | None = None) -
     return ny >= datetime.combine(day, time(hh, mm), tzinfo=cal.NY) + RELEASE_BUFFER
 
 
+def awaiting_refresh(sid: str, exp_month: date, now: datetime | None, releases: dict | None,
+                     watermark: dict | None = None, attempts: dict | None = None,
+                     newest_check: datetime | None = None) -> dict | None:
+    """The neutral wait (design F) for a monthly input whose newest print due is `exp_month` and whose store
+    holds the month before it: {"released_at", "due_at", "grace_until"} when the print's dated release R (the
+    event calendar's row in New York month exp_month + 1) has passed by RELEASE_BUFFER and `now` is before
+    close_grace_until(R's New York date); else None. None, too, for a series outside MONTHLY_INPUTS, a month
+    the calendar does not date (Codex DR-02: an approximate day is no evidence of a release), a `now` with no
+    clock, and a watermark whose status records a failed check (anything but ok or revised).
+
+    F-3 (design F3): inside that window the refresh-attempt status decides (api/refresh_status.decide,
+    `attempts` = api/bootstrap.refresh_attempts(), `newest_check` = the store's newest fred:<id>
+    `checked_at`). The result's "outcome" is "waiting" (the neutral word) or "failed" (a relevant refresh
+    failed, was cancelled or stopped reporting: stale, with that said); a status that cannot vouch for
+    the time since the release (missing, unreadable, not read recently, older than the store, not
+    covering it, overdue) returns None, so the caller keeps today's stale state."""
+    meta = MONTHLY_INPUTS.get(sid)
+    if meta is None or not meta.get("event") or not isinstance(now, datetime) or now.tzinfo is None:
+        return None
+    status = (watermark or {}).get("status")
+    if status is not None and status not in ("ok", "revised"):
+        return None
+    month = cal.month_add(exp_month, 1)
+    released = _dated_release(meta, month.year, month.month, releases)
+    if released is None:
+        return None
+    due = released + RELEASE_BUFFER
+    grace = close_grace_until(released.astimezone(cal.NY).date())
+    if not (due <= now < grace):
+        return None
+    from api import refresh_status as rs
+
+    verdict = rs.decide(attempts, released_at=released, now=now, newest_check=newest_check)
+    if verdict["outcome"] not in ("waiting", "failed"):
+        return None
+    return {"released_at": released, "due_at": due, "grace_until": grace, "outcome": verdict["outcome"],
+            "why": verdict["why"], "attempt": verdict["attempt"]}
+
+
+def newest_fred_check(watermarks: dict | None) -> datetime | None:
+    """The newest `checked_at` among the store's fred:<id> watermarks: when the full refresh behind the
+    served database last read FRED (F-3: a refresh status older than this has lost a run)."""
+    stamps = [_parse_dt((w or {}).get("checked_at")) for k, w in (watermarks or {}).items() if str(k).startswith("fred:")]
+    stamps = [t for t in stamps if t is not None]
+    return max(stamps) if stamps else None
+
+
+def _day(t: datetime) -> str:
+    return f"{t.strftime('%b')} {t.day}"
+
+
+def _awaiting_reason(label: str, exp_month: date, wait: dict) -> str:
+    r = wait["released_at"].astimezone(cal.NY)
+    g = wait["grace_until"].astimezone(timezone.utc)
+    return (f"{label} for {exp_month.strftime('%b %Y')} was scheduled for release {_day(r)} at {r.strftime('%H:%M')} ET "
+            f"(official calendar) and is not stored yet; the full refresh has until 06:00 UTC {_day(g)} to store it, "
+            "after which it reads stale. A failed refresh normally shows here within about 10 minutes; one that stops "
+            "reporting turns this stale within an hour of starting, and one whose status never arrives is caught at "
+            "the 06:00 UTC deadline.")
+
+
+def _failed_reason(label: str, exp_month: date, stored_month: date, wait: dict) -> str:
+    r = wait["released_at"].astimezone(cal.NY)
+    started = _parse_dt((wait.get("attempt") or {}).get("started_at"))
+    run = (f"the full refresh that started {_day(started.astimezone(cal.NY))} {started.astimezone(cal.NY).strftime('%H:%M')} ET "
+           if started else "the full refresh ")
+    return (f"{label} for {exp_month.strftime('%b %Y')} was scheduled for release {_day(r)} at {r.strftime('%H:%M')} ET "
+            f"(official calendar) and is not stored: {run}{wait['why']}. The newest stored print is "
+            f"{stored_month.strftime('%b %Y')}.")
+
+
 def _expected_month_for(meta: dict, when: date | datetime, releases: dict | None = None) -> date:
     today = when.astimezone(cal.NY).date() if isinstance(when, datetime) else when
     return cal.month_add(date(today.year, today.month, 1), -1 if _released(meta, when, releases) else -2)
@@ -230,9 +316,14 @@ def _daily_expected_and_lag(d: date, today_ny: date, rates: bool) -> tuple[date,
 
 
 def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, watermark: dict | None,
-                      now: datetime | None = None, releases: dict | None = None) -> dict:
+                      now: datetime | None = None, releases: dict | None = None, awaiting: bool = False,
+                      attempts: dict | None = None, newest_check: datetime | None = None) -> dict:
     """State of one FRED series. Daily series need a watermark (their stored
-    rows are month-stamped); monthly prints are dated by month either way."""
+    rows are month-stamped); monthly prints are dated by month either way.
+    `awaiting` (design F) opts in to the neutral wait for a monthly input one
+    release behind (`awaiting_refresh`); `assess` passes it, the Desk Pipeline
+    does not (its vocabulary reads "delayed" as current), so it keeps today's
+    states."""
     meta = SERIES_REGISTRY.get(sid) or {"label": sid, "cadence": "monthly", "rule": "day", "day": 15}
     label, cadence = meta["label"], meta["cadence"]
     obs = (watermark or {}).get("last_obs")
@@ -258,6 +349,14 @@ def fred_series_state(sid: str, *, today_ny: date, stored_date: str | None, wate
     month = date(d.year, d.month, 1)
     exp = _expected_month_for(meta, now or today_ny, releases)
     cycles = max(0, (exp.year - month.year) * 12 + exp.month - month.month)
+    if awaiting and cycles == 1:
+        wait = awaiting_refresh(sid, exp, now, releases, watermark, attempts, newest_check)
+        if wait is not None and wait["outcome"] == "waiting":
+            return _state(sid, label, "fred", cadence, month.isoformat(), "delayed", cycles_behind=1, late=False,
+                          word=AWAITING_WORD, reason=_awaiting_reason(label, exp, wait))
+        if wait is not None and wait["outcome"] == "failed":
+            return _state(sid, label, "fred", cadence, month.isoformat(), "stale", cycles_behind=1,
+                          reason=_failed_reason(label, exp, month, wait))
     reason = (f"{label} for {month.strftime('%b %Y')} is the newest print due." if cycles == 0
               else f"{label}: {cycles} release(s) behind; {exp.strftime('%b %Y')} is due.")
     return _state(sid, label, "fred", cadence, month.isoformat(), "close" if cycles == 0 else "stale", cycles_behind=cycles, reason=reason)
@@ -448,8 +547,10 @@ def assess(
     bootstrap: dict | None,
     now: datetime | None = None,
     watermarks: dict | None = None,
+    attempts: dict | None = None,
 ) -> dict:
-    """`watermarks` (B6, 2026-09-18) maps source → the source_watermarks row
+    """`attempts` (F-3) is api/bootstrap.refresh_attempts(); without it a monthly print one release
+    behind keeps today's stale state (no neutral wait). `watermarks` (B6, 2026-09-18) maps source → the source_watermarks row
     (true last observation, advanced_at, checked_at). raw_series stores daily
     FRED series month-stamped, so without watermarks the FRED daily verdicts
     measure lag from the 1st of the month (the legacy path, kept for older
@@ -635,6 +736,12 @@ def assess(
         ok = latest_month is not None and latest_month >= exp
         delayed_ok = latest_month is not None and latest_month >= cal.month_add(exp, -1)
         row = _verdict(f"fred:{sid}", r.get("date") if r else None, exp.isoformat(), ok, delayed_ok, f"{meta['label']} for {exp.strftime('%b %Y')} is the latest print due by today." if ok else (f"{meta['label']} print for {exp.strftime('%b %Y')} is published but not stored yet." if delayed_ok else f"{meta['label']} is more than one release behind."))
+        # design F: within the neutral wait the verdict stays "delayed" (overall, validate_db, the smoke check) and the
+        # drawer prints the word in the neutral tone in its place, as GRACE_WORD does for the daily closes.
+        if (not ok and delayed_ok and latest_month == cal.month_add(exp, -1)
+                and ((awaiting_refresh(sid, exp, now, releases, (watermarks or {}).get(f"fred:{sid}"), attempts,
+                                       newest_fred_check(watermarks)) or {}).get("outcome") == "waiting")):
+            row["word"] = AWAITING_WORD
         rows.append(row)
         inputs.append({"series": sid, "label": meta["label"], "latest_month": latest_month.isoformat() if latest_month else None, "expected_month": exp.isoformat(), "verdict": row["verdict"]})
 
@@ -715,7 +822,8 @@ def assess(
     for sid in SERIES_REGISTRY:
         stored = by_series.get(sid)
         series.append(fred_series_state(sid, today_ny=today_ny, stored_date=stored.get("date") if stored else None,
-                                        watermark=(watermarks or {}).get(f"fred:{sid}"), now=now, releases=releases))
+                                        watermark=(watermarks or {}).get(f"fred:{sid}"), now=now, releases=releases,
+                                        awaiting=True, attempts=attempts, newest_check=newest_fred_check(watermarks)))
     md_str = md.isoformat() if md else None
     md_cycles = cal.business_days_between(md, exp_md) if md else None
     # D7 follow-up: within the D4 grace (the previous session's close, before the full refresh's deadline) the
@@ -723,8 +831,8 @@ def assess(
     md_on_time = md is not None and (md >= exp_md or within_grace)
     series.append(_state("market_daily", "Daily closes (stored)", "market", "daily", md_str,
                          "unknown" if md is None else ("close" if md_on_time else "stale"), cycles_behind=0 if md_on_time else md_cycles,
-                         reason="No stored closes." if md is None else (f"Official close of {md_str}, the last completed session." if md >= exp_md
-                                else f"Official close of {md_str}; the last completed session ({exp_md.isoformat()}) is stored by the full refresh, which has until 06:00 UTC." if within_grace
+                         reason="No stored closes." if md is None else (f"Stored provider close of {md_str}, the last completed session." if md >= exp_md
+                                else f"Stored provider close of {md_str}; the last completed session ({exp_md.isoformat()}) is stored by the full refresh, which has until 06:00 UTC." if within_grace
                                 else f"Newest stored close {md_str} is {md_cycles} session(s) older than the last completed session ({exp_md.isoformat()}).")))
     if mi is None:
         series.append(_state("market_intraday", "Intraday bars (stored)", "market", "5min", None, "unknown", reason="No stored intraday bars."))

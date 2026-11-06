@@ -83,7 +83,8 @@ ETFs and the other Desk ETFs are stored by the same refresh step as the
 S&P's closes, with their volume, full history back to each fund's first
 close. Live on request: Basket & Hedge, a basket you keep in your browser
 priced as one index from daily closes, read against the Nasdaq and the S&P,
-and hedged with the ETF that fits it best.
+hedged with the ETF that fits it best, and studied: the event-study engine
+run on that same index.
 
 Designed and drawn, not yet served, each for a stated reason:
 
@@ -106,7 +107,7 @@ Designed and drawn, not yet served, each for a stated reason:
 
 ## Prototypes, and how I would build them
 
-Five cards are drawn as prototypes: finished, with illustrative values, each
+Four cards are drawn as prototypes: finished, with illustrative values, each
 ending in a small footnote that says so and names how it would be built. They
 are there so the Desk can be walked through end to end. They don't change the
 list above: nothing in them is served, and each stays designed, not yet
@@ -147,16 +148,6 @@ table per source, each row dated by its settlement or filing date, because
 the three arrive on three calendars and the card has to say how old each
 figure is. Effort: about two weeks; the 13F parsing is the long pole, and its
 45-day lag has to be printed beside the number.
-
-**Event study on this basket (Basket & Hedge).** Source: the closes the
-basket's names already have in the store, plus any name not yet ingested.
-Compute: a basket index from the saved weights, a name joining when it lists,
-rebalanced monthly, then the existing event-study engine run on that series
-exactly as it runs on the S&P: same entry rule, baseline, blocks and verdict
-rule. Storage: the index levels in the proposed MART.INDEX_LEVELS table, keyed
-by basket and date, with the inputs hash. Effort: about a week, since the
-engine exists; the work is the index, its rebalancing rule, and a cache keyed
-on the basket's weights.
 
 **Sync to Snowflake (Data Pipeline).** Source: the validated SQLite snapshot
 the refresh already publishes. Compute: a job after each validated refresh
@@ -206,9 +197,11 @@ more than the engine computes, and the honest fix was to label them.
 In order: constituent-level breadth, the stocks inside the index rather
 than the 11 sector ETFs (it needs a constituent list and a price per
 stock); a stored options surface so the vol card and the options hedge on
-a basket can go live; rolling-window and by-regime views of the
-correlations (the "What moves with the S&P" card carries no Advanced
-control until one is served); then the per-study confidence selector. After that, a server-side position store with accounts, so the
+a basket can go live; the correlation views not served yet, a 250-session
+window and the stock–bond history since 1990 (the 20-, 60- and 120-session
+windows and the correlation by regime of the revised regime history are
+served on Macro; "as known at the time" waits for the point-in-time regime
+history); then the per-study confidence selector. After that, a server-side position store with accounts, so the
 discipline gate can be shared across a desk instead of living in one
 browser.
 
@@ -282,6 +275,7 @@ its raw close is not used.
 | Against QQQ and SPY | `regression`, `relative_series` | Beta and correlation of daily returns over the last 252 and the last 60 sessions both traded; a window with fewer returns shows a dash and says how many there are. The relative lines are basket over benchmark, 100 at the chart's first session, each with its 50-day average. |
 | ETF hedge | `hedge_rows` | SMH, SOXX, QQQ, XLK, IGV, XLU, SPY and IWM, each fitted to the basket by least squares on daily returns. R² over a year ranks them; the hedge ratio is the beta (dollars of ETF to short per dollar of basket); what's left is the volatility of the basket minus beta times the ETF. With a least-squares beta that is the basket's volatility times √(1 − R²). |
 | Stress | `stress` | Hedged means the short the ETF table recommends, its dollars held as they are, and the card names it. The betas to the benchmark are fitted on one shared window: the last year (or 60 sessions) up to the basket's last close on which the basket, the top ETF and the benchmark all trade. If QQQ or SPY falls 10%, the basket moves its beta times that; the short moves the ETF's own beta times that. No convexity, no costs, stated on the card with the window. |
+| Event study | `api/desk_basket.py`, `src/desk/event_study.py` `run_on_supplied_traced` | The saved basket's own index, defined as the page defines it: the same names and weights, the same start (the first session every name has a close), held or rebalanced monthly on the month's last index session, cap weight from the stored share counts. It is built from EODHD's daily closes since 1995 and fed to the unchanged event-study engine: the same entry rule, normal stretch, blocks and verdict rule as an S&P study. An index too short for the question says so and shows no number, rather than switching to another index. By-regime rows read the revised regime history and say so. The card states the basket is chosen today, so its history is a backtest of names picked knowing how they did. Method: `docs/desk/BASKET_STUDY_SPEC.md`. |
 
 The options hedge sits in its own slot at the end of the page, labeled
 as not served until the option arithmetic is.

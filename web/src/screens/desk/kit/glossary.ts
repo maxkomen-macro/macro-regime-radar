@@ -31,7 +31,7 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   cross: { forms: ["golden cross", "Golden cross", "death cross", "Death cross"], text: "A golden cross is the 50-day average rising above the 200-day; a death cross is the 50-day falling below it." },
   rs: { forms: ["Relative strength", "relative strength"], text: "Relative strength is the price divided by a benchmark's, the S&P 500's unless the card names another; a rising line means it is beating the benchmark." },
   logret: { forms: ["log returns", "log return"], text: "A log return is the natural log of the price ratio; for moves this size it is close to the percent change." },
-  corr: { forms: ["60-day correlation", "Correlation", "correlation", "Corr"], text: "Correlation runs from −1 to +1: how closely two assets' daily returns move together, here over the last 60 sessions." },
+  corr: { forms: ["60-day correlation", "Correlation", "correlation", "Corr"], text: "Correlation runs from −1 to +1: how closely two assets' daily returns move together, over the window or sample the card names." },
   breadth: { forms: ["Breadth", "breadth"], text: "Breadth is how much of the market joins a move; here, how many sector ETFs sit above their 50-day and 200-day averages, and the average stock against the index." },
   baseline: { forms: ["a normal stretch"], text: "Normal is the study's baseline: the same horizon's move over every evaluable session of its sample, not only after events." },
   // Codex R-05: the served excess median (api/desk_v2.py vs_normal: 100 × (median − baseline_median) of log moves, bp as served).
@@ -135,7 +135,8 @@ export const GLOSSARY: Readonly<Record<string, GlossaryTerm>> = {
   "col-now-firing": { forms: [], text: "Latest says whether the signal fired on its latest evaluated session and for how many days, is quiet, or is stale because an input is behind." },
   // Position Monitor (positions/monitor.ts, positions/store.ts).
   "col-room": { forms: [], text: "Room is how far the series is from the exit level now, as a share of that distance at entry: 100% at entry, zero at the level." },
-  "col-to-level": { forms: [], text: "To level is the distance left to the exit level: a percent of the price for the S&P, basis points for 2s10s." },
+  "nav-ref-leg": { forms: [], text: "For a spread, the market value of its longer-maturity (reference) leg as a share of NAV, not the spread's total: the other leg is sized to offset its DV01." },
+  "col-to-level": { forms: [], text: "To level is the distance left to the exit level: a percent of the price for the S&P and ETFs, basis points for yields and spreads." },
   "col-falsified": { forms: [], text: "Closes in the last 90 days marked falsified, the level you named as wrong reached." },
   "col-expired": { forms: [], text: "Closes in the last 90 days marked expired, the position's horizon over." },
   "col-premortem": { forms: [], text: "Of the closes in the last 90 days whose pre-mortem you judged, how many you marked right." },

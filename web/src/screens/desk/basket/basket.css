@@ -717,3 +717,42 @@ td.bh-live[data-tone="down"] {
     text-align: left;
   }
 }
+
+/* §10, §12.19 (desk P1a): "Event study on this basket", the engine on the basket's own index, styled as an Event
+   Study answer (§4). */
+.bs-study .bs-q { margin-top: 8px; font-family: var(--dk-serif); font-weight: 700; font-size: 17px; line-height: 1.3; color: var(--dk-t1); }
+.bs-study .dk-stats { margin-top: 12px; }
+.bs-study .es-bars { position: relative; margin-top: 12px; height: 260px; }
+.bs-study .es-bars svg { position: absolute; inset: 0; }
+.bs-study .es-bar-value { font-family: var(--dk-serif); font-weight: 700; font-size: 12.5px; fill: var(--dk-blue); }
+.bs-study .es-bar-label { font-family: var(--dk-serif); font-size: 14px; fill: var(--dk-t1); }
+.bs-why { margin-top: 12px; font-size: 13px; line-height: 1.45; color: var(--dk-t3); }
+.bs-study-why { margin-top: 10px; font-size: 13px; line-height: 1.45; color: var(--dk-t2); }
+.bs-prov { margin-top: 6px; font-family: var(--dk-mono); font-size: 11px; line-height: 1.5; color: var(--dk-t4); }
+.bs-caveats { margin: 8px 0 0; padding-left: 16px; font-size: 12px; line-height: 1.45; color: var(--dk-t3); }
+.bs-caveats li + li { margin-top: 2px; }
+.bs-adv-line { margin-top: 8px; font-size: 12.5px; line-height: 1.45; color: var(--dk-t2); }
+/* The last events (§12.19's last_events): date · revised regime · the move a month on; the Event Study rail's rows. */
+.bs-events { list-style: none; margin: 4px 0 0; padding: 0; }
+.bs-events li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: 16px; min-height: 27px; border-bottom: 1px solid var(--dk-row); font-size: 13px; }
+.bs-events li:last-child { border-bottom: 0; }
+.bs-events li > :last-child { font-family: var(--dk-mono); text-align: right; min-width: 60px; }
+.bs-events-regime { color: var(--dk-t3); }
+.bs-table-wrap { margin-top: 6px; overflow-x: auto; }
+.bs-table-wrap:focus-visible { outline: 2px solid var(--dk-blue); outline-offset: 2px; }
+.bs-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.bs-table caption { text-align: left; }
+.bs-table th,
+.bs-table td { padding: 6px 8px; border-bottom: 1px solid var(--dk-row); text-align: right; white-space: nowrap; }
+.bs-table thead th { font-family: var(--dk-mono); font-size: 10.5px; font-weight: 400; letter-spacing: 0.02em; text-transform: uppercase; color: var(--dk-t4); }
+.bs-table th:first-child,
+.bs-table td:first-child { text-align: left; padding-left: 0; }
+.bs-table tbody th { font-weight: 600; color: var(--dk-t1); }
+.bs-table td { font-family: var(--dk-mono); color: var(--dk-t2); }
+.bs-table tr:last-child th,
+.bs-table tr:last-child td { border-bottom: 0; }
+.bs-study .es-legend { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 4px; font-size: 13px; color: var(--dk-t2); }
+.bs-study .es-legend i { display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px; }
+.bs-key-blue { background: var(--dk-blue); }
+.bs-key-gray { background: rgba(139, 146, 158, 0.35); }
+.bs-key-whisker { color: var(--dk-blue); }

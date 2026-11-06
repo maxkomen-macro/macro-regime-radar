@@ -260,3 +260,31 @@ describe("EvidenceTab (checklist 04 B.10)", () => {
     expect(within(section()).queryByRole("table", { name: "Backtests" })).toBeNull();
   });
 });
+
+/* ── backtest total return (2026-11-04): the label follows the stored basis ── */
+
+describe("EvidenceTab return basis", () => {
+  const TR = BACKTESTS.map((r) => ({ ...r, return_basis: "total_return" }));
+
+  it("says total return, dividends reinvested, only when every stored row records that basis", async () => {
+    stubFetch(routes({ "/api/backtests": () => TR }));
+    await renderEvidence();
+    expect(text(section())).toContain("Stored empirical analysis · SPY total return");
+    expect(text(section())).not.toContain("basis not recorded");
+    expect(text(section())).toContain("SPY total returns, dividends reinvested, after each regime began, measured over trading-day horizons (1M=21d … 12M=252d).");
+    fireEvent.click(option("By signal"));
+    await waitFor(() => expect(text(section())).toContain("SPY total returns, dividends reinvested, after each signal fired"));
+  });
+
+  it("rows stored without a basis (before the switch, or a mixed set) say basis not recorded and never total return", async () => {
+    for (const rows of [BACKTESTS, [...TR.slice(1), { ...TR[0], return_basis: null }]]) {
+      stubFetch(routes({ "/api/backtests": () => rows }));
+      const view = renderWithProviders(<EvidenceTab />, { route: "/app/regime-lab#backtests" });
+      await waitFor(() => expect(within(section()).queryByRole("table", { name: "Backtests" })).not.toBeNull());
+      expect(text(section())).toContain("Stored empirical analysis · SPY forward returns · basis not recorded");
+      expect(text(section())).toContain("SPY forward returns after each regime began");
+      expect(text(section())).not.toContain("total return");
+      view.unmount();
+    }
+  });
+});

@@ -19,9 +19,12 @@ import { deskAwaiting, deskError, stubDesk } from "../../../test/desk";
 import { basketKey, deskFixture } from "../../../fixtures/desk";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
+import basketStudy from "../../../fixtures/desk/basket-study.json";
 import { PRESET, SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
 import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
 import { GLOSSARY } from "../kit/glossary";
+import { dayLong } from "../kit/format";
+import { moveText } from "../kit/units";
 
 const BASKETS = (sample as { baskets: SavedBasket[] }).baskets;
 
@@ -762,46 +765,155 @@ describe("Positioning (PROTOTYPE, §1.0.3): drawn for the AI Infrastructure 10 p
   });
 });
 
-describe("Event study on this basket (PROTOTYPE, §1.0.3): as an Event Study answer, drawn for the preset", () => {
-  it("a first visit: the question names the basket; events, up a month later, the median against a normal month, the verdict and the horizon chart; its footnote last", async () => {
+describe("Event study on this basket (§10, §12.19; desk P1a): the engine on the saved basket's own index", () => {
+  const STUDY = (basketStudy as unknown as { answers: Record<string, Record<string, any>> }).answers;
+  const HOLD = STUDY["legs=SMH:40,SOXX:30,XLK:30&method=hold"];
+  const CHIPS = [{ id: "local-1", name: "Chip ETFs", legs: [{ symbol: "SMH", name: null, weight: "40" }, { symbol: "SOXX", name: null, weight: "30" }, { symbol: "XLK", name: null, weight: "30" }], saved_at: "2026-09-28T00:00:00Z" }];
+  const studyCard = () => screen.findByRole("region", { name: /^Event study on this basket/ });
+
+  it("a served study: the question names the basket; the engine's events, share up, medians, verdict and chart; the index stated the page's way; the caveats", async () => {
+    seed(CHIPS);
+    const { calls } = stubDesk();
+    renderTab();
+    const c = await studyCard();
+    const m = HOLD.study.horizons.find((h: { h: number }) => h.h === 20);
+    const pct = (x: number) => `${Math.round(x * 100)}%`;
+    await waitFor(() => expect(c).toHaveTextContent(`After Chip ETFs falls 2σ over 5 days, it was higher a month later ${pct(m.up_pct)} of the time.`));
+    expect(calls).toContain("GET /api/desk/basket/study?legs=SMH%3A40%2CSOXX%3A30%2CXLK%3A30&method=hold");
+    expect(c).not.toHaveAttribute("data-prototype");
+    expect(c.querySelector("[data-prototype-foot]")).toBeNull();
+    expect(c).toHaveTextContent(new RegExp(`Events\\s*${HOLD.study.matched_n}\\s*${m.n} complete at a month`));
+    expect(c).toHaveTextContent(new RegExp(`Up a month later\\s*${pct(m.up_pct)}\\s*${m.up_n} of ${m.n}`));
+    expect(within(c).getAllByText("No edge")[0]).toHaveAttribute("data-verdict", "no_edge");
+    expect(within(c).getByRole("img")).toBeInTheDocument();
+    expect(c).toHaveTextContent(HOLD.study.why);
+    expect(c).toHaveTextContent("The index: SMH 40%, SOXX 30%, XLK 30%, at the saved weights; the saved weights bought at the start and held, so each name's weight drifts with its price. A session counts only when every name has a close. Yahoo daily closes from Jul 13, 2001, SOXX's first close, through Sep 23, 2026.");
+    const caveats = within(c).getByRole("list", { name: "What this history cannot claim" });
+    expect(caveats).toHaveTextContent("The basket is chosen today");
+    expect(caveats).toHaveTextContent("Regime labels are revised regime history");
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    const regimes = within(c).getByRole("region", { name: "By regime, revised regime history" });
+    expect(regimes).toHaveTextContent("Revised regime history");
+    // Codex S-07: the labels are as the served data's last full refresh revised them, which may be an earlier day's;
+    // neither the caption nor the caveat dates that revision "today".
+    expect(regimes).toHaveTextContent("as this data's last full refresh revised it");
+    expect(regimes).not.toHaveTextContent(/today/i);
+    expect(caveats).toHaveTextContent("current at that refresh");
+    expect(caveats.textContent).not.toMatch(/today's FRED/);
+    expect(within(regimes).getAllByRole("row")).toHaveLength(5);
+    expect(within(within(c).getByRole("region", { name: "Every horizon" })).getAllByRole("row")).toHaveLength(5);
+    expect(c).toHaveTextContent(`inputs ${HOLD.study.inputs_hash}`);
+  });
+
+  it("Advanced lists the last events, newest first, each with its revised regime and its move a month on; the unlabeled count reads in agreeing words (§10, §12.19)", async () => {
+    seed(CHIPS);
+    stubDesk();
+    renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    const last = within(c).getByRole("region", { name: "Last events" });
+    const served = HOLD.study.last_events as { event_date: string; regime: string; value_20: number | null }[];
+    expect(served.length).toBe(5);
+    expect(last).toHaveTextContent("Last five events · the basket a month later · regime as revised");
+    const items = within(last).getAllByRole("listitem");
+    expect(items).toHaveLength(served.length);
+    served.forEach((e, i) => {
+      expect(items[i]).toHaveTextContent(dayLong(e.event_date));
+      expect(items[i]).toHaveTextContent(e.regime);
+      expect(items[i]).toHaveTextContent(moveText(e.value_20, "log_return")!);
+    });
+    // The fixture's one unlabeled event, in the singular (the verifier's P3).
+    expect(HOLD.study.unlabeled_n).toBe(1);
+    expect(c).toHaveTextContent("1 event has no regime label yet and is counted in none.");
+    expect(c).not.toHaveTextContent("1 events");
+  });
+
+  it("the last events: none served says so; a move not a month on yet is a dash; three unlabeled events read in the plural", async () => {
+    seed(CHIPS);
+    const one = [{ event_date: "2026-09-21", entry_date: "2026-09-22", regime: "Goldilocks", value_20: null }];
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study: { ...HOLD.study, last_events: one, unlabeled_n: 3 } }) });
+    const first = renderTab();
+    let c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    let last = within(c).getByRole("region", { name: "Last events" });
+    expect(last).toHaveTextContent("Last event · the basket a month later · regime as revised");
+    const [row] = within(last).getAllByRole("listitem");
+    expect(row).toHaveTextContent(dayLong("2026-09-21"));
+    expect(row).toHaveTextContent("Goldilocks");
+    expect(row.lastElementChild).toHaveTextContent(/^—$/);
+    expect(c).toHaveTextContent("3 events have no regime label yet and are counted in none.");
+    first.unmount();
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study: { ...HOLD.study, last_events: [], unlabeled_n: 0 } }) });
+    renderTab();
+    c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    last = within(c).getByRole("region", { name: "Last events" });
+    expect(last).toHaveTextContent("No events.");
+    expect(within(last).queryAllByRole("listitem")).toHaveLength(0);
+    expect(c).not.toHaveTextContent(/no regime label/);
+  });
+
+  it("Codex S-01: an answer without the last-events list says Awaiting refresh under its label, and the rest of Advanced stands", async () => {
+    seed(CHIPS);
+    const { last_events: _dropped, ...study } = HOLD.study;
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study }) });
+    renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    const last = within(c).getByRole("region", { name: "Last events" });
+    expect(last).toHaveTextContent("Last events · the basket a month later · regime as revised");
+    expect(within(last).getByRole("status")).toHaveTextContent("Awaiting refresh");
+    expect(within(last).queryAllByRole("listitem")).toHaveLength(0);
+    expect(within(within(c).getByRole("region", { name: "Every horizon" })).getAllByRole("row")).toHaveLength(5);
+    expect(within(c).getByRole("region", { name: "By regime, revised regime history" })).toBeInTheDocument();
+  });
+
+  it("an index too short for the question: the route's reason, the index line and the caveats, no number", async () => {
+    seed(CHIPS);
+    const reason = "Not enough history yet: the index starts 2025-03-28 (CRWV's first close) and spans 150 sessions; the first 2σ move over 5 sessions can be judged on its 245th session (240 5-session moves in a 252-session window).";
+    stubDesk({ "/api/desk/basket/study": () => ({ ...HOLD, study: null, not_run: reason }) });
+    renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveTextContent(reason));
+    expect(c).toHaveAttribute("data-basket-study", "not-run");
+    expect(within(c).queryByRole("img")).toBeNull();
+    expect(c).not.toHaveTextContent(/Up a month later|No edge|Suggestive|Reliable/);
+    expect(c).toHaveTextContent("The index: SMH 40%, SOXX 30%, XLK 30%");
+    expect(c).toHaveTextContent("The basket is chosen today");
+  });
+
+  it("the preset on the fixtures: asked as the page prices it (cap-weighted), and with no fixture study it says it couldn't load, never a made-up number", async () => {
+    const { calls } = stubDesk();
     renderTab();
     await loaded();
-    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
-    expect(c).toHaveAttribute("data-prototype", "basket-study");
-    expect(c).toHaveTextContent("After AI Infrastructure 10 falls 2σ over 5 days, it was higher a month later 64% of the time.");
-    expect(c).toHaveTextContent(/Events\s*57\s*56 complete at a month/);
-    expect(c).toHaveTextContent(/Up a month later\s*64%\s*36 of 56 · 61% in a normal month/);
-    expect(c).toHaveTextContent(/Median at a month\s*\+3\.4%\s*vs \+2\.4% in a normal month/);
-    expect(within(c).getByText("Suggestive")).toHaveAttribute("data-verdict", "suggestive");
-    expect(within(c).getByRole("img")).toBeInTheDocument();
-    expect(c).toHaveTextContent("56 completed outcomes in 45 overlap blocks; the 90% interval on the excess median runs −1.1% to +3.8%; 14.0% of resampled medians are adverse against a 3% bar.");
-    expect(c).toHaveTextContent("57 events since 2010 · the basket's index from Aug 2009 · last event Mar 27, 2026");
-    expect(within(c).queryByTestId("dk-live")).toBeNull();
-    expect(c.querySelector("[data-prototype-foot]")!.textContent).toBe("Illustrative values · In production: the existing engine run on the basket index series.");
-    fireEvent.click(within(c).getByTestId("dk-advanced"));
-    expect(c).toHaveTextContent("the interval spans zero");
-    expect(c).toHaveTextContent("all lean up: Suggestive");
+    const c = await studyCard();
+    await waitFor(() => expect(calls.some((x) => x.startsWith("GET /api/desk/basket/study?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&weighting=cap"))).toBe(true));
+    await waitFor(() => expect(within(c).getByTestId("dk-failed")).toHaveTextContent("Couldn't load"));
+    expect(c.textContent).not.toMatch(/\d%|Suggestive|No edge|Reliable/);
   });
 
-  it("the preset renamed is the same basket, named as saved", async () => {
-    seed([{ ...PRESET, name: "My AI names" }]);
+  it("a refusal prints the route's words; an awaiting answer its reason", async () => {
+    seed(CHIPS);
+    stubDesk({ "/api/desk/basket/study": deskError(422, "unknown_symbol", { message: "SOXX: No listing found for 'SOXX' on EODHD." }) });
+    const first = renderTab();
+    let c = await studyCard();
+    await waitFor(() => expect(c).toHaveTextContent("Couldn't load: SOXX: No listing found for 'SOXX' on EODHD."));
+    first.unmount();
+    const reason = "Awaiting refresh: cap weight reads stored share counts, and share counts are not stored in this database yet.";
+    stubDesk({ "/api/desk/basket/study": deskAwaiting(reason) });
     renderTab();
-    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
-    expect(c).toHaveTextContent("After My AI names falls 2σ over 5 days");
-  });
-
-  it("another basket: the labels and one line, no chart", async () => {
-    seed([{ ...BASKETS[0], legs: BASKETS[0].legs.slice(0, 3).map((l) => ({ ...l, weight: l.symbol === "NVDA" ? 40 : 30 })) }]);
-    renderTab();
-    const c = await screen.findByRole("region", { name: /^Event study on this basket/ });
-    expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
+    c = await studyCard();
+    await waitFor(() => expect(c).toHaveTextContent(reason));
     expect(within(c).queryByRole("img")).toBeNull();
-    expect(c).not.toHaveTextContent("Suggestive");
   });
 });
 
 describe("Codex R-04: a basket that repeats a symbol is not the preset", () => {
-  it("ten NVDA legs imported as \"NVDA only\": both prototypes print the one line and no figure", async () => {
+  it("ten NVDA legs imported as \"NVDA only\": Positioning prints the one line and no figure", async () => {
     renderTab();
     await loaded();
     const b = basketCard();
@@ -814,7 +926,7 @@ describe("Codex R-04: a basket that repeats a symbol is not the preset", () => {
     await waitFor(() => expect(stored().map((x) => x.name)).toEqual(["AI Infrastructure 10", "NVDA only"]));
     fireEvent.change(within(b).getByLabelText("Basket"), { target: { value: stored()[1].id } });
     await waitFor(() => expect(within(basketCard()).getByLabelText("Basket")).toHaveDisplayValue("NVDA only"));
-    for (const name of [/^Positioning/, /^Event study on this basket/]) {
+    for (const name of [/^Positioning/]) {
       const c = await screen.findByRole("region", { name });
       await waitFor(() => expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset."));
       expect(within(c).queryByRole("table")).toBeNull();

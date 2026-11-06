@@ -158,8 +158,8 @@ describe("Macro tab", () => {
     // The rows' own dates: since desk/fill-compute the VIX is the CBOE close (^VIX), dated like the ETFs.
     expect(card).toHaveTextContent("60 daily returns to Sep 23 · each against SPY");
     expect(card).not.toHaveTextContent("VIXCLS");
-    // desk/matrix: the full matrix is its own card; rolling windows and by regime are not served, so the card
-    // carries no Advanced control at all (Build Notes lists them under what comes next).
+    // desk/matrix: the full matrix is its own card; P1b's windows switch from the page's control and the
+    // correlation by regime has its own card, so this card carries no Advanced control at all.
     expect(within(card).queryByTestId("dk-advanced")).toBeNull();
     expect(card).not.toHaveTextContent("Advanced");
     expect(within(card).queryByRole("table")).toBeNull();

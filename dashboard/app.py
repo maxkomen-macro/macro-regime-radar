@@ -38,8 +38,26 @@ DB_PATH = Path(__file__).resolve().parent.parent / "data" / "macro_radar.db"
 # the latest snapshot into DB_PATH at startup via the GitHub API, authenticated with
 # GH_DB_TOKEN (a read-only PAT in Streamlit Cloud secrets — the repo is private, so
 # the asset is not publicly reachable). No token (local dev) → on-disk DB untouched.
-_GH_API_REPO = "https://api.github.com/repos/maxkomen-macro/macro-regime-radar"
+_DEFAULT_DATA_REPO = "maxkomen-macro/macro-regime-radar"
 _DB_ASSET_NAME = "macro_radar.db"
+_REPO_NAME = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}")
+
+
+def _data_release_repo() -> str:
+    """Private storage (Change 1): DATA_RELEASE_REPO ("owner/name", Streamlit
+    secret or env) names the repo whose data-latest release holds the database;
+    unset, this repo, as before. Malformed raises, so the app never quietly
+    reads the old public copy (the same rule as api/bootstrap.py)."""
+    try:
+        raw = st.secrets.get("DATA_RELEASE_REPO", "")
+    except Exception:
+        raw = ""
+    raw = (raw or os.environ.get("DATA_RELEASE_REPO", "")).strip()
+    if not raw:
+        return _DEFAULT_DATA_REPO
+    if not _REPO_NAME.fullmatch(raw) or raw.split("/", 1)[1] in (".", ".."):
+        raise ValueError("DATA_RELEASE_REPO is not owner/name")
+    return raw
 
 
 def _gh_db_token() -> str:
@@ -62,7 +80,7 @@ def _refresh_db_snapshot() -> str:
             "User-Agent": "macro-regime-radar-dashboard"}
     # 1) resolve the current asset on the data-latest release (id changes per upload)
     meta = requests.get(
-        f"{_GH_API_REPO}/releases/tags/data-latest",
+        f"https://api.github.com/repos/{_data_release_repo()}/releases/tags/data-latest",
         headers={**auth, "Accept": "application/vnd.github+json"},
         timeout=30,
     )
