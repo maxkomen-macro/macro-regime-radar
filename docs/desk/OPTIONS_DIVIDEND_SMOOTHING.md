@@ -134,18 +134,21 @@ bench, compared with the unrepaired bench on the same cases. It is kept apart fr
 not acceptance (review-loop/dividend-fix/rerun-S26/COMPARISON.md):
 - engine outputs identical
 - all seven component verdicts identical
-- 176 references moved by at most 0.0076 tol, none changed status
+- 176 cases' references moved (72 values, 107 deltas), none changed status; the largest value shift is 0.0076
+  of its tolerance and the largest delta shift 5.1e-5
 - arbiter: 310 of 315 reference-consistent
 
 ### Second registered run (seed 20261111): all seven components met
 
 [HELD_OUT_REGISTRATION_2.md](options-dividend-smoothing/HELD_OUT_REGISTRATION_2.md), frozen `1a4bad4` (engine files
 identical to `44a7f74`), 18,423 cases, registered before any case was drawn. Scored by `score.py` at `1a4bad4`.
+The gate's in-domain groups are G0-exempt to G6-long (random) and T1-near-boundary (targeted); the scorecard's
+summary statistics cover the random groups, so T1's figures are given beside them.
 
 | Component | Verdict | Evidence |
 |---|---|---|
-| Price accuracy | pass | 16,300 scored (at least 1,000 in every in-domain group, G0-exempt 1,500), 0 failures, 0 indeterminate; error p50 0.0002 tol, p99 0.046 tol, max 0.368 tol (G3-carry-itm/335) |
-| Displayed delta | pass | 13,255 scored, 0 failures, 0 indeterminate; 3,047 withheld (withholding an unvalidated delta is not an accuracy failure) |
+| Price accuracy | pass | random groups: 16,300 scored (at least 1,000 in each, G0-exempt 1,500), error p50 0.0002 tol, p99 0.046 tol, max 0.368 tol (G3-carry-itm/335); T1: 1,490 scored, p99 0.105 tol, max 0.589 tol (T1-near-boundary/270); 0 failures and 0 indeterminate in any group |
+| Displayed delta | pass | random groups 13,255 scored and 3,047 withheld; T1 982 scored and 508 withheld; 0 failures, 0 indeterminate (withholding an unvalidated delta is not an accuracy failure) |
 | Early-exercise bound | pass | 2,276 checked: 813 covered, 0 violated, 0 indeterminate, 1,463 unscored |
 | Dividend scenario | pass | 2,741 scored in domain; all groups: pass 2,765, refused 91, no failure or indeterminate |
 | Reference controls | pass | 1,863 European controls (max 0.35 u) and 150 exempt cases, all within their uncertainty; 0 lattice disputes |
@@ -157,16 +160,22 @@ Coverage, reported against the full population:
   T1-near-boundary.
 - **Unresolved references:** 17 in-domain values, unscored and never counted as passes (G5-extreme-vol 12,
   G6-long 4, G3-carry-itm 1), and 46 in X1-outside, mostly convection-dominated.
-- **IV round trip:** no work-cap refusal. 3,232 of 3,270 solved, 21 no root, 17 unpriceable.
-- **QuantLib QdFp comparisons outside u:** 237 in domain. The arbiter put them at:
-  - reference-consistent: 235
-  - arbiter-unresolved: 1 (G6-long/2312)
+- **IV round trip** (a diagnostic, not gated): no work-cap refusal. Random groups: 3,232 of 3,270 solved, 21 no
+  root, 17 unpriceable; T1: 294 solved, 4 unpriceable. Its identifiability test reads vega at the true sigma
+  only, so it can call a case identifiable where the price is flat in sigma near the recovered root: named
+  S29-T1-1351 solved at sigma 0.001 against a true 0.510 with a residual of 3e-14 (a sigma outside the Finder's
+  IV range).
+  The largest error × vega among identifiable random cases is 1.5 tol (G4-negrate/1440).
+- **QuantLib QdFp comparisons outside u:** 373 in all (237 in the random groups, 129 in T1, 7 in X1-outside).
+  The arbiter put them at:
+  - reference-consistent: 369
+  - arbiter-unresolved: 3 (G6-long/2312, T1-near-boundary/117, T1-near-boundary/163)
   - neither: 1 (G1-nodiv/1647)
 
 The request matrix and dashboard latency measure the engine. They were run against main with the `44a7f74`
 engine, whose files are identical:
 - no request newly over the 300 M cap (5 of 24 over on both)
-- Finder time +3.1% pooled, within 10%
+- Finder time +3.1% pooled (two alternating repetitions, ratios 1.008 and 1.056), within 10%
 - dashboard latency the same as main, including the existing stall of up to about 0.8 s on the big chain
 
 Evidence: review-loop/dividend-fix/held-out-2/ (run, scorecard, sha256 manifest), final-requests/ and
