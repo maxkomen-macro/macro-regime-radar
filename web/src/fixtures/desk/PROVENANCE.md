@@ -40,6 +40,11 @@ reason: the S&P has no Sep 22 close, so its 50- and 200-day rows, gold's
 condition and every study with the S&P as its target cannot be read on Sep
 22 (VIX for Sep 22 is stored).
 
+**Desk P1d.** The study answers here (`study.json`, `study-horizons.json`, `studies/*.json`, `basket-study.json`) predate
+the 80% and 95% ranges (`ci80_*`, `ci95_*`, docs/desk/INTERVALS_SPEC.md) and carry none of the four fields: the shape
+of an answer from a generation before them, which the page draws at the engine's 90% and says so. The tests that
+draw 80% or 95% add invented pairs to a copy.
+
 ## Per fixture
 
 | Fixture | Real (audit COMPUTABLE, or the engine) | Illustrative |

@@ -24,6 +24,7 @@ import AnswerCard from "./AnswerCard";
 import EngineDetail from "./EngineDetail";
 import QueryCard, { type Mode } from "./QueryCard";
 import StudyRail, { RailPlaceholder } from "./StudyRail";
+import { effectiveLevel, levelOf, strayLevel, type Level } from "./levels";
 import { WINDOWS, apiParams, askFromSearch, presetHorizon, loadSaved, questionFromEngine, questionWords, sameQuestion, searchFor, slotsOf, unreadableSaved, withSaved, withdrawnIn, writeLastStudy, writeSaved, type Ask, type SavedQuestion } from "./question";
 import { saveServed } from "../kit/download";
 import { DroppedNote, Unserved, LoadingLine, FailedScope } from "../kit/ui";
@@ -100,6 +101,16 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
     );
   const setMode = (m: Mode) => setParam("mode", m);
   const adv = search.get("adv") === "1";
+  // P1d (INTERVALS_SPEC §1): the range level the address asks, display only (never an API parameter), and the one
+  // drawn for this answer: the asked level when the answer serves it, else the engine's 90 for the whole answer.
+  const level = levelOf(search);
+  const shown = effectiveLevel(Array.isArray(study?.horizons) ? study.horizons : [], level);
+  const setLevel = (l: Level) => setParam("ci", l === 90 ? null : String(l));
+  useEffect(() => {
+    // §6: a `ci` the page does not read is read as 90 and dropped from the address.
+    if (strayLevel(search)) setParam("ci", null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
   const setAdv = (f: (open: boolean) => boolean) => setParam("adv", f(adv) ? "1" : null);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState("");
@@ -245,7 +256,7 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
         {/* §14.12: a question the server refuses prints its words; any other failure says Couldn't load, with Retry. */}
         <FailedScope q={refusal ? { isError: false, error: null } : q}>
         <div className="es-grid" data-busy={placeholder || undefined}>
-          <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon ?? undefined} />
+          <AnswerCard study={study} failed={q.isError} refusal={refusal} busy={placeholder} onFix={onFix} horizon={askedHorizon ?? undefined} level={shown} />
           <aside className="dk-card es-rail" aria-label="Verdict and detail" aria-busy={(!study && !q.isError) || placeholder}>
             <LoadingLine busy={(!study && !q.isError) || placeholder} />
             {study ? (
@@ -258,6 +269,9 @@ export default function EventStudyPage({ page }: { page: DeskPage }) {
                 onExport={onExport}
                 exporting={exporting}
                 busy={placeholder}
+                level={level}
+                shown={shown}
+                onLevel={setLevel}
               />
             ) : q.isError && !refusal ? (
               <RailPlaceholder />

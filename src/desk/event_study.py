@@ -93,8 +93,10 @@ import json
 import math
 import re
 import sqlite3
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
+from types import MappingProxyType
 from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 import exchange_calendars as xcals
@@ -835,11 +837,18 @@ def block_resample_medians(ev: np.ndarray, blocks: np.ndarray, rng: np.random.Ge
 
 
 def horizon_stats(ev: np.ndarray, entries: np.ndarray, base: np.ndarray, h: int, rng: np.random.Generator,
-                  n_boot: int = N_BOOT, ci: float = CI_LEVEL) -> dict:
+                  n_boot: int = N_BOOT, ci: float = CI_LEVEL, sink: dict | None = None) -> dict:
     """One horizon: its own n (events with a complete window), the events'
     statistics, the baseline's, Δ, and the cluster-bootstrap interval on Δ
     (exact or Monte Carlo, disclosed); the exclusion verdict needs
-    MIN_BLOCKS_EXCLUSION blocks."""
+    MIN_BLOCKS_EXCLUSION blocks.
+
+    desk P1d (docs/desk/INTERVALS_SPEC.md §3): with a `sink`, the optional
+    80% and 95% pairs read off the same `deltas` are stored in `sink[h]`
+    (None when the horizon has no interval). The returned dict, the draws
+    and the generator's state are the same with or without it."""
+    if sink is not None:
+        sink[h] = None
     keep = ~np.isnan(ev)
     ev, entries = ev[keep], entries[keep]
     base = base[~np.isnan(base)]
@@ -869,12 +878,41 @@ def horizon_stats(ev: np.ndarray, entries: np.ndarray, base: np.ndarray, h: int,
     medians, method, n_draws = block_resample_medians(ev, blocks, rng, n_boot)
     deltas = medians - out["baseline_median"]
     judged = judge_exclusion(deltas, out["delta"], ci)
+    if sink is not None:
+        sink[h] = optional_intervals(deltas)
     out.update(ci90=judged["ci90"], resampling=method, n_draws=int(n_draws), opposite_sign_share=judged["opposite_sign_share"])
     if n_blocks < MIN_BLOCKS_EXCLUSION:
         out.update(ci_excludes_zero=None, exclusion=None, note="too few independent blocks to judge exclusion")
     else:
         out.update(ci_excludes_zero=judged["ci_excludes_zero"], exclusion=judged["exclusion"],
                    note=None if judged["exclusion"] != "not established" else "exclusion not established")
+    return out
+
+
+def interval_bounds(deltas: np.ndarray, ci: float) -> tuple[float, float]:
+    """The interval at level `ci` on the resampled Δ: both bounds are
+    resampled values, never interpolations, rounded outward. The tail is
+    `(1.0 - ci) / 2.0 * 100.0` as written (4.999999999999999 at 0.90, not 5;
+    desk P1d DR-01), and nothing here validates or clamps (DR-04), so the
+    90% path is today's two lines on every input."""
+    tail = (1.0 - ci) / 2.0 * 100.0
+    # both bounds are resampled values, never interpolations, rounded outward
+    lo = float(np.percentile(deltas, tail, method="lower"))
+    hi = float(np.percentile(deltas, 100.0 - tail, method="higher"))
+    return lo, hi
+
+
+OPTIONAL_CI = (("80", 0.80), ("95", 0.95))  # desk P1d: the display-only levels; verdicts stay at CI_LEVEL
+
+
+def optional_intervals(deltas: np.ndarray) -> dict[str, tuple[float, float] | None]:
+    """desk P1d (INTERVALS_SPEC §2–3): the 80% and 95% pairs of the same
+    draws as the 90%, by `interval_bounds`; a pair with a non-finite bound
+    is None (DR-05), never a number the page could print."""
+    out: dict[str, tuple[float, float] | None] = {}
+    for key, level in OPTIONAL_CI:
+        lo, hi = interval_bounds(deltas, level)
+        out[key] = (lo, hi) if math.isfinite(lo) and math.isfinite(hi) else None
     return out
 
 
@@ -891,10 +929,7 @@ def judge_exclusion(deltas: np.ndarray, point: float, ci: float = CI_LEVEL) -> d
     between them. "established" only when the interval excludes
     zero and the adverse share is below OPPOSITE_SIGN_MAX; "not
     established" when the two disagree; "included" otherwise."""
-    tail = (1.0 - ci) / 2.0 * 100.0
-    # both bounds are resampled values, never interpolations, rounded outward
-    lo = float(np.percentile(deltas, tail, method="lower"))
-    hi = float(np.percentile(deltas, 100.0 - tail, method="higher"))
+    lo, hi = interval_bounds(deltas, ci)
     if point > 0:
         share = float(np.mean(deltas <= 0.0))
         excludes = bool(lo >= 0.0)
@@ -1164,6 +1199,9 @@ class EventTable:
     exit_idx: dict[int, np.ndarray]     # h → int[k], entry + h when value[h] is finite, else −1
     value: dict[int, np.ndarray]        # h → float[k], the native outcome, NaN when incomplete
     n_unlabeled: int
+    # desk P1d (INTERVALS_SPEC §3): h → {"80": (lo, hi) | None, "95": (lo, hi) | None}, or None when the
+    # horizon has no interval; never a "90" pair (that is the native ci90). Empty off the traced paths.
+    intervals: Mapping[int, Mapping[str, tuple[float, float] | None] | None] = field(default_factory=dict)
 
     def __len__(self) -> int:
         return len(self.event_idx)
@@ -1206,6 +1244,7 @@ def _traced(t: dict) -> tuple[EventTable, SignalTrace]:
         exit_idx={h: _frozen(np.where(np.isfinite(v), entry + h, -1), np.int64) for h, v in value.items()},
         value=value,
         n_unlabeled=int(t["n_unlabeled"]),
+        intervals=MappingProxyType({h: (None if v is None else MappingProxyType(dict(v))) for h, v in (t.get("intervals") or {}).items()}),
     )
     trace = SignalTrace(
         sessions=sessions,
@@ -1476,7 +1515,9 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
     base_labels = labels_all[base_pos]  # the regime of the signal date
 
     rng = np.random.default_rng(q.seed)
-    horizons = [horizon_stats(moves_by_h[h], entry, base_by_h[h], h, rng, n_boot=n_boot) for h in HORIZONS]
+    # desk P1d: the traced paths collect the optional 80/95% pairs; the untraced run builds none
+    sink: dict | None = {} if trace is not None else None
+    horizons = [horizon_stats(moves_by_h[h], entry, base_by_h[h], h, rng, n_boot=n_boot, sink=sink) for h in HORIZONS]
     regimes = regime_split(labels, moves_by_h, base_labels, base_by_h, unl_by_h)
 
     stages = [
@@ -1523,6 +1564,7 @@ def _run(q: Query, conn: sqlite3.Connection, *, n_boot: int, generation: Any, cl
             has_entry=has_entry.copy(), ev_delay=ev_delay.copy(), moves_by_h={h: m.copy() for h, m in moves_by_h.items()},
             n_unlabeled=int(len(unl_pos)), z=None if z is None else z.to_numpy(dtype=float).copy(),
             evaluable=evaluable.copy(), trigger=trigger, holds=holds_arr.astype(bool),
+            intervals=sink,
         )
 
     metas = [_series_meta(k, raw[k], off[k], missing[k], invalid[k], invalid_reason[k],

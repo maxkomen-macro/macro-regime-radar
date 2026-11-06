@@ -476,6 +476,12 @@ export interface StudyHorizon {
   /** The interval on Δ = median − baseline_median, native (§1.9); null under five blocks. */
   ci_lo: number | null;
   ci_hi: number | null;
+  /** P1d (INTERVALS_SPEC §4): the 80% and 95% ranges on Δ of the same resampled medians, display only (the verdicts
+   * stay at 90%). Absent on an answer from before them; null with no 90% interval, or alone when not finite. */
+  ci80_lo?: number | null;
+  ci80_hi?: number | null;
+  ci95_lo?: number | null;
+  ci95_hi?: number | null;
   /** The resampling behind the interval (§12.2): overlap blocks, the share of resampled medians adverse, draws and method. */
   n_blocks?: number | null;
   adverse_share?: number | null;

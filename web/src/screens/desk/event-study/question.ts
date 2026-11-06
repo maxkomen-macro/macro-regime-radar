@@ -146,10 +146,11 @@ export function askFromSearch(search: string | URLSearchParams): Ask {
   return { preset: PRESET_CHIPS[0].slug };
 }
 
-/** The query string for an ask, with the Desk / Client view and the tour kept from `keep`. */
+/** The query string for an ask, with the Desk / Client view, the tour and the range level (P1d `ci`, display
+ * state only, never an API parameter: apiParams) kept from `keep`. */
 export function searchFor(ask: Ask, keep?: URLSearchParams): string {
   const p = new URLSearchParams();
-  for (const k of ["view", "tour"]) {
+  for (const k of ["view", "tour", "ci"]) {
     const v = keep?.get(k);
     if (v) p.set(k, v);
   }

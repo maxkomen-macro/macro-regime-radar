@@ -735,6 +735,12 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
         baseline_up_pct: "n",
         ci_lo: "n",
         ci_hi: "n",
+        // P1d (INTERVALS_SPEC §4): the 80% and 95% ranges of the same resampled medians. A field absent stays
+        // absent (an answer from before them, ../event-study/levels.ts), one not finite becomes null.
+        ci80_lo: "n",
+        ci80_hi: "n",
+        ci95_lo: "n",
+        ci95_hi: "n",
         n_blocks: "n",
         adverse_share: "n",
         draws: "n",
@@ -965,6 +971,10 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
               baseline_up_pct: "n",
               ci_lo: "n",
               ci_hi: "n",
+              ci80_lo: "n",
+              ci80_hi: "n",
+              ci95_lo: "n",
+              ci95_hi: "n",
               n_blocks: "n",
               adverse_share: "n",
               draws: "n",

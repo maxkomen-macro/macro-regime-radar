@@ -597,3 +597,32 @@ def test_the_studys_closes_refuse_an_unknown_name_and_an_empty_answer(up, monkey
         desk_basket.study_history({"dates": np.array(["2026-09-25"], dtype="datetime64[D]"), "adjusted": np.array([np.nan]),
                                    "close_raw": np.array([1.0])}, "X")
     market.clear_caches()
+
+
+def test_p1d_the_basket_study_serves_the_80_and_95_ranges_off_the_same_draws(served):
+    """§12.19 builds horizons[] with §12.2's horizon_row, so it serves P1d's four fields: the traced run's 80% and 95%
+    pairs (docs/desk/INTERVALS_SPEC.md §4), nested around the 90% one, which with the verdicts is unchanged."""
+    d = study(legs="OLD:60,MID:40", method="hold", window="20", move="up2s", horizon="60").json()["data"]
+    hist = {s: desk_basket.study_history(market.daily_closes_since_1995(s), s) for s in ("OLD", "MID")}
+    from src.desk import basket as bk
+
+    priced = bk.price_basket(hist, {"OLD": 0.6, "MID": 0.4}, "hold", 1.0, sessions=desk_basket.calendar_for(hist))
+    lvl = pd.Series(priced["index"], index=pd.DatetimeIndex(priced["dates"]))
+    conn = dbpath.connect_ro(db.DB_PATH)
+    try:
+        native, table, _ = es.run_on_supplied_traced(conn, es.Query(shock="basket", target="basket", w=20, z=2.0, sign="+"),
+                                                     _supplied_from(lvl), generation="g", as_of=AS_OF)
+    finally:
+        conn.close()
+    ranged = 0
+    for row, H in zip(d["study"]["horizons"], native["horizons"]):
+        assert {"ci80_lo", "ci80_hi", "ci95_lo", "ci95_hi"} <= set(row)
+        assert [row["ci_lo"], row["ci_hi"]] == (H["ci90"] or [None, None])
+        if row["ci_lo"] is None:
+            assert row["ci80_lo"] is row["ci80_hi"] is row["ci95_lo"] is row["ci95_hi"] is None
+            continue
+        pairs = table.intervals[row["h"]]
+        assert (row["ci80_lo"], row["ci80_hi"]) == pairs["80"] and (row["ci95_lo"], row["ci95_hi"]) == pairs["95"]
+        assert row["ci95_lo"] <= row["ci_lo"] <= row["ci80_lo"] <= row["ci80_hi"] <= row["ci_hi"] <= row["ci95_hi"]
+        ranged += 1
+    assert ranged
