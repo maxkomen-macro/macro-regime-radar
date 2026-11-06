@@ -97,3 +97,14 @@ Still contains `data/macro_radar.db merge=ours`. Harmless, left in place. Do not
 ### Which repo holds data-latest (private storage)
 
 Every database, snapshot, verdict and refresh-status release command takes `--repo "$DATA_RELEASE_REPO"`, from the workflow-level env `${{ vars.DATA_RELEASE_REPO || github.repository }}`: unset = this repo, exactly as before. Its first run line is the token switch (the `DATA_RELEASE_TOKEN` secret only when the repo differs). The earnings ledger steps never read it. A new step that touches `data-latest` follows the same pattern, and `tests/test_data_release_repo.py` checks every `gh release` line. The cutover mirror (`scripts/mirror_data_release.sh`) runs only while `vars.DATA_RELEASE_MIRROR == 'true'`. Procedure: `docs/data/PRIVATE_STORAGE.md`.
+
+## Close sentinel (CS-1, Max 2026-11-05): dormant until `vars.CLOSE_SENTINEL_ENABLED == 'true'`
+
+`close-sentinel.yml` exists because GitHub starts this repo's crons 5–9.5 h late, so the 00:23 UTC full refresh misses the 06:00 UTC deadline. A few low-frequency weekday crons start a watcher (`scripts/close_sentinel.py`, group `close-sentinel`, never `data-write`). At 17:30 New York time it dispatches `refresh-data.yml -f mode=full -f close_session=<S>` only when the published database lacks session S's closes. Coverage is checked per symbol: every `config/assets.yml` daily symbol and every `asset_history.DAILY_SYMBOLS` series. The watcher does not dispatch while any refresh-data run is active.
+
+- **Cap:** at most two dispatches per session. They are counted from `close-sentinel-dispatch-<S>` artifacts, each uploaded before its dispatch. A run that then decides not to dispatch deletes its own artifact. An uncertain outcome keeps it. A re-run of a watcher (attempt 2 or later) never plans or dispatches.
+- **No earnings calls:** sentinel runs make no earnings calls, because `actions_gate` refuses `workflow_dispatch`.
+- **What stays:** the refresh-data crons, validation and the deadline are unchanged.
+- **Keep it off until CS-2 (once-per-session memos) merges.** Under today's clock-slot memo rule, a sentinel full run that starts before 18:00 UTC would also dispatch a memo.
+
+`refresh-data`'s `close_session` input is a title label only (`run-name: Refresh Data (close <S>)`), and no step reads it. The sentinel's release reads follow `DATA_RELEASE_REPO` in Python. They are pinned in `tests/test_data_release_repo.py` and `tests/test_close_sentinel.py`.

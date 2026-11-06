@@ -24,7 +24,7 @@ Loaded by every session and every Project thread, and re-read after compaction. 
 | `dashboard/` | Legacy Streamlit app |
 | `scripts/` | Ops and fixture scripts (`validate_db.py`, `build_snapshot.py`, `sync_data.sh`, `lock_api_requirements.py`, `smoke_public.py`) |
 | `tests/` | pytest. Web tests: vitest under `web/src`, Playwright under `web/e2e` |
-| `.github/workflows/` | `refresh-data`, `intraday-refresh`, `daily-memo`, `weekly-memo`, `keep-api-warm` |
+| `.github/workflows/` | `refresh-data`, `intraday-refresh`, `daily-memo`, `weekly-memo`, `keep-api-warm`, `close-sentinel` (dormant) |
 | `docs/` | Specs, reports, runbooks. Session history: `docs/agent-history.md` |
 
 ## Commands
