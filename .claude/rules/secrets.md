@@ -15,9 +15,9 @@ paths:
 
 ## API Keys & Secrets
 
-All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). Locally, `.streamlit/secrets.toml` (gitignored). GitHub Actions secrets in repo settings.
+Secrets live in four places, inventoried by name in `deploy/ENV.md`: the API host's environment (Render), GitHub Actions repository secrets (the workflows), Vercel's build environment, and Streamlit Cloud secrets for the legacy dashboard (`st.secrets[]`). Locally: the repo-root `.env` (gitignored; `src/config.py` and the API read it), and `.streamlit/secrets.toml` (gitignored) for the legacy dashboard.
 
-**Never hardcode keys. Never commit `.streamlit/secrets.toml`.** The committed `.streamlit/secrets.toml.example` contains all key names; copy it to `.streamlit/secrets.toml` and fill values.
+**Never hardcode keys. Never commit `.env` or `.streamlit/secrets.toml`.** The committed `.streamlit/secrets.toml.example` lists the legacy dashboard's key names; copy it to `.streamlit/secrets.toml` and fill values.
 
 | Key | Status |
 |---|---|
@@ -29,7 +29,7 @@ All secrets via `st.secrets[]` in production (Streamlit Cloud secrets manager). 
 | `ANTHROPIC_API_KEY` | Optional — required for AI regime interpretation |
 | `PERPLEXITY_API_KEY` | Optional — required for Sonar research enrichment |
 | `POLYGON_API_KEY` | Legacy — yfinance is the active path; no longer read by the pipeline. Safe to leave in secrets or remove |
-| `GH_DB_TOKEN` | Fine-grained PAT with **Contents: Read** on this repo. Lets `dashboard/app.py` (Streamlit Cloud secret) and `api/bootstrap.py` (env var) download `data/macro_radar.db`, and lets the API's earnings ledger reader list and download the ledger assets (child process, token from the environment only), from the private `data-latest` Release. Not needed locally; workflows use the built-in `GITHUB_TOKEN` |
+| `GH_DB_TOKEN` | Fine-grained PAT with **Contents: Read** on this repo. Lets `dashboard/app.py` (Streamlit Cloud secret) and `api/bootstrap.py` (env var) download `data/macro_radar.db`, and lets the API's earnings ledger reader list and download the ledger assets (child process, token from the environment only), from the `data-latest` Release (public while it lives in this repo; see `.claude/rules/database.md`). Not needed locally; workflows use the built-in `GITHUB_TOKEN` |
 | `DATA_RELEASE_TOKEN` | GitHub Actions secret, unset until private storage (`docs/data/PRIVATE_STORAGE.md`): Contents read and write on the private data repo. The data release steps use it only when the repository variable `DATA_RELEASE_REPO` names another repo, and fail before publishing without it. `DATA_RELEASE_REPO` itself is not a secret (API env, Streamlit secret, Vercel env, repository variable); unset means this repo |
 | `EODHD_OPTIONS_TOKEN` | Optional — Desk D3's private SPY option-chain collector only (`src/market_data/option_snapshots.py`): a GitHub Actions secret passed in that one refresh step's `env`, never written to `.env`, never read by any other module (pinned by `tests/test_option_snapshots.py`). Same value as the API host's `EODHD_API_TOKEN`, under its own name so adding it cannot switch the stored histories from Yahoo to EODHD. Absent → the step prints `held` and makes no call |
 | `OPTION_SNAPSHOT_REPO`, `OPTION_SNAPSHOT_GH_TOKEN` | Optional — the collector's private archive: `owner/name` of a separate **private** repository, and a fine-grained PAT restricted to that repository with **Contents: Read and write** (Metadata: Read is added with it). Actions secrets in that step only. The collector refuses a repository the API does not report as private, and this one. Absent → `held`. Never printed |
