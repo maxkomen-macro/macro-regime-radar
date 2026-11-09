@@ -42,6 +42,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.analytics.surprise_dates import date_from_ordinal
+from src.utils.memo_clock import memo_clock
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
@@ -236,7 +237,7 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
 
     def _add(date_str, name, level, value, threshold, direction, message):
         rows_out.append((
-            date_str or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            date_str or memo_clock().strftime("%Y-%m-%d"),   # the content clock (CS-2)
             "market",
             name,
             level,

@@ -117,30 +117,40 @@ def test_db_never_committed():
 
 
 def test_memos_depend_on_validated_full_refresh():
-    # The refresh workflow dispatches the memos only after a validated morning full run…
+    # CS-2: the refresh workflow records each validated full main attempt and wakes both memo queues…
     steps = {s["name"]: s for s in _load("refresh-data.yml")["jobs"]["refresh"]["steps"]}
-    disp = steps["Dispatch the memo workflows (validated morning full refresh only)"]
-    assert "== 'full'" in disp["if"] and "verdict == 'pass'" in disp["if"] and "slot == 'morning'" in disp["if"]
-    assert "gh workflow run daily-memo.yml -f run_id=" in disp["run"] and "gh workflow run weekly-memo.yml -f run_id=" in disp["run"]
+    assert "Dispatch the memo workflows (validated morning full refresh only)" not in steps
+    wake = steps["Wake the memo queues"]
+    assert "== 'full'" in wake["if"] and "verdict == 'pass'" in wake["if"] and "refs/heads/main" in wake["if"]
+    assert "slot" not in wake["if"]
+    assert 'gh workflow run daily-memo.yml -f wake="$RUN_ID"' in wake["run"]
+    assert 'gh workflow run weekly-memo.yml -f wake="$RUN_ID"' in wake["run"]
     assert _load("refresh-data.yml")["permissions"]["actions"] == "write"
+    meta = steps["Record the validated run for downstream memos"]
+    assert "verdict == 'pass'" in meta["if"] and "== 'full'" in meta["if"]
     art = steps["Upload the validated snapshot as a run artifact"]
-    assert art["with"]["name"] == "validated-db" and "verdict == 'pass'" in art["if"] and "== 'full'" in art["if"]
+    assert art["with"]["name"] == "validated-db" and art["if"] == "steps.memo_meta.outcome == 'success'"
     names = [s["name"] for s in _load("refresh-data.yml")["jobs"]["refresh"]["steps"]]
-    assert names.index("Upload the validated snapshot as a run artifact") < names.index("Dispatch the memo workflows (validated morning full refresh only)")
-    # …and each memo workflow consumes that run's validated artifact, refusing anything else.
-    for name in ("daily-memo.yml", "weekly-memo.yml"):
+    assert names.index("Upload the validated snapshot as a run artifact") < names.index("Record memo sources") < names.index("Wake the memo queues")
+    # …and each memo run sources its database only from the attempt the plan names, checked by hash, or (manual
+    # runs, never recorded) from the current release asset.
+    for name, generate in (("daily-memo.yml", "Generate daily memo"), ("weekly-memo.yml", "Generate weekly memo")):
         doc = _load(name)
         on = _on(doc)
-        assert set(on) == {"workflow_dispatch"} and "run_id" in on["workflow_dispatch"]["inputs"]
+        assert set(on) == {"workflow_dispatch"} and set(on["workflow_dispatch"]["inputs"]) == {"wake", "run_id", "resend_key"}
         job = next(iter(doc["jobs"].values()))
         steps = {s["name"]: s for s in job["steps"]}
-        dl = steps["Download the validated snapshot from the dispatching run"]
-        assert dl["with"]["name"] == "validated-db" and "inputs.run_id" in dl["with"]["run-id"]
-        gate = steps["Decide whether this run produces a memo"]["run"]
-        assert 'MODE" = "full"' in gate and "refresh-meta.txt" in gate and "unvalidated" in gate
+        plan = steps["Plan the memo"]
+        assert plan["id"] == "plan" and plan["if"] == "env.MEMO_MODE != 'manual' && github.ref == 'refs/heads/main'"
+        dl = steps["Download the source snapshot"]
+        assert dl["with"]["name"] == "validated-db" and dl["with"]["run-id"] == "${{ steps.plan.outputs.origin_run_id }}"
+        check = steps["Check the source snapshot"]["run"]
+        assert "memo_queue.py verify" in check and "--db-sha256" in check and "--validation-sha256" in check
         for s in job["steps"]:
-            if s["name"] in ("Generate daily memo", "Generate weekly memo", "Send memo email"):
-                assert s["if"] == "steps.gate.outputs.go == 'true'", (name, s["name"])
+            if s["name"] in (generate, "Send memo email", "Download the source snapshot", "Check the source snapshot"):
+                assert s["if"] == "steps.plan.outputs.go == 'true'", (name, s["name"])
+            if s["name"].endswith("(manual run)"):
+                assert s["if"].startswith("env.MEMO_MODE == 'manual'"), (name, s["name"])
 
 
 def test_no_secret_is_echoed_to_logs():

@@ -37,8 +37,8 @@ pytestmark = pytest.mark.skipif(REAL_GIT is None or shutil.which("bash") is None
 # (workflow, step name, the artifact it publishes, its commit message)
 WRITERS = [
     ("refresh-data.yml", "Commit playbook.json if it changed", "output/playbook.json", "Update playbook [skip ci]"),
-    ("daily-memo.yml", "Commit and push updated memo to GitHub Pages", "docs/memo/daily_memo.html", "Update daily memo [skip ci]"),
-    ("weekly-memo.yml", "Commit and push updated memo to GitHub Pages", "docs/memo/weekly_memo.html", "Update weekly memo [skip ci]"),
+    ("daily-memo.yml", "Commit and push updated memo to GitHub Pages (manual run)", "docs/memo/daily_memo.html", "Update daily memo [skip ci]"),
+    ("weekly-memo.yml", "Commit and push updated memo to GitHub Pages (manual run)", "docs/memo/weekly_memo.html", "Update weekly memo [skip ci]"),
 ]
 
 # The commit step as it ran in refresh-data.yml at d9359019 (the incident).

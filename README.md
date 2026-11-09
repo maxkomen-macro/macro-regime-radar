@@ -117,7 +117,7 @@ flowchart LR
 
 **Front end.** A React 18 and TypeScript app built with Vite and hosted on Vercel, using TanStack Query for data and a hand-built dark design system. The build ships a validated snapshot, so the main pages render even while the API is waking up.
 
-**Briefings.** After a validated morning refresh, the pipeline builds the daily memo on weekdays and the weekly memo on Mondays, emails them, and publishes them to GitHub Pages.
+**Briefings.** The pipeline builds one daily memo for each completed US market session and one weekly memo for each week, each from the first validated refresh that covered it, emails them, and publishes them to GitHub Pages.
 
 ---
 

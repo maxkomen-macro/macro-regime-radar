@@ -11,7 +11,7 @@ deployed by the build session. Commands assume the repo root.
 | Data pipeline | FRED series, regimes, signals, market bars, analytics, news | `Refresh Data` workflow: full at 11:17 and 00:23 UTC (Tue–Sat), news-only hourly at :41; `Intraday Market Refresh` every 5 min at :02/:07/… during the US session | GitHub Actions → `data-latest` Release (`macro_radar.db`, `snapshot-latest.json`) |
 | API | FastAPI `api/` (read-only SQLite, provider layer, EODHD relay, assistant) | always-on or sleeping host | one instance only (the relay holds one EODHD socket per feed) |
 | Frontend | Vite bundle in `web/dist` + `public/snapshot/latest.json` | static | any static host, or served by the API same-origin |
-| Memos | daily / weekly HTML + email | after a validated morning full refresh | `Daily Memo Email`, `Weekly Memo Email` (workflow_run) |
+| Memos | daily / weekly HTML + email | one per NYSE session / ISO week, from the first validated full refresh that covered it (section 4) | `Daily Memo Email`, `Weekly Memo Email` (woken by Refresh Data) |
 
 ## 2. Daily checks (two minutes)
 
@@ -37,12 +37,27 @@ Observed on 2026-09-05 (Saturday, Labor Day weekend): regime month July 2026 is 
 - **Manual:** Actions → Refresh Data → Run workflow → choose `full`, `news-only`, `market-only` or `verify-only`. Fill `allow_stale_reason` only when publishing an outside-SLA snapshot on purpose (the reason is printed in the step summary).
 - **Every run** downloads the current asset, keeps it as `data/previous.db`, refreshes, then runs `scripts/validate_db.py` (integrity_check, required tables, row counts and max dates, no max-date regression, no core-table row loss over a fifth, mode-scoped SLA verdicts, source labels). The step summary shows the mode, previous → new maxima per table, SLA verdicts, blockers, warnings and failures.
 - **Upload happens only when** the verdict is `pass` **and** something changed for that mode. Otherwise the previous asset — the last-known-good — stays. A failed validation fails the run loudly.
-- **Full runs additionally** build `snapshot-latest.json` (the public static snapshot), upload it beside the DB, and publish a `validated-db` run artifact (3-day retention) that the memo workflows consume.
+- **Full runs additionally** build `snapshot-latest.json` (the public static snapshot), upload it beside the DB, and publish a `validated-db` run artifact (3-day retention) and a `validated-meta-<attempt>` artifact (45 days, coverage metadata only) that the memo queue reads.
 - **Local copy:** `make sync-data` (needs `gh auth login` with read access). It validates the download against the current file and swaps atomically; a failed validation leaves the local file untouched.
 
 ## 4. Memos
 
-`Refresh Data` dispatches the memo workflows itself — only after a **validated morning full** refresh, on weekdays (daily) and Mondays (weekly) — passing its run id. Each memo workflow downloads that run's `validated-db` artifact and refuses to produce a memo unless the artifact says `mode=full`. A manual dispatch without a run id uses the current Release asset. The memo commit goes through `scripts/publish_artifacts.sh`, which builds it in a fresh worktree of the current `main` with only the memo staged (the old `git reset --soft origin/main` loop reverted PRs merged during a run); stash/rebase is gone. (Hourly news runs never wake the memo workflows.)
+Since CS-2 the memos run from a durable queue in git: one daily memo per completed NYSE session and one weekly memo per ISO week, each built from the **first validated full refresh that covered it**. That is at most once for automation with every failure visible, not exactly-once email delivery.
+
+- **Records.** `docs/memo/sources.json` says which validated refresh attempt first covered each session or week (written only by Refresh Data's "Record memo sources" step). `docs/memo/ledger-daily.json` and `ledger-weekly.json` hold each key's state: `attempt`, `sending`, `sent`, `not_sent`, `ambiguous`, `failed`, `skipped` or `blocked`. Every write is a compare-and-swap (`scripts/publish_artifacts.sh --expect`): if a reviewed PR changed the file during a run, the run stops and the next one re-reads it. Nothing before `QUEUE_START` in `scripts/memo_queue.py` is ever queued; before that date only manual runs produce memos.
+- **Wake-ups.** Every validated full main refresh wakes both memo workflows (`-f wake=<run id>`); a memo run that sends one key and finds more chains the next run. A lost wake-up is recovered by the next refresh: the queue drains from the records, not from the wake-up.
+- **Where to look.** The memo run's summary names the key, its source run and attempt, the pinned session and the database hash. Each send uploads `memo-outcome-<kind>-<key>-<run>-<attempt>` (30 days) with what SMTP answered.
+- **A run fails on purpose** when a key becomes `ambiguous`, `failed` or `blocked`, so it shows in Actions. None of them is retried automatically.
+
+Owner actions (each is a deliberate step; none is needed in normal operation):
+
+1. **Resend a key** (any terminal state, when its `sources.json` record is a `source`; a `blocked` key has none): first open that key's `memo-outcome-…` artifact (or the run's "Send memo email" log) and the inbox. If SMTP may have accepted it (`ambiguous`), check the recipients before resending: automation never resends after possible acceptance. Then run the memo workflow manually with `resend_key` = the session (`YYYY-MM-DD`) or week (`GGGG-Www`). It works only while the source run's `validated-db` artifact exists (3 days); the ledger keeps the key's state and appends an `overrides` entry.
+2. **Abandon a key** that holds the queue: open a PR that sets its ledger entry to `skipped` (with a `note`) or its `sources.json` record to `blocked` (with a `reason`). The next run moves past it. Never edit these files on `main` directly.
+3. **A missing or unreadable ledger or registry** stops every memo run rather than being treated as empty. Restore the file from git history (`git log -- docs/memo/<file>`) through a reviewed PR.
+4. **Do not re-run a pre-CS-2 Refresh Data run.** It records no coverage metadata, so a re-run attempt that validates blocks the sessions it might have covered instead of feeding them. A re-run more than 31 days after the run was created is recorded as `ineligible=late-rerun` and never becomes a source.
+5. **A manual run with no inputs** works as before: the current Release asset, the page commit and the email, never recorded in the ledger. It can duplicate a queued memo.
+
+The memo commits go through `scripts/publish_artifacts.sh`, which builds each commit in a fresh worktree of the current `main` with only the memo files staged; stash/rebase and the old `git reset --soft origin/main` loop are gone. Hourly news runs never wake the memo workflows.
 
 ## 5. Rolling back data
 
