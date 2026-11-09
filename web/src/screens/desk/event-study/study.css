@@ -419,6 +419,73 @@
   justify-content: space-between;
   margin-top: 12px;
 }
+/* P1d (INTERVALS_SPEC §5, DR-07): the "Range shown" switch, native radios drawn as the Desk's segmented chips
+   (.dk-seg's tokens); the input stays in the accessibility tree, focusable, its ring on the chip. */
+.es-level {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 2px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.es-level legend {
+  float: left;
+  margin-right: 4px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+.es-level label {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+.es-level input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+}
+.es-level label span {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--dk-box);
+  border-radius: 5px;
+  background: var(--dk-card-2);
+  font-family: var(--dk-mono);
+  font-size: 12px;
+  color: var(--dk-t3);
+}
+.es-level input:checked + span {
+  background: var(--dk-active);
+  color: #fff;
+}
+.es-level input:focus-visible + span {
+  outline: 2px solid var(--dk-blue);
+  outline-offset: 2px;
+}
+/* A level this answer does not serve: dimmed, still reachable (its reason is the line under the switch). */
+.es-level label[data-off] span {
+  color: var(--dk-t4);
+  border-color: var(--dk-row);
+}
+.es-level label[data-off] input:checked + span {
+  background: transparent;
+  color: var(--dk-t3);
+  border-color: var(--dk-box);
+}
 .es-conf {
   display: inline-flex;
   align-items: center;

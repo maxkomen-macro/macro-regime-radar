@@ -205,7 +205,14 @@ HORIZON_ROW = obj(
     ci_lo=null(NUM), ci_hi=null(NUM), adverse_share=null(FRAC), draws=INT,
     method=null(E("enumeration", "monte_carlo")), reason=null(STR), verdict=VERDICT,
     worst=null(EXTREME), best=null(EXTREME),
+    # P1d (docs/desk/INTERVALS_SPEC.md §4): the 80% and 95% pairs of the same resampled medians. The API serves all
+    # four on every row; an answer from a generation before them carries none (the client's fixtures, and what
+    # the page reads until the worker's first generation on the new code), so they may be absent, but only all
+    # four together, and `interval_rule` holds whenever they are served.
+    ci80_lo=F(NUM, null=True, opt=True), ci80_hi=F(NUM, null=True, opt=True),
+    ci95_lo=F(NUM, null=True, opt=True), ci95_hi=F(NUM, null=True, opt=True),
 )
+OPTIONAL_RANGE_KEYS = ("ci80_lo", "ci80_hi", "ci95_lo", "ci95_hi")
 STUDY = obj(
     slug=STR, label=STR, short=STR,
     question=obj(
@@ -901,6 +908,40 @@ def _finite_everywhere(v: Any, path: str, errs: list[str]) -> None:
             _finite_everywhere(x, f"{path}[{i}]", errs)
 
 
+def interval_rule(row: dict, path: str, errs: list[str]) -> None:
+    """P1d §4/§8, one §12.2/§12.19 horizons[] row: the four optional range fields are served all together or not
+    at all; every pair is null when `ci_lo` is null; otherwise each level's pair is null, or two numbers lo ≤ hi."""
+    have = [k for k in OPTIONAL_RANGE_KEYS if k in row]
+    if not have:
+        return
+    if len(have) != len(OPTIONAL_RANGE_KEYS):
+        errs.append(f"{path}: serves {have} of the four 80%/95% range fields, never only some")
+        return
+    no_ninety = row.get("ci_lo") is None or row.get("ci_hi") is None
+    for level in ("80", "95"):
+        lo, hi = row[f"ci{level}_lo"], row[f"ci{level}_hi"]
+        if lo is None and hi is None:
+            continue
+        if no_ninety:
+            errs.append(f"{path}: a {level}% range where the row has no 90% one")
+        elif lo is None or hi is None:
+            errs.append(f"{path}: the {level}% bounds are null together or not at all")
+        elif not (_scalar_ok(NUM, lo) and _scalar_ok(NUM, hi)) or lo > hi:
+            errs.append(f"{path}: the {level}% range {lo!r} to {hi!r} is not two numbers lo ≤ hi")
+
+
+def _horizon_rows(v: Any, path: str, errs: list[str]) -> None:
+    """`interval_rule` on every horizons[] row of an answer (a dict carrying `ci_lo` and `n_blocks`)."""
+    if isinstance(v, dict):
+        if "ci_lo" in v and "n_blocks" in v:
+            interval_rule(v, path, errs)
+        for k, x in v.items():
+            _horizon_rows(x, f"{path}.{k}" if path else k, errs)
+    elif isinstance(v, list):
+        for i, x in enumerate(v):
+            _horizon_rows(x, f"{path}[{i}]", errs)
+
+
 def problems(route: str, body: Any) -> list[str]:
     """Every way `body` breaks the contract of `route` (empty when it holds)."""
     if isinstance(body, (bytes, str)):
@@ -950,6 +991,7 @@ def problems(route: str, body: Any) -> list[str]:
         return errs
     if status == "ready" and isinstance(body["data"], dict):
         _walk(ROUTES[route], body["data"], "", errs)
+        _horizon_rows(body["data"], "", errs)
         declared = set(nested_paths().get(route, ()))
         found = _found_blocks(body["data"])
         for p in found:

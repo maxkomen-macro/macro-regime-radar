@@ -288,3 +288,33 @@ def test_the_clients_fixtures_keep_the_contract(route):
     assert payloads, f"{f.name} carries no answer"
     for payload in payloads:
         dc.check(route, json.dumps(_wire(route, payload)))
+
+
+# ── P1d: the optional 80%/95% range fields (docs/desk/INTERVALS_SPEC.md §4, §8) ──
+
+def _row_problems(route: str, **fields) -> list[str]:
+    body = dc.example_envelope(route)
+    rows = body["data"]["horizons"] if route == "/study" else body["data"]["study"]["horizons"]
+    rows[0].update(fields)
+    return dc.problems(route, body)
+
+
+@pytest.mark.parametrize("route", ("/study", "/basket/study"))
+def test_p1d_the_range_fields_keep_their_rule(route):
+    ok = dict(ci_lo=-1.0, ci_hi=2.0, ci80_lo=-0.5, ci80_hi=1.5, ci95_lo=-1.5, ci95_hi=2.5)
+    assert not _row_problems(route, **ok)
+    assert not _row_problems(route, **{**ok, "ci95_lo": None, "ci95_hi": None})  # a level null alone (DR-05)
+    assert not _row_problems(route, ci_lo=None, ci_hi=None, ci80_lo=None, ci80_hi=None, ci95_lo=None, ci95_hi=None)
+    # an answer from before the fields carries none of them
+    body = dc.example_envelope(route)
+    rows = body["data"]["horizons"] if route == "/study" else body["data"]["study"]["horizons"]
+    for k in dc.OPTIONAL_RANGE_KEYS:
+        rows[0].pop(k)
+    assert not dc.problems(route, body)
+    # only some of the four
+    rows[0]["ci80_lo"] = 1.0
+    assert any("never only some" in e for e in dc.problems(route, body))
+    for bad, words in (({**ok, "ci_lo": None, "ci_hi": None}, "no 90% one"),
+                       ({**ok, "ci80_hi": None}, "null together"),
+                       ({**ok, "ci95_lo": 3.0}, "lo ≤ hi")):
+        assert any(words in e for e in _row_problems(route, **bad)), bad
