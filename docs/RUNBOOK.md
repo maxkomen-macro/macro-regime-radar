@@ -42,11 +42,11 @@ Observed on 2026-09-05 (Saturday, Labor Day weekend): regime month July 2026 is 
 
 ## 4. Memos
 
-Since CS-2 the memos run from a durable queue in git: one daily memo per completed NYSE session and one weekly memo per ISO week, each built from the **first validated full refresh that covered it**. That is at most once for automation with every failure visible, not exactly-once email delivery.
+Since CS-2 the memos run from a durable queue in git: one daily memo per completed NYSE session and one weekly memo per ISO week, each built from the **first validated full refresh that covered it**. That is at most once for automation, not exactly-once email delivery. A key that fails, becomes `ambiguous` or is `blocked` fails its run; a key that is `skipped` (its source expired, or no refresh covered it in time) does not, and shows only in the run summary and the ledger.
 
 - **Records.** `docs/memo/sources.json` says which validated refresh attempt first covered each session or week (written only by Refresh Data's "Record memo sources" step). `docs/memo/ledger-daily.json` and `ledger-weekly.json` hold each key's state: `attempt`, `sending`, `sent`, `not_sent`, `ambiguous`, `failed`, `skipped` or `blocked`. Every write is a compare-and-swap (`scripts/publish_artifacts.sh --expect`): if a reviewed PR changed the file during a run, the run stops and the next one re-reads it. Nothing before `QUEUE_START` in `scripts/memo_queue.py` is ever queued; before that date only manual runs produce memos.
 - **Wake-ups.** Every validated full main refresh wakes both memo workflows (`-f wake=<run id>`); a memo run that sends one key and finds more chains the next run. A lost wake-up is recovered by the next refresh: the queue drains from the records, not from the wake-up.
-- **Where to look.** The memo run's summary names the key, its source run and attempt, the pinned session and the database hash. Each send uploads `memo-outcome-<kind>-<key>-<run>-<attempt>` (30 days) with what SMTP answered.
+- **Where to look.** The memo run's summary names the key, its source run and attempt, the pinned session and the database hash. Each send uploads `memo-outcome-<kind>-<key>-<run>-<attempt>` (30 days) with what SMTP answered. Refused recipients appear by their position in `MEMO_RECIPIENTS`, and addresses in server replies are replaced by `<address>`, because run logs and artifacts can be public.
 - **A run fails on purpose** when a key becomes `ambiguous`, `failed` or `blocked`, so it shows in Actions. None of them is retried automatically.
 
 Owner actions (each is a deliberate step; none is needed in normal operation):

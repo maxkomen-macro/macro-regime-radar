@@ -10,10 +10,14 @@ step by step, so every failure is classified by how far it got:
   a socket error, timeout or disconnect while the body is
   sent or while waiting for the final reply             -> ambiguous
   final reply 250                                       -> sent (a failing QUIT is ignored)
-  any other final reply                                 -> not_sent (the server refused it)
+  final reply 4xx or 5xx                                -> not_sent (the server refused it)
+  any other final reply (smtplib's -1 for a malformed
+  line, or an unexpected code)                          -> ambiguous
 
 Some recipients refused and at least one accepted is `sent`, with the refused
-addresses reported. Empty MEMO_RECIPIENTS is `not_sent`. Every socket operation
+recipients reported by their position in MEMO_RECIPIENTS. No address is written
+to the run log or the outcome file (both can be public): replies and error text
+have anything shaped like an address replaced by <address>. Empty MEMO_RECIPIENTS is `not_sent`. Every socket operation
 has a 60 s timeout. The body bytes are the ones smtplib.SMTP.data would send
 (CRLF line ends, dot-stuffing, the terminating <CRLF>.<CRLF>).
 
@@ -40,6 +44,12 @@ from typing import Callable
 
 HOST, PORT, TIMEOUT_S = "smtp.gmail.com", 465, 60
 CRLF = b"\r\n"
+_ADDRESS = re.compile(r"[^\s<>()\[\]\"',;:@]+@[^\s<>()\[\]\"',;:@]+")
+
+
+def redact(text: str) -> str:
+    """Anything shaped like an email address becomes <address>."""
+    return _ADDRESS.sub("<address>", text)
 
 
 def recipients(raw: str) -> list[str]:
@@ -87,12 +97,12 @@ def send(user: str, password: str, to: list[str], msg: EmailMessage,
             return {"state": "not_sent", "phase": phase, "code": code, "refused": [], "detail": _text(resp)}
         phase = "rcpt"
         accepted = 0
-        for r in to:
+        for i, r in enumerate(to, 1):
             code, resp = smtp.rcpt(r)
             if code in (250, 251):
                 accepted += 1
             else:
-                refused.append({"address": r, "code": code, "reply": _text(resp)})
+                refused.append({"recipient": i, "code": code, "reply": _text(resp)})
         if not accepted:
             return {"state": "not_sent", "phase": phase, "code": None, "refused": refused, "detail": "every recipient refused"}
         phase = "data"
@@ -103,7 +113,7 @@ def send(user: str, password: str, to: list[str], msg: EmailMessage,
     except (OSError, smtplib.SMTPException) as exc:
         _close(smtp)
         return {"state": "not_sent", "phase": phase, "code": getattr(exc, "smtp_code", None), "refused": refused,
-                "detail": f"{type(exc).__name__}: {exc}"[:500]}
+                "detail": _detail(exc)}
     # From here the body may have reached the server: a broken connection is ambiguous.
     phase = "body"
     try:
@@ -113,18 +123,24 @@ def send(user: str, password: str, to: list[str], msg: EmailMessage,
     except (OSError, smtplib.SMTPException, socket.timeout) as exc:
         _close(smtp)
         return {"state": "ambiguous", "phase": phase, "code": None, "refused": refused,
-                "detail": f"{type(exc).__name__}: {exc}"[:500]}
+                "detail": _detail(exc)}
     try:
         smtp.quit()
     except (OSError, smtplib.SMTPException):
         pass
     if code == 250:
         return {"state": "sent", "phase": phase, "code": code, "refused": refused, "detail": _text(resp)}
-    return {"state": "not_sent", "phase": phase, "code": code, "refused": refused, "detail": _text(resp)}
+    if 400 <= code <= 599:
+        return {"state": "not_sent", "phase": phase, "code": code, "refused": refused, "detail": _text(resp)}
+    return {"state": "ambiguous", "phase": phase, "code": code, "refused": refused, "detail": _text(resp)}
 
 
 def _text(resp) -> str:
-    return resp.decode("utf-8", "replace")[:500] if isinstance(resp, bytes) else str(resp)[:500]
+    return redact(resp.decode("utf-8", "replace") if isinstance(resp, bytes) else str(resp))[:500]
+
+
+def _detail(exc: BaseException) -> str:
+    return redact(f"{type(exc).__name__}: {exc}")[:500]
 
 
 def _close(smtp) -> None:
@@ -152,13 +168,13 @@ def main(argv: list[str] | None = None, env: dict | None = None,
                             a.html_file.read_text(encoding="utf-8"), a.attach)
         out = send(sender, env.get("GMAIL_APP_PASSWORD", ""), to, msg, factory)
     except (OSError, ValueError) as exc:   # the message could not be built: nothing was sent
-        out = {"state": "not_sent", "phase": "build", "code": None, "refused": [], "detail": f"{type(exc).__name__}: {exc}"[:500]}
+        out = {"state": "not_sent", "phase": "build", "code": None, "refused": [], "detail": _detail(exc)}
     out.update(started_at=started.strftime("%Y-%m-%dT%H:%M:%SZ"),
                finished_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                recipients=len(recipients(env.get("MEMO_RECIPIENTS", ""))))
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    refused = ", ".join(r["address"] for r in out["refused"])
+    refused = ", ".join(f"recipient {r['recipient']} ({r['code']})" for r in out["refused"])
     print(f"memo email: {out['state']} at {out['phase']}" + (f" (refused: {refused})" if refused else ""))
     if out["state"] != "sent":
         print(f"::error::memo email {out['state']} at {out['phase']}: {out['detail']}")

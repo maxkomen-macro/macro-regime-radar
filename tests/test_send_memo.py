@@ -118,7 +118,46 @@ def test_a_refused_final_reply_is_not_sent():
 
 def test_some_recipients_refused_is_sent_with_them_reported():
     out = run(FakeSMTP(rcpt={"b@example.com": 550}))
-    assert out["state"] == "sent" and [r["address"] for r in out["refused"]] == ["b@example.com"]
+    assert out["state"] == "sent" and [(r["recipient"], r["code"]) for r in out["refused"]] == [(2, 550)]
+
+
+@pytest.mark.parametrize("final", [-1, 221, 251, 354])
+def test_a_final_reply_that_is_neither_250_nor_a_refusal_is_ambiguous(final):
+    out = run(FakeSMTP(final=final))
+    assert out["state"] == "ambiguous" and out["phase"] == "final-reply" and out["code"] == final
+
+
+@pytest.mark.parametrize("final", [421, 451, 550, 554])
+def test_a_4xx_or_5xx_final_reply_is_not_sent(final):
+    assert run(FakeSMTP(final=final))["state"] == "not_sent"
+
+
+class LeakySMTP(FakeSMTP):
+    """Replies and errors that quote addresses, as real servers do."""
+
+    def rcpt(self, r):
+        code = self.rcpt_codes.get(r, 250)
+        return code, (f"5.1.1 <{r}> user unknown" if code >= 400 else f"OK {r}").encode()
+
+    def getreply(self):
+        if self.replies:
+            return self.replies.pop(0)
+        raise smtplib.SMTPServerDisconnected("lost while sending to me@example.com")
+
+
+def test_no_address_reaches_the_log_or_the_outcome_file(tmp_path, capsys):
+    (tmp_path / "s.txt").write_text("Subj\n")
+    (tmp_path / "b.html").write_text("<p>x</p>")
+    env = {"MEMO_RECIPIENTS": "a@example.com, b@example.com", "GMAIL_ADDRESS": "me@example.com", "GMAIL_APP_PASSWORD": "pw"}
+    out_file = tmp_path / "o" / "outcome.json"
+    args = ["--subject-file", str(tmp_path / "s.txt"), "--html-file", str(tmp_path / "b.html"), "--out", str(out_file)]
+    assert sm.main(args, env=env, factory=lambda: LeakySMTP(rcpt={"b@example.com": 550})) == 1
+    log, written = capsys.readouterr().out, out_file.read_text()
+    out = json.loads(written)
+    assert out["state"] == "ambiguous" and out["refused"] == [{"recipient": 2, "code": 550, "reply": "5.1.1 <<address>> user unknown"}]
+    assert "recipient 2 (550)" in log and "<address>" in out["detail"]
+    for text in (log, written):
+        assert "@" not in text, text
 
 
 def test_no_recipients_is_not_sent():
