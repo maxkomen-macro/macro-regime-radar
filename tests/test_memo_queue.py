@@ -1069,3 +1069,60 @@ def test_queue_writes_only_through_the_publisher():
         assert banned not in src, banned
     assert src.count('"scripts/publish_artifacts.sh"') == 1 and '"--expect"' in src
     assert "DATA_RELEASE_TOKEN" in src and "release" not in src.replace("DATA_RELEASE_TOKEN", "").replace("re-release", "")
+
+
+# ── round 2 (S-3, S-4) ────────────────────────────────────────────────────────
+
+
+def test_metadata_records_the_refresh_jobs_start_the_rule_discovery_uses(tmp_path, monkeypatch):
+    # S-3: a job that starts Monday 23:59:50 and records Tuesday is a Monday job, with or without metadata
+    db = tmp_path / "m.db"
+    db.write_bytes(b"x")
+    make_db(tmp_path / "rows.db", {"SPY": "2026-11-16"}, {"GLD": "2026-11-16"})
+    db.write_bytes((tmp_path / "rows.db").read_bytes())
+    val = tmp_path / "v.json"
+    val.write_text("{}")
+    api = FakeApi()
+    api.add_run(610, utc(2026, 11, 16, 23, 59), utc(2026, 11, 17, 0, 30), status="in_progress", conclusion=None)
+    api.jobs[(610, 1)] = [{"name": "refresh", "run_id": 610, "run_attempt": 1, "status": "in_progress",
+                           "started_at": "2026-11-16T23:59:50Z", "steps": []}]
+    monkeypatch.setattr(mq, "market_symbols", lambda: ["SPY"])
+    monkeypatch.setattr(mq, "asset_symbols", lambda: ["GLD"])
+    m = mq.run_meta(api, {"GITHUB_RUN_ID": "610", "GITHUB_RUN_ATTEMPT": "1"}, db, val, "2026-11-17T00:00:20Z",
+                    tmp_path / "a" / "refresh-meta.txt", tmp_path / "b" / "validated-meta.txt")
+    assert m.started_at == utc(2026, 11, 16, 23, 59, 50)
+    assert mq.parse_meta((tmp_path / "b" / "validated-meta.txt").read_text()) == m
+    own = meta(611, started=utc(2026, 11, 17, 0, 30), validated=utc(2026, 11, 17, 2, 0))
+    rec = mq.decide_key("weekly", "2026-W47", mq.Discovery([m, own], []), FakeApiBytes(m, db.read_bytes()), own)
+    assert rec["state"] == "source" and rec["origin_run_id"] == 610
+    # and an attempt without metadata is judged by the same field
+    u = mq.UnknownAttempt(610, 1, utc(2026, 11, 16, 23, 59, 50), utc(2026, 11, 17), utc(2026, 11, 17, 0, 0, 20))
+    assert u.eligible("weekly", "2026-W47") and not u.eligible("weekly", "2026-W48")
+    # a job listing that names no refresh job stops the step
+    api.jobs[(610, 1)] = []
+    with pytest.raises(mq.QueueError, match="cannot identify"):
+        mq.run_meta(api, {"GITHUB_RUN_ID": "610", "GITHUB_RUN_ATTEMPT": "1"}, db, val, "2026-11-17T00:00:20Z",
+                    tmp_path / "a" / "refresh-meta.txt", tmp_path / "b" / "validated-meta.txt")
+
+
+class FakeApiBytes(FakeApi):
+    """validated-db of attempt m holding the bytes m.db_sha256 names."""
+
+    def __init__(self, m: mq.Meta, db: bytes):
+        super().__init__()
+        assert hashlib.sha256(db).hexdigest() == m.db_sha256
+        self.add_artifact(m.run_id, "validated-db", {"refresh-meta.txt": mq.format_meta(m), "macro_radar.db": db},
+                          m.validated_at)
+
+
+@pytestmark_git
+def test_the_page_and_the_email_carry_one_sent_date_across_midnight(tmp_path, outdirs):
+    # S-4: publish at 23:59 and finalize after midnight: one date, no stale page
+    bundle, final, outcome = outdirs
+    repo, ctx = _claimed(tmp_path, outdirs, now=utc(2026, 11, 18, 23, 59))      # already delayed: the 17th has closed
+    mq.run_reserve(ctx, "2026-11-16", "auto")
+    assert mq.run_publish(ctx, "2026-11-16", "auto")["variant"] == "delayed"
+    ctx.clock.t = 120
+    assert mq.run_finalize(ctx, "2026-11-16") == {"variant": "delayed", "republish": False}
+    assert repo.main_text(mq.PAGE["daily"]) == (final / "page.html").read_text() == \
+        "<p>delayed page 2026-11-16 sent 2026-11-18</p>"

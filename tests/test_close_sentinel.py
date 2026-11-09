@@ -901,12 +901,11 @@ MEMO_HANDOFF_CS2 = {
     "Record the validated run for downstream memos": {
         "name": "Record the validated run for downstream memos", "id": "memo_meta", "if": FULL_PASS,
         "continue-on-error": True,
-        "env": {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "STARTED_AT": "${{ steps.attempt.outputs.started_at }}",
-                "VALIDATED_AT": "${{ steps.validated.outputs.validated_at }}"},
+        "env": {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "VALIDATED_AT": "${{ steps.validated.outputs.validated_at }}"},
         "run": ("mkdir -p validated validated-meta\ncp data/macro_radar.db validated/macro_radar.db\n"
                 "cp validation.json validated/validation.json\n"
                 "python scripts/memo_queue.py meta --db validated/macro_radar.db --validation validated/validation.json \\\n"
-                "  --started-at \"${STARTED_AT:?the attempt start was not recorded}\" --validated-at \"${VALIDATED_AT:?}\" \\\n"
+                "  --validated-at \"${VALIDATED_AT:?}\" \\\n"
                 "  --out validated/refresh-meta.txt --out-meta validated-meta/validated-meta.txt\n"),
     },
     "Upload this attempt's memo metadata": {

@@ -1172,6 +1172,17 @@ def materialize(kind: str, variant: str, sent: date) -> tuple[str, str, str]:
     return page, header + email, subject
 
 
+def sent_date(now: datetime) -> date:
+    """The memo's sent date, fixed by the first of publish and finalize in this run, so the
+    published page and the email never disagree across midnight (S-4)."""
+    p = FINAL / "sent-date.txt"
+    if p.exists():
+        return day_of(p.read_text().strip())
+    FINAL.mkdir(parents=True, exist_ok=True)
+    p.write_text(now.date().isoformat() + "\n")
+    return now.date()
+
+
 def _variant_file() -> Path:
     return FINAL / "variant.txt"
 
@@ -1197,7 +1208,7 @@ def run_publish(ctx: Ctx, key: str, mode: str) -> dict:
     e = _own_entry(ctx, ledger, key, mode)
     variant = choose_variant(_delayed_now(ctx, key))
     now = ctx.clock.now()
-    page, _, _ = materialize(ctx.kind, variant, now.date())
+    page, _, _ = materialize(ctx.kind, variant, sent_date(now))
     files: dict[str, str] = {}
     pub = ledger["published"]
     if pub is None or key_order(ctx.kind, key) >= key_order(ctx.kind, pub):
@@ -1221,7 +1232,7 @@ def run_finalize(ctx: Ctx, key: str) -> dict:
     ctx.store.fetch()
     before = current_variant()
     variant = choose_variant(_delayed_now(ctx, key))
-    page, email, subject = materialize(ctx.kind, variant, ctx.clock.now().date())
+    page, email, subject = materialize(ctx.kind, variant, sent_date(ctx.clock.now()))
     FINAL.mkdir(parents=True, exist_ok=True)
     (FINAL / "page.html").write_text(page, encoding="utf-8")
     (FINAL / f"{ctx.kind}_memo.html").write_text(page, encoding="utf-8")   # the attachment, under its usual name
@@ -1278,13 +1289,25 @@ def run_record(ctx: Ctx, key: str, mode: str) -> dict:
 # ── the refresh side: metadata and wake-ups ───────────────────────────────────
 
 
-def run_meta(api: Api, env: dict, db: Path, validation: Path, started_at: str, validated_at: str,
+def job_started(api: Api, run_id: int, attempt: int) -> datetime:
+    """This attempt's refresh job start, from the jobs API: the same field discovery reads for an
+    attempt without metadata, so weekly eligibility is one rule for both (S-3)."""
+    jobs = [j for j in api.attempt_jobs(run_id, attempt) if j.get("name") == REFRESH_JOB]
+    if len(jobs) != 1 or int(jobs[0].get("run_attempt") or 0) != attempt or int(jobs[0].get("run_id") or 0) != run_id:
+        raise QueueError(f"run {run_id} attempt {attempt}: cannot identify its '{REFRESH_JOB}' job")
+    started = ts(jobs[0].get("started_at"))
+    if started is None:
+        raise QueueError(f"run {run_id} attempt {attempt}: the '{REFRESH_JOB}' job has no started_at")
+    return started
+
+
+def run_meta(api: Api, env: dict, db: Path, validation: Path, validated_at: str,
              out_refresh: Path, out_meta: Path) -> Meta:
     run_id, attempt = int(env["GITHUB_RUN_ID"]), int(env["GITHUB_RUN_ATTEMPT"])
     created = ts(api.run(run_id).get("created_at"))
     if created is None:
         raise QueueError(f"run {run_id} has no created_at")
-    m = build_meta(db, validation, run_id, attempt, ts(started_at), ts(validated_at), created,
+    m = build_meta(db, validation, run_id, attempt, job_started(api, run_id, attempt), ts(validated_at), created,
                    market_symbols(), asset_symbols())
     text = format_meta(m)
     for p in (out_refresh, out_meta):
@@ -1335,7 +1358,6 @@ def main(argv: list[str] | None = None, env: dict | None = None, clock: Clock | 
     p = sub.add_parser("meta")
     p.add_argument("--db", required=True, type=Path)
     p.add_argument("--validation", required=True, type=Path)
-    p.add_argument("--started-at", required=True)
     p.add_argument("--validated-at", required=True)
     p.add_argument("--out", required=True, type=Path)
     p.add_argument("--out-meta", required=True, type=Path)
@@ -1366,7 +1388,7 @@ def main(argv: list[str] | None = None, env: dict | None = None, clock: Clock | 
     try:
         if a.cmd == "meta":
             api = Api(env, Budget(clock, 5 * 60), runner)
-            run_meta(api, env, a.db, a.validation, a.started_at, a.validated_at, a.out, a.out_meta)
+            run_meta(api, env, a.db, a.validation, a.validated_at, a.out, a.out_meta)
             return 0
         if a.cmd == "sources":
             own = parse_meta(a.meta.read_text())

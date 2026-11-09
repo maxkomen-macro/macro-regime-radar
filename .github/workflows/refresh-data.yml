@@ -460,14 +460,13 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          STARTED_AT: ${{ steps.attempt.outputs.started_at }}
           VALIDATED_AT: ${{ steps.validated.outputs.validated_at }}
         run: |
           mkdir -p validated validated-meta
           cp data/macro_radar.db validated/macro_radar.db
           cp validation.json validated/validation.json
           python scripts/memo_queue.py meta --db validated/macro_radar.db --validation validated/validation.json \
-            --started-at "${STARTED_AT:?the attempt start was not recorded}" --validated-at "${VALIDATED_AT:?}" \
+            --validated-at "${VALIDATED_AT:?}" \
             --out validated/refresh-meta.txt --out-meta validated-meta/validated-meta.txt
 
       - name: Upload this attempt's memo metadata
