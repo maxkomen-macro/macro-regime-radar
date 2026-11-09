@@ -818,8 +818,12 @@ def discover(api: Api, store: Store, own: Meta, f_time: datetime, now: datetime)
             if conclusion == "success" and not legacy:
                 continue   # a successful CS-2 attempt that validated uploaded its metadata
             u = classify_attempt(api, rid, n)
-            if u is not None:
-                unknown.append(u)
+            if u is None:
+                continue
+            created = ts(r.get("created_at"))
+            if created is not None and u.validated_lo > created + ELIGIBLE_AFTER_CREATE:
+                continue   # validated after its run's 31-day cutoff: never a source (DR-61), so it hides nothing
+            unknown.append(u)   # bounds straddling the cutoff stay uncertain: kept
     return Discovery(sorted(metas.values(), key=Meta.order), unknown)
 
 

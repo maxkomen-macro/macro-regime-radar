@@ -1126,3 +1126,27 @@ def test_the_page_and_the_email_carry_one_sent_date_across_midnight(tmp_path, ou
     assert mq.run_finalize(ctx, "2026-11-16") == {"variant": "delayed", "republish": False}
     assert repo.main_text(mq.PAGE["daily"]) == (final / "page.html").read_text() == \
         "<p>delayed page 2026-11-16 sent 2026-11-18</p>"
+
+
+@pytest.mark.parametrize("val_start,blocks", [
+    (utc(2026, 11, 16, 22, 31), False),         # validated wholly after created + 31 days: ineligible, ignored
+    (utc(2026, 11, 16, 22, 29, 58), True),      # bounds straddle the cutoff: still uncertain, blocks
+    (utc(2026, 11, 16, 22, 0), True),           # before the cutoff: an earlier validation with lost coverage
+])
+def test_an_attempt_without_metadata_validated_after_the_31_day_cutoff_hides_nothing(val_start, blocks):
+    # S-5: the creation cutoff applies to attempts without metadata too, by their validation bounds; each case
+    # validates before run 400 (23:00), so only the cutoff decides whether it hides an earlier coverage
+    api, m400, own = _scenario()
+    legacy = "e" * 40
+    created = utc(2026, 11, 16, 22, 30) - mq.ELIGIBLE_AFTER_CREATE      # cutoff: 2026-11-16 22:30
+    api.add_run(290, created, val_start + timedelta(minutes=10), attempts=2, head_sha=legacy)
+    api.attempts[(290, 1)] = {"status": "completed", "conclusion": "failure"}
+    api.jobs[(290, 1)] = []                                             # the first attempt never started its job
+    api.jobs[(290, 2)] = refresh_job(290, 2, val_start - timedelta(minutes=30), val_start,
+                                     val_start + timedelta(minutes=1), legacy=True)
+    got = mq.discover(api, FakeStore({legacy: False}), own, utc(2026, 11, 16), utc(2026, 11, 17, 2, 10))
+    rec = mq.decide_key("daily", "2026-11-16", got, api, own)
+    if blocks:
+        assert rec["state"] == "blocked" and "run 290 attempt 2" in rec["reason"]
+    else:
+        assert got.unknown == [] and rec["state"] == "source" and rec["origin_run_id"] == 400
