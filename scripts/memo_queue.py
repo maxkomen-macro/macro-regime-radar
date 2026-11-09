@@ -88,6 +88,7 @@ REFRESH_WORKFLOW = "refresh-data.yml"
 REFRESH_JOB = "refresh"
 RECORD_STEP = "Record the validated run for downstream memos"
 VALIDATE_STEP = "Validate the refreshed database"
+VALIDATED_STEP = "Record the validation time"   # runs only on a full refresh whose verdict is pass
 MEMO_JOB = "email-memo"
 PLAN_STEP = "Plan the memo"
 SEND_STEP = "Send memo email"
@@ -721,8 +722,12 @@ def _step(job: dict, name: str) -> dict | None:
 
 
 def classify_attempt(api: Api, run_id: int, n: int) -> UnknownAttempt | None:
-    """From an attempt's jobs: None when it did not validate (its record step did not
-    conclude success), else an UnknownAttempt with bounds on its validation time."""
+    """From an attempt's jobs: None when it did not validate, else an UnknownAttempt with
+    bounds on its validation time. Validation is established independently of the metadata:
+    a CS-2 attempt validated when "Record the validation time" (full mode, verdict pass)
+    succeeded, whatever happened to its record step afterwards; its own start and finish
+    bound validated_at. A legacy attempt has no such step: it validated when its record
+    step succeeded, bounded by the validate step's start and the record step's finish."""
     jobs = [j for j in api.attempt_jobs(run_id, n) if j.get("name") == REFRESH_JOB]
     if not jobs:
         return None   # cancelled before its job started: nothing validated
@@ -733,13 +738,19 @@ def classify_attempt(api: Api, run_id: int, n: int) -> UnknownAttempt | None:
         raise Incomplete(f"run {run_id} attempt {n}: the jobs listing names another attempt")
     if job.get("status") != "completed":
         raise Incomplete(f"run {run_id} attempt {n} has not completed")
-    rec = _step(job, RECORD_STEP)
-    if rec is None or rec.get("conclusion") != "success":
-        return None
-    val = _step(job, VALIDATE_STEP)
-    lo = ts((val or {}).get("started_at"))
-    hi = ts(rec.get("completed_at"))
+    if not isinstance(job.get("steps"), list):
+        raise Incomplete(f"run {run_id} attempt {n}: the job lists no steps")
     started = ts(job.get("started_at"))
+    marker = _step(job, VALIDATED_STEP)
+    if marker is not None:
+        if marker.get("conclusion") != "success":
+            return None
+        lo, hi = ts(marker.get("started_at")), ts(marker.get("completed_at"))
+    else:
+        rec = _step(job, RECORD_STEP)
+        if rec is None or rec.get("conclusion") != "success":
+            return None
+        lo, hi = ts((_step(job, VALIDATE_STEP) or {}).get("started_at")), ts(rec.get("completed_at"))
     if lo is None or hi is None or started is None:
         raise Incomplete(f"run {run_id} attempt {n}: step times missing")
     return UnknownAttempt(run_id, n, started, lo, hi)

@@ -354,6 +354,8 @@ jobs:
           fi
 
       # CS-2: when this attempt's validation finished (t_R in docs/memo coverage, design section 1).
+      # scripts/memo_queue.py reads this step's success as "this attempt validated a full refresh",
+      # independently of the metadata step below (keep its name and condition).
       - name: Record the validation time
         id: validated
         if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'

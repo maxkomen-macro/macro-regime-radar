@@ -384,10 +384,17 @@ class FakeStore:
         return self.code.get(sha, True)
 
 
-def refresh_job(rid, n, started, val_start, rec_done, rec_conclusion="success", status="completed"):
+def refresh_job(rid, n, started, val_start, rec_done, rec_conclusion="success", status="completed",
+                marker="success", legacy=False):
+    """A refresh job's record. CS-2: "Record the validation time" runs from val_start to val_start + 5 s
+    (skipped when marker is "skipped": not a passing full run); legacy: no such step."""
+    steps = [{"name": mq.VALIDATE_STEP, "started_at": mq.iso(val_start)}]
+    if not legacy:
+        steps.append({"name": mq.VALIDATED_STEP, "conclusion": marker, "started_at": mq.iso(val_start),
+                      "completed_at": mq.iso(val_start + timedelta(seconds=5))})
+    steps.append({"name": mq.RECORD_STEP, "conclusion": rec_conclusion, "completed_at": mq.iso(rec_done)})
     return [{"name": "refresh", "run_id": rid, "run_attempt": n, "status": status, "started_at": mq.iso(started),
-             "steps": [{"name": mq.VALIDATE_STEP, "started_at": mq.iso(val_start)},
-                       {"name": mq.RECORD_STEP, "conclusion": rec_conclusion, "completed_at": mq.iso(rec_done)}]}]
+             "steps": steps}]
 
 
 DB400, DB500 = b"invented db 400", b"invented db 500"
@@ -425,14 +432,16 @@ def test_an_earlier_validated_attempt_without_metadata_blocks_the_key():
     api, m400, own = _scenario()
     legacy = "d" * 40
     api.add_run(300, utc(2026, 11, 16, 21, 30), utc(2026, 11, 16, 22, 40), head_sha=legacy)
-    api.jobs[(300, 1)] = refresh_job(300, 1, utc(2026, 11, 16, 21, 30), utc(2026, 11, 16, 22, 0), utc(2026, 11, 16, 22, 5))
+    api.jobs[(300, 1)] = refresh_job(300, 1, utc(2026, 11, 16, 21, 30), utc(2026, 11, 16, 22, 0), utc(2026, 11, 16, 22, 5),
+                                     legacy=True)
     got = mq.discover(api, FakeStore({legacy: False}), own, utc(2026, 11, 16), utc(2026, 11, 17, 2, 10))
     assert [(u.run_id, u.attempt) for u in got.unknown] == [(300, 1)]
     rec = mq.decide_key("daily", "2026-11-16", got, api, own)
     assert rec["state"] == "blocked" and "run 300 attempt 1" in rec["reason"]
     assert mq.decide_key("weekly", "2026-W47", got, api, own)["state"] == "blocked"
     # the same attempt validated before the close cannot have covered the 16th: no block
-    api.jobs[(300, 1)] = refresh_job(300, 1, utc(2026, 11, 16, 20, 0), utc(2026, 11, 16, 20, 30), utc(2026, 11, 16, 21, 10))
+    api.jobs[(300, 1)] = refresh_job(300, 1, utc(2026, 11, 16, 20, 0), utc(2026, 11, 16, 20, 30), utc(2026, 11, 16, 21, 10),
+                                     legacy=True)
     got = mq.discover(api, FakeStore({legacy: False}), own, utc(2026, 11, 16), utc(2026, 11, 17, 2, 10))
     assert mq.decide_key("daily", "2026-11-16", got, api, own)["origin_run_id"] == 400
 
@@ -446,13 +455,48 @@ def test_an_unknown_attempt_after_the_first_source_does_not_block():
     assert mq.decide_key("daily", "2026-11-16", got, api, own)["origin_run_id"] == 400
 
 
-def test_a_failed_attempt_whose_record_step_did_not_succeed_validated_nothing():
+@pytest.mark.parametrize("rec", ["failure", "cancelled", "skipped"])
+def test_a_validated_attempt_whose_metadata_was_not_recorded_blocks_the_keys_it_may_cover(rec):
+    # S-1: validation is established by "Record the validation time", not by the metadata step
     api, m400, own = _scenario()
     api.add_run(300, utc(2026, 11, 16, 21, 30), utc(2026, 11, 16, 22, 40), conclusion="failure")
     api.jobs[(300, 1)] = refresh_job(300, 1, utc(2026, 11, 16, 21, 30), utc(2026, 11, 16, 22, 0),
-                                     utc(2026, 11, 16, 22, 5), rec_conclusion="skipped")
+                                     utc(2026, 11, 16, 22, 5), rec_conclusion=rec)
     got = mq.discover(api, FakeStore(), own, utc(2026, 11, 16), utc(2026, 11, 17, 2, 10))
+    assert [(u.run_id, u.attempt) for u in got.unknown] == [(300, 1)]
+    u = got.unknown[0]
+    assert (u.validated_lo, u.validated_hi) == (utc(2026, 11, 16, 22, 0), utc(2026, 11, 16, 22, 0, 5))
+    rec_ = mq.decide_key("daily", "2026-11-16", got, api, own)
+    assert rec_["state"] == "blocked" and "run 300 attempt 1" in rec_["reason"]
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_an_attempt_that_did_not_validate_is_not_a_candidate(legacy):
+    api, m400, own = _scenario()
+    api.add_run(300, utc(2026, 11, 16, 21, 30), utc(2026, 11, 16, 22, 40), conclusion="failure", head_sha="d" * 40)
+    api.jobs[(300, 1)] = refresh_job(300, 1, utc(2026, 11, 16, 21, 30), utc(2026, 11, 16, 22, 0),
+                                     utc(2026, 11, 16, 22, 5), rec_conclusion="skipped", marker="skipped", legacy=legacy)
+    got = mq.discover(api, FakeStore({"d" * 40: not legacy}), own, utc(2026, 11, 16), utc(2026, 11, 17, 2, 10))
     assert got.unknown == []
+
+
+def test_the_step_names_the_queue_reads_exist_in_the_workflows():
+    import yaml
+
+    wf = ROOT / ".github" / "workflows"
+    refresh = yaml.safe_load((wf / "refresh-data.yml").read_text())["jobs"]
+    assert mq.REFRESH_JOB in refresh
+    names = [s["name"] for s in refresh[mq.REFRESH_JOB]["steps"]]
+    for n in (mq.VALIDATE_STEP, mq.VALIDATED_STEP, mq.RECORD_STEP):
+        assert names.count(n) == 1, n
+    marker = next(s for s in refresh[mq.REFRESH_JOB]["steps"] if s["name"] == mq.VALIDATED_STEP)
+    assert marker["if"] == "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'"
+    assert "continue-on-error" not in marker
+    for kind in mq.KINDS:
+        jobs = yaml.safe_load((wf / mq.MEMO_WORKFLOW[kind]).read_text())["jobs"]
+        assert list(jobs) == [mq.MEMO_JOB]
+        names = [s["name"] for s in jobs[mq.MEMO_JOB]["steps"]]
+        assert names.count(mq.PLAN_STEP) == 1 and names.count(mq.SEND_STEP) == 1
 
 
 def test_a_running_attempt_or_an_expired_or_mismatched_metadata_makes_discovery_incomplete():
@@ -492,7 +536,7 @@ def test_an_ineligible_late_rerun_never_covers():
     api.runs[400]["run_attempt"] = 2
     api.attempts[(400, 1)] = {"status": "completed", "conclusion": "failure"}
     api.jobs[(400, 1)] = refresh_job(400, 1, utc(2026, 11, 16, 22, 30), utc(2026, 11, 16, 22, 50),
-                                     utc(2026, 11, 16, 22, 55), rec_conclusion="skipped")
+                                     utc(2026, 11, 16, 22, 55), rec_conclusion="skipped", marker="skipped")
     api.add_meta(late)
     got = mq.discover(api, FakeStore(), own, utc(2026, 11, 16), utc(2026, 11, 17, 2, 10))
     assert mq.decide_key("daily", "2026-11-16", got, api, own)["origin_run_id"] == 500

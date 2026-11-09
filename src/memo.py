@@ -1476,7 +1476,7 @@ def generate_memo() -> None:
         key_indicators    = key_indicators,
     )
     if _session_mode():   # CS-2: the pinned session and the snapshot's validation time
-        ctx.update(as_of_long=pin_p.strftime("%B %d, %Y"),
+        ctx.update(as_of=pin_p.strftime("%B %d, %Y"), as_of_long=pin_p.strftime("%B %d, %Y"),
                    data_as_of=memo_clock().strftime("%Y-%m-%d %H:%M UTC"))
 
     # ── Render browser version ─────────────────────────────────────────────

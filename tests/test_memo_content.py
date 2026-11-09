@@ -381,3 +381,36 @@ def test_the_weekly_templates_are_unchanged_when_the_queue_variables_are_unset(n
     if old.returncode != 0:
         pytest.skip(f"commit {BASE} is not in this clone")
     assert stripped == old.stdout
+
+
+DB = ROOT / "data" / "macro_radar.db"
+
+
+@pytest.mark.skipif(not DB.exists(), reason="needs data/macro_radar.db")
+def test_a_queued_weekly_memo_dates_the_page_and_the_email_to_the_pinned_session(tmp_path):
+    # S-2: both surfaces show the pinned session, not the regime month
+    import os
+    import shutil
+
+    pytest.importorskip("matplotlib")
+    pytest.importorskip("jinja2")
+    shutil.copytree(ROOT / "src", tmp_path / "src", ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(ROOT / "templates", tmp_path / "templates")
+    (tmp_path / "data").mkdir()
+    shutil.copy2(DB, tmp_path / "data" / "macro_radar.db")
+    p = sqlite3.connect(tmp_path / "data" / "macro_radar.db").execute(
+        "SELECT MAX(date) FROM market_daily WHERE symbol = 'SPY'").fetchone()[0][:10]
+    env = {**os.environ, "MEMO_KEY": "2026-W47", "MEMO_SESSION": p, "MEMO_CLOCK": f"{p}T23:30:00Z"}
+    run = subprocess.run([sys.executable, "-m", "src.memo"], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=600)
+    assert run.returncode == 0, run.stderr[-2000:]
+    out = tmp_path / "output" / "memo-bundle"
+    long = date.fromisoformat(p).strftime("%B %d, %Y")
+    for v in ("normal", "delayed"):
+        page, email = (out / f"page-{v}.html").read_text(), (out / f"email-{v}.html").read_text()
+        assert f"<strong>As of:</strong>&nbsp; {long}</div>" in page
+        assert f"Weekly Memo &nbsp;&bull;&nbsp; {long} &nbsp;&bull;&nbsp;" in email
+        assert f"Data as of {p} 23:30 UTC" in email and f"<strong>Data as of:</strong>&nbsp; {p} 23:30 UTC" in page
+        assert ("Delayed memo for the week 2026-W47, sent __MEMO_SENT_DATE__" in page) == (v == "delayed")
+    assert (out / "subject-delayed.txt").read_text() == "[Delayed] Macro Regime Radar — Weekly Memo\n"
+    meta = __import__("json").loads((out / "meta.json").read_text())
+    assert meta["kind"] == "weekly" and meta["key"] == "2026-W47" and meta["pin_session"] == p
