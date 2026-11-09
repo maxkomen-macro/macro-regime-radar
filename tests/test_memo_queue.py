@@ -1116,16 +1116,37 @@ class FakeApiBytes(FakeApi):
 
 
 @pytestmark_git
-def test_the_page_and_the_email_carry_one_sent_date_across_midnight(tmp_path, outdirs):
-    # S-4: publish at 23:59 and finalize after midnight: one date, no stale page
+def test_the_sent_date_is_the_send_date_and_the_page_follows_it_across_midnight(tmp_path, outdirs):
+    # S-4, S-6: published at 23:59:50, finalized and sent after midnight: the email and the page both say
+    # the 18th, the day it is sent
     bundle, final, outcome = outdirs
-    repo, ctx = _claimed(tmp_path, outdirs, now=utc(2026, 11, 18, 23, 59))      # already delayed: the 17th has closed
+    repo, ctx = _claimed(tmp_path, outdirs, now=utc(2026, 11, 17, 23, 59, 50))   # delayed: the 17th has closed
     mq.run_reserve(ctx, "2026-11-16", "auto")
     assert mq.run_publish(ctx, "2026-11-16", "auto")["variant"] == "delayed"
-    ctx.clock.t = 120
-    assert mq.run_finalize(ctx, "2026-11-16") == {"variant": "delayed", "republish": False}
-    assert repo.main_text(mq.PAGE["daily"]) == (final / "page.html").read_text() == \
-        "<p>delayed page 2026-11-16 sent 2026-11-18</p>"
+    assert repo.main_text(mq.PAGE["daily"]) == "<p>delayed page 2026-11-16 sent 2026-11-17</p>"
+    ctx.clock.t = 20
+    assert mq.run_finalize(ctx, "2026-11-16") == {"variant": "delayed", "republish": True}
+    assert (final / "page.html").read_text() == "<p>delayed page 2026-11-16 sent 2026-11-18</p>"
+    _send(final, "sent")
+    mq.write_outcome("daily", "2026-11-16", 900, 1, "success", ctx.clock.now())
+    mq.run_record(ctx, "2026-11-16", "auto")
+    assert repo.main_text(mq.PAGE["daily"]) == "<p>delayed page 2026-11-16 sent 2026-11-18</p>"
+
+
+@pytestmark_git
+def test_an_unchanged_page_is_not_republished_and_an_older_key_never_is(tmp_path, outdirs):
+    bundle, final, outcome = outdirs
+    repo, ctx = _claimed(tmp_path, outdirs, now=utc(2026, 11, 17, 23, 0))
+    mq.run_publish(ctx, "2026-11-16", "auto")
+    assert mq.run_finalize(ctx, "2026-11-16")["republish"] is False
+    led = mq.empty_ledger("daily")
+    led["published"] = "2026-11-17"
+    import shutil
+    shutil.rmtree(final)                      # a new job: a fresh output/memo-final
+    repo2, ctx2 = _claimed(tmp_path / "older", outdirs, ledger=led, now=utc(2026, 11, 17, 23, 59, 50))
+    assert mq.run_publish(ctx2, "2026-11-16", "auto")["page"] is False
+    ctx2.clock.t = 20
+    assert mq.run_finalize(ctx2, "2026-11-16")["republish"] is False
 
 
 @pytest.mark.parametrize("val_start,blocks", [

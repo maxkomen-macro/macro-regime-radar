@@ -1176,15 +1176,8 @@ def materialize(kind: str, variant: str, sent: date) -> tuple[str, str, str]:
     return page, header + email, subject
 
 
-def sent_date(now: datetime) -> date:
-    """The memo's sent date, fixed by the first of publish and finalize in this run, so the
-    published page and the email never disagree across midnight (S-4)."""
-    p = FINAL / "sent-date.txt"
-    if p.exists():
-        return day_of(p.read_text().strip())
-    FINAL.mkdir(parents=True, exist_ok=True)
-    p.write_text(now.date().isoformat() + "\n")
-    return now.date()
+def _published_file() -> Path:
+    return FINAL / "published-page.html"
 
 
 def _variant_file() -> Path:
@@ -1212,7 +1205,7 @@ def run_publish(ctx: Ctx, key: str, mode: str) -> dict:
     e = _own_entry(ctx, ledger, key, mode)
     variant = choose_variant(_delayed_now(ctx, key))
     now = ctx.clock.now()
-    page, _, _ = materialize(ctx.kind, variant, sent_date(now))
+    page, _, _ = materialize(ctx.kind, variant, now.date())
     files: dict[str, str] = {}
     pub = ledger["published"]
     if pub is None or key_order(ctx.kind, key) >= key_order(ctx.kind, pub):
@@ -1226,25 +1219,29 @@ def run_publish(ctx: Ctx, key: str, mode: str) -> dict:
         e.update(state="sending", updated_at=iso(now))
     files[LEDGER[ctx.kind]] = dumps(ledger)
     ctx.store.publish(f"{ctx.kind.title()} memo {key} [skip ci]", files, {LEDGER[ctx.kind]: blob})
+    if PAGE[ctx.kind] in files:   # what this run put on the page, for finalize to compare against
+        _published_file().write_text(page, encoding="utf-8")
     return {"variant": variant, "page": PAGE[ctx.kind] in files}
 
 
 def run_finalize(ctx: Ctx, key: str) -> dict:
     """Checkpoint 3, immediately before SMTP: the delayed version if a boundary has passed
-    since checkpoint 2. Writes the message the send step sends."""
+    since checkpoint 2, and the sent date of this moment. Writes the message the send step
+    sends; when this run published the page and the final page differs from it (the variant
+    switched, or the date moved past midnight), the record step republishes it (S-6)."""
     load_bundle(ctx.kind, key)
     ctx.store.fetch()
-    before = current_variant()
     variant = choose_variant(_delayed_now(ctx, key))
-    page, email, subject = materialize(ctx.kind, variant, sent_date(ctx.clock.now()))
+    page, email, subject = materialize(ctx.kind, variant, ctx.clock.now().date())
     FINAL.mkdir(parents=True, exist_ok=True)
     (FINAL / "page.html").write_text(page, encoding="utf-8")
     (FINAL / f"{ctx.kind}_memo.html").write_text(page, encoding="utf-8")   # the attachment, under its usual name
     (FINAL / "email.html").write_text(email, encoding="utf-8")
     (FINAL / "subject.txt").write_text(subject + "\n", encoding="utf-8")
-    switched = before == "normal" and variant == "delayed"
-    (FINAL / "republish").write_text("true\n" if switched else "false\n")
-    return {"variant": variant, "republish": switched}
+    pub = _published_file()
+    changed = pub.exists() and pub.read_text(encoding="utf-8") != page
+    (FINAL / "republish").write_text("true\n" if changed else "false\n")
+    return {"variant": variant, "republish": changed}
 
 
 def write_outcome(kind: str, key: str, run_id: int, attempt: int, send_outcome: str, now: datetime) -> dict:
