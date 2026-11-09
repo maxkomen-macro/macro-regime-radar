@@ -488,4 +488,6 @@ def test_the_publisher_keeps_bounded_retries_and_backoff():
     for banned in ("reset --soft", "git stash", "rebase", "git add -A", "git add ."):
         assert banned not in code, banned
     allowed = code.split("ALLOWED=(")[1].split(")")[0].split()
-    assert sorted(a.strip('"') for a in allowed) == sorted(w[2] for w in WRITERS)
+    # CS-2 adds the memo ledgers and the source registry (pinned in tests/test_publish_expect.py)
+    cs2 = ["docs/memo/ledger-daily.json", "docs/memo/ledger-weekly.json", "docs/memo/sources.json"]
+    assert sorted(a.strip('"') for a in allowed) == sorted([w[2] for w in WRITERS] + cs2)
