@@ -182,3 +182,12 @@ def test_a_resumed_run_keeps_complete_records_and_runs_only_the_rest(tmp_path):
     assert json.loads((out / "manifest-p3.json").read_text())["resumed_after"] == 3
     with pytest.raises(SystemExit):
         run_p3.main(["--per-group", "2", "--out", str(out), "--workers", "2", "--no-refs", "--resume"])
+
+
+def test_the_cross_check_counts_interval_consistency_apart_from_point_agreement():
+    rows = [_xc(i) for i in range(3)] + [_xc(3 + i) for i in range(2)]
+    for r in rows[3:]:
+        r["tier2"]["route"] = "analytic-interval"            # an older record: basis derived from the route
+    rows[0]["cross_check"]["basis"] = oa.XC_BASIS_INTERVAL   # a newer record: basis as recorded
+    got = S.score_cross_check(rows)["G1-nodiv"]["cross_checked_by_basis"]
+    assert got == {oa.XC_BASIS_INTERVAL: 3, oa.XC_BASIS_POINT: 2}

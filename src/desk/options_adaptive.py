@@ -490,6 +490,8 @@ XC_EXACT = "the price is exact"
 XC_NO_PRICE = "no price to check"
 XC_SLACK = 0.1                 # analytic prices: the interval test's floor, s = max(E_FD, 0.1·price_tol) (P3-AM1)
 XC_NO_INTERVAL = "no proved interval to check"
+XC_BASIS_POINT = "point agreement"            # lattice price: |V_T2 − V_FD| ≤ 0.5·tol
+XC_BASIS_INTERVAL = "interval consistency"    # analytic price: V_FD within [L − s, U + s]; not midpoint agreement
 
 
 @dataclass(frozen=True)
@@ -564,15 +566,17 @@ def cross_check(c: om.Context, a: oe.Answer, base: dict, xcfg: XConfig = XConfig
         return CrossCheck(XC_UNAVAILABLE, XC_E_ABOVE, v2, e_fd, diff, tol, audit)
     if a.price_status == oe.ANALYTIC:
         # amendment P3-AM1: an analytic price claims its proved interval [L, U], not its midpoint, so the FD value
-        # is tested against the interval, widened by s = max(E_FD, 0.1·tol) (the padding Tier 2 adds itself)
+        # is tested against the interval, widened by s = max(E_FD, 0.1·tol) (the padding Tier 2 adds itself).
+        # A pass is interval consistency only: it does not establish the midpoint agreement the lattice rule tests.
         lo, hi = a.audit.get("L"), a.audit.get("U")
         if lo is None or hi is None or not (math.isfinite(lo) and math.isfinite(hi)):
             return CrossCheck(XC_UNAVAILABLE, XC_NO_INTERVAL, v2, e_fd, diff, tol, audit)
         s = max(e_fd, XC_SLACK * tol)
-        audit.update(L=lo, U=hi, s=s)
+        audit.update(L=lo, U=hi, s=s, basis=XC_BASIS_INTERVAL)
         if lo - s <= v2 <= hi + s:
             return CrossCheck(XC_CHECKED, None, v2, e_fd, diff, tol, audit)
         return CrossCheck(XC_DISAGREE, None, v2, e_fd, diff, tol, audit)
+    audit["basis"] = XC_BASIS_POINT
     if diff <= XC_AGREE * tol:
         return CrossCheck(XC_CHECKED, None, v2, e_fd, diff, tol, audit)
     return CrossCheck(XC_DISAGREE, None, v2, e_fd, diff, tol, audit)

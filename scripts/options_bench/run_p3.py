@@ -95,7 +95,8 @@ def one(args) -> dict:
     rec["tier2_deep_exercise"] = p3.tier2.audit.get("delta_rule") == "deep exercise"
     xc = p3.cross_check
     rec["cross_check"] = {"status": xc.status, "reason": xc.reason, "v_fd": xc.v_fd, "e_fd": xc.e_fd,
-                          "diff": xc.diff, "tol": xc.tol, "L1": xc.audit.get("L1"), "L2": xc.audit.get("L2")}
+                          "diff": xc.diff, "tol": xc.tol, "L1": xc.audit.get("L1"), "L2": xc.audit.get("L2"),
+                          "basis": xc.audit.get("basis"), "L": xc.audit.get("L"), "U": xc.audit.get("U")}
     rec["price_status_p3"] = p3.price_status
     # L1 and L2 (and the h/2 value of a bumped Greek) let the calibration re-derive E_G for any candidate F_G
     rec["greeks"] = {g: {"status": a.status, "value": a.value, "estimate": a.estimate, "reason": a.reason,

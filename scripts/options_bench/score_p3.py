@@ -153,6 +153,13 @@ def score_greeks(records: list[dict], targeted: dict | None = None) -> dict:
 
 # ── the cross-check (DR-07) ─────────────────────────────────────────────────
 
+def _basis(r: dict) -> str:
+    b = r["cross_check"].get("basis")
+    if b:
+        return b
+    return oa.XC_BASIS_INTERVAL if r["tier2"].get("route") == "analytic-interval" else oa.XC_BASIS_POINT
+
+
 def score_cross_check(records: list[dict]) -> dict:
     """Per group, among prices returned "cross-checked": V_T2 against the FD price reference (independent of the
     lattice) and V_FD against the corroborated price reference or an exact control; the rules of a Greek pair
@@ -191,8 +198,11 @@ def score_cross_check(records: list[dict]) -> dict:
         else:
             verdict = "validated"
         diffs = [r["cross_check"]["diff"] / r["cross_check"]["tol"] for r in checked]
+        # P3-AM1 (P3-A11): an analytic price's "cross-checked" is interval consistency, a lattice price's is point
+        # agreement; they are counted apart and never read as the same claim
+        basis = Counter(_basis(r) for r in checked)
         out[g] = {"contexts": len(recs), "statuses": {f"{s}: {w}" if w else s: n for (s, w), n in statuses.items()},
-                  "cross_checked": len(checked), "scored_both": both, "tier2": t2, "fd": fdv, "verdict": verdict,
+                  "cross_checked": len(checked), "cross_checked_by_basis": dict(basis), "scored_both": both, "tier2": t2, "fd": fdv, "verdict": verdict,
                   "shares": {str(f): (sum(1 for d in diffs if d <= f) / len(diffs) if diffs else math.nan)
                              for f in oa.XC_SHARES}}
     return out

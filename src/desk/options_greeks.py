@@ -74,7 +74,7 @@ def tolerance(greek: str, value: float, spot: float) -> float:
     raise ValueError(greek)
 
 
-BUMP_FACTORS = (4.0 / 3.0, 2.0, 3.0)    # F_h candidates; 4/3 is the second-order Richardson bound (P3-AM1)
+BUMP_FACTORS = (4.0 / 3.0, 2.0, 3.0)    # F_h candidates (P3-AM1); 4/3 is the asymptotic second-order Richardson factor, not a bound
 
 
 @dataclass(frozen=True)

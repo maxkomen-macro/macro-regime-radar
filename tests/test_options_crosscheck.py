@@ -148,6 +148,7 @@ def test_an_analytic_price_is_checked_against_its_proved_interval(v_fd, status):
     got = oa.cross_check(C, _analytic(V - TOL, V + TOL), _base(v_fd, v_fd))
     assert got.status == status and got.v_fd == v_fd and got.e_fd == 0.0
     assert got.audit["L"] == V - TOL and got.audit["U"] == V + TOL and got.audit["s"] == oa.XC_SLACK * TOL
+    assert got.audit["basis"] == oa.XC_BASIS_INTERVAL
 
 
 def test_the_interval_test_is_stricter_than_the_midpoint_test_where_the_interval_is_narrow():
@@ -182,7 +183,8 @@ def test_an_analytic_answer_without_its_interval_is_never_checked_at_its_midpoin
 def test_the_lattice_rule_is_unchanged_by_the_amendment():
     for frac, status in ((0.5 * (1 - 1e-9), oa.XC_CHECKED), (0.5 * (1 + 1e-9), oa.XC_DISAGREE)):
         v2 = V + frac * TOL
-        assert oa.cross_check(C, _est(V), _base(v2, v2)).status == status
+        got = oa.cross_check(C, _est(V), _base(v2, v2))
+        assert got.status == status and got.audit["basis"] == oa.XC_BASIS_POINT
 
 
 def test_only_estimated_and_analytic_prices_are_checked():
