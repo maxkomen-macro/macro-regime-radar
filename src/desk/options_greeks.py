@@ -74,6 +74,9 @@ def tolerance(greek: str, value: float, spot: float) -> float:
     raise ValueError(greek)
 
 
+BUMP_FACTORS = (4.0 / 3.0, 2.0, 3.0)    # F_h candidates; 4/3 is the second-order Richardson bound (P3-AM1)
+
+
 @dataclass(frozen=True)
 class GreekConfig:
     """Production settings. The defaults are placeholders until the Phase 3 freeze, which sets every one from dev
@@ -83,10 +86,20 @@ class GreekConfig:
     h_r: float = 5e-4             # rate units
     h_d_frac: float = 0.005       # times max(D_1, 0.001·S), in $
     factors: tuple = ((GAMMA, 3.0), (VEGA, 3.0), (RHO, 3.0), (THETA, 3.0), (DIVIDEND, 3.0))
+    # amendment P3-AM1 (pilot D2): F_h of the bump term F_h·|G(h) − G(h/2)| in a bumped Greek's estimate
+    bump_factors: tuple = ((VEGA, 4.0 / 3.0), (RHO, 4.0 / 3.0), (DIVIDEND, 4.0 / 3.0))
     zone: float = ZONE
+
+    def __post_init__(self):
+        got = dict(self.bump_factors)
+        if set(got) != set(BUMPED) or any(f not in BUMP_FACTORS for f in got.values()):
+            raise ValueError(f"bump_factors must give each of {BUMPED} one of {BUMP_FACTORS}")
 
     def factor(self, greek: str) -> float:
         return dict(self.factors)[greek]
+
+    def bump_factor(self, greek: str) -> float:
+        return dict(self.bump_factors)[greek]
 
 
 @dataclass(frozen=True)
@@ -392,7 +405,9 @@ def _bumped(run: _Ctx, g: str, ex_now: float, ptol: float) -> GreekAnswer:
     if abs(g2 - g_half) > tol:
         return _withheld(g, R_UNSTABLE, rule=3, L2=g2, L2_half=g_half, tol=tol)
     est, tol = _estimate(g, g1, g2, c, cfg)
-    return _answer(g, g1, g2, est, tol, h=h, L2_half=g_half)
+    # amendment P3-AM1: E_G also carries the bump's own error, which L2 − L1 (at a fixed h) cannot see
+    bump_term = cfg.bump_factor(g) * abs(g2 - g_half)
+    return _answer(g, g1, g2, est + bump_term, tol, h=h, L2_half=g_half, bump_term=bump_term)
 
 
 def _theta(run: _Ctx, ex_now: float, ptol: float) -> GreekAnswer:

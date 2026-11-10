@@ -302,3 +302,47 @@ def test_expiry_states_never_reach_a_solver_or_closed_form(monkeypatch):
     assert r[G.THETA].status == G.RETURNED
     with pytest.raises(ValueError):
         G.closed_forms(ctx(days=0))
+
+
+# ── amendment P3-AM1 (pilot D2): the bump term in a bumped Greek's estimate ─────────────────────────────────────
+
+# the dev pilot's G5-extreme-vol/3 inputs (bench-generated, invented): European-mode vega was 1.10 tol from the
+# closed form while |G(h) − G(h/2)| = 0.79 tol passed rule 3 and the grid-only estimate was 0.29 tol
+LOW_VOL = om.Context(False, 100.0, 95.346498, 155, 0.00212854, 0.04065392, 0.01080647, ((10, 0.923),))
+
+
+def test_the_bump_term_withholds_the_low_volatility_vega_that_failed_control_c1():
+    got = G.greeks(LOW_VOL, american=False)["vega"]
+    assert got.status == G.WITHHELD and got.reason == G.R_ESTIMATE
+    a = got.audit
+    assert abs(a["L2"] - a["L2_half"]) <= a["tol"]                 # rule 3 alone lets it through
+    grid = max(G.GreekConfig().factor(G.VEGA) * abs(a["L2"] - a["L1"]), G.FLOOR * a["tol"])
+    assert grid <= a["tol"]                                         # the grid-only estimate would return it
+    assert math.isclose(a["bump_term"], 4.0 / 3.0 * abs(a["L2"] - a["L2_half"]))
+    assert math.isclose(got.estimate, grid + a["bump_term"]) and got.estimate > a["tol"]
+
+
+def test_a_returned_bumped_greek_carries_its_bump_term_in_the_estimate():
+    got = G.greeks(ctx())
+    for g in G.BUMPED:
+        a = got[g]
+        if a.status != G.RETURNED:
+            continue
+        au = a.audit
+        grid = max(G.GreekConfig().factor(g) * abs(au["L2"] - au["L1"]), G.FLOOR * au["tol"])
+        assert math.isclose(a.estimate, grid + G.GreekConfig().bump_factor(g) * abs(au["L2"] - au["L2_half"]))
+        assert a.value == au["L2"]                                  # the served value itself is unchanged
+
+
+def test_gamma_and_theta_have_no_bump_term():
+    got = G.greeks(ctx())
+    for g in (G.GAMMA, G.THETA):
+        assert "bump_term" not in got[g].audit
+
+
+@pytest.mark.parametrize("bf", [((G.VEGA, 1.0), (G.RHO, 4 / 3), (G.DIVIDEND, 4 / 3)),
+                                ((G.VEGA, 4 / 3), (G.RHO, 4 / 3)),
+                                ((G.VEGA, 4 / 3), (G.RHO, 4 / 3), (G.DIVIDEND, 6.0))])
+def test_the_bump_factor_is_one_of_the_candidates_and_never_below_four_thirds(bf):
+    with pytest.raises(ValueError):
+        G.GreekConfig(bump_factors=bf)
