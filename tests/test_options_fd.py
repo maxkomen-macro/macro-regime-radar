@@ -228,3 +228,126 @@ def test_a_bermudan_schedule_without_day_0_has_no_exercise_at_t0():
                grids=g)
     assert not g["g0"].any() and not g["exercise0"].any()
     assert g["free0"].tobytes() == g["v0"].tobytes()
+
+
+# ---- Step 4: the production wrapper (design section 3.4) --------------------------------------------------------
+
+from scripts.options_bench import cases, reference  # noqa: E402
+from src.desk import options_adaptive as oa  # noqa: E402
+from src.desk import options_math as om  # noqa: E402
+
+CFG = options_fd.FDConfig(m_frac=0.25, p_frac=0.5, work_cap=10**9)
+
+
+def _ctx(**kw) -> om.Context:
+    a = dict(is_call=False, spot=100.0, strike=105.0, days=90, rho=0.05, q=0.0, sigma=0.3, divs=())
+    a.update(kw)
+    return om.Context(a["is_call"], a["spot"], a["strike"], a["days"], a["rho"], a["q"], a["sigma"], tuple(a["divs"]))
+
+
+def test_the_production_grid_rule_is_the_reference_rule():
+    n = 0
+    for g in cases.GROUPS:
+        for i in range(60):
+            c = cases.case(20261026, g, i)
+            if c.spot - c.pv() <= 0:
+                continue
+            assert options_fd.grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma,
+                                        options_fd.pv_owed(c.divs, c.rho, 0.0)) == reference.grid(c), c.id
+            n += 1
+    assert n >= 500
+    assert (options_fd.GRID_M_MIN, options_fd.GRID_M_MAX) == (reference.M_MIN, reference.M_MAX)
+    assert options_fd.GRID_STEPS_MID == reference.STEPS_MID
+    assert options_fd.GRID_PECLET_MAX == reference.PECLET_MAX
+    assert options_fd.PECLET_MONOTONE == reference.PECLET_MONOTONE
+
+
+def test_levels_double_both_dimensions_and_keep_the_centre_a_node():
+    for c in (_ctx(), _ctx(days=3, sigma=1.5), _ctx(days=1200, sigma=0.12, divs=((100, 1.0),))):
+        l1, l2 = options_fd.levels(c, CFG)
+        assert l1.m % 4 == 0 and l2.m == 2 * l1.m and l2.per_day == 2 * l1.per_day and l1.width == l2.width
+        assert l1.m >= 16 and l1.per_day >= 1
+
+
+def test_a_production_solve_is_the_kernel_solve():
+    c = _ctx(divs=((30, 1.0),))
+    l1, _ = options_fd.levels(c, CFG)
+    b = options_fd.Budget(CFG.work_cap)
+    got = options_fd.price(c, l1, b)
+    assert isinstance(got, options_fd.Solved)
+    v, d = options_fd.solve(c.is_call, c.spot, c.strike, c.days, c.rho, c.q, c.sigma, c.divs, l1.m, l1.per_day,
+                            l1.width)
+    assert (got.value.hex(), got.delta.hex()) == (v.hex(), d.hex())
+    assert got.units == (l1.m + 1) * l1.per_day * c.days == b.used
+
+
+def test_the_work_cap_is_charged_before_the_solve_runs(monkeypatch):
+    c = _ctx()
+    l1, l2 = options_fd.levels(c, CFG)
+    u1 = options_fd.solve_units(l1.m, l1.per_day, c.days)
+    b = options_fd.Budget(u1 + 10)
+    assert isinstance(options_fd.price(c, l1, b), options_fd.Solved)
+    ran = []
+    monkeypatch.setattr(options_fd, "solve", lambda *a, **k: ran.append(1))
+    r = options_fd.price(c, l2, b)
+    assert isinstance(r, options_fd.Refused) and r.reason == options_fd.R_WORK
+    assert ran == [] and b.used == u1
+
+
+@pytest.mark.parametrize("ctx, reason", [
+    (dict(sigma=float("nan")), options_fd.R_INPUT),
+    (dict(sigma=6.0), options_fd.R_INPUT),                             # outside the engine's domain
+    (dict(days=0), options_fd.R_EXPIRY),
+    (dict(divs=((5, 60.0), (40, 60.0))), options_fd.R_DIVIDENDS),       # X <= 0
+])
+def test_named_refusals(ctx, reason):
+    c = _ctx(**ctx)
+    l1 = options_fd.Level(240, 2, 1.0)
+    r = options_fd.price(c, l1, options_fd.Budget(10**9))
+    assert isinstance(r, options_fd.Refused) and r.reason == reason
+
+
+def test_the_dividend_refusal_reads_tier_2s_own_words():
+    assert oa.input_failure(_ctx(divs=((5, 60.0), (40, 60.0)))) == options_fd.OA_DIVIDENDS_REASON
+
+
+def test_a_grid_that_is_not_monotone_is_refused():
+    # high drift at low volatility: the reference dx meets Péclet 0.25, so a production grid coarser by more
+    # than four times passes 1
+    c = _ctx(rho=0.5, q=0.0, sigma=0.02, days=30, strike=100.0)
+    cfg = options_fd.FDConfig(m_frac=0.2, p_frac=0.5, work_cap=10**9)
+    l1, _ = options_fd.levels(c, cfg)
+    assert options_fd.peclet(c.rho, c.q, c.sigma, l1.m, l1.width) > 1.0
+    b = options_fd.Budget(10**9)
+    r = options_fd.price(c, l1, b)
+    assert isinstance(r, options_fd.Refused) and r.reason == options_fd.R_PECLET and b.used == 0
+
+
+def test_a_penalty_step_at_its_cap_is_refused(monkeypatch):
+    monkeypatch.setattr(options_fd, "PENALTY_ITER_MAX", 1)
+    c = _ctx(strike=130.0, rho=0.08)
+    l1, _ = options_fd.levels(c, CFG)
+    r = options_fd.price(c, l1, options_fd.Budget(10**9))
+    assert isinstance(r, options_fd.Refused) and r.reason == options_fd.R_PENALTY
+
+
+def test_a_non_finite_result_is_refused(monkeypatch):
+    real = options_fd.solve
+
+    def bad(*a, **k):
+        v, d = real(*a, **k)
+        return float("nan"), d
+    monkeypatch.setattr(options_fd, "solve", bad)
+    c = _ctx()
+    l1, _ = options_fd.levels(c, CFG)
+    r = options_fd.price(c, l1, options_fd.Budget(10**9))
+    assert isinstance(r, options_fd.Refused) and r.reason == options_fd.R_NONFINITE
+
+
+def test_the_config_rejects_impossible_settings():
+    with pytest.raises(ValueError):
+        options_fd.FDConfig(m_frac=0.0, p_frac=0.5, work_cap=1)
+    with pytest.raises(ValueError):
+        options_fd.FDConfig(m_frac=0.5, p_frac=1.5, work_cap=1)
+    with pytest.raises(ValueError):
+        options_fd.FDConfig(m_frac=0.5, p_frac=0.5, work_cap=0)

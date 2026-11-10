@@ -27,6 +27,7 @@ yield q applies to X, not to the whole stock). It shares no code with src/desk/o
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass, field
 from typing import Iterable, Sequence
 
 import numpy as np
@@ -242,3 +243,156 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
         grids.update({"x": x.copy(), "xs": xs.copy(), "v0": v.copy(), "g0": g0, "free0": pre0,
                       "active0": active0, "exercise0": exercise0, "v_day1": v_day1})
     return float(v[i]), float(delta)
+
+
+# ── the production wrapper (Phase 3, design section 3.4): guards around the kernel, never inside it ──────────
+
+# The reference grid rule (scripts/options_bench/reference.py `grid`, restated over plain numbers so production
+# never imports the bench; tests/test_options_fd.py holds the two equal on every bench group).
+GRID_M_MIN, GRID_M_MAX = 1000, 6000
+GRID_STEPS_MID = 1500
+GRID_PECLET_MAX = 0.25
+PECLET_MONOTONE = 1.0   # |drift|·dx/σ² at most 1 keeps both off-diagonals nonnegative (see coefficients)
+
+# Refusals, each named (design section 3.4).
+R_INPUT = "input failure"
+R_EXPIRY = "at expiry"
+R_DIVIDENDS = "price at or below the owed dividends"
+R_PECLET = "grid not monotone at this volatility and drift"
+R_PENALTY = "exercise iteration did not converge"
+R_NONFINITE = "a non-finite value"
+R_WORK = "work cap"
+# options_adaptive.input_failure's words for X <= 0 (pinned by tests/test_options_fd.py), named R_DIVIDENDS here
+OA_DIVIDENDS_REASON = "the price is at or below the dividends still owed"
+
+
+def grid_rule(spot: float, strike: float, days: int, rho: float, q: float, sigma: float,
+              pv: float) -> tuple[int, int, float]:
+    """(M, p, half-width) of the reference's finest grid: M intervals, p steps a day at its middle time level.
+    The half-width covers the drift's displacement plus seven standard deviations, and the strike plus five."""
+    tau = days / 365.0
+    sd = sigma * math.sqrt(tau)
+    x0 = spot - pv
+    drift = rho - q - 0.5 * sigma * sigma
+    width = max(abs(drift) * tau + 7.0 * sd, abs(math.log(strike / x0)) + 5.0 * sd)
+    dx = min(0.004, sd / 30.0)
+    if drift:
+        dx = min(dx, GRID_PECLET_MAX * sigma * sigma / abs(drift))
+    m = int(min(GRID_M_MAX, max(GRID_M_MIN, 2.0 * width / dx)))
+    m -= m % 16
+    p = 2 * max(1, math.ceil(GRID_STEPS_MID / (2 * days)))
+    return m, p, width
+
+
+def peclet(rho: float, q: float, sigma: float, m: int, width: float) -> float:
+    """|drift|·dx/σ² on a grid of m intervals over ±width: convection against diffusion, per cell."""
+    return abs(rho - q - 0.5 * sigma * sigma) * (2.0 * width / m) / (sigma * sigma)
+
+
+def solve_units(m: int, per_day: int, days: int) -> int:
+    """The work of one solve, (m + 1)·(time steps), in the Tier 2 work units (one node update each)."""
+    return (m + 1) * per_day * days
+
+
+class Budget:
+    """A per-context work cap, charged before each solve runs (precharged: a solve that would pass the cap is
+    refused without running)."""
+
+    def __init__(self, cap: int):
+        self.cap = int(cap)
+        self.used = 0
+
+    def take(self, units: int) -> bool:
+        if self.used + units > self.cap:
+            return False
+        self.used += units
+        return True
+
+
+@dataclass(frozen=True)
+class Level:
+    """A production level: m intervals over ±width, per_day steps a day. L1 = (m, p), L2 = (2m, 2p)."""
+    m: int
+    per_day: int
+    width: float
+
+
+@dataclass(frozen=True)
+class FDConfig:
+    """The production grid as fractions of the reference grid (calibrated on dev, then frozen) and the
+    per-context work cap. The defaults here are placeholders until the freeze; tests pass their own."""
+    m_frac: float
+    p_frac: float
+    work_cap: int
+    penalty: float = PENALTY
+
+    def __post_init__(self) -> None:
+        if not (0.0 < self.m_frac <= 1.0 and 0.0 < self.p_frac <= 1.0):
+            raise ValueError("the production grid is a fraction of the reference grid, in (0, 1]")
+        if self.work_cap <= 0:
+            raise ValueError("the work cap must be positive")
+
+
+def levels(c, cfg: FDConfig) -> tuple[Level, Level]:
+    """L1 and L2 for context `c` (an options_math.Context): the reference rule scaled by the frozen fractions.
+    m is a multiple of 4, so the centre is a node at both levels and in every half-grid stencil."""
+    m_ref, p_ref, width = grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma, pv_owed(c.divs, c.rho, 0.0))
+    m = max(16, int(round(m_ref * cfg.m_frac)))
+    m -= m % 4
+    p = max(1, int(round(p_ref * cfg.p_frac)))
+    return Level(m, p, width), Level(2 * m, 2 * p, width)
+
+
+@dataclass(frozen=True)
+class Solved:
+    value: float
+    delta: float
+    level: Level
+    units: int
+    grids: dict = field(repr=False, compare=False)
+
+
+@dataclass(frozen=True)
+class Refused:
+    reason: str
+    detail: str = ""
+
+
+def price(c, level: Level, budget: Budget, penalty: float = PENALTY, american: bool = True) -> Solved | Refused:
+    """One production solve of context `c` (an options_math.Context) at `level`, with every guard of design
+    section 3.4: the inputs and the engine's domain, an expiry, the owed dividends, the grid's monotonicity, the
+    work cap (charged before the solve), the penalty iteration and every number's finiteness. Never raises for a
+    refusable state; the kernel itself is unchanged."""
+    from src.desk import options_adaptive as oa   # read only: the input test and the domain test are Tier 2's own
+    from src.desk import options_math as om
+    bad = oa.input_failure(c)
+    if bad == OA_DIVIDENDS_REASON:
+        return Refused(R_DIVIDENDS, bad)
+    if bad is not None:
+        return Refused(R_INPUT, bad)
+    if c.days == 0:
+        return Refused(R_EXPIRY)
+    why = om.in_domain(c)
+    if why is not None:
+        return Refused(R_INPUT, why)
+    if c.spot - pv_owed(c.divs, c.rho, 0.0) <= 0.0:
+        return Refused(R_DIVIDENDS)
+    if peclet(c.rho, c.q, c.sigma, level.m, level.width) > PECLET_MONOTONE:
+        return Refused(R_PECLET)
+    units = solve_units(level.m, level.per_day, c.days)
+    if not budget.take(units):
+        return Refused(R_WORK, f"{units} units with {budget.used} of {budget.cap} used")
+    diag: dict = {}
+    grids: dict = {}
+    try:
+        with np.errstate(all="ignore"):
+            v, d = solve(c.is_call, c.spot, c.strike, c.days, c.rho, c.q, c.sigma, c.divs, level.m, level.per_day,
+                         level.width, american=american, penalty=penalty, diag=diag, grids=grids)
+    except (ValueError, OverflowError, ZeroDivisionError, FloatingPointError) as e:
+        return Refused(R_NONFINITE, str(e)[:200])
+    if diag.get("penalty_unconverged", 0):
+        return Refused(R_PENALTY, f"{diag['penalty_unconverged']} steps at the iteration cap")
+    arrays = [grids[k] for k in ("v0", "free0", "g0")] + ([grids["v_day1"]] if grids["v_day1"] is not None else [])
+    if not (math.isfinite(v) and math.isfinite(d) and all(np.all(np.isfinite(a)) for a in arrays)):
+        return Refused(R_NONFINITE)
+    return Solved(v, d, level, units, grids)
