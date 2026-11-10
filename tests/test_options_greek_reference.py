@@ -230,3 +230,13 @@ def test_the_european_control_has_no_lattice_side():
     assert out[G.GAMMA]["status"] == "FD only (European control)" and "lattice" not in out[G.GAMMA]
     assert out["_work"]["lattice_calls"] == 0
     assert abs(out[G.GAMMA]["R_FD"] - G.closed_forms(EXEMPT)[G.GAMMA]) <= out[G.GAMMA]["u_FD"]
+
+
+def test_the_lattice_side_s_dividend_smoothing_is_a_setting_and_off_by_default():
+    # V-3: frozen at calibration; the default is the unsmoothed lattice (smooth_divs=False, om's own default)
+    c = ctx(is_call=True, strike=95.0, days=40, rho=0.03, divs=((12, 1.0),))
+    off, on = GR.Runner(GR.RefBudget()), GR.Runner(GR.RefBudget(), smooth_divs=True)
+    a, b = off.lattice(c, 2), on.lattice(c, 2)
+    want = om._lattice([True], [0.95], np.array([0.03]), np.array([0.0]), np.array([0.3]), [[(12, 0.01)]], 40,
+                       om.steps_for(40) * 2)[0][0] * 100.0
+    assert a["value"] == want and b["value"] != a["value"]

@@ -85,9 +85,10 @@ class Key:
 class Runner:
     """The budgeted, cached solves of one context's references. Each state is a full om.Context (spot held)."""
 
-    def __init__(self, budget: RefBudget, american: bool = True):
+    def __init__(self, budget: RefBudget, american: bool = True, smooth_divs: bool = False):
         self.budget = budget
         self.american = american
+        self.smooth_divs = smooth_divs   # the lattice side's dividend smoothing: frozen at calibration (V-3)
         self._fd: dict = {}
         self._lat: dict = {}
         self.penalty_misses = 0
@@ -106,16 +107,16 @@ class Runner:
 
     def lattice(self, s: om.Context, mult: int, nodes: bool = False) -> dict:
         steps = om.steps_for(s.days) * mult
-        key = (s, steps, nodes)
+        key = (s, steps, nodes, self.smooth_divs)
         if key not in self._lat:
             self.budget.take(oa.units(steps))
             self.budget.lattice_calls += 1
             args = ([s.is_call], [s.strike / s.spot], np.array([s.rho]), np.array([s.q]), np.array([s.sigma]),
                     [[(dd, a / s.spot) for dd, a in s.divs]], s.days, steps)
             if nodes:
-                v, d, _, h, nd = om._lattice(*args, with_cont=True, with_nodes=True)
+                v, d, _, h, nd = om._lattice(*args, with_cont=True, smooth_divs=self.smooth_divs, with_nodes=True)
             else:
-                v, d, _, h = om._lattice(*args, with_cont=True)
+                v, d, _, h = om._lattice(*args, with_cont=True, smooth_divs=self.smooth_divs)
                 nd = None
             self._lat[key] = {"value": float(v[0]) * s.spot, "cont": float(h[0]) * s.spot, "steps": steps,
                               "nodes": None if nd is None else {k: np.asarray(a[0]) for k, a in nd.items()}}
@@ -344,12 +345,12 @@ def score(g: float, R: float, u: float, tol: float) -> str:
 # ── one context ────────────────────────────────────────────────────────────
 
 def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=QUANTITIES, american: bool = True,
-               cap: float = REF_WORK_CAP) -> dict:
+               cap: float = REF_WORK_CAP, smooth_divs: bool = False) -> dict:
     """Every requested quantity's reference for context c, under one aggregate budget. `american=False` is the
     C2 FD adequacy control: the FD study in European mode, no lattice side, scored against closed forms."""
     t0 = time.time()
     budget = RefBudget(cap)
-    r = Runner(budget, american)
+    r = Runner(budget, american, smooth_divs)
     out: dict = {}
     bad = G.state_failure(c)
     for name in quantities:
