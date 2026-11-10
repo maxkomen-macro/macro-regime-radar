@@ -279,6 +279,82 @@ def test_a_data_set_of_another_shape_is_refused_and_nothing_replaced(store, monk
     assert snapshot(store) == before
 
 
+def _edit_member(fs: dict, suffix: str, member: str, edit) -> None:
+    path = next(p for p in fs if p.endswith(suffix))
+    with zipfile.ZipFile(io.BytesIO(fs[path])) as z:
+        members = {m: z.read(m) for m in z.namelist()}
+    members[member] = edit(members[member])
+    fs[path] = fx._zip(members)
+
+
+def _blank_value_of_a_counted_row(blob: bytes) -> bytes:
+    """Codex S-2's repro: a counted filing's share row keeps its shares and loses its VALUE."""
+    lines = blob.decode().split("\n")
+    head = lines[0].split("\t")
+    for i, line in enumerate(lines[1:], start=1):
+        cells = line.split("\t")
+        if len(cells) == len(head) and cells[head.index("SSHPRNAMTTYPE")] == "SH" and not cells[head.index("PUTCALL")]:
+            cells[head.index("VALUE")] = ""
+            lines[i] = "\t".join(cells)
+            return "\n".join(lines).encode()
+    raise AssertionError("no share row")
+
+
+UNREADABLE = {
+    "a counted row's value": ("01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", _blank_value_of_a_counted_row,
+                              "has no readable CUSIP, share count or value"),
+    "a short holdings row": ("01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", lambda b: b + b"SYN-0001-26-000001\tX\n",
+                             "INFOTABLE.tsv line"),
+    "a short submission row": ("01mar2026-31may2026_form13f.zip", "SUBMISSION.tsv", lambda b: b + b"SYN-1\n",
+                               "SUBMISSION.tsv line"),
+    "a filing with no date": ("01jun2026-31aug2026_form13f.zip", "SUBMISSION.tsv",
+                              lambda b: b.replace(b"30-JUN-2026", b"30-XXX-2026", 1), "has no readable period or filing date"),
+    "a fails file cut short": ("cnsfails202608a.zip", "cnsfails202608a.txt", lambda b: b"\n".join(l for i, l in enumerate(b.split(b"\n")) if i != 1),  # a record lost
+                               "is not whole"),
+    "a fails file with no trailer": ("cnsfails202609b.zip", "cnsfails202609b.txt",
+                                     lambda b: b"\n".join(l for l in b.split(b"\n") if not l.startswith(b"Trailer record count")),
+                                     "its trailer counts no records"),
+    "a ticker with no CUSIP": ("cnsfails202609a.zip", "cnsfails202609a.txt", lambda b: b.replace(b"|SYN", b"|SYN?", 1),
+                               "with no readable CUSIP or date"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(UNREADABLE))
+def test_an_unreadable_row_replaces_nothing_and_says_where(store, monkeypatch, case):
+    # Codex S-2: the figures would leave the row out, so a partial quarter would be published as whole.
+    monkeypatch.setattr(s13, "METHOD", "13f-test")
+    before = snapshot(store)
+    fs = files()
+    suffix, member, edit, why = UNREADABLE[case]
+    _edit_member(fs, suffix, member, edit)
+    s = refresh(store, fx.FakeSec(fs))
+    assert s["status"] == "error" and why in s["detail"] and "nothing replaced" in s["detail"], s["detail"]
+    assert snapshot(store) == before
+    assert rows_of(store, "SELECT last_obs, status FROM source_watermarks WHERE source = 'sec_13f'") == [("2026-06-30", "error")]
+
+
+def test_codex_s2_one_holder_of_two_is_never_published(tmp_path):
+    # Two filers hold one CUSIP, 10 and 90 shares; the second row loses its VALUE: no quarter is stored at all.
+    f = tmp_path / "s.db"
+    fs = files()
+    _edit_member(fs, "01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", _blank_value_of_a_counted_row)
+    s = refresh(f, fx.FakeSec(fs))
+    assert s["status"] == "error" and "nothing replaced" in s["detail"]
+    assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)] == rows_of(f, f"SELECT COUNT(*) FROM {s13.PERIODS}")
+
+
+def test_an_empty_read_is_refused_not_stored_as_a_quarter_nobody_held(store, monkeypatch):
+    monkeypatch.setattr(s13, "METHOD", "13f-test")
+    before = snapshot(store)
+    fs = files()
+    for p in [p for p in fs if "cnsfails" in p]:
+        _edit_member(fs, p.rsplit("/", 1)[-1], p.rsplit("/", 1)[-1].replace(".zip", ".txt"),
+                     lambda b: b"\n".join([b.split(b"\n")[0], b"Trailer record count 0", b""]))
+    s = refresh(store, fx.FakeSec(fs))
+    assert s["status"] == "error" and "pair no ticker with a CUSIP" in s["detail"]
+    assert snapshot(store) == before
+
+
 def test_the_time_budget_stops_the_run_cleanly(store, monkeypatch):
     monkeypatch.setattr(s13, "METHOD", "13f-test")
     before = snapshot(store)

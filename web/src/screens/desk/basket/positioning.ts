@@ -95,7 +95,7 @@ export function holdersChange(n: PositioningHoldings["names"][number]): string {
 /** The Advanced line on what the 13F block read. */
 export function holdingsReadLine(h: PositioningHoldings): string {
   const amend = `${grouped(h.restatements)} restatements applied and ${grouped(h.new_holdings)} new-holdings amendments added`;
-  const aside = h.set_aside ? `; ${grouped(h.set_aside)} amendments of no stated type or unreadable rows set aside` : "";
+  const aside = h.set_aside ? `; ${grouped(h.set_aside)} ${h.set_aside === 1 ? "amendment" : "amendments"} of no stated type set aside` : "";
   const prev = h.previous_period ? ` The change is against ${dayLong(h.previous_period)}.` : ` No change: ${h.previous_reason ?? "the quarter before is not stored"}.`;
   return (
     `${grouped(h.filings)} holdings reports and amendments for ${dayLong(h.period)} from ${grouped(h.filers)} filers, ` +

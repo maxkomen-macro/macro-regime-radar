@@ -107,6 +107,7 @@ BUDGET_S = 480.0           # inside the workflow step's ten minutes: stop cleanl
 SET_RE = re.compile(r'href="(/files/[^"]*?/(\d{2}[a-z]{3}\d{4})-(\d{2}[a-z]{3}\d{4})_form13f\.zip)"', re.I)
 FTD_RE = re.compile(r'href="(/files/[^"]*?/cnsfails(\d{6})([ab])\.zip)"', re.I)
 CUSIP_RE = re.compile(r"^[0-9A-Z]{9}$")
+FTD_TRAILER_RE = re.compile(r"Trailer record count (\d+)", re.I)
 
 SUBMISSION_COLUMNS = ("ACCESSION_NUMBER", "FILING_DATE", "SUBMISSIONTYPE", "CIK", "PERIODOFREPORT")
 COVER_COLUMNS = ("ACCESSION_NUMBER", "ISAMENDMENT", "AMENDMENTTYPE", "REPORTTYPE")
@@ -126,7 +127,7 @@ CREATE TABLE IF NOT EXISTS {PERIODS} (
     filings         INTEGER NOT NULL,  -- holdings reports and amendments read for the period
     restatements    INTEGER NOT NULL,  -- RESTATEMENT amendments that replaced a report
     new_holdings    INTEGER NOT NULL,  -- NEW HOLDINGS amendments added
-    set_aside       INTEGER NOT NULL,  -- amendments of no stated type and rows that could not be read
+    set_aside       INTEGER NOT NULL,  -- amendments of no stated type
     names           INTEGER NOT NULL,  -- tickers stored for the period
     revised_names   INTEGER NOT NULL,  -- tickers whose figures changed when the period was last recomputed
     method          TEXT NOT NULL,
@@ -356,19 +357,25 @@ def _count(raw: str) -> int | None:
     return int(x)
 
 
+def _unreadable(set_name: str, table: str, line: int, what: str) -> str:
+    """Codex S-2: a row that cannot be read would leave a holder or a position out, so the run replaces nothing."""
+    return f"{set_name} {table} line {line:,} {what}, so the quarter cannot be computed whole; nothing replaced"
+
+
 def read_filings(z: zipfile.ZipFile, periods: set[date], set_name: str) -> list[dict]:
     """The data set's holdings reports and amendments for `periods`, with each one's amendment type."""
     cover: dict[str, tuple[str, str, str]] = {}
     rows, ix = _tsv(z, "COVERPAGE.tsv", COVER_COLUMNS)
-    for r in rows:
-        if len(r) > max(ix.values()):
-            cover[r[ix["ACCESSION_NUMBER"]].strip()] = (r[ix["ISAMENDMENT"]].strip().upper(), r[ix["AMENDMENTTYPE"]].strip().upper(),
-                                                        r[ix["REPORTTYPE"]].strip().upper())
+    for line, r in enumerate(rows, start=2):
+        if len(r) <= max(ix.values()):
+            raise Refused(_unreadable(set_name, "COVERPAGE.tsv", line, "has too few fields"))
+        cover[r[ix["ACCESSION_NUMBER"]].strip()] = (r[ix["ISAMENDMENT"]].strip().upper(), r[ix["AMENDMENTTYPE"]].strip().upper(),
+                                                    r[ix["REPORTTYPE"]].strip().upper())
     out = []
     rows, ix = _tsv(z, "SUBMISSION.tsv", SUBMISSION_COLUMNS)
-    for r in rows:
+    for line, r in enumerate(rows, start=2):
         if len(r) <= max(ix.values()):
-            continue
+            raise Refused(_unreadable(set_name, "SUBMISSION.tsv", line, "has too few fields"))
         kind = r[ix["SUBMISSIONTYPE"]].strip().upper()
         if kind not in ("13F-HR", "13F-HR/A"):
             continue  # notices hold no positions
@@ -376,7 +383,7 @@ def read_filings(z: zipfile.ZipFile, periods: set[date], set_name: str) -> list[
             period = _sec_date(r[ix["PERIODOFREPORT"]])
             filed = _sec_date(r[ix["FILING_DATE"]])
         except ValueError:
-            continue
+            raise Refused(_unreadable(set_name, "SUBMISSION.tsv", line, "has no readable period or filing date")) from None
         if period not in periods:
             continue
         acc = r[ix["ACCESSION_NUMBER"]].strip()
@@ -416,15 +423,17 @@ def effective(filings: list[dict]) -> tuple[dict[str, dict], Counter]:
 
 
 def load_positions(work: sqlite3.Connection, z: zipfile.ZipFile, keep: dict[str, dict], names: dict[date, dict[str, Counter]],
-                   deadline: Callable[[], None]) -> Counter:
-    """Each counted filing's long positions in shares into `work.rows`; the issuer names filers give each CUSIP."""
+                   deadline: Callable[[], None], set_name: str = "the data set") -> Counter:
+    """Each counted filing's long positions in shares into `work.rows`; the issuer names filers give each CUSIP.
+    A row that cannot be read (too few fields, or a counted filing's share row with no readable CUSIP, share count
+    or value) refuses the run: the figures would leave it out."""
     n: Counter = Counter()
     rows, ix = _tsv(z, "INFOTABLE.tsv", INFO_COLUMNS)
     width = max(ix.values())
     batch: list[tuple] = []
-    for i, r in enumerate(rows):
+    for line, r in enumerate(rows, start=2):
         if len(r) <= width:
-            continue
+            raise Refused(_unreadable(set_name, "INFOTABLE.tsv", line, "has too few fields"))
         acc = r[ix["ACCESSION_NUMBER"]].strip()
         f = keep.get(acc)
         if f is None:
@@ -434,8 +443,8 @@ def load_positions(work: sqlite3.Connection, z: zipfile.ZipFile, keep: dict[str,
         cusip = r[ix["CUSIP"]].strip().upper()
         shares, value = _count(r[ix["SSHPRNAMT"]]), _count(r[ix["VALUE"]])
         if not CUSIP_RE.match(cusip) or shares is None or value is None:
-            n[("rows_set_aside", f["period"])] += 1
-            continue
+            raise Refused(_unreadable(set_name, "INFOTABLE.tsv", line,
+                                      f"(filing {acc}) has no readable CUSIP, share count or value"))
         if shares == 0:
             continue
         batch.append((acc, cusip, shares, value))
@@ -463,18 +472,34 @@ def read_ftd(blobs: Iterable[tuple[str, bytes]]) -> tuple[dict[str, dict], dict[
                 if any(c not in header for c in FTD_COLUMNS):
                     raise Refused(f"{name}: the fails file has no {', '.join(c for c in FTD_COLUMNS if c not in header)} column")
                 ix = {c: header.index(c) for c in FTD_COLUMNS}
-                for r in reader:
-                    if len(r) <= max(ix.values()):
+                records, trailer = 0, None
+                for line, r in enumerate(reader, start=2):
+                    if len(r) == 1 and (m := FTD_TRAILER_RE.fullmatch(r[0].strip())):
+                        trailer = int(m.group(1))
                         continue
+                    if len(r) == 1 and r[0].strip().upper().startswith("TRAILER"):
+                        continue  # the trailer's share total
+                    if len(r) <= max(ix.values()):
+                        raise Refused(f"{name} line {line:,} has too few fields, so the tickers cannot be paired whole; "
+                                      "nothing replaced")
+                    records += 1
                     sym, cusip, day = r[ix["SYMBOL"]].strip().upper(), r[ix["CUSIP"]].strip().upper(), r[ix["SETTLEMENT DATE"]].strip()
                     key = symbol_key(sym)
-                    if not key or not CUSIP_RE.match(cusip) or not re.fullmatch(r"\d{8}", day):
-                        continue
+                    if not key:
+                        continue  # a security with no ticker (a bond, say): nothing to pair
+                    if not CUSIP_RE.match(cusip) or not re.fullmatch(r"\d{8}", day):
+                        raise Refused(f"{name} line {line:,} pairs {sym} with no readable CUSIP or date, so the tickers "
+                                      "cannot be paired whole; nothing replaced")
                     cur = seen.get(key)
                     if cur is None or day > cur["day"]:
                         seen[key] = {"day": day, "cusips": {cusip}, "description": r[ix["DESCRIPTION"]].strip().upper(), "symbol": sym}
                     elif day == cur["day"]:
                         cur["cusips"].add(cusip)
+                if trailer != records:
+                    raise Refused(f"{name}: its trailer counts {trailer if trailer is not None else 'no'} records and "
+                                  f"{records:,} were read, so the file is not whole; nothing replaced")
+    if not seen:
+        raise Refused("the SEC's fails-to-deliver files read pair no ticker with a CUSIP; nothing replaced")
     pairs, refused = {}, {}
     for key, v in seen.items():
         if len(v["cusips"]) > 1:
@@ -584,9 +609,7 @@ def compute(set_files: list[tuple[str, Path]], ftd_blobs: list[tuple[str, bytes]
             work.executemany("INSERT INTO eff VALUES (?, ?, ?)", [(a, f["period"].isoformat(), f["cik"]) for a, f in keep.items()])
             for name, path in set_files:
                 with zipfile.ZipFile(path) as z:
-                    c = load_positions(work, z, keep, names, deadline)
-                for p in periods:  # rows that could not be read, counted against the period they would have entered
-                    per_period[p]["rows_set_aside"] += c[("rows_set_aside", p)]
+                    load_positions(work, z, keep, names, deadline, name)
                 deadline()
             work.execute("CREATE INDEX rows_acc ON rows (accession)")
             stats = {}
@@ -613,6 +636,9 @@ def compute(set_files: list[tuple[str, Path]], ftd_blobs: list[tuple[str, bytes]
                                               f"and 13F filers name its CUSIP {issuer.title()!r}, so the pairing is not settled")}
                 continue
             held[p][key] = {"symbol": pair["symbol"], "issuer": issuer, **s}
+        if not filers[p] or not held[p]:
+            # an empty quarter is a failed read, not a quarter in which nobody held anything
+            raise Refused(f"the data sets read give {p} {filers[p]} filers and {len(held[p])} tickers; nothing replaced")
     return {"period": period, "prev": prev, "held": held, "refused": refused, "filers": filers, "per_period": per_period,
             "newest_filing": newest, "counts": counts, "pairs": len(pairs)}
 
@@ -648,7 +674,7 @@ def write(conn: sqlite3.Connection, result: dict, sets: list[DataSet], ftd: list
                      f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      (ps, deadline_of(p).isoformat(), ",".join(s.name for s in sets), max(s.end for s in sets).isoformat(),
                       newest.isoformat() if newest else None, ",".join(f.rsplit("/", 1)[-1] for f in ftd),
-                      result["filers"][p], c["filings"], c["restatements"], c["new_holdings"], c["set_aside"] + c["rows_set_aside"],
+                      result["filers"][p], c["filings"], c["restatements"], c["new_holdings"], c["set_aside"],
                       len(new), revised, METHOD, run_id, cot.stamp(now)))
         counts[ps] = {"names": len(new), "refused": len(result["refused"][p]), "revised": revised, "filers": result["filers"][p]}
     return counts

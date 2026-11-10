@@ -51,9 +51,12 @@ spreading contracts, the market's open interest, the market name, the CFTC's row
 (`CFTC`), the run that last wrote the numbers, and when the store first and last wrote them.
 
 - **The CFTC's identity is checked before a report is stored:** the categories' long positions plus
-  their spreading equal the open interest, and so do the short positions plus spreading. A report that
-  fails it, misses a field or holds a number that is not a whole count is not stored; the watermark
-  `cftc_cot` counts and names the refusals. (On 2026-11-10 every one of the 5,325 reports passed.)
+  their spreading equal the open interest, and so do the short positions plus spreading. A row that
+  fails it, misses a field or holds a number that is not a whole count is refused. Because a refused row
+  may be a stored report's replacement, a run that refuses any row of a CFTC report (TFF or
+  Disaggregated) writes nothing for that report's markets: the stored rows stay, none is marked
+  withdrawn, and the watermark `cftc_cot` (status `partial`, or `error` while a market has no stored
+  report) counts and names the refusals (Codex S-1). (On 2026-11-10 every one of the 5,325 reports passed.)
 - **Amendments.** The CFTC occasionally corrects a published report. Because every run reads the whole
   history, a correction is seen: a stored row whose numbers change keeps its old numbers in
   `cot_revisions` (old and new numbers, the runs that wrote each, and when the store read the change),
@@ -146,8 +149,13 @@ quarterly-named sets before 2024 are not read). A run reads:
   on without a gap from the day after it, or the run is refused. Their newest date is `filings_through`.
 - **The filings:** the holdings reports (`13F-HR`) and amendments (`13F-HR/A`) for the two quarters, by
   `SUBMISSION.tsv` and `COVERPAGE.tsv`; notices (`13F-NT`) hold no positions. Positions are
-  `INFOTABLE.tsv` rows in shares (`SSHPRNAMTTYPE` = `SH`) with no put or call; a row whose CUSIP or
-  numbers cannot be read is set aside and counted.
+  `INFOTABLE.tsv` rows in shares (`SSHPRNAMTTYPE` = `SH`) with no put or call.
+- **A row that cannot be read refuses the run** (Codex S-2): a row of any of the three tables with too
+  few fields, a holdings report or amendment with no readable period or filing date, or a counted
+  filing's share row with no readable CUSIP, share count or value. Leaving it out would publish a
+  quarter short of a holder or a position as if it were whole, so nothing is replaced and the watermark
+  names the data set, the table and the line. (The real files read on 2026-11-10, 7.65 million holdings
+  rows, held none.)
 - **A data set of another shape** (a missing table or column) refuses the run: nothing is replaced.
 - **Unchanged inputs:** a run whose needed data sets and method (`METHOD`) are the ones the stored quarter
   was computed from reads only the index page. The data sets change about once a quarter.
@@ -186,7 +194,10 @@ CUSIP of its newest fails record, and only when the first word of that record's 
 the first word of the issuer name 13F filers give the CUSIP most often (equal, or the shorter, of three
 letters or more, begins the longer: the files abbreviate FED for FEDERAL). A ticker the files pair with
 two CUSIPs on its newest date, or whose names disagree, is stored as refused with why; one with no
-pairing, or whose CUSIP no filer reports, reads "no 13F row stored: …". Tickers are compared without
+pairing, or whose CUSIP no filer reports, reads "no 13F row stored: …". Each fails file must be whole:
+its trailer ("Trailer record count N") must count the records read, and a record that names a ticker
+must carry a readable CUSIP and settlement date (a record with no ticker, a bond say, is passed over);
+otherwise, or when the files pair no ticker at all, the run is refused. Tickers are compared without
 punctuation (BRK.B and BRKB are one). CUSIPs are used during the run only and are not stored in the
 published database.
 
@@ -197,8 +208,8 @@ the method and the run), `holdings_13f` (per ticker key and quarter: the ticker 
 it, the issuer name and the figures of §3.4) and `holdings_13f_refused` (per ticker key and quarter, why).
 Each run is a `positioning_runs` row (§2.2); the reader reads only a committed run's quarter. The two
 quarters are replaced in one transaction, made only when the whole read and computation succeeded: a
-failed request, a refusal (HTTP 403, never retried), a data set of another shape or a run past its time
-budget (inside the workflow step's ten minutes) keeps what is stored and records the watermark `sec_13f`
+failed request, a refusal (HTTP 403, never retried), a data set of another shape, an unreadable row or
+fails file (§3.2, §3.5), a quarter read with no filer or no ticker, or a run past its time budget (inside the workflow step's ten minutes) keeps what is stored and records the watermark `sec_13f`
 (status `error`, the reason in the detail). Without the contact the step reads nothing and says so. The
 step exits 0; `validate_db` warns, never blocks.
 

@@ -166,7 +166,6 @@ def synth_sec(seed: int = SEED, symbols: tuple[str, ...] | None = None) -> dict[
             if cik % 50 == 3:
                 rows.append((book[0][2], book[0][1], 12345, 100, "SH", "Put"))   # an option row: not shares held
                 rows.append((book[0][2], book[0][1], 50000, 50000, "PRN", ""))   # a principal amount: not shares
-                rows.append((book[0][2], "BAD", 1, 1, "SH", ""))                  # an unreadable CUSIP: set aside
             filed = first + timedelta(days=rng.randint(0, (last - first).days))
             file(cik, period, filed, "13F-HR", "", "13F HOLDINGS REPORT", rows)
             if cik % 40 == 5:   # a restatement filed a week later replaces it, every position doubled
@@ -197,6 +196,8 @@ def synth_sec(seed: int = SEED, symbols: tuple[str, ...] | None = None) -> dict[
         if i == 0:
             lines.append(f"{day}|SYN777770|ZQTWO|10|INVENTED TWO CUSIPS A|1")   # one ticker, two CUSIPs on its newest day
             lines.append(f"{day}|SYN777780|ZQTWO|10|INVENTED TWO CUSIPS B|1")
+        lines.append(f"{day}|SYN99999X||10|INVENTED NOTE DUE 2030|1.00")   # a security with no ticker: not paired
+        lines += [f"Trailer record count {len(lines) - 1}", "Trailer total quantity of shares 0"]
         path = f"/files/data/fails-deliver-data/cnsfails{half}.zip"
         ftd_links.append(f'<a href="{path}">{half}</a>')
         out[path] = _zip({f"cnsfails{half}.txt": ("\n".join(lines) + "\n").encode("latin-1")})
