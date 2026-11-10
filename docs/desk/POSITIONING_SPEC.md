@@ -19,7 +19,8 @@ history, and says what they are not.
 |---|---|---|
 | CFTC Commitments of Traders, Public Reporting Environment (`publicreporting.cftc.gov`, Socrata, no key) | Traders in Financial Futures, futures only (dataset `gpe5-46if`); Disaggregated, futures only (`72hh-3qpy`) | US government work in the public domain. cftc.gov Web Policy, "Copyright": "Government information at the CFTC website is in the public domain. Public domain information may be freely distributed and copied, but it is requested that in any subsequent use the CFTC be given appropriate acknowledgement." The card credits the CFTC. |
 | CFTC COT release schedule (cftc.gov) | the 2026 release dates, copied into `src/market_data/cot_schedule.py` | as above |
-| SEC Form 13F data sets (`www.sec.gov`) | the quarterly flattened 13F filings | US government work; SEC's fair-access policy requires a declared User-Agent with a contact and at most ten requests a second. The contact is a repository variable the owner sets (`SEC_USER_AGENT`), never committed. |
+| SEC Form 13F data sets (`www.sec.gov`, "Form 13F Data Sets") | the flattened 13F filings, one zip per three months of filing dates | US government work. The SEC's fair-access policy asks automated clients to declare a User-Agent with a contact and to stay under ten requests a second. The contact is a repository secret the owner sets (`SEC_USER_AGENT`): a secret, not a variable, because the public run log prints a variable and masks a secret. It is never committed, printed or stored. |
+| SEC fails-to-deliver data (`www.sec.gov`, "Fails-to-Deliver Data") | the half-month files' ticker, CUSIP and issuer description, to pair a ticker with its CUSIP | as above |
 
 Source copies read for this spec are kept with the project's records (`desk-upgrade/p4-positioning/`).
 
@@ -123,8 +124,7 @@ from 2006-06-13 to 2026-11-03 matched, 1,065 per market, every category and the 
 
 ## 3. SEC Form 13F holder concentration
 
-Status: designed; the parser is checked against the SEC's own files once this environment can reach them
-with a declared User-Agent (§1). Until then nothing in this section is served: the block awaits.
+`src/market_data/sec_13f.py`, in the same full-refresh step as §2 (`src/market_data/positioning.py`), stdlib only.
 
 ### 3.1 What a 13F is, and what it is not
 
@@ -132,34 +132,91 @@ Institutional investment managers with at least $100 million in 13(f) securities
 days of each calendar quarter's end, listing their long positions in those securities at the quarter's
 end. It is a lagged, partial disclosure: no shorts, no positions in securities off the SEC's 13(f) list,
 no cash or derivatives other than listed options (which this card leaves out), and some positions are
-confidential and filed later. Holders are filers (a parent filing for its subsidiaries counts once).
+confidential and filed later. Holders are filers (a parent filing for its subsidiaries counts once; two
+filers reporting a shared position each count it).
 
-### 3.2 Dates and amendments
+### 3.2 What is read
 
-- **Period (`period`):** the quarter end the holdings are as of.
-- **Filing deadline:** 45 days after the period. A period is served only after its deadline and after a
-  data set covering the deadline has been read, and the card states the newest filing date read.
-- **Amendments:** a 13F-HR/A marked RESTATEMENT replaces the filer's earlier report for that period
-  (the latest restatement by filing date and accession number wins); one marked NEW HOLDINGS adds its
-  positions to the filer's report. Notices (13F-NT) hold no positions. Each served figure counts the
-  amendments applied.
+The SEC's page lists the data sets by filing-date window (`01jun2026-31aug2026_form13f.zip`; the
+quarterly-named sets before 2024 are not read). A run reads:
 
-### 3.3 Figures (per name, per period)
+- **The quarter (`period`):** the newest quarter end whose filing deadline (45 days after it) the newest
+  data set's window reaches, and the quarter before it (`previous_period`), for the change.
+- **The data sets:** every one whose window ends after the earlier quarter's end; their windows must run
+  on without a gap from the day after it, or the run is refused. Their newest date is `filings_through`.
+- **The filings:** the holdings reports (`13F-HR`) and amendments (`13F-HR/A`) for the two quarters, by
+  `SUBMISSION.tsv` and `COVERPAGE.tsv`; notices (`13F-NT`) hold no positions. Positions are
+  `INFOTABLE.tsv` rows in shares (`SSHPRNAMTTYPE` = `SH`) with no put or call; a row whose CUSIP or
+  numbers cannot be read is set aside and counted.
+- **A data set of another shape** (a missing table or column) refuses the run: nothing is replaced.
+- **Unchanged inputs:** a run whose needed data sets and method (`METHOD`) are the ones the stored quarter
+  was computed from reads only the index page. The data sets change about once a quarter.
 
-- `holders`: filers reporting a long position (shares, not principal amounts; no put or call rows).
-- `holders_change`: against the previous period, when both are served.
-- `top10_share`: the share of the name's 13F-reported shares held by its ten largest holders.
-- `large_filers_top10`: of the 100 largest filers by reported long value that period, how many hold the
-  name among their ten largest positions.
+### 3.3 Dates and amendments
 
-### 3.4 Identifiers
+- **Period (`period`):** the quarter end the holdings are as of. **Deadline:** 45 days after it. A quarter
+  is served only when the filings read reach its deadline; the card prints the period, the deadline and
+  `filings_through`. Late filings and amendments filed after `filings_through` are not read until a later
+  data set holds them; the quarter is then recomputed, and the count of tickers whose figures changed is
+  kept (`revised_names`).
+- **Amendments:** per filer and quarter, the filings are ordered by filing date and accession number. The
+  latest original or RESTATEMENT amendment is the report; NEW HOLDINGS amendments filed after it add their
+  positions; NEW HOLDINGS filed before a restatement are part of what it restates. An amendment of no
+  stated type is set aside and counted (`set_aside`). The block counts the restatements applied and the
+  new-holdings amendments added.
 
-13F rows name a security by CUSIP and issuer, not ticker. The mapping to a basket's ticker is checked, and
-a name it cannot settle reads "no 13F row stored" with why, never a guess. CUSIPs are used during the
-run only and are not stored in the published database.
+### 3.4 Figures (per ticker, per quarter)
+
+- `holders`: filers reporting a long position in the ticker's shares.
+- `holders_change`: `holders` minus the previous quarter's, when both are stored (else null, with why).
+- `shares`: the shares those filers report; `top10_share`: the share of them held by the ten largest
+  holders (a fraction).
+- `large_filers_top10`: of the 100 filers with the largest reported long value that quarter, how many
+  hold the ticker among their ten largest positions. Each position is valued at the quarter's median
+  reported price per share of its CUSIP (each filer's own value over its own shares, the median across
+  filers), so a filer that writes its values in the wrong unit moves neither its own rank nor anyone
+  else's. Ties are broken by CIK and CUSIP.
+- No threshold turns a figure into a word ("crowded", "concentrated").
+
+### 3.5 Identifiers
+
+13F rows name a security by CUSIP and issuer, not ticker. The SEC's own fails-to-deliver files (the newest
+six half-month files) pair each ticker with a CUSIP and an issuer description. A ticker is mapped to the
+CUSIP of its newest fails record, and only when the first word of that record's description agrees with
+the first word of the issuer name 13F filers give the CUSIP most often (equal, or the shorter, of three
+letters or more, begins the longer: the files abbreviate FED for FEDERAL). A ticker the files pair with
+two CUSIPs on its newest date, or whose names disagree, is stored as refused with why; one with no
+pairing, or whose CUSIP no filer reports, reads "no 13F row stored: …". Tickers are compared without
+punctuation (BRK.B and BRKB are one). CUSIPs are used during the run only and are not stored in the
+published database.
+
+### 3.6 Storage and failure
+
+`holdings_13f_periods` (one row per quarter: its dates, the data sets and fails files read, the counts,
+the method and the run), `holdings_13f` (per ticker key and quarter: the ticker as the fails file writes
+it, the issuer name and the figures of §3.4) and `holdings_13f_refused` (per ticker key and quarter, why).
+Each run is a `positioning_runs` row (§2.2); the reader reads only a committed run's quarter. The two
+quarters are replaced in one transaction, made only when the whole read and computation succeeded: a
+failed request, a refusal (HTTP 403, never retried), a data set of another shape or a run past its time
+budget (inside the workflow step's ten minutes) keeps what is stored and records the watermark `sec_13f`
+(status `error`, the reason in the detail). Without the contact the step reads nothing and says so. The
+step exits 0; `validate_db` warns, never blocks.
+
+### 3.7 Independent reference check (plan gate 3)
+
+`scripts/check_13f_reference.py` compares, for a sample of the quarter's counted filings (the ten with the
+largest reported table value, ten amendments and twenty drawn with seed 20261110), the data set's long
+positions in shares with the information table the manager filed on EDGAR, CUSIP by CUSIP, at zero
+tolerance; and it recomputes `holders`, `shares` and the ten largest holders' shares of named tickers by a
+second reading of the data set without the step's SQL (it shares the step's file reader and amendment
+rule). First run, 2026-11-10, quarter 2026-06-30 from the Mar–May and Jun–Aug 2026 data sets: all 40
+filings matched share for share (5,455 positions in the largest), and the 14 tickers checked matched in
+both quarters.
 
 ## 4. The route
 
 `GET /api/desk/positioning` (DESK_FRAME3_SPEC §12.20): a worker item (`desk_positioning`), rebuilt with
-every generation; no parameters. Two block envelopes, `futures` and `holdings`, so one can await while
-the other serves. Nothing depends on "now".
+every generation. Two block envelopes, `futures` and `holdings`, so one can await while the other serves.
+One parameter, `names=TICKER,…` (at most 25 US tickers, each once): the names whose 13F rows the holdings
+block serves, in that order; without it the block serves the quarter and no names. Nothing depends on
+"now".

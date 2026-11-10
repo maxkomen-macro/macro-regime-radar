@@ -133,14 +133,50 @@ def desk_positioning(request: Request) -> Response:
     return _response(env.answer("/positioning", lambda: positioning_answer(list(request.query_params.multi_items()))))
 
 
+POSITIONING_PARAMS = ("names",)
+
+
+def positioning_names(params: list[tuple[str, str]]) -> list[str]:
+    """`names=TICKER,TICKER,…`: the basket's names whose 13F holders the holdings block serves (none when absent)."""
+    from api.desk_basket import MAX_LEGS
+    from api.providers.symbols import SymbolError, parse
+
+    keys = [k for k, _ in params]
+    unknown = sorted({k for k in keys if k not in POSITIONING_PARAMS})
+    if unknown:
+        raise env.Unsupported(f"{unknown[0]} is not a parameter of /positioning.")
+    if len(keys) > 1:
+        raise env.Unsupported("The names parameter is given more than once.")
+    raw = (dict(params).get("names") or "").strip()
+    if not raw:
+        return []
+    out: list[str] = []
+    for part in raw.split(","):
+        try:
+            inst = parse(part)
+        except SymbolError as exc:
+            raise env.Unsupported(str(exc)) from exc
+        if inst.exchange != "US" or inst.kind != "equity":
+            raise env.Unsupported(f"{part.strip().upper()} is not a US listing; a basket holds US-listed stocks and ETFs.")
+        if inst.canonical in out:
+            raise env.Unsupported(f"{inst.canonical} is named twice.")
+        out.append(inst.canonical)
+    if len(out) > MAX_LEGS:
+        raise env.Unsupported(f"A basket holds at most {MAX_LEGS} names; this asks for {len(out)}.")
+    return out
+
+
 def positioning_answer(params: list[tuple[str, str]]) -> dict:
-    """The desk_positioning item as stored, each part a block (api/desk_positioning.py); no parameters."""
+    """The desk_positioning item as stored, each part a block (api/desk_positioning.py); the holdings block serves
+    the names asked for."""
+    from api.desk_positioning import holdings_for
     from api.desk_v2_macro import stored_block
 
-    if params:
-        raise env.Unsupported(f"{params[0][0]} is not a parameter of /positioning.")
+    names = positioning_names(params)
     item = _result("desk_positioning")
-    return {"futures": stored_block(item["futures"]), "holdings": stored_block(item["holdings"])}
+    h = item["holdings"]
+    holdings = env.block_ready(holdings_for(h["data"], names)) if h.get("ok") else stored_block(h)
+    return {"futures": stored_block(item["futures"]), "holdings": holdings}
 
 
 @router.get("/basket/study")

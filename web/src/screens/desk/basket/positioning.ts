@@ -78,11 +78,28 @@ export function historyLine(m: CotMarket): string {
   );
 }
 
-/** The basket's names the 13F block holds, in basket order, and the names it does not, with why. */
+/** The basket's names the 13F block serves, in basket order, and the names it does not, each with the server's why. */
 export function holdingsFor(h: PositioningHoldings, symbols: readonly string[]) {
   const by = new Map(h.names.map((n) => [n.symbol, n]));
   const why = new Map(h.excluded.map((x) => [x.symbol, x.reason]));
   const rows = symbols.flatMap((s) => (by.has(s) ? [by.get(s)!] : []));
-  const missing = symbols.filter((s) => !by.has(s)).map((s) => ({ symbol: s, reason: why.get(s) ?? "no 13F row stored" }));
+  const missing = symbols.filter((s) => !by.has(s)).map((s) => ({ symbol: s, reason: why.get(s) ?? "not served for this basket" }));
   return { rows, missing };
+}
+
+/** The holders' change from the quarter before: "+92", or "—" with the reason in its title. */
+export function holdersChange(n: PositioningHoldings["names"][number]): string {
+  return contracts(n.holders_change);
+}
+
+/** The Advanced line on what the 13F block read. */
+export function holdingsReadLine(h: PositioningHoldings): string {
+  const amend = `${grouped(h.restatements)} restatements applied and ${grouped(h.new_holdings)} new-holdings amendments added`;
+  const aside = h.set_aside ? `; ${grouped(h.set_aside)} amendments of no stated type or unreadable rows set aside` : "";
+  const prev = h.previous_period ? ` The change is against ${dayLong(h.previous_period)}.` : ` No change: ${h.previous_reason ?? "the quarter before is not stored"}.`;
+  return (
+    `${grouped(h.filings)} holdings reports and amendments for ${dayLong(h.period)} from ${grouped(h.filers)} filers, ` +
+    `filed through ${dayLong(h.newest_filing ?? h.filings_through)}: ${amend}${aside}.${prev} Data sets: ${h.data_sets.join(", ")}. ` +
+    `Tickers paired from the SEC's fails-to-deliver files ${h.ftd_files.join(", ")}.`
+  );
 }

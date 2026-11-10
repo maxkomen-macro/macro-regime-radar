@@ -800,13 +800,18 @@ test.describe("desk v2", () => {
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     // §12.20 (Desk P4): Positioning is served for every basket: the five macro futures from the stored CFTC reports
-    // (the fixture's invented ones, which its credit line says), and the 13F block awaiting with its reason.
+    // (the fixture's invented ones, which its credit line says), and the 13F holders of the basket's names (the
+    // fixture's invented filings, for the preset's names: a name the fixture does not hold says why).
     const positions = step3.getByRole("region", { name: /^Positioning/ });
     await expect(positions).not.toHaveAttribute("data-prototype");
     await expect(positions.getByRole("region", { name: "Futures positioning, CFTC" }).getByRole("row")).toHaveCount(6);
     await expect(positions).toContainText("Lagged disclosure, not live positioning");
     await expect(positions).toContainText("Invented positions, not CFTC data");
-    await expect(positions).toContainText("Awaiting refresh: SEC 13F holdings are not stored in this database yet.");
+    const holders = positions.getByRole("region", { name: "13F holders of the basket's names" });
+    await expect(holders.getByRole("row")).toHaveCount(8);
+    await expect(holders).toContainText("no 13F row stored");
+    await expect(positions).toContainText("Invented filings, not SEC data");
+    await expect(positions).toContainText("Holdings as of Jun 30, 2026 · filing deadline Aug 14, 2026");
     // §12.19 (desk P1a): the event study is served, not a PROTOTYPE. The fixtures carry no study for this basket (the
     // stored closes answer ETF baskets only), so the card says it couldn't load and prints no number.
     const study = step3.getByRole("region", { name: /^Event study on this basket/ });
@@ -887,6 +892,9 @@ test.describe("desk v2", () => {
     const positions = page.getByRole("region", { name: /^Positioning/ });
     await expect(positions.getByRole("region", { name: "Futures positioning, CFTC" }).getByRole("row")).toHaveCount(6);
     await expect(positions).not.toHaveAttribute("data-prototype");
+    // The preset's ten names, asked for by name: eight with invented 13F rows, CRWV and NBIS with why.
+    await expect(positions.getByRole("region", { name: "13F holders of the basket's names" }).getByRole("row")).toHaveCount(11);
+    expect(asked).toContain("GET /api/desk/positioning?names=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS");
     const presetStudy = page.getByRole("region", { name: /^Event study on this basket/ });
     await expect(presetStudy.getByTestId("dk-failed")).toContainText("Couldn't load");
     await expect(presetStudy).not.toContainText("64%");

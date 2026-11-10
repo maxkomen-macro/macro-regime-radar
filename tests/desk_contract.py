@@ -646,12 +646,14 @@ POSITIONING_FUTURES = obj(
 )
 POSITIONING_HOLDINGS = obj(
     provider=Const("SEC"), source=STR, credit=STR, lag_note=STR,
-    period=DATE, deadline=DATE, filings_through=DATE, previous_period=null(DATE), data_sets=Arr(STR, min=1),
-    large_filers_n=INT,
-    names=Arr(obj(symbol=STR, issuer=STR, title_of_class=STR, holders=INT, holders_prev=null(INT),
-                  holders_change=null(INT), shares=NUM, value_usd=NUM, top10_share=null(FRAC),
-                  large_filers_top10=INT, amendments=INT), min=1),
-    excluded=Arr(obj(symbol=STR, reason=STR)),
+    period=DATE, previous_period=null(DATE), previous_reason=null(STR), deadline=DATE, filings_through=DATE,
+    newest_filing=null(DATE), data_sets=Arr(STR, min=1), ftd_files=Arr(STR, min=1),
+    filers=INT, filings=INT, restatements=INT, new_holdings=INT, set_aside=INT, revised_names=INT, computed_at=TS,
+    large_filers_n=Const(100), top_positions_n=Const(10), top_holders_n=Const(10),
+    # the names a request asks for (names=…), in its order: none when it asks for none
+    names=Arr(obj(symbol=STR, issuer=STR, holders=INT, holders_prev=null(INT), holders_change=null(INT), shares=INT,
+                  top10_share=FRAC, large_filers_top10=INT), max=25),
+    excluded=Arr(obj(symbol=STR, reason=STR), max=25),
 )
 POSITIONING = obj(futures=Block(POSITIONING_FUTURES), holdings=Block(POSITIONING_HOLDINGS))
 

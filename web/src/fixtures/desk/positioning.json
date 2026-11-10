@@ -4399,11 +4399,129 @@
   "revisions_stored": 0
  },
  "holdings": {
-  "status": "awaiting",
-  "data": null,
-  "unavailable": {
-   "reason": "Awaiting refresh: SEC 13F holdings are not stored in this database yet.",
-   "until": null
-  }
+  "provider": "SEC",
+  "source": "SEC Form 13F data sets (www.sec.gov), long positions in shares; tickers paired with CUSIPs from the SEC's fails-to-deliver data",
+  "credit": "Invented filings, not SEC data: seeded 13F filers and issuers run through the served parser, store and reader.",
+  "lag_note": "Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it; long positions only, from managers with $100 million or more in 13(f) securities.",
+  "period": "2026-06-30",
+  "previous_period": "2026-03-31",
+  "previous_reason": null,
+  "deadline": "2026-08-14",
+  "filings_through": "2026-08-31",
+  "newest_filing": "2026-08-28",
+  "data_sets": [
+   "01mar2026-31may2026_form13f.zip",
+   "01jun2026-31aug2026_form13f.zip"
+  ],
+  "ftd_files": [
+   "cnsfails202609b.zip",
+   "cnsfails202609a.zip",
+   "cnsfails202608b.zip",
+   "cnsfails202608a.zip",
+   "cnsfails202607b.zip",
+   "cnsfails202607a.zip"
+  ],
+  "filers": 240,
+  "filings": 253,
+  "restatements": 6,
+  "new_holdings": 4,
+  "set_aside": 8,
+  "revised_names": 0,
+  "computed_at": "2026-09-19T11:20:00Z",
+  "large_filers_n": 100,
+  "top_positions_n": 10,
+  "top_holders_n": 10,
+  "names": [
+   {
+    "symbol": "NVDA",
+    "issuer": "INVENTED NVDA CORP",
+    "holders": 66,
+    "holders_prev": 59,
+    "holders_change": 7,
+    "shares": 41112606,
+    "top10_share": 0.615321563415367,
+    "large_filers_top10": 25
+   },
+   {
+    "symbol": "AVGO",
+    "issuer": "INVENTED AVGO CORP",
+    "holders": 75,
+    "holders_prev": 74,
+    "holders_change": 1,
+    "shares": 42960473,
+    "top10_share": 0.6794951023933093,
+    "large_filers_top10": 18
+   },
+   {
+    "symbol": "AMD",
+    "issuer": "INVENTED AMD CORP",
+    "holders": 68,
+    "holders_prev": 62,
+    "holders_change": 6,
+    "shares": 46331341,
+    "top10_share": 0.5484567994697154,
+    "large_filers_top10": 27
+   },
+   {
+    "symbol": "TSM",
+    "issuer": "INVENTED TSM CORP",
+    "holders": 62,
+    "holders_prev": 57,
+    "holders_change": 5,
+    "shares": 29113873,
+    "top10_share": 0.6771529847643424,
+    "large_filers_top10": 7
+   },
+   {
+    "symbol": "MU",
+    "issuer": "INVENTED MU CORP",
+    "holders": 83,
+    "holders_prev": 74,
+    "holders_change": 9,
+    "shares": 69100384,
+    "top10_share": 0.7113528775759046,
+    "large_filers_top10": 30
+   },
+   {
+    "symbol": "ANET",
+    "issuer": "INVENTED ANET CORP",
+    "holders": 68,
+    "holders_prev": 65,
+    "holders_change": 3,
+    "shares": 28650552,
+    "top10_share": 0.6471527319962282,
+    "large_filers_top10": 19
+   },
+   {
+    "symbol": "VRT",
+    "issuer": "INVENTED VRT CORP",
+    "holders": 71,
+    "holders_prev": 67,
+    "holders_change": 4,
+    "shares": 41913670,
+    "top10_share": 0.6877643260540057,
+    "large_filers_top10": 11
+   },
+   {
+    "symbol": "CEG",
+    "issuer": "INVENTED CEG CORP",
+    "holders": 66,
+    "holders_prev": 62,
+    "holders_change": 4,
+    "shares": 41063508,
+    "top10_share": 0.5830931687570385,
+    "large_filers_top10": 25
+   }
+  ],
+  "excluded": [
+   {
+    "symbol": "CRWV",
+    "reason": "no 13F row stored: the SEC's fails-to-deliver files read pair no CUSIP with CRWV, or no 13F filer reports a long position in its shares for 2026-06-30"
+   },
+   {
+    "symbol": "NBIS",
+    "reason": "the SEC's fails-to-deliver files name NBIS 'Not The Same Co Com' and 13F filers name its CUSIP 'Invented Nbis Corp', so the pairing is not settled"
+   }
+  ]
  }
 }

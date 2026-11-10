@@ -87,8 +87,11 @@ hedged with the ETF that fits it best, and studied: the event-study engine
 run on that same index. Below it, Positioning reads the CFTC's weekly
 Commitments of Traders for five macro futures from the store: speculators' net
 positions, where they sit in three years of reports, and each report's
-positions and release dates. It is a lagged disclosure and says so; with no
-reports stored it says it is awaiting them.
+positions and release dates; and, for the basket's own names, how widely the
+SEC's quarterly 13F filings show them held: holders, the change on the quarter,
+the ten largest holders' share and how many of the 100 largest filers hold each
+among their ten largest positions. Both are lagged disclosures and say so; with
+nothing stored each says it is awaiting it.
 
 Designed and drawn, not yet served, each for a stated reason:
 
@@ -99,9 +102,6 @@ Designed and drawn, not yet served, each for a stated reason:
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
   store doesn't hold.
-- Holders from 13F filings: who holds a basket's names, from the SEC's
-  quarterly filings. The method is written (docs/desk/POSITIONING_SPEC.md);
-  the parser has to be checked against the SEC's own files first.
 - The confidence selector: verdicts are fixed at 90%, so the chips would
   only move the whiskers, and that plumbing isn't built.
 - Position Monitor stores positions in your browser. There is no server

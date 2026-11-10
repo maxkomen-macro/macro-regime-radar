@@ -214,6 +214,25 @@ jobs:
         timeout-minutes: 5
         run: python -m src.market_data.share_counts
 
+      # Desk P4 (D7): the CFTC's weekly Commitments of Traders for five macro
+      # futures and SEC Form 13F holder concentration for basket names
+      # (src/market_data/positioning.py runs cot.py, then sec_13f.py), lagged
+      # public disclosures for Basket & Hedge's Positioning card. Never fails
+      # the refresh: a failed or slow read keeps what is stored (each write is
+      # one transaction, made only when the whole read succeeded), records the
+      # cftc_cot and sec_13f watermarks and exits 0, and validate_db only warns.
+      # The 13F step stops itself inside the step's ten minutes. The SEC's
+      # fair-access policy asks automated clients for a declared contact:
+      # SEC_USER_AGENT is a repository secret, so the public log masks it;
+      # without it the 13F step reads nothing and says so in its watermark.
+      - name: Store positioning (CFTC + SEC 13F)
+        if: steps.mode.outputs.mode == 'full'
+        continue-on-error: true
+        timeout-minutes: 10
+        env:
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+        run: python -m src.market_data.positioning
+
       - name: Fetch intraday bars
         if: steps.mode.outputs.mode == 'market-only'
         run: python src/market_data/fetch_market.py --mode intraday-only

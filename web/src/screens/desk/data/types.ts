@@ -1551,24 +1551,38 @@ export interface PositioningHoldings {
   source: string;
   credit: string;
   lag_note: string;
+  /** The quarter end the holdings are as of. */
   period: string;
-  deadline: string;
-  filings_through: string;
   previous_period: string | null;
+  previous_reason: string | null;
+  /** 45 days after the period. */
+  deadline: string;
+  /** The last filing date the data sets read cover. */
+  filings_through: string;
+  newest_filing: string | null;
   data_sets: string[];
+  ftd_files: string[];
+  filers: number;
+  filings: number;
+  restatements: number;
+  new_holdings: number;
+  set_aside: number;
+  revised_names: number;
+  computed_at: string;
   large_filers_n: number;
+  top_positions_n: number;
+  top_holders_n: number;
+  /** The names the request asked for (`names=`), in its order. */
   names: {
     symbol: string;
     issuer: string;
-    title_of_class: string;
     holders: number;
     holders_prev: number | null;
     holders_change: number | null;
     shares: number;
-    value_usd: number;
-    top10_share: number | null;
+    /** A fraction of the 13F-reported shares. */
+    top10_share: number;
     large_filers_top10: number;
-    amendments: number;
   }[];
   excluded: { symbol: string; reason: string }[];
 }

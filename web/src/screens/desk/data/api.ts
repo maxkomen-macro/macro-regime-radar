@@ -269,7 +269,10 @@ export const useRegime = (opts: { enabled?: boolean } = {}) => useDesk<RegimeRes
 export const useMacro = (opts: { enabled?: boolean } = {}) => useDesk<MacroResponse>("/macro", undefined, opts);
 
 /** §12.20 (Desk P4): the CFTC's weekly futures positioning and SEC 13F holder concentration, as stored. */
-export const usePositioning = (opts: { enabled?: boolean } = {}) => useDesk<PositioningResponse>("/positioning", undefined, opts);
+/** §12.20: the CFTC's futures positioning, and the SEC 13F holders of `names` (the saved basket's tickers; none asks
+ * for no holdings rows). */
+export const usePositioning = (names: readonly string[] = [], opts: { enabled?: boolean } = {}) =>
+  useDesk<PositioningResponse>("/positioning", names.length ? { names: names.join(",") } : undefined, opts);
 
 /** §12.2: one study; the previous answer stays on screen while the next is asked. */
 export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {

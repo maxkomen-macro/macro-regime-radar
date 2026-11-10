@@ -732,7 +732,7 @@ describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", 
   const POS = positioningFixture as unknown as { futures: Record<string, any>; holdings: Record<string, unknown> };
   const positioningCard = () => screen.findByRole("region", { name: /^Positioning/ });
 
-  it("a first visit: the five markets' CFTC rows with their dates, the lag note and credit; 13F awaits with its reason", async () => {
+  it("a first visit: the five markets' CFTC rows with their dates, the lag note and credit; the preset's 13F holders", async () => {
     const { calls } = stubDesk();
     renderTab();
     await loaded();
@@ -741,7 +741,7 @@ describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", 
     expect(c).not.toHaveAttribute("data-prototype");
     expect(c.querySelector("[data-prototype-foot]")).toBeNull();
     await waitFor(() => expect(c).toHaveAttribute("data-positioning", "ready"));
-    expect(calls).toContain("GET /api/desk/positioning");
+    expect(calls).toContain("GET /api/desk/positioning?names=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS");
     const table = within(c).getByRole("region", { name: "Futures positioning, CFTC" });
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Market", "Speculators", "Net, contracts", "Of open interest", "1-week change", "3-year percentile", "Report"]);
     const rows = within(table).getAllByRole("row").slice(1);
@@ -752,9 +752,18 @@ describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", 
     // Lagged disclosure, said so; the credit line is the fixture's, which says its positions are invented.
     expect(c).toHaveTextContent("Lagged disclosure, not live positioning: each report states positions as of a Tuesday and is released the following Friday, later in a holiday week.");
     expect(c).toHaveTextContent(POS.futures.credit);
-    // The 13F block awaits with the served reason, and prints no holder figure.
-    expect(c).toHaveTextContent("Awaiting refresh: SEC 13F holdings are not stored in this database yet.");
-    expect(within(c).queryByRole("region", { name: "13F holders of the basket's names" })).toBeNull();
+    // The 13F block: the preset basket's names, asked for by name, in basket order; a name without a row says why.
+    const holders = within(c).getByRole("region", { name: "13F holders of the basket's names" });
+    expect(within(holders).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "13F holders", "Change on the quarter", "Top 10 holders' share", "In large filers' top 10"]);
+    const hrows = within(holders).getAllByRole("row").slice(1);
+    expect(hrows.map((r) => r.querySelector("th")?.textContent)).toEqual(["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]);
+    const nv = (POS.holdings as any).names[0];
+    expect(hrows[0]).toHaveTextContent(new RegExp(`NVDA\\s*${nv.holders}\\s*\\+${nv.holders_change}\\s*${(nv.top10_share * 100).toFixed(1)}%\\s*${nv.large_filers_top10} of 100`));
+    expect(hrows[8]).toHaveTextContent("no 13F row stored: the SEC's fails-to-deliver files read pair no CUSIP with CRWV");
+    expect(hrows[9]).toHaveTextContent("so the pairing is not settled");
+    expect(c).toHaveTextContent("Holdings as of Jun 30, 2026 · filing deadline Aug 14, 2026 · filings read through Aug 31, 2026");
+    expect(c).toHaveTextContent("Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it");
+    expect(c).toHaveTextContent((POS.holdings as any).credit);
     // No crowding word and no live badge: positions and where they sit in their own history.
     expect(c.textContent).not.toMatch(/crowd|NaN/i);
     expect(within(c).queryByTestId("dk-live")).toBeNull();
@@ -766,6 +775,9 @@ describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", 
     expect(within(cats).getAllByRole("row").slice(1).map((r) => r.querySelector("th")?.textContent)).toEqual(["Dealers", "Asset managers", "Leveraged funds", "Other reportables", "Non-reportable (small traders)"]);
     expect(c).toHaveTextContent(/S&P 500 \(E-mini\): CFTC Traders in Financial Futures, contract 13874A \(INVENTED MARKET 13874A\); 210 weekly reports from Sep 13, 2022/);
     expect(c).toHaveTextContent("No corrected report stored.");
+    expect(c).toHaveTextContent("13F holders are the filers reporting a long position in the name's shares at the quarter's end");
+    expect(c).toHaveTextContent("A ticker is paired with its CUSIP from its newest record in the SEC's fails-to-deliver files");
+    expect(c).toHaveTextContent(/holdings reports and amendments for Jun 30, 2026 from 240 filers, filed through Aug \d+, 2026: 6 restatements applied and 4 new-holdings amendments added/);
   });
 
   it("on a database without positions: the futures block's reason, no table and no Advanced", async () => {
@@ -773,7 +785,10 @@ describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", 
     stubDesk({
       "/api/desk/positioning": () => ({
         status: 200,
-        body: { futures: { status: "awaiting", data: null, unavailable: { reason, until: null } }, holdings: POS.holdings },
+        body: {
+          futures: { status: "awaiting", data: null, unavailable: { reason, until: null } },
+          holdings: { status: "awaiting", data: null, unavailable: { reason: "Awaiting refresh: SEC 13F holdings are not stored in this database yet.", until: null } },
+        },
       }),
     });
     renderTab();
@@ -816,13 +831,18 @@ describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", 
   it("served 13F holdings: the basket's names in its order, a name without a row says why", async () => {
     // Invented holdings (test-data rule): no SEC filing is quoted.
     const holdings = {
-      provider: "SEC", source: "invented for this test", credit: "Invented holdings, not SEC data.", lag_note: "Lagged disclosure, filed up to 45 days after the quarter.",
-      period: "2026-06-30", deadline: "2026-08-14", filings_through: "2026-08-20", previous_period: "2026-03-31", data_sets: ["synthetic"], large_filers_n: 100,
+      ...(POS.holdings as any),
+      credit: "Invented holdings, not SEC data.",
+      previous_period: "2026-03-31",
+      filings_through: "2026-08-20",
       names: [
-        { symbol: "AVGO", issuer: "INVENTED A", title_of_class: "COM", holders: 2100, holders_prev: 2050, holders_change: 50, shares: 1e9, value_usd: 2e11, top10_share: 0.312, large_filers_top10: 41, amendments: 2 },
-        { symbol: "NVDA", issuer: "INVENTED N", title_of_class: "COM", holders: 3500, holders_prev: 3520, holders_change: -20, shares: 2e9, value_usd: 3e11, top10_share: 0.284, large_filers_top10: 77, amendments: 0 },
+        { symbol: "AVGO", issuer: "INVENTED A", holders: 2100, holders_prev: 2050, holders_change: 50, shares: 1e9, top10_share: 0.312, large_filers_top10: 41 },
+        { symbol: "NVDA", issuer: "INVENTED N", holders: 3500, holders_prev: 3520, holders_change: -20, shares: 2e9, top10_share: 0.284, large_filers_top10: 77 },
       ],
-      excluded: [{ symbol: "CRWV", reason: "its CUSIP maps to two listings; not settled" }],
+      excluded: [
+        { symbol: "CRWV", reason: "its CUSIP maps to two listings; not settled" },
+        { symbol: "VRT", reason: "no 13F row stored: invented reason" },
+      ],
     };
     seed();
     stubDesk({ "/api/desk/positioning": () => ({ status: 200, body: { futures: POS.futures, holdings } }) });
@@ -836,8 +856,9 @@ describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", 
     expect(rows[0]).toHaveTextContent(/NVDA\s*3,500\s*−20\s*28\.4%\s*77 of 100/);
     expect(rows[1]).toHaveTextContent(/AVGO\s*2,100\s*\+50\s*31\.2%\s*41 of 100/);
     expect(rows[3]).toHaveTextContent("its CUSIP maps to two listings; not settled");
-    expect(rows[2]).toHaveTextContent("no 13F row stored");
-    expect(c).toHaveTextContent("Holdings as of Jun 30, 2026 · filed by Aug 14, 2026, filings read through Aug 20, 2026");
+    expect(rows[2]).toHaveTextContent("no 13F row stored: invented reason");
+    expect(rows[4]).toHaveTextContent("not served for this basket");
+    expect(c).toHaveTextContent("Holdings as of Jun 30, 2026 · filing deadline Aug 14, 2026 · filings read through Aug 20, 2026");
     expect(c).toHaveTextContent("Invented holdings, not SEC data.");
   });
 });

@@ -74,7 +74,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Basket & Hedge: cap weight, each name's market value at the basket's start from the stored share counts; the preset's default, Equal-weight beside it | LIVE (§12.15 `weighting=cap`, §12.18; desk/cap-weight) for a basket whose every name has a stored count (the preset baskets' names); any other basket, or a database the full refresh has not reached, shows it unavailable with the reason and is priced at its own weights | share counts come from Yahoo through the full refresh: this EODHD plan carries no fundamentals |
 | Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
 | Basket & Hedge: "Positioning", futures (step 3, below the event study, §10) | LIVE (§12.20, Desk P4; method `docs/desk/POSITIONING_SPEC.md`) from the stored CFTC Commitments of Traders for five macro futures; awaiting, with the reason, on a database without them | a lagged weekly disclosure, labelled so; FINRA short interest deferred (D7), OCC put/call out of D7's scope, no crowding verdict |
-| Basket & Hedge: "Positioning", 13F holders of the basket's names (§10) | UNAVAILABLE (§12.20 `holdings` awaiting) | SEC 13F holdings not ingested yet (POSITIONING_SPEC §3: designed, its parser checked against the SEC's files before it serves) |
+| Basket & Hedge: "Positioning", 13F holders of the basket's names (§10) | LIVE (§12.20 `holdings`, Desk P4; POSITIONING_SPEC §3) from the stored SEC Form 13F data sets, for the names the page asks for; awaiting, with the reason, on a database without them | a lagged quarterly disclosure of long positions only, labelled so; a ticker whose CUSIP pairing is not settled says why |
 | Basket & Hedge: "Event study on this basket" (step 3, above Positioning, §10) | LIVE (§12.19, desk P1a): the event-study engine on the saved basket's own index, computed on request from EODHD's daily closes since 1995; a basket whose index is too short for the question says so | the index's history is a backtest of names chosen today (hindsight); by-regime rows read revised regime history |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
 | Data Pipeline: "Sync to Snowflake" (§11) | PROTOTYPE (§1.0.3); the bridge's "Generate Snowflake DDL" and "Export current study → CSV" stay LIVE | no Snowflake account or sync job exists; the schema is proposed |
@@ -94,7 +94,7 @@ Build Notes prints these two lists as their own section, word for word.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P and any stored ETF against its 50-day and for each Treasury tenor's yield and the spreads between them; for a yield or a spread, DV01 as the signed sensitivity of a hypothetical Treasury proxy.
-- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged; an event study on the basket's own index; speculators' positions in five macro futures from the CFTC's weekly reports, a lagged disclosure.
+- Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged; an event study on the basket's own index; speculators' positions in five macro futures from the CFTC's weekly reports, and how widely the basket's names are held from the SEC's quarterly 13F filings, both lagged disclosures.
 - Data Pipeline: the series inventory, generated from the registry.
 - Client view: the current study in plain words, a month out.
 
@@ -105,7 +105,6 @@ Build Notes prints these two lists as their own section, word for word.
 - The comparison with the study's condition dropped.
 - Positions kept on a server, and the DV01 of actual holdings and bond ETFs.
 - Option structures for a basket's hedge.
-- Holder concentration in a basket's names from SEC 13F filings.
 
 #### 1.0.2 The unavailable state
 
@@ -1154,13 +1153,17 @@ says why across its row. Under the table the lag note ("Lagged disclosure, not
 live positioning: …") and the CFTC credit. Holders, "The basket's names · SEC
 Form 13F holders, quarterly": per basket name, 13F holders, the change, the top
 ten holders' share and how many of the 100 largest filers hold it in their top
-ten, with the period, the filing deadline and the filings read; a name without
-a row says why. Each block that is not served prints its reason (§1.0.2). No
+ten, with the period, the filing deadline and the filings read, the lag note
+("Lagged disclosure, not live positioning: …") and the SEC credit; a name
+without a row says why. The page asks for the saved basket's names
+(`names=`). Each block that is not served prints its reason (§1.0.2). No
 crowding word, no threshold, no live badge. Advanced: how each figure is
 computed, each market's three-year range with the dates of its lowest and
 highest, every category of each report, and what was read (report, contract,
 the CFTC's market name, the history's start, reports set aside with why,
-corrected reports kept).
+corrected reports kept); for the holders, how each figure is counted, how a
+ticker is paired with its CUSIP, and what was read (filings, amendments
+applied, data sets, fails files).
 
 ---
 
@@ -2109,8 +2112,10 @@ is refused 422 `unsupported` naming it; a name EODHD does not list is 422
 Two lagged public disclosures for Basket & Hedge's Positioning card, each a block envelope (§12.0) so one can
 await while the other serves: `futures`, the CFTC's weekly Commitments of Traders, futures only, for five macro
 markets (`cot_positions`, written by `src/market_data/cot.py`), and `holdings`, SEC Form 13F holder concentration
-for basket names (designed, awaiting until ingested). A worker item (`desk_positioning`), rebuilt with every
-generation; no parameters (any is 422 `unsupported`); nothing depends on "now". The method, the reading rules and
+for basket names (`holdings_13f`, written by `src/market_data/sec_13f.py`). A worker item (`desk_positioning`),
+rebuilt with every generation; one parameter, `names=TICKER,…` (at most 25 US tickers, each once), the names whose
+13F rows the holdings block serves, in that order (none when absent); any other parameter is 422 `unsupported`;
+nothing depends on "now". The method, the reading rules and
 the reference check are `docs/desk/POSITIONING_SPEC.md`.
 
 | Field | Type | Presence | Unit | Date · freq · source | Engine basis |
@@ -2118,7 +2123,9 @@ the reference check are `docs/desk/POSITIONING_SPEC.md`.
 | `futures` | block: `{provider: "CFTC", source, credit, lag_note, range_years: 3, range_min_reports, markets[≤5], missing[], revisions_stored}` | awaiting when no report is stored or none is readable | — | weekly · CFTC Public Reporting Environment | A: `api/desk_positioning.futures_block` |
 | `futures.markets[]` | `{key, label, contract_code, market_name, report, report_title, category, category_label, as_of, released, release_delayed, release_basis, release_note, first_stored_at, stored_at, long, short, spread, net, open_interest, net_pct_oi, change_1w{from, net, net_pct_oi}, change_reason, range_3y{percentile, n, from, to, min_pct_oi, min_on, max_pct_oi, max_on}, range_reason, categories[5], history_from, reports, excluded[], series[]}` | required in a ready block | contracts; `net_pct_oi` percent of open interest | `as_of` the positions date; `released` the CFTC's 2026 schedule's (null with why off it); `first_stored_at` UTC | A: the newest readable report; `change_1w` against the previous readable report 6–8 days earlier; `range_3y` among the readable reports dated after the same day three years earlier through the report, at least `range_min_reports`, percentile = 100 × at-or-below ÷ n |
 | `futures.missing[]` | `{key, label, excluded[], reason}` | required | — | — | A: a market with no readable report, and why |
-| `holdings` | block: `{provider: "SEC", source, credit, lag_note, period, deadline, filings_through, previous_period, data_sets[], large_filers_n, names[{symbol, issuer, title_of_class, holders, holders_prev, holders_change, shares, value_usd, top10_share, large_filers_top10, amendments}], excluded[{symbol, reason}]}` | awaiting ("Awaiting refresh: SEC 13F holdings are not stored in this database yet.") | shares; USD; `top10_share` a fraction | `period` the quarter end; `deadline` 45 days after | A: POSITIONING_SPEC §3 |
+| `holdings` | block: `{provider: "SEC", source, credit, lag_note, period, previous_period, previous_reason, deadline, filings_through, newest_filing, data_sets[], ftd_files[], filers, filings, restatements, new_holdings, set_aside, revised_names, computed_at, large_filers_n: 100, top_positions_n: 10, top_holders_n: 10, names[≤25], excluded[≤25]}` | awaiting ("Awaiting refresh: SEC 13F holdings are not stored in this database yet.") when no quarter's run committed or none's filings reach its deadline | counts | `period` the quarter end; `deadline` 45 days after; `filings_through` the last filing date the data sets read cover · quarterly · SEC Form 13F data sets | A: `api/desk_positioning.holdings_block`, `holdings_for` |
+| `holdings.names[]` | `{symbol, issuer, holders, holders_prev, holders_change, shares, top10_share, large_filers_top10}` | the asked-for names with a stored row, in the request's order | holders and filers; shares; `top10_share` a fraction | `period` | A: POSITIONING_SPEC §3.3; `holders_change` against `previous_period`, null when it is not stored |
+| `holdings.excluded[]` | `{symbol, reason}` | the asked-for names without a row, in the request's order | — | — | A: the refusal stored with why (the CUSIP pairing not settled), else "no 13F row stored: …" |
 
 ## 13. Build order, engine scope and acceptance
 

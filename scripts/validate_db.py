@@ -52,7 +52,10 @@ failed read (watermark `cftc_cot`), a date that moved earlier, rows that fell, a
 report the API sets aside (api/desk_positioning.py: an uncommitted run, a missing
 category, open interest that disagrees or breaks the CFTC's identity, a report
 dated after the store first held it) or a check that cannot run is a warning: the
-reader never serves such a report, so none can reach the screen.
+reader never serves such a report, so none can reach the screen. The SEC 13F holdings
+(`holdings_13f`, src/market_data/sec_13f.py) are advisory too: the table being absent
+or a failed read (watermark `sec_13f`, which also says when the SEC contact is not
+set) is a warning, and a failed read replaces nothing.
 
 Price quality (Analyst Desk P0c, src/market_data/quality.py) is advisory: splits,
 implausible moves, repeated bars, stale runs, spikes, jumps, NYSE gaps,
@@ -107,12 +110,14 @@ DATE_COLUMNS = {
     "share_counts": "as_of",
     # Desk P4: the CFTC's weekly futures positions (src/market_data/cot.py), advisory
     "cot_positions": "as_of",
+    # Desk P4: SEC 13F holder concentration per ticker and quarter (src/market_data/sec_13f.py), advisory
+    "holdings_13f": "period",
 }
 # desk/cap-weight: tables a refresh publishes when they change but whose state never fails a database.
 # Absent, partly fetched, regressed, emptied or holding a row the API sets aside: each is a warning, and a
 # query on them that cannot run is a warning too (never "not executed"). Basket & Hedge's cap weight is
 # the only reader, and it says it is unavailable, with the reason, when the counts are not there.
-ADVISORY_TABLES = {"share_counts", "cot_positions"}
+ADVISORY_TABLES = {"share_counts", "cot_positions", "holdings_13f"}
 ADVISORY_FINGERPRINT_SQL = {
     "share_counts": "SELECT symbol, shares_outstanding, as_of, source FROM share_counts ORDER BY symbol",
     # Options Finder earnings cache (design EC 4.1): the encrypted vault's public digest of its observations,
@@ -122,6 +127,9 @@ ADVISORY_FINGERPRINT_SQL = {
     # withdrawal publishes and a run that read the same reports (which rewrites nothing) does not
     "cot_positions": ("SELECT report, contract_code, as_of, category, long, short, spread, open_interest, run_id, withdrawn_at "
                       "FROM cot_positions ORDER BY report, contract_code, as_of, category"),
+    # Desk P4: every ticker's figures and the run that computed them, so a recomputed quarter publishes
+    "holdings_13f": ("SELECT symbol_key, period, holders, shares, top10_shares, large_filers_top10, run_id "
+                     "FROM holdings_13f ORDER BY symbol_key, period"),
 }
 # Rolling-window tables shrink by design (intraday trimmed to 30 days, news
 # aged out); their freshness is judged by max date, never by row count.
@@ -145,7 +153,7 @@ MODE_TABLES = {
     # desk/cap-weight: share_counts, so a refresh whose only news is a new share count publishes it;
     # earnings_cache_vault, so a run's observations, withdrawals and call accounting are never dropped (EC 4.1)
     "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices", "desk_series",
-             "desk_series_runs", "share_counts", "earnings_cache_vault", "cot_positions"],
+             "desk_series_runs", "share_counts", "earnings_cache_vault", "cot_positions", "holdings_13f"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also store the provider's finished-session
@@ -684,6 +692,12 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         cot_mark = (cur.get("watermarks") or {}).get("cftc_cot") or {}
         if cot_mark.get("status") in ("partial", "error"):
             warnings.append(f"cftc_cot {cot_mark['status']}: {cot_mark.get('detail')} (advisory, never blocking)")
+        if "holdings_13f" not in cur["tables"]:
+            warnings.append("holdings_13f: not stored; the full refresh's positioning step stores the SEC 13F holdings, and "
+                            "the Positioning card's holdings block awaits until then (advisory, never blocking)")
+        sec_mark = (cur.get("watermarks") or {}).get("sec_13f") or {}
+        if sec_mark.get("status") in ("partial", "error"):
+            warnings.append(f"sec_13f {sec_mark['status']}: {sec_mark.get('detail')} (advisory, never blocking)")
 
     # Stamps ahead of the clock are a fault, never freshness (review P2-3).
     horizon = (now + timedelta(days=1)).strftime("%Y-%m-%d")

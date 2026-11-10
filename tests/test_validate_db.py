@@ -1659,3 +1659,55 @@ def test_the_unreadable_cftc_count_agrees_with_the_reader(tmp_path):
     set_aside = sum(1 for m in dp.futures_block(conn)["markets"] for x in m["excluded"] if "withdrawn" not in x["reason"])
     assert set_aside == 5 and conn.execute(v.COT_REPORTS_UNREADABLE).fetchone()[0] == 5
     conn.close()
+
+
+# ── Desk P4: SEC 13F holdings, advisory ─────────────────────────────────────
+
+def _with_13f(path: Path, *, fail: set[str] | None = None, now: datetime = NOW) -> dict:
+    """The SEC 13F step run on `path` against invented filings (scripts/desk_positioning_fixture.synth_sec)."""
+    from scripts import desk_positioning_fixture as fx
+    from src.market_data import sec_13f as s13
+
+    return s13.refresh(path, now=now, client=fx.FakeSec(fx.synth_sec(), fail=fail))
+
+
+def test_a_full_refresh_without_13f_holdings_passes_and_says_so(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert any(w.startswith("holdings_13f: not stored") for w in rep["warnings"])
+
+
+def test_a_failed_13f_read_still_validates_and_uploads(tmp_path):
+    from src.market_data import sec_13f as s13
+
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+    assert _with_13f(cur, fail={s13._path(s13.SETS_PAGE)})["status"] == "error"
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert any(w.startswith("sec_13f error: not read:") for w in rep["warnings"]), rep["warnings"]
+
+
+def test_a_recomputed_13f_quarter_is_published_and_an_unchanged_run_is_not(tmp_path, monkeypatch):
+    import shutil
+
+    from src.market_data import sec_13f as s13
+
+    prev = _make_path(tmp_path, "prev.db")
+    assert _with_13f(prev)["status"] == "ok"
+    same = tmp_path / "same.db"
+    shutil.copy(prev, same)
+    assert "unchanged" in _with_13f(same, now=NOW + timedelta(hours=1))["detail"]
+    rep = v.validate(same, prev, "full", now=NOW + timedelta(hours=1))
+    assert "holdings_13f" not in rep["changed_tables"], rep["changed_tables"]
+    monkeypatch.setattr(s13, "METHOD", "13f-test")
+    redone = tmp_path / "redone.db"
+    shutil.copy(prev, redone)
+    assert _with_13f(redone, now=NOW + timedelta(hours=1))["status"] == "ok"
+    rep = v.validate(redone, prev, "full", now=NOW + timedelta(hours=1))
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert "holdings_13f" in rep["changed_tables"] and rep["upload"] is True

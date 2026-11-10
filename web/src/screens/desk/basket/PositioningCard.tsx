@@ -5,7 +5,9 @@
  *   (leveraged funds, managed money): net contracts, their share of open interest, the change from the report a
  *   week earlier, and where the share sits among the market's own reports of three years; each row dated by its
  *   positions date and its release.
- * - Holders: SEC Form 13F holder concentration for the basket's names, dated by the quarter the holdings are as of.
+ * - Holders: SEC Form 13F holder concentration for the basket's names (asked for by name, `names=`): holders, their
+ *   change on the quarter, the ten largest holders' share and how many of the largest filers hold it among their ten
+ *   largest positions, dated by the quarter the holdings are as of, its filing deadline and the filings read.
  *
  * Both say they are lagged disclosures, not live positioning. No crowding verdict is drawn: the card reports
  * positions and where they sit in their own history. Each block prints its own reason when it is not served.
@@ -16,7 +18,7 @@ import { usePositioning, unavailableOf } from "../data/api";
 import type { CotMarket, PositioningFutures, PositioningHoldings } from "../data/types";
 import { dayLong, grouped, pctPlain } from "../kit/format";
 import { AdvancedPanel, Awaiting, FailedLine, FailedScope, Signed, UnservedLine, useAdvanced } from "../kit/ui";
-import { changeText, contracts, datesLine, historyLine, holdingsFor, percentileText, rangeLine, shareOfOi, sideWord } from "./positioning";
+import { changeText, contracts, datesLine, historyLine, holdersChange, holdingsFor, holdingsReadLine, percentileText, rangeLine, shareOfOi, sideWord } from "./positioning";
 import type { SavedBasket } from "./weights";
 
 const TITLE = "Positioning";
@@ -130,6 +132,7 @@ function FuturesAdvanced({ f }: { f: PositioningFutures }) {
 
 function Holdings({ h, symbols }: { h: PositioningHoldings; symbols: readonly string[] }) {
   const { rows, missing } = holdingsFor(h, symbols);
+  const prev = h.previous_period ? `holders on ${dayLong(h.previous_period)}` : (h.previous_reason ?? undefined);
   return (
     <>
       <div className="pz-table-wrap" role="region" aria-label="13F holders of the basket's names" tabIndex={0}>
@@ -138,25 +141,27 @@ function Holdings({ h, symbols }: { h: PositioningHoldings; symbols: readonly st
             <tr>
               <th scope="col">Name</th>
               <th scope="col">13F holders</th>
-              <th scope="col">Change</th>
-              <th scope="col">Top 10 hold</th>
-              <th scope="col">In large filers' top 10</th>
+              <th scope="col">Change on the quarter</th>
+              <th scope="col">Top {h.top_holders_n} holders' share</th>
+              <th scope="col">In large filers' top {h.top_positions_n}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.symbol}>
-                <th scope="row">{r.symbol}</th>
+              <tr key={r.symbol} data-symbol={r.symbol}>
+                <th scope="row" title={r.issuer}>
+                  {r.symbol}
+                </th>
                 <td>{grouped(r.holders)}</td>
-                <td>{r.holders_change == null ? "—" : contracts(r.holders_change)}</td>
-                <td>{r.top10_share == null ? "—" : pctPlain(r.top10_share, 1)}</td>
+                <td title={r.holders_prev == null ? prev : `${prev}: ${grouped(r.holders_prev)}`}>{holdersChange(r)}</td>
+                <td title={`of ${grouped(r.shares)} shares the 13F filers report`}>{pctPlain(r.top10_share, 1)}</td>
                 <td>
                   {r.large_filers_top10} of {h.large_filers_n}
                 </td>
               </tr>
             ))}
             {missing.map((x) => (
-              <tr key={x.symbol}>
+              <tr key={x.symbol} data-symbol={x.symbol}>
                 <th scope="row">{x.symbol}</th>
                 <td colSpan={4} className="pz-words pz-muted">
                   {x.reason}
@@ -167,9 +172,30 @@ function Holdings({ h, symbols }: { h: PositioningHoldings; symbols: readonly st
         </table>
       </div>
       <p className="pz-note">
-        Holdings as of {dayLong(h.period)} · filed by {dayLong(h.deadline)}, filings read through {dayLong(h.filings_through)} · {h.lag_note}
+        Holdings as of {dayLong(h.period)} · filing deadline {dayLong(h.deadline)} · filings read through {dayLong(h.filings_through)}
       </p>
+      <p className="pz-note">{h.lag_note}</p>
       <p className="pz-credit">{h.credit}</p>
+    </>
+  );
+}
+
+function HoldingsAdvanced({ h }: { h: PositioningHoldings }) {
+  return (
+    <>
+      <p className="pz-adv-line">
+        13F holders are the filers reporting a long position in the name's shares at the quarter's end (no put or call rows, no
+        principal amounts); a parent filing for its subsidiaries counts once. The top {h.top_holders_n} holders' share is the
+        shares of its {h.top_holders_n} largest holders over every share the filers report. Large filers are the{" "}
+        {h.large_filers_n} filers with the largest reported long value, each position valued at the quarter's median reported
+        price per share of its security; the last column counts how many hold the name among their {h.top_positions_n} largest
+        positions. A restatement replaces the filer's report; a new-holdings amendment filed after it adds its positions.
+      </p>
+      <p className="pz-adv-line">
+        A ticker is paired with its CUSIP from its newest record in the SEC's fails-to-deliver files, and only when that
+        record's issuer name and the name 13F filers give the CUSIP agree in their first word; otherwise it says why.
+      </p>
+      <p className="pz-adv-line">{holdingsReadLine(h)}</p>
     </>
   );
 }
@@ -177,14 +203,14 @@ function Holdings({ h, symbols }: { h: PositioningHoldings; symbols: readonly st
 export function PositioningCard({ basket }: { basket: SavedBasket | null }) {
   const hid = useId();
   const adv = useAdvanced();
-  const q = usePositioning();
+  const symbols = basket?.legs.map((l) => l.symbol) ?? [];
+  const q = usePositioning(symbols);
   const scope = unavailableOf(q.error);
   const d = q.data;
   const futures = d?.futures ?? null;
   const holdings = d?.holdings ?? null;
   const futuresWhy = d?._blocks?.futures ?? null;
   const holdingsWhy = d?._blocks?.holdings ?? null;
-  const symbols = basket?.legs.map((l) => l.symbol) ?? [];
   let futuresBody;
   if (scope) futuresBody = <UnservedLine block={scope} />;
   else if (q.isError) futuresBody = <FailedLine />;
@@ -230,10 +256,11 @@ export function PositioningCard({ basket }: { basket: SavedBasket | null }) {
             </>
           ) : null}
         </div>
-        {futures && !futuresWhy && !scope ? (
+        {!scope && ((futures && !futuresWhy) || (holdings && !holdingsWhy)) ? (
           <div className="dk-card-foot">
             <AdvancedPanel enabled adv={adv} items="how each figure is computed · each market's range and every category · what was read">
-              <FuturesAdvanced f={futures} />
+              {futures && !futuresWhy ? <FuturesAdvanced f={futures} /> : null}
+              {holdings && !holdingsWhy ? <HoldingsAdvanced h={holdings} /> : null}
             </AdvancedPanel>
           </div>
         ) : null}

@@ -44,6 +44,11 @@ LAG_NOTE = ("Lagged disclosure, not live positioning: each report states positio
 NOT_STORED = "Awaiting refresh: CFTC positions are not stored in this database yet."
 NONE_READABLE = "Awaiting refresh: no stored CFTC report can be read (each one is set aside, with why)."
 HOLDINGS_NOT_STORED = "Awaiting refresh: SEC 13F holdings are not stored in this database yet."
+HOLDINGS_SOURCE = ("SEC Form 13F data sets (www.sec.gov), long positions in shares; tickers paired with CUSIPs from the "
+                   "SEC's fails-to-deliver data")
+HOLDINGS_CREDIT = "Source: U.S. Securities and Exchange Commission, Form 13F data sets and fails-to-deliver data."
+HOLDINGS_LAG_NOTE = ("Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it; "
+                     "long positions only, from managers with $100 million or more in 13(f) securities.")
 
 # The window for "where it sits": three calendar years of weekly reports ending at the report, at least this many.
 RANGE_YEARS = 3
@@ -264,7 +269,84 @@ def futures_block(conn: sqlite3.Connection) -> dict:
 
 
 def holdings_block(conn: sqlite3.Connection) -> dict:
-    raise env.Awaiting(HOLDINGS_NOT_STORED)
+    """The newest stored 13F quarter whose run committed, every stored ticker's figures and the previous quarter's
+    holders, and the tickers refused with why. The route serves the names a request asks for (`holdings_for`)."""
+    from src.market_data import sec_13f as s13
+
+    if not all(_table_exists(conn, t) for t in (s13.PERIODS, s13.TABLE, s13.REFUSED, s13.RUNS)):
+        raise env.Awaiting(HOLDINGS_NOT_STORED)
+    periods = conn.execute(
+        f"SELECT p.period, p.deadline, p.data_sets, p.filings_through, p.newest_filing, p.ftd_files, p.filers, p.filings, "
+        f"p.restatements, p.new_holdings, p.set_aside, p.names, p.revised_names, p.run_id, p.computed_at "
+        f"FROM {s13.PERIODS} p JOIN {s13.RUNS} r ON r.run_id = p.run_id WHERE r.status = 'committed' "
+        f"ORDER BY p.period DESC").fetchall()
+    # point in time: a quarter is served only when the filings read reach its deadline
+    periods = [r for r in periods if r[1] <= r[3]]
+    if not periods:
+        raise env.Awaiting(HOLDINGS_NOT_STORED)
+    (period, deadline, data_sets, through, newest_filing, ftd_files, filers, filings, restatements, new_holdings,
+     set_aside, _n, revised, run_id, computed_at) = periods[0]
+    prev = s13.previous_quarter_end(date.fromisoformat(period)).isoformat()
+    prev_row = next((r for r in periods if r[0] == prev), None)
+    held_prev = {}
+    if prev_row is not None:
+        held_prev = {k: h for k, h in conn.execute(f"SELECT symbol_key, holders FROM {s13.TABLE} WHERE period = ? AND run_id = ?",
+                                                   (prev, prev_row[13]))}
+    rows = {}
+    for key, symbol, issuer, holders, shares, top10, large in conn.execute(
+            f"SELECT symbol_key, symbol, issuer, holders, shares, top10_shares, large_filers_top10 FROM {s13.TABLE} "
+            f"WHERE period = ? AND run_id = ? ORDER BY symbol_key", (period, run_id)):
+        hp = held_prev.get(key)
+        rows[key] = {"issuer": issuer, "holders": int(holders), "holders_prev": None if hp is None else int(hp),
+                     "holders_change": None if hp is None else int(holders) - int(hp), "shares": int(shares),
+                     "top10_share": int(top10) / int(shares), "large_filers_top10": int(large)}
+    refused = {k: why for k, why in conn.execute(f"SELECT symbol_key, reason FROM {s13.REFUSED} WHERE period = ? AND run_id = ?",
+                                                 (period, run_id))}
+    return {
+        "provider": "SEC",
+        "source": HOLDINGS_SOURCE,
+        "credit": HOLDINGS_CREDIT,
+        "lag_note": HOLDINGS_LAG_NOTE,
+        "period": period,
+        "previous_period": prev if prev_row is not None else None,
+        "previous_reason": None if prev_row is not None else f"the quarter before, {prev}, is not stored",
+        "deadline": deadline,
+        "filings_through": through,
+        "newest_filing": newest_filing,
+        "data_sets": data_sets.split(","),
+        "ftd_files": ftd_files.split(","),
+        "filers": int(filers),
+        "filings": int(filings),
+        "restatements": int(restatements),
+        "new_holdings": int(new_holdings),
+        "set_aside": int(set_aside),
+        "revised_names": int(revised),
+        "computed_at": computed_at,
+        "large_filers_n": s13.LARGE_FILERS,
+        "top_positions_n": s13.TOP_POSITIONS,
+        "top_holders_n": s13.TOP_HOLDERS,
+        "_rows": rows,
+        "_refused": refused,
+    }
+
+
+def holdings_for(stored: dict, symbols: list[str]) -> dict:
+    """The served holdings block: the stored quarter, and the requested tickers in request order, each served or
+    excluded with why. The stored maps (`_rows`, `_refused`) are not served."""
+    from src.market_data import sec_13f as s13
+
+    names, excluded = [], []
+    for sym in symbols:
+        key = s13.symbol_key(sym)
+        row = stored["_rows"].get(key)
+        if row is not None:
+            names.append({"symbol": sym, **row})
+            continue
+        why = stored["_refused"].get(key) or (
+            f"no 13F row stored: the SEC's fails-to-deliver files read pair no CUSIP with {sym}, or no 13F filer "
+            f"reports a long position in its shares for {stored['period']}")
+        excluded.append({"symbol": sym, "reason": why})
+    return {k: v for k, v in stored.items() if not k.startswith("_")} | {"names": names, "excluded": excluded}
 
 
 def desk_positioning(ctx: dict) -> dict:
