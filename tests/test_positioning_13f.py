@@ -288,13 +288,29 @@ def test_the_time_budget_stops_the_run_cleanly(store, monkeypatch):
 
 
 def test_without_a_declared_contact_nothing_is_fetched(tmp_path, monkeypatch, capsys):
-    monkeypatch.delenv(s13.CONTACT_ENV, raising=False)
+    from src.market_data import positioning
+
+    monkeypatch.setenv(s13.CONTACT_ENV, "Invented Person invented@example.invalid")
     f = tmp_path / "s.db"
-    s = s13.refresh(f, now=NOW)
+    s = s13.refresh(f, now=NOW)  # the module reads no environment: no contact passed, none used
     assert s["status"] == "error" and "SEC_USER_AGENT is not set" in s["detail"]
     assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)]
-    assert s13.main(["--db", str(f)]) == 0
+    monkeypatch.delenv(s13.CONTACT_ENV)
+    monkeypatch.setattr(s13, "Client", lambda *a, **kw: pytest.fail("no request without a contact"))
+    assert positioning.main(["--db", str(f), "--sec-only"]) == 0
     assert "SEC_USER_AGENT is not set" in capsys.readouterr().out
+    assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)]
+
+
+def test_the_13f_module_reads_no_environment_so_the_api_never_reads_the_contact():
+    # The API imports sec_13f for its table names; the contact is read only by the step's runner.
+    from tests.test_env_template import _api_closure, _env_reads
+
+    root = Path(__file__).resolve().parents[1]
+    assert _env_reads((root / "src/market_data/sec_13f.py").read_text()) == set()
+    assert _env_reads((root / "src/market_data/positioning.py").read_text()) == {s13.CONTACT_ENV} == {"SEC_USER_AGENT"}
+    closure = {p.relative_to(root).as_posix() for p in _api_closure()}
+    assert "src/market_data/sec_13f.py" in closure and "src/market_data/positioning.py" not in closure
 
 
 # ── the HTTP client ────────────────────────────────────────────────────────
@@ -469,7 +485,7 @@ def test_the_step_runs_the_13f_read_even_when_the_cftc_read_fails(tmp_path, monk
     calls = []
     monkeypatch.setattr(cot, "main", lambda argv: calls.append(("cot", argv)) or 0)
 
-    def fake_refresh(path, budget_s):
+    def fake_refresh(path, budget_s, **kw):
         calls.append(("sec", budget_s))
         raise RuntimeError("boom")
 
@@ -491,7 +507,9 @@ def test_the_contact_is_sent_in_the_header_and_stored_nowhere(tmp_path, monkeypa
     monkeypatch.setenv(s13.CONTACT_ENV, contact)
     monkeypatch.setattr(s13, "Client", lambda c, **kw: _RealClient(c, opener=opener, sleep=lambda s: None, **kw))
     f = tmp_path / "s.db"
-    assert s13.main(["--db", str(f)]) == 0
+    from src.market_data import positioning
+
+    assert positioning.main(["--db", str(f), "--sec-only"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("sec_13f: ok") and sent and set(sent) == {contact}
     assert "invented@" not in out

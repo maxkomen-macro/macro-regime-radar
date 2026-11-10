@@ -635,6 +635,8 @@ ROUTES: dict[tuple[str, str], tuple[str, int, dict | None]] = {
     ("GET", "/api/desk/basket/shares"): ("/api/desk/basket/shares", 200, None),
     # desk/basket-study (§12.19, P1a): the study on a basket the request names (legs=…); a bare GET names none: 422
     ("GET", "/api/desk/basket/study"): ("/api/desk/basket/study", 422, None),
+    # Desk P4 (§12.20): the CFTC and 13F disclosures; a bare GET names no basket and serves the futures block
+    ("GET", "/api/desk/positioning"): ("/api/desk/positioning", 200, None),
     # the Options Finder (design F3): a view names a symbol, a target, a date and a budget; a bare GET names none: 422
     ("GET", "/api/desk/options/finder"): ("/api/desk/options/finder", 422, None),
     ("GET", "/api/desk/hedge"): ("/api/desk/hedge?mode=protect", 200, None),

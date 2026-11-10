@@ -9,13 +9,18 @@ stored (every write is one transaction), records its watermark (`cftc_cot`,
 The workflow step allows ten minutes; the 13F step is given what is left of
 nine, so it stops cleanly, keeping what is stored, before the step is killed.
 
-Run:  python -m src.market_data.positioning [--db data/macro_radar.db]
+The SEC contact (`SEC_USER_AGENT`, an Actions secret) is read here and passed
+to the 13F step, never printed or stored; `--sec-only` and `--cache-dir` are for
+local verification.
+
+Run:  python -m src.market_data.positioning [--db data/macro_radar.db] [--sec-only] [--cache-dir DIR]
 Stdlib only.
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -33,12 +38,16 @@ MIN_SEC_BUDGET_S = 60.0
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Store the CFTC futures positions and the SEC 13F holdings for the Desk.")
     ap.add_argument("--db", default=str(cot.DB_PATH))
+    ap.add_argument("--sec-only", action="store_true", help="skip the CFTC read (local verification)")
+    ap.add_argument("--cache-dir", default=None, help="keep and reuse the SEC files here (local verification)")
     a = ap.parse_args(argv)
     started = time.monotonic()
-    cot.main(["--db", a.db])
+    if not a.sec_only:
+        cot.main(["--db", a.db])
     budget = max(MIN_SEC_BUDGET_S, STEP_BUDGET_S - (time.monotonic() - started))
     try:
-        s = sec_13f.refresh(Path(a.db), budget_s=budget)
+        s = sec_13f.refresh(Path(a.db), budget_s=budget, contact=os.environ.get("SEC_USER_AGENT", ""),
+                            cache_dir=Path(a.cache_dir) if a.cache_dir else None)
         print(f"sec_13f: {s['status']} · {s['detail']}")
     except Exception as exc:  # noqa: BLE001 — never fails the refresh; validate_db warns on the watermark
         print(f"sec_13f: not refreshed ({type(exc).__name__})")

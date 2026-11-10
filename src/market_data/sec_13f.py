@@ -33,13 +33,16 @@ its newest date, or whose names disagree, is refused with why, never guessed.
 CUSIPs are used during the run only and are not stored.
 
 Fair access: the SEC asks automated clients to declare a User-Agent with a
-contact and to stay under ten requests a second. The contact is read from the
-environment (`SEC_USER_AGENT`, an Actions secret), never printed or stored;
+contact and to stay under ten requests a second. The contact is passed in by
+the step's runner (src/market_data/positioning.py), which reads it from the
+environment (`SEC_USER_AGENT`, an Actions secret); this module reads no
+environment variable, so the API, which imports its table names, never sees
+it. It is never printed or stored;
 requests are spaced at least 0.2 s apart, a 429 or a server error is retried
 with backoff, and a refusal (403) is not retried. A run whose data sets are
 the ones already stored downloads nothing more than the two index pages.
 
-Run:  python -m src.market_data.sec_13f [--db data/macro_radar.db] [--cache-dir DIR]
+Run:  python -m src.market_data.positioning --sec-only [--db data/macro_radar.db] [--cache-dir DIR]
 The step never fails the refresh: a failed read keeps what is stored (every
 write is one transaction, made only when the whole computation succeeded),
 records the watermark `sec_13f` (status ok or error, the reasons in its detail)
@@ -50,10 +53,8 @@ Method: docs/desk/POSITIONING_SPEC.md §3. Stdlib only.
 
 from __future__ import annotations
 
-import argparse
 import csv
 import io
-import os
 import re
 import shutil
 import sqlite3
@@ -670,7 +671,7 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, clien
         ensure_tables(conn)
         watermarks.ensure_table(conn)
         conn.commit()
-        contact = contact if contact is not None else os.environ.get(CONTACT_ENV, "").strip()
+        contact = (contact or "").strip()
         if client is None and "@" not in (contact or ""):
             detail = (f"not read: the SEC asks automated clients for a declared contact and {CONTACT_ENV} is not set; "
                       "what is stored is kept")
@@ -740,20 +741,3 @@ def _record(conn: sqlite3.Connection, last_obs: str | None, status: str, detail:
         conn.commit()
     return {"status": status, "detail": detail, "last_obs": last_obs}
 
-
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description="Store SEC Form 13F holder concentration for the Desk's basket names.")
-    ap.add_argument("--db", default=str(DB_PATH))
-    ap.add_argument("--cache-dir", default=None, help="keep and reuse the SEC files here (local verification)")
-    a = ap.parse_args(argv)
-    try:
-        s = refresh(Path(a.db), cache_dir=Path(a.cache_dir) if a.cache_dir else None)
-    except Exception as exc:  # noqa: BLE001 — never fails the refresh; validate_db warns on the watermark
-        print(f"sec_13f: not refreshed ({type(exc).__name__})")
-        return 0
-    print(f"sec_13f: {s['status']} · {s['detail']}")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
