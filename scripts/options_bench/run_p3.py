@@ -70,9 +70,11 @@ def one(args) -> dict:
     rec["tier2_deep_exercise"] = p3.tier2.audit.get("delta_rule") == "deep exercise"
     xc = p3.cross_check
     rec["cross_check"] = {"status": xc.status, "reason": xc.reason, "v_fd": xc.v_fd, "e_fd": xc.e_fd,
-                          "diff": xc.diff, "tol": xc.tol}
+                          "diff": xc.diff, "tol": xc.tol, "L1": xc.audit.get("L1"), "L2": xc.audit.get("L2")}
     rec["price_status_p3"] = p3.price_status
-    rec["greeks"] = {g: {"status": a.status, "value": a.value, "estimate": a.estimate, "reason": a.reason}
+    # L1 and L2 (and the h/2 value of a bumped Greek) let the calibration re-derive E_G for any candidate F_G
+    rec["greeks"] = {g: {"status": a.status, "value": a.value, "estimate": a.estimate, "reason": a.reason,
+                         "audit": {k: v for k, v in a.audit.items() if k in ("L1", "L2", "tol", "h", "L2_half", "rule")}}
                      for g, a in p3.greeks.items()}
     rec["units_phase3"] = p3.units
     rec["regions"] = {g: (None if regions is None else regions.greek_region(c, g)) for g in G.GREEKS}
