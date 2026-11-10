@@ -24,6 +24,7 @@ import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import basketShares from "../../../fixtures/desk/basket-shares.json";
 import optionsFinder from "../../../fixtures/desk/options-finder.json";
 import basketStudy from "../../../fixtures/desk/basket-study.json";
+import positioning from "../../../fixtures/desk/positioning.json";
 import instruments from "../../../fixtures/desk/instruments.json";
 import regime from "../../../fixtures/desk/regime.json";
 import sectors from "../../../fixtures/desk/sectors.json";
@@ -164,6 +165,8 @@ describe("the response boundary", () => {
       "/options/finder": Object.values((optionsFinder as { answers: Record<string, Record<string, unknown>> }).answers)[0],
       // §12.19 (desk P1a): the fixtures' first study (an ETF basket held, from stored closes).
       "/basket/study": Object.values((basketStudy as { answers: Record<string, Record<string, unknown>> }).answers)[0],
+      // §12.20 (Desk P4): invented CFTC reports through the served reader; the 13F block awaits.
+      "/positioning": { generation_id: positioning.generation_id, as_of: positioning.as_of, futures: positioning.futures },
     };
     expect(Object.keys(fixtures).length).toBe(Object.keys(SCHEMAS).length);
     // A basket study cannot be read without the basket it studies, the question asked, and the index that was run.

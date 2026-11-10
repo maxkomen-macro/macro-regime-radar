@@ -268,35 +268,6 @@
   }
 }
 
-/* ── Basket & Hedge: positioning ── */
-.pr-below {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 13px;
-  align-items: stretch;
-}
-@media (max-width: 1100px) {
-  .pr-below {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-.pr-positioning .dk-stats {
-  margin-top: 8px;
-}
-/* "(illustrative)" under a numeric column's name, in lowercase sans, so the headers keep the columns' width. */
-.pr-th-note {
-  display: block;
-  font-family: var(--dk-sans);
-  text-transform: none;
-  letter-spacing: 0;
-}
-/* A long company name (the preset's "Constellation Energy") wraps under its ticker before the table scrolls. */
-.pr-positioning .pr-table tbody th {
-  white-space: normal;
-}
-.pr-positioning .pr-table-wrap {
-  margin-top: 12px;
-}
 .pr-name {
   font-weight: 400;
   font-size: 12px;

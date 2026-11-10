@@ -28,7 +28,9 @@ from src.market_data import cot, cot_schedule
 from tests import desk_contract as dc
 
 client = TestClient(app, raise_server_exceptions=False)
-NOW = fx.STORED_AT
+# The tests' own invented world: weekly reports to Tuesday 2026-09-22 (released 2026-09-25), stored the next day.
+END = date(2026, 9, 22)
+NOW = datetime(2026, 9, 26, 11, 20, tzinfo=timezone.utc)
 CODES = {r: [m.contract_code for m in cot.MARKETS if m.report == r] for r in cot.REPORTS}
 
 
@@ -37,7 +39,7 @@ def served(**over):
     def get(url: str):
         for key, report in cot.REPORTS.items():
             if f"/{report.dataset}.json" in url:
-                rows = fx.synth_rows(report, CODES[key])
+                rows = fx.synth_rows(report, CODES[key], end=END)
                 return over[key](rows) if key in over else rows
         raise AssertionError(url)
     return get
@@ -61,7 +63,7 @@ def block(path: Path) -> dict:
 
 def test_the_invented_rows_satisfy_the_cftc_identity_and_parse():
     for key, report in cot.REPORTS.items():
-        raw = fx.synth_rows(report, CODES[key])
+        raw = fx.synth_rows(report, CODES[key], end=END)
         assert len(raw) == fx.WEEKS * len(CODES[key])
         parsed, refused = cot.parse_rows(report, raw, set(CODES[key]))
         assert refused == [] and len(parsed) == len(raw) * len(report.categories)
@@ -74,10 +76,10 @@ def test_a_run_stores_every_report_commits_and_records_the_watermark(tmp_path):
     s = refresh(f)
     assert s["status"] == "ok" and s["failed"] == []
     assert s["counts"] == {"new": fx.WEEKS * 5 * 5, "revised": 0, "restored": 0, "withdrawn": 0, "refused": 0}
-    assert set(s["newest"].values()) == {fx.END.isoformat()}
+    assert set(s["newest"].values()) == {END.isoformat()}
     assert rows_of(f, f"SELECT status, source FROM {cot.RUNS}") == [("committed", "cftc_pre")]
     (obs, status), = rows_of(f, "SELECT last_obs, status FROM source_watermarks WHERE source = ?", cot.WATERMARK)
-    assert (obs, status) == (fx.END.isoformat(), "ok")
+    assert (obs, status) == (END.isoformat(), "ok")
     # Every row is traceable: provider, the run that wrote it, the CFTC's row id, when the store first held it.
     prov = rows_of(f, f"SELECT DISTINCT provider, run_id = (SELECT run_id FROM {cot.RUNS}), first_stored_at FROM {cot.TABLE}")
     assert prov == [("CFTC", 1, "2026-09-26T11:20:00Z")]
@@ -203,7 +205,7 @@ TFF = cot.REPORTS["tff"]
 
 
 def _one(**edit):
-    row = dict(fx.synth_rows(TFF, ["13874A"], weeks=1)[0])
+    row = dict(fx.synth_rows(TFF, ["13874A"], end=END, weeks=1)[0])
     for k, v in edit.items():
         if v is None:
             row.pop(k, None)
@@ -231,7 +233,7 @@ def test_a_row_that_breaks_a_rule_is_refused_with_why(edit, why):
 def test_a_report_served_twice_is_refused_both_times():
     row = _one()
     parsed, refused = cot.parse_rows(TFF, [row, dict(row)], {"13874A"})
-    assert parsed == [] and refused == [f"13874A {fx.END.isoformat()}: served more than once"]
+    assert parsed == [] and refused == [f"13874A {END.isoformat()}: served more than once"]
 
 
 def test_refused_rows_are_counted_in_the_watermark_and_never_stored(tmp_path):
@@ -472,7 +474,7 @@ def test_the_reference_check_matches_a_store_and_catches_one_contract(store, tmp
     files = []
     for key in cot.REPORTS:
         p = tmp_path / ("fut_fin_txt_2026.zip" if key == "tff" else "fut_disagg_txt_2026.zip")
-        p.write_bytes(_archive_zip(key, fx.synth_rows(cot.REPORTS[key], CODES[key]), "x.txt"))
+        p.write_bytes(_archive_zip(key, fx.synth_rows(cot.REPORTS[key], CODES[key], end=END), "x.txt"))
         files.append(str(p))
     assert ref.main(["--db", str(store), "--files", *files]) == 0
     assert capsys.readouterr().out.count(": match") == 5

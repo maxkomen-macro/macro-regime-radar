@@ -15,7 +15,6 @@ import { grouped, ordinal, signed } from "../kit/format";
 import { inputsFrom, type HedgeAnswer } from "./basket-inputs";
 import { DRAWN_FOR } from "./drawn-for";
 import { hedge, usd } from "./options";
-import { CROWDING_WORDS, positioning } from "./positioning";
 import { costText, protection, strikeText } from "./protection";
 import { sync } from "./snowflake-sync";
 
@@ -41,12 +40,6 @@ function optionsMarkers(): string[] {
   return h.routes.flatMap((r) => r.rows.flatMap((p) => (p.reason === null ? [usd(p.costUsd), usd(p.payoffUsd)] : [])));
 }
 
-/** The preset's names: the crowding words and the two short interests over 10% of float. */
-function positioningMarkers(): string[] {
-  const p = positioning(DRAWN_FOR.legs.map((l) => ({ symbol: l.symbol, name: l.name ?? null, weight: Number(l.weight) })));
-  return [CROWDING_WORDS.short, CROWDING_WORDS.long, ...p.rows.filter((r) => r.flag === "short").map((r) => `${r.si.toFixed(1)}%`)];
-}
-
 /** The sync's target, and its largest tables' row counts. */
 function syncMarkers(): string[] {
   const s = sync();
@@ -56,6 +49,5 @@ function syncMarkers(): string[] {
 export const PROTOTYPE_MARKERS: Readonly<Record<string, readonly string[]>> = {
   protection: protectionMarkers(),
   "options-hedge": [...new Set(optionsMarkers())],
-  positioning: positioningMarkers(),
   "snowflake-sync": syncMarkers(),
 };

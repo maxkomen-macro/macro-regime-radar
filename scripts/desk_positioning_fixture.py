@@ -31,9 +31,9 @@ from src.market_data import cot  # noqa: E402
 
 OUT = ROOT / "web" / "src" / "fixtures" / "desk" / "positioning.json"
 NOTE = "Invented positions, not CFTC data: a seeded random walk run through the served parser, store and reader."
-END = date(2026, 9, 22)          # a Tuesday; the CFTC's 2026 schedule releases it on 2026-09-25
+END = date(2026, 9, 15)          # a Tuesday; the CFTC's 2026 schedule releases it on 2026-09-18
 WEEKS = 4 * 52 + 2
-STORED_AT = datetime(2026, 9, 26, 11, 20, tzinfo=timezone.utc)
+STORED_AT = datetime(2026, 9, 19, 11, 20, tzinfo=timezone.utc)
 SEED = 20260922
 # Each invented market's open interest scale (contracts), so the five read differently.
 SCALE = {"13874A": 2_000_000, "043602": 5_000_000, "098662": 40_000, "088691": 400_000, "067651": 1_800_000}
@@ -97,8 +97,9 @@ def build(db: Path) -> dict:
     # The card prints the block's credit line: here it says the positions are invented (PROVENANCE.md has the row).
     futures["credit"] = NOTE
     return {
-        "generation_id": "gen-fixture",
-        "as_of": "2026-09-26",
+        # the fixture world's envelope (web/src/fixtures/desk/index.ts FIXTURE_META): the reports are older than it
+        "generation_id": "gen-fixture-2026-09-24",
+        "as_of": "2026-09-24",
         "futures": futures,
         "holdings": {"status": "awaiting", "data": None, "unavailable": {"reason": dp.HOLDINGS_NOT_STORED, "until": None}},
     }

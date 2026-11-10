@@ -799,12 +799,14 @@ test.describe("desk v2", () => {
     await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
-    // §1.0.3: Positioning is drawn for the AI Infrastructure 10 preset; this basket is another, so it keeps its labels
-    // and prints one line (step 3, below the options slot).
+    // §12.20 (Desk P4): Positioning is served for every basket: the five macro futures from the stored CFTC reports
+    // (the fixture's invented ones, which its credit line says), and the 13F block awaiting with its reason.
     const positions = step3.getByRole("region", { name: /^Positioning/ });
-    await expect(positions).toHaveAttribute("data-prototype", "positioning");
-    await expect(positions).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
-    await expect(positions.getByRole("table")).toHaveCount(0);
+    await expect(positions).not.toHaveAttribute("data-prototype");
+    await expect(positions.getByRole("region", { name: "Futures positioning, CFTC" }).getByRole("row")).toHaveCount(6);
+    await expect(positions).toContainText("Lagged disclosure, not live positioning");
+    await expect(positions).toContainText("Invented positions, not CFTC data");
+    await expect(positions).toContainText("Awaiting refresh: SEC 13F holdings are not stored in this database yet.");
     // §12.19 (desk P1a): the event study is served, not a PROTOTYPE. The fixtures carry no study for this basket (the
     // stored closes answer ETF baskets only), so the card says it couldn't load and prints no number.
     const study = step3.getByRole("region", { name: /^Event study on this basket/ });
@@ -879,13 +881,12 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("Up 155.8% since Mar 28, 2025");
     await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best (R² 0.83 over a year): short $847,384 of it");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&notional=1000000&weighting=cap");
-    // §1.0.3: Positioning, a PROTOTYPE, is drawn for this basket and lists all ten names. The event study is served
+    // §12.20 (Desk P4): Positioning is served, the same five markets for any basket. The event study is served
     // (§12.19): it asks for this basket cap-weighted, and the fixtures carry no study for single names, so it says it
     // couldn't load rather than print a number.
     const positions = page.getByRole("region", { name: /^Positioning/ });
-    await expect(positions.getByRole("table").getByRole("row")).toHaveCount(11);
-    await expect(positions).not.toContainText("no data");
-    await expect(positions.getByRole("columnheader", { name: "Short int. (illustrative)" })).toHaveCount(1);
+    await expect(positions.getByRole("region", { name: "Futures positioning, CFTC" }).getByRole("row")).toHaveCount(6);
+    await expect(positions).not.toHaveAttribute("data-prototype");
     const presetStudy = page.getByRole("region", { name: /^Event study on this basket/ });
     await expect(presetStudy.getByTestId("dk-failed")).toContainText("Couldn't load");
     await expect(presetStudy).not.toContainText("64%");
