@@ -28,10 +28,11 @@ Withdrawal needs confirmation (owner F-3, Codex S-9): a read that leaves out
 a readable stored report marks it unserved and keeps it readable (status
 partial); only the next read that also leaves it out marks it withdrawn, and a
 read that serves it clears the mark. A read that leaves out more than
-MAX_WITHDRAWN_PER_READ (2) readable stored reports of a market is treated as
-incomplete: nothing of that market is replaced, marked or withdrawn, and the
-watermark says how many reports it left out. So a run of ever-shorter reads
-holds the market rather than wearing its history down.
+MAX_WITHDRAWN_PER_READ (2) stored reports of a market, withdrawn ones included
+(Codex S-10), is treated as incomplete: nothing of that market is replaced,
+marked or withdrawn, and the watermark says how many reports it left out. So a
+run of ever-shorter reads holds the market rather than wearing its history
+down: at most two reports of a market are ever withdrawn while unserved.
 Each report must satisfy the CFTC's own identity before it is stored: the
 categories' long positions plus their spreading equal the open interest, and
 so do the short positions plus spreading. A row that fails it, or misses a
@@ -87,9 +88,10 @@ TIMEOUT_S = 60
 RETRIES = 3
 RETRY_WAIT_S = 5.0
 ROW_LIMIT = 50000  # one request per report; the five markets hold about 1,100 weekly reports each
-# A whole-history read that leaves out more than this many stored reports of one market is treated as incomplete
-# (a truncated or partial answer), not as the CFTC withdrawing them: nothing of that market is replaced or withdrawn
-# until a read serves its history again. The CFTC corrects reports in place; it does not remove weeks in bulk.
+# A whole-history read that leaves out more than this many stored reports of one market, withdrawn ones included,
+# is treated as incomplete (a truncated or partial answer), not as the CFTC withdrawing them: nothing of that market
+# is replaced, marked or withdrawn until a read serves its history again. The CFTC corrects reports in place; it does
+# not remove weeks in bulk. So at most this many reports of a market are ever withdrawn while the CFTC leaves them out.
 MAX_WITHDRAWN_PER_READ = 2
 
 
@@ -386,15 +388,17 @@ def write_rows(conn: sqlite3.Connection, report: str, codes: list[str], rows: li
 
 
 def unserved_reports(conn: sqlite3.Connection, report: str, codes: list[str], rows: list[dict]) -> dict[str, tuple[int, str]]:
-    """The markets whose read leaves out more than MAX_WITHDRAWN_PER_READ of their readable stored reports:
-    {contract code: (how many, the newest one left out)}. Reports already withdrawn are not counted."""
+    """The markets whose read leaves out more than MAX_WITHDRAWN_PER_READ of their stored reports: {contract code:
+    (how many, the newest one left out)}. Reports already withdrawn count too (Codex S-10): the store's inventory
+    is the yardstick, so a response that shrinks a week at a time is held once it leaves out three, however many
+    of them earlier reads withdrew."""
     served: dict[str, set[str]] = {}
     for r in rows:
         served.setdefault(r["contract_code"], set()).add(r["as_of"])
     out: dict[str, tuple[int, str]] = {}
     for code in codes:
-        stored = {d for (d,) in conn.execute(f"SELECT DISTINCT as_of FROM {TABLE} WHERE report = ? AND contract_code = ? "
-                                             "AND withdrawn_at IS NULL", (report, code))}
+        stored = {d for (d,) in conn.execute(f"SELECT DISTINCT as_of FROM {TABLE} WHERE report = ? AND contract_code = ?",
+                                             (report, code))}
         gone = stored - served.get(code, set())
         if len(gone) > MAX_WITHDRAWN_PER_READ:
             out[code] = (len(gone), max(gone))

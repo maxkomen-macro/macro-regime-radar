@@ -239,22 +239,49 @@ def _newest_cut(n):
     return lambda rows: [r for r in rows if r["report_date_as_yyyy_mm_dd"][:10] <= (END - timedelta(weeks=n)).isoformat()]
 
 
+@pytest.mark.parametrize("step", [1, 2], ids=["a week a read", "two weeks a read"])
 @pytest.mark.parametrize("cut", [_oldest_cut, _newest_cut], ids=["oldest weeks cut", "newest weeks cut"])
-def test_codex_s9_ever_shorter_reads_never_wear_the_history_down(tmp_path, cut):
+def test_codex_s9_s10_ever_shorter_reads_never_wear_the_history_down(tmp_path, cut, step):
     """Codex S-9: 210 reports stored, then reads of 208, 206 and 204 (identity-valid) withdrew 50 category rows each
-    with status ok. Now the first marks two reports unserved, the next ones leave out more than two and are held."""
+    with status ok. Codex S-10: reads of 209, 208, 207, 206, 205 still withdrew one more report a read, because the
+    cap counted only readable reports. The cap counts every stored report the read leaves out, withdrawn ones too:
+    no read is ok, at most two reports of a market are ever withdrawn, and from three left out every read is held."""
     f = tmp_path / "s.db"
     refresh(f)
-    for i, n in enumerate((2, 4, 6), start=1):
+    markets = ("spx", "ust10y", "usd", "gold", "wti")
+    for i, n in enumerate(range(step, 6 * step, step), start=1):
         assert len({r["report_date_as_yyyy_mm_dd"] for r in cut(n)(fx.synth_rows(cot.REPORTS["tff"], CODES["tff"], end=END))}) == fx.WEEKS - n
         s = refresh(f, served(tff=cut(n), disaggregated=cut(n)), now=NOW + timedelta(days=i))
-        assert s["status"] == "partial" and s["counts"]["withdrawn"] == 0, (n, s["detail"])
-        assert _readable(f) == {k: fx.WEEKS for k in ("spx", "ust10y", "usd", "gold", "wti")}
-    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL") == [(0,)]
-    # the full history served again clears every mark
-    s = refresh(f, now=NOW + timedelta(days=5))
-    assert s["status"] == "ok" and s["counts"] == {"new": 0, "revised": 0, "restored": 0, "withdrawn": 0, "refused": 0}
-    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL") == [(0,)]
+        assert s["status"] == "partial", (n, s["detail"])
+        if n > cot.MAX_WITHDRAWN_PER_READ:
+            assert len(s["failed"]) == 2 and all("treated as incomplete" in x for x in s["failed"]) and s["counts"]["withdrawn"] == 0
+        assert all(v >= fx.WEEKS - cot.MAX_WITHDRAWN_PER_READ for v in _readable(f).values()), (n, _readable(f))
+    gone = rows_of(f, f"SELECT contract_code, COUNT(DISTINCT as_of) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL GROUP BY contract_code")
+    assert all(k <= cot.MAX_WITHDRAWN_PER_READ for _, k in gone), gone
+    if step == 2:  # the first read only marks; the next leaves out four and is held: nothing is ever withdrawn
+        assert gone == [] and _readable(f) == {k: fx.WEEKS for k in markets}
+    # the full history served again restores and clears every mark
+    s = refresh(f, now=NOW + timedelta(days=9))
+    assert s["status"] == "ok" and s["counts"]["withdrawn"] == 0 and s["unconfirmed"] == []
+    assert _readable(f) == {k: fx.WEEKS for k in markets}
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL OR withdrawn_at IS NOT NULL") == [(0,)]
+
+
+def test_a_third_report_left_out_beside_two_withdrawn_ones_holds_the_market_and_says_why(tmp_path):
+    """At most two reports of a market are withdrawn while the CFTC leaves them out; a third left out is not taken on
+    trust: the market is held, the others are stored, and the watermark names it (the owner's call)."""
+    f = tmp_path / "s.db"
+    refresh(f)
+    two = [(END - timedelta(weeks=k)).isoformat() for k in (30, 60)]
+    drop = lambda extra: (lambda rows: [r for r in rows if not (r["cftc_contract_market_code"] == "13874A"  # noqa: E731
+                                                                and r["report_date_as_yyyy_mm_dd"][:10] in two + extra)])
+    refresh(f, served(tff=drop([])), now=NOW + timedelta(days=1))
+    assert refresh(f, served(tff=drop([])), now=NOW + timedelta(days=2))["counts"]["withdrawn"] == 10
+    s = refresh(f, served(tff=drop([(END - timedelta(weeks=90)).isoformat()])), now=NOW + timedelta(days=3))
+    assert s["status"] == "partial" and s["counts"]["withdrawn"] == 0
+    assert "13874A (3 stored reports not served" in s["detail"] and "treated as incomplete" in s["detail"]
+    assert _readable(f)["spx"] == fx.WEEKS - 2 and _readable(f)["ust10y"] == fx.WEEKS
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL AND withdrawn_at IS NULL") == [(0,)]
 
 
 def test_a_newest_week_a_lagging_read_leaves_out_stays_readable_and_is_served_again(tmp_path):
