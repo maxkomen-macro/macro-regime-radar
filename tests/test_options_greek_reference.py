@@ -240,3 +240,63 @@ def test_the_lattice_side_s_dividend_smoothing_is_a_setting_and_off_by_default()
     want = om._lattice([True], [0.95], np.array([0.03]), np.array([0.0]), np.array([0.3]), [[(12, 0.01)]], 40,
                        om.steps_for(40) * 2)[0][0] * 100.0
     assert a["value"] == want and b["value"] != a["value"]
+
+
+# ── P3-AM3 change 3: the FD bump term on the study's finest grid; over budget, it escalates space ──
+
+def _fake_bump_study(monkeypatch, scale):
+    """FD quantity constant in the grid (u_ref at the floor); the h_ref/2 value differs by scale/m (a bump term
+    that falls with space refinement, as the exercise boundary's position between nodes does). Records the grids
+    the bump term was read on."""
+    seen = []
+
+    def fake(r, c, sp, k, half=False):
+        if half:
+            seen.append((k.m, k.p))
+            return 1.0 + scale / k.m
+        return 1.0
+    monkeypatch.setattr(GR, "_fd_q", fake)
+    return seen
+
+
+def test_the_bump_term_is_read_on_the_finest_grid_and_escalates_space(monkeypatch):
+    c = ctx()
+    sp = GR.spec(c, G.VEGA, G.GreekConfig())
+    tol = GR._tol(G.VEGA, 1.0, c.spot)
+    m0, p0, _ = fd.grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma, 0.0)
+    m0 -= m0 % 16
+    seen = _fake_bump_study(monkeypatch, 0.05 * tol * m0)       # 0.05·tol on m0, 0.025·tol on 2·m0
+    out = GR.fd_study(GR.Runner(GR.RefBudget()), c, sp)
+    assert out["grid"]["escalations"]["space"] == 1 and out["grid"]["space_levels"][-1] == 2 * m0
+    assert out["u_bump"] == pytest.approx(0.025 * tol) and out["u_bump"] <= GR.U_BUMP_MAX * tol
+    assert seen[-1] == (2 * m0, out["grid"]["time_levels"][-1])
+
+
+def test_a_bump_term_within_budget_escalates_nothing(monkeypatch):
+    c = ctx()
+    sp = GR.spec(c, G.VEGA, G.GreekConfig())
+    tol = GR._tol(G.VEGA, 1.0, c.spot)
+    m0, p0, _ = fd.grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma, 0.0)
+    m0 -= m0 % 16
+    _fake_bump_study(monkeypatch, 0.02 * tol * m0)
+    out = GR.fd_study(GR.Runner(GR.RefBudget()), c, sp)
+    assert out["grid"]["escalations"] == {"time": 0, "space": 0}
+    assert out["u_bump"] == pytest.approx(0.02 * tol)
+
+
+def test_a_bump_term_that_does_not_fall_stops_at_the_escalation_limit(monkeypatch):
+    c = ctx()
+    sp = GR.spec(c, G.VEGA, G.GreekConfig())
+    tol = GR._tol(G.VEGA, 1.0, c.spot)
+    seen = []
+
+    def fake(r, c_, sp_, k, half=False):
+        if half:
+            seen.append(k)
+            return 1.0 + 0.05 * tol
+        return 1.0
+    monkeypatch.setattr(GR, "_fd_q", fake)
+    out = GR.fd_study(GR.Runner(GR.RefBudget()), c, sp)
+    from scripts.options_bench import reference as ref
+    assert out["grid"]["escalations"] == {"time": ref.ESCALATE_MAX, "space": ref.ESCALATE_MAX}
+    assert out["u_bump"] == pytest.approx(0.05 * tol)

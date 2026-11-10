@@ -236,3 +236,29 @@ def test_the_run_config_carries_the_lattice_smoothing_apart_from_the_greek_confi
     from scripts.options_bench import run_p3
     assert run_p3.greek_config({"smooth_divs": True}) == G.GreekConfig()
     assert run_p3.greek_config({"smooth_divs": True, "h_r": 2.5e-4}).h_r == 2.5e-4
+
+
+# ── P3-AM3: the mesh at the payoff kink, the time step halving per level, the FD bump term on the finest grid ──
+
+def test_every_level_halves_the_time_step_with_the_space_step():
+    for days in (1, 9, 120, 399, 400, 401, 1278, om.DAYS_MAX):
+        spd = [qe.steps_per_day(days, n) for n in qe.LEVELS + (qe.ESCALATE,)]
+        assert spd == [spd[0], 2 * spd[0], 4 * spd[0], 8 * spd[0]] and spd[0] == max(1, math.ceil(400 / days))
+    # under P3-AM2's ceil(n/days) a 1,278-day context stepped 1, 1, 2, 3 per day: the sequence did not refine time
+    assert [max(1, -(-n // 1278)) for n in (400, 800, 1600, 3200)] == [1, 1, 2, 3]
+    with pytest.raises(ValueError):
+        qe.steps_per_day(120, 1200)
+
+
+def test_the_mesh_concentrates_at_the_expiry_kink_not_at_k_minus_pv0():
+    c = om.Context(False, 100.0, 104.0, 120, 0.03, 0.015, 0.25, ((30, 10.0), (95, 10.0)))   # K − PV_0 ≈ 84
+    kink = c.strike                            # no dividend at expiry: PV_τ = 0, the payoff kinks at X = K
+    for n in (400, 1600):
+        m1, kx = qe.mesh(c, n)
+        assert kx == pytest.approx(c.strike - qe._pv(c)[0](0.0))
+        lx = np.array(m1.locations())
+        step = np.diff(lx)
+        at = lambda x: step[min(int(np.searchsorted(lx, math.log(x))), len(step) - 1)]
+        assert at(kink) == pytest.approx(step.min(), rel=1e-3)          # the finest cells sit at the kink
+        assert at(kink) < 0.65 * np.median(step)
+        assert at(kx) > 1.5 * at(kink)                                   # and not at K − PV_0

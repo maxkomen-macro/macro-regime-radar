@@ -257,15 +257,23 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True) -> dict:
             flags.append(f"convection-dominated: cell Péclet {pe:.3g} on the coarsest space level")
         u_bump = 0.0
         if sp.h is not None:
-            u_bump = abs(q(m0, pt[-1]) - _fd_q(r, c, sp, Key(m0, pt[-1], w, fd.PENALTY), half=True))
+            # P3-AM3 change 3: on the finest grid the study ran (finest space and time level). At a coarse space
+            # level the difference |G(h_ref) − G(h_ref/2)| is mostly the exercise boundary's position between
+            # nodes, which falls with space refinement and is already in the space study's u; on the finest grid
+            # it measures the bump's own truncation
+            mb, pb = s_levels[-1], t_levels[-1]
+            u_bump = abs(q(mb, pb) - _fd_q(r, c, sp, Key(mb, pb, w, fd.PENALTY), half=True))
         return {"R": R, "u_ref": u_ref, "u_bump": u_bump, "tol": tol, "time": t, "space": sp_,
                 "width_steps": [w1, w2], "u_penalty": u_p, "raw_finest": base, "flags": flags}
 
     out = assess()
-    while escalate and (out["flags"] or out["u_ref"] > U_REF_MAX * out["tol"]):
-        convective = any("convection-dominated" in f for f in out["flags"])
+    while escalate and (out["flags"] or out["u_ref"] > U_REF_MAX * out["tol"]
+                        or out["u_bump"] > U_BUMP_MAX * out["tol"]):
+        # space first when the flow is convective, and (P3-AM3 change 3) when the bump term is over its budget
+        space_first = (any("convection-dominated" in f for f in out["flags"])
+                       or out["u_bump"] > U_BUMP_MAX * out["tol"])
         dims = sorted((d for d in ("time", "space") if steps[d] < ref.ESCALATE_MAX),
-                      key=lambda d: (not (convective and d == "space"), -out[d]["u"]))
+                      key=lambda d: (not (space_first and d == "space"), -out[d]["u"]))
         if not dims or sum(out["width_steps"]) + out["u_penalty"] > U_REF_MAX * out["tol"]:
             break
         d = dims[0]

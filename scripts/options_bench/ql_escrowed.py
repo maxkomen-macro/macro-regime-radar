@@ -4,10 +4,12 @@ Design: amendment P3-AM2 (review-loop/options-adaptive-p3/designs/), section B. 
 solved by QuantLib's own finite-difference classes: X = S − PV_0 a GBM with drift r − q and volatility σ,
 PV_t = Σ_{d_i ≥ t} D_i·e^{−r(d_i − t)/365}, exercise value (sgn·(X_t + PV_t − K))⁺ with the cum value at a close.
 
-- mesh: FdmBlackScholesMesher in ln X, built from the base context and held fixed across its stencil's states;
+- mesh: FdmBlackScholesMesher in ln X, built from the base context and held fixed across its stencil's states,
+  concentrated at the expiry payoff's kink X = K − PV_τ (amendment P3-AM3, change 1);
 - operator: FdmBlackScholesOp; time stepping: FdmBackwardSolver (Douglas, θ = 0.5) after DAMPING implicit
   steps, N_t = days·spd steps in all (QuantLib divides the horizon by steps + damping steps), spd whole steps
-  per calendar day, so every close is a grid time and the theta pair shares its grid;
+  per calendar day, so every close is a grid time and the theta pair shares its grid; spd doubles with n
+  (spd = ceil(400/days)·n/400, P3-AM3 change 2), so every level halves both the space and the time step;
 - early exercise: a step condition projecting onto the exercise value after every step, through a zero-copy
   view of the QuantLib Array (layout-checked on every call, element-wise fallback, bit-identical);
 - read-out: CubicNaturalSpline in ln X; gamma = (V_xx − V_x)/X_0².
@@ -33,7 +35,7 @@ except ImportError:          # pragma: no cover - the bench requires it; the res
     ql = None
 
 YEAR_DAYS = 365.0
-LEVELS = (400, 800, 1600)    # mesh sizes n; spd = ceil(n / days)
+LEVELS = (400, 800, 1600)    # mesh sizes n; spd = ceil(400 / days)·n/400 (P3-AM3)
 ESCALATE = 3200              # the one extra level when LEVELS leave Q unqualified (section C)
 DAMPING = 2
 FLOOR = 0.02                 # reference floor, of tol (= greek_reference.REF_FLOOR)
@@ -76,17 +78,26 @@ def _process(c: om.Context, x0: float):
 
 
 def steps_per_day(days: int, n: int) -> int:
-    """Whole steps per calendar day: every close is a grid time, and the theta pair shares the step."""
-    return max(1, -(-n // max(days, 1)))
+    """Whole steps per calendar day: every close is a grid time, and the theta pair shares the step. P3-AM3:
+    spd_0 = ceil(LEVELS[0]/days) at the first level, doubled with each doubling of n, so the time step halves
+    with the space step at every level (under P3-AM2's ceil(n/days) a long-dated context kept spd = 1 at n = 400
+    and 800, and the sequence's ratio no longer measured its error)."""
+    if n % LEVELS[0] or (n // LEVELS[0]) & (n // LEVELS[0] - 1):
+        raise ValueError(f"level {n} is not {LEVELS[0]}·2^k")
+    return max(1, -(-LEVELS[0] // max(days, 1))) * (n // LEVELS[0])
 
 
 def mesh(c: om.Context, n: int):
-    """The base context's ln X mesh (size n), held fixed for every state of the stencil."""
+    """The base context's ln X mesh (size n), held fixed for every state of the stencil. P3-AM3: concentrated
+    at the expiry payoff's kink X = K − PV_τ (floored at 0.001·K), not at K − PV_0: with a dividend owed the two
+    differ, the kink sat in coarse cells and the level sequence alternated (dev: 4 of 4 such sequences in
+    G2-dividends converge with it). The mesher's span and its strike argument K_X are unchanged."""
     pv, _ = _pv(c)
     x0 = c.spot - pv(0.0)
     kx = max(c.strike - pv(0.0), 1e-3 * c.strike)
+    kink = max(c.strike - pv(max(c.days, 1) / YEAR_DAYS), 1e-3 * c.strike)
     m1 = ql.FdmBlackScholesMesher(n, _process(c, x0), max(c.days, 1) / YEAR_DAYS, kx, ql.nullDouble(),
-                                  ql.nullDouble(), 1e-4, 1.5, (kx, DENSITY))
+                                  ql.nullDouble(), 1e-4, 1.5, (kink, DENSITY))
     return m1, kx
 
 
