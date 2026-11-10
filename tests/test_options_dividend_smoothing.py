@@ -18,6 +18,7 @@ from scipy.integrate import quad
 from scripts.options_bench import cases
 from src.desk import options_engine as oe
 from src.desk import options_math as om
+from tests.fixtures import options_pre_dividend_smoothing as frozen
 
 REPO = Path(__file__).resolve().parent.parent
 REFS = json.loads((REPO / "tests" / "fixtures" / "options_dividend_references.json").read_text())
@@ -83,24 +84,41 @@ def test_the_smoothed_step_is_the_exact_expectation_of_its_local_model(f_childre
 
 # ── what must not change ─────────────────────────────────────────────────────
 
-# _lattice with the flag off, as main computed it at 38916cb (before design S): Tier 2 and the bench's
-# lattice check call it this way, so its values must stay bit-identical.
+# _lattice with the flag off must stay bit-identical to main before design S (38916cb): Tier 2 and the bench's
+# lattice check call it this way. Both implementations run in the same process: today's module against a verbatim
+# copy of 38916cb's options_math.py (tests/fixtures/options_pre_dividend_smoothing/, checked by its git blob id).
+# Recorded float.hex constants were not portable: another platform's numpy and libm round differently, so there the
+# old and the new code both give other bits, identical to each other.
+PRE_S_FILE, PRE_S_BLOB = "options_math_38916cb.py", "633e21633e9fdf16ea32820ed888e6b13000f884"
 FLAG_OFF = [
-    ((True, 0.95, 0.03, 0.01, 0.4, [(4, 0.02), (40, 0.015)], 60, 120),
-     ("0x1.31da5c884a8e2p-4", "0x1.3bbd1c0b5115ep-1", False, "0x1.31da5c884a8e2p-4")),
-    ((False, 1.08, 0.05, 0.0, 0.3, [(10, 0.01), (59, 0.012)], 60, 240),
-     ("0x1.c09e5f12514e8p-4", "-0x1.822cfe823f116p-1", False, "0x1.c09e5f12514e8p-4")),
-    ((True, 0.9, -0.01, 0.02, 0.6, [(0, 0.015), (21, 0.02)], 22, 330),
-     ("0x1.ae405e47e0891p-4", "0x1.848d7dd35054fp-1", False, "0x1.ae405e47e0891p-4")),
+    (True, 0.95, 0.03, 0.01, 0.4, [(4, 0.02), (40, 0.015)], 60, 120),
+    (False, 1.08, 0.05, 0.0, 0.3, [(10, 0.01), (59, 0.012)], 60, 240),
+    (True, 0.9, -0.01, 0.02, 0.6, [(0, 0.015), (21, 0.02)], 22, 330),
 ]
 
 
-@pytest.mark.parametrize("args, want", FLAG_OFF)
-def test_the_flag_off_lattice_is_bit_identical_to_before(args, want):
+def test_the_frozen_pre_change_lattice_is_the_verbatim_38916cb_file():
+    assert frozen.blob_id(PRE_S_FILE) == PRE_S_BLOB
+
+
+@pytest.fixture(scope="module")
+def pre_s():
+    return frozen.load(PRE_S_FILE, PRE_S_BLOB)
+
+
+@pytest.mark.parametrize("args", FLAG_OFF)
+def test_the_flag_off_lattice_is_bit_identical_to_before(args, pre_s):
     c, k, r, q, s, dv, days, steps = args
-    v, d, x, h = om._lattice([c], [k], np.array([r]), np.array([q]), np.array([s]), [dv], days, steps,
-                             with_cont=True)
-    assert (float(v[0]).hex(), float(d[0]).hex(), bool(x[0]), float(h[0]).hex()) == want
+
+    def run(m):
+        return m._lattice([c], [k], np.array([r]), np.array([q]), np.array([s]), [dv], days, steps, with_cont=True)
+
+    new, old = run(om), run(pre_s)
+    assert len(new) == len(old) == 4
+    for a, b in zip(new, old):   # root values, step-1 deltas, exercised at the root, root continuation values
+        assert (a.dtype, a.shape) == (b.dtype, b.shape)
+        assert a.tobytes() == b.tobytes()   # every bit, not a tolerance
+    assert np.isfinite(new[0]).all() and np.isfinite(new[1]).all()
 
 
 def test_smoothing_leaves_contexts_without_a_smoothed_close_unchanged():

@@ -81,6 +81,28 @@ scores them on every run. `tests/test_options_dividend_smoothing.py` checks them
 (before this change), 10 of the 16 fail that check, including both held-out dividend-scenario failures
 (S29 G2/1239 and G4-negrate/54).
 
+## How the unchanged paths are checked
+
+Two tests check that a path the fix must not touch is bit-identical to the code before it:
+- `test_the_flag_off_lattice_is_bit_identical_to_before` (`tests/test_options_dividend_smoothing.py`), for
+  `_lattice` with the flag off;
+- `test_solves_without_a_continuous_cum_close_are_unchanged` (`tests/test_options_bench_dividends.py`), for the
+  bench FD without a cum close inside continuous exercise.
+
+Each runs the current code and a verbatim copy of the file before the change in the same process, and compares
+every output bit for bit. The copies are `options_math.py` at `38916cb` and `fd.py` at `6b21304`, in
+`tests/fixtures/options_pre_dividend_smoothing/`, and each is checked against its git blob id before use.
+
+The first version compared against float.hex values recorded on one machine. Those values are specific to the
+platform's numpy and libm. On another machine the old and the new code both give other bits, identical to each
+other, so the recorded values failed there although nothing had changed. Limiting numpy's SIMD dispatch here
+(`NPY_DISABLE_CPU_FEATURES`) reproduces that failure for the recorded values; the same-process comparison passes
+under it and still fails on a one-ulp change to either path.
+
+The same SIMD limit also fails `tests/test_options_engine.py::test_baseline_matches_the_golden_file`, at
+G1-nodiv/33's delta (a case with no dividend), identically on main `f61112b` before this PR. That is the golden
+file's platform dependence, not an effect of this fix, and the frozen golden file is not regenerated for it.
+
 ## Existing tests changed
 
 Each change accounts for an intended change in behaviour. No test was removed, skipped or loosened.
@@ -180,3 +202,15 @@ engine, whose files are identical:
 
 Evidence: review-loop/dividend-fix/held-out-2/ (run, scorecard, sha256 manifest), final-requests/ and
 final-latency/.
+
+### Numerical acceptance
+
+Max accepted the registered seed 20261111 result on 2026-11-10 (01:25 UTC), within the registered population,
+coverage and acceptance rules. That acceptance is recorded apart from the merge and from any API deployment: the
+fix is not in the deployed release B, and its deployment needs its own pinned release decision.
+
+- The first registered run (seed 20261117) stays on record as not met and not accepted. The seed 20261026
+  recomputation stays a diagnostic recomputation.
+- Refusals, unresolved references, withheld deltas, unscored bound checks and the IV diagnostics are not passing
+  observations.
+- The acceptance does not establish trading edge, complete IV or Greek validation, or institutional readiness.

@@ -19,6 +19,7 @@ import pytest
 
 from scripts.options_bench import crosscheck, fd, reference, score
 from scripts.options_bench.cases import Case
+from tests.fixtures import options_pre_dividend_smoothing as frozen
 
 
 def _case(**a) -> Case:
@@ -89,23 +90,41 @@ def test_a_rannacher_step_into_a_close_holds_the_ex_dividend_obstacle(name):
     assert abs(v - ql_value) <= 1e-3 + spread   # a tenth of the price tolerance (0.01 at S = 100)
 
 
-# Solves with no cum close inside continuous exercise are bit-identical to the bench before the fix (values from
-# BASE 6b21304, as float.hex): no dividend, a Bermudan schedule, a European solve.
+# Solves with no cum close inside continuous exercise are bit-identical to the bench before the fix (BASE 6b21304):
+# no dividend, a Bermudan schedule, a European solve. Both run in the same process: today's fd.py against a verbatim
+# copy of 6b21304's (tests/fixtures/options_pre_dividend_smoothing/, checked by its git blob id). Recorded float.hex
+# constants were not portable: another platform's numpy and libm round differently, so there the old and the new
+# code both give other bits, identical to each other.
+PRE_FIX_FILE, PRE_FIX_BLOB = "fd_6b21304.py", "509b322bb68fe56b7159859d485fe76c3de2d8e5"
 UNCHANGED = [
-    (dict(is_call=False, spot=100.0, strike=105.0, days=90, rho=0.05, q=0.0, sigma=0.3, divs=(), m=400, per_day=4,
-          width=1.2), "0x1.0864012bac451p+3"),
-    (dict(is_call=True, spot=100.0, strike=95.0, days=60, rho=0.03, q=0.0, sigma=0.3, divs=((20, 2.0),), m=400,
-          per_day=4, width=1.2, exercise_days=(10, 20, 40)), "0x1.ba1e5f713ff31p+2"),
-    (dict(is_call=False, spot=100.0, strike=100.0, days=60, rho=0.03, q=0.01, sigma=0.3, divs=((20, 2.0),), m=400,
-          per_day=4, width=1.2, american=False), "0x1.6a7e7880344d9p+2"),
-    (dict(is_call=True, spot=100.0, strike=90.0, days=45, rho=0.02, q=0.06, sigma=0.4, divs=(), m=400, per_day=4,
-          width=1.2), "0x1.6e0df1b96d4b9p+3"),
+    dict(is_call=False, spot=100.0, strike=105.0, days=90, rho=0.05, q=0.0, sigma=0.3, divs=(), m=400, per_day=4,
+         width=1.2),
+    dict(is_call=True, spot=100.0, strike=95.0, days=60, rho=0.03, q=0.0, sigma=0.3, divs=((20, 2.0),), m=400,
+         per_day=4, width=1.2, exercise_days=(10, 20, 40)),
+    dict(is_call=False, spot=100.0, strike=100.0, days=60, rho=0.03, q=0.01, sigma=0.3, divs=((20, 2.0),), m=400,
+         per_day=4, width=1.2, american=False),
+    dict(is_call=True, spot=100.0, strike=90.0, days=45, rho=0.02, q=0.06, sigma=0.4, divs=(), m=400, per_day=4,
+         width=1.2),
 ]
 
 
-@pytest.mark.parametrize("args, want", UNCHANGED)
-def test_solves_without_a_continuous_cum_close_are_unchanged(args, want):
-    assert fd.solve(**args)[0].hex() == want
+def test_the_frozen_pre_fix_fd_is_the_verbatim_6b21304_file():
+    assert frozen.blob_id(PRE_FIX_FILE) == PRE_FIX_BLOB
+
+
+@pytest.fixture(scope="module")
+def pre_fix_fd():
+    return frozen.load(PRE_FIX_FILE, PRE_FIX_BLOB)
+
+
+@pytest.mark.parametrize("args", UNCHANGED)
+def test_solves_without_a_continuous_cum_close_are_unchanged(args, pre_fix_fd):
+    new, old = fd.solve(**args), pre_fix_fd.solve(**args)
+    assert len(new) == len(old) == 2
+    for a, b in zip(new, old):
+        assert type(a) is type(b) is float
+        assert a.hex() == b.hex()   # every bit, not a tolerance
+    assert math.isfinite(new[0])
 
 
 def test_pv_after_drops_the_dividend_at_its_own_close_only():
