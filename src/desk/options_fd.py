@@ -93,7 +93,8 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
       exercise time;
       "v_day1": the solution at the time level one calendar day after t = 0 (after its projection; at a cum close
       on day 1 that is the cum value), or None when days < 2 (for days = 1 that level is expiry, whose exact payoff
-      the Greeks use instead of the smoothed initial data)."""
+      the Greeks use instead of the smoothed initial data);
+      "free_day1": that level's solution before its projection (None when days < 2)."""
     if m % 2:
         raise ValueError("m must be even (the centre must be a node)")
     tau = days / YEAR_DAYS
@@ -203,7 +204,7 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
     # no damping step follows (T1-near-boundary/1351; design D-2). For a call the ex-dividend obstacle is the lower
     # one, for a put the higher; no ordering is assumed.
     closes = {d * per_day for d, _ in divs} if continuous else set()
-    v_day1 = pre0 = None   # written only when `grids` is given (Python-level tests, no array operation)
+    v_day1 = pre0 = pre_day1 = None   # written only when `grids` is given (Python-level tests, no array operation)
     for k in range(n_steps, 0, -1):
         close = (k - 1) in closes
         end = exercise_value_after if close else exercise_value
@@ -215,8 +216,12 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
         else:
             g = end(k - 1) if continuous else None
             v, active = step(v, 0.5, dt, g, active)
-        if grids is not None and k == 1:
-            pre0 = v.copy()
+        if grids is not None and (k == 1 or (k - 1 == per_day and days >= 2)):
+            pre = v.copy()
+            if k == 1:
+                pre0 = pre
+            else:
+                pre_day1 = pre
         if close:
             g = exercise_value(k - 1)
         if g is not None:
@@ -241,7 +246,7 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
         else:
             g0, exercise0 = np.zeros(n), np.zeros(n, dtype=bool)
         grids.update({"x": x.copy(), "xs": xs.copy(), "v0": v.copy(), "g0": g0, "free0": pre0,
-                      "active0": active0, "exercise0": exercise0, "v_day1": v_day1})
+                      "active0": active0, "exercise0": exercise0, "v_day1": v_day1, "free_day1": pre_day1})
     return float(v[i]), float(delta)
 
 

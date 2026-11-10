@@ -351,3 +351,14 @@ def test_the_config_rejects_impossible_settings():
         options_fd.FDConfig(m_frac=0.5, p_frac=1.5, work_cap=1)
     with pytest.raises(ValueError):
         options_fd.FDConfig(m_frac=0.5, p_frac=0.5, work_cap=0)
+
+
+def test_the_day_1_level_keeps_its_pre_projection_values():
+    g = {}
+    _ref_solve(is_call=False, strike=120.0, days=30, rho=0.08, q=0.0, sigma=0.25, divs=(), grids=g)
+    assert g["free_day1"] is not None and g["free_day1"].shape == g["v_day1"].shape
+    ex1 = np.maximum(120.0 - g["xs"], 0.0)
+    assert np.array_equal(g["v_day1"], np.maximum(g["free_day1"], ex1))
+    g1 = {}
+    _ref_solve(is_call=False, strike=120.0, days=1, rho=0.08, q=0.0, sigma=0.25, divs=(), per_day=4, grids=g1)
+    assert g1["free_day1"] is None and g1["v_day1"] is None
