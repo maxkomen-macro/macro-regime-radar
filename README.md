@@ -2,7 +2,7 @@
 
 **A live macro terminal that reads the US economy into one of four regimes every month, then shows the evidence, the models and the data trail underneath.**
 
-**[Open the live site →](https://macro-economic-radar.vercel.app)** · [Analyst Desk](https://macro-economic-radar.vercel.app/desk/overview) · [Methodology](https://macro-economic-radar.vercel.app/app/methodology) · [Today's daily memo](https://maxkomen-macro.github.io/macro-regime-radar/memo/daily_memo.html)
+**[Open the live site →](https://macro-economic-radar.vercel.app)** · [Analyst Desk](https://macro-economic-radar.vercel.app/desk/overview) · [Methodology](https://macro-economic-radar.vercel.app/app/methodology) · [Latest daily memo](https://maxkomen-macro.github.io/macro-regime-radar/memo/daily_memo.html)
 
 ![The Dashboard: the current regime, its odds, and 24 months of regime history](docs/images/dashboard.png)
 

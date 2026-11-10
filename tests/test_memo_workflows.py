@@ -169,3 +169,10 @@ def test_the_memo_records_are_committed_and_not_ignored():
         assert (ROOT / rel).is_file(), rel
         ignored = subprocess.run(["git", "check-ignore", "-q", rel], cwd=ROOT)
         assert ignored.returncode == 1, f"{rel} is git-ignored"
+
+
+def test_the_readme_link_does_not_call_the_memo_todays():
+    # S-7: the queue publishes the latest completed session, so on a weekend or holiday the
+    # linked page carries an earlier date than today
+    readme = (ROOT / "README.md").read_text()
+    assert "[Latest daily memo](" in readme and "Today's daily memo" not in readme
