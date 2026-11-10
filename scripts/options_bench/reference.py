@@ -72,8 +72,15 @@ def gci(coarse: float, mid: float, fine: float, floor: float, cap: float = ORDER
         # and the uncertainty is at least the last change (a low-volatility put read 2.9 from three levels,
         # then 1.5 and 3.5 on the next two; Codex OB-10)
         return {"corr": corr, "u": max(GCI_FS3 * abs(corr), abs(e21)), "order": order, "kind": "above-order"}
-    kind = "low-order" if order < ORDER_MIN else "monotone"
-    return {"corr": corr, "u": GCI_FS3 * abs(corr), "order": order, "kind": kind}
+    if order < ORDER_MIN:
+        # below the order test: the extrapolation is not trusted, as for the other non-asymptotic kinds, so no
+        # correction is applied. Dividing by 2^order − 1 multiplied rounding-level changes (seed 20261117
+        # G5-extreme-vol/670: order 0.27, factor 4.9, the corrected delta 8.6e-9 from Black-76 against 5.2e-10
+        # uncorrected). The estimate keeps the old one, which covers a genuinely slow convergence, and is at
+        # least the wide rule of the other non-asymptotic kinds (design B, item 2)
+        return {"corr": 0.0, "u": max(GCI_FS3 * abs(corr), GCI_FS_WIDE * max(abs(e21), abs(e32))), "order": order,
+                "kind": "low-order"}
+    return {"corr": corr, "u": GCI_FS3 * abs(corr), "order": order, "kind": "monotone"}
 
 
 BAD_KINDS = {"not-converging", "low-order", "high-order"}

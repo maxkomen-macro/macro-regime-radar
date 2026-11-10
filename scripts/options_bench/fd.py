@@ -11,6 +11,10 @@ yield q applies to X, not to the whole stock). It shares no code with src/desk/o
 - Early exercise: the penalty method (Forsyth and Vetzal 2002), iterated to a fixed active set, warm-started
   from the previous step's set, then the projection max(V, exercise value). The penalty weight is a parameter
   so the reference can measure its effect.
+- Dividend closes: a step that ends at a cum close holds the ex-dividend exercise value (the right limit at the
+  close) inside its solve, then projects the cum value at the close. Holding the cum value inside the solve rang
+  at a day-0 close, where no damping step follows (seed 20261029 T1-near-boundary/1351: 14.354 to 14.356 against
+  the exact 14.353056).
 - Far boundaries: zero gamma in S (V linear in S, V_xx = V_x in x), right for both deep-in and deep-out tails.
 - Exercise schedule: continuous (every time level, the default) or only at the closes of given day indices
   (a Bermudan schedule, for convention studies only).
@@ -34,6 +38,11 @@ TIE_ULPS = 4
 def pv_owed(divs: Sequence[tuple[int, float]], rho: float, t_days: float) -> float:
     """PV at t of the dividends still owed at t: a dividend whose cum close is day d is owed through t = d."""
     return sum(a * math.exp(-rho * (d - t_days) / YEAR_DAYS) for d, a in divs if d >= t_days - 1e-9)
+
+
+def pv_after(divs: Sequence[tuple[int, float]], rho: float, t_days: float) -> float:
+    """PV at t of the dividends owed just after t (the right limit): at a cum close t = d, without that dividend."""
+    return sum(a * math.exp(-rho * (d - t_days) / YEAR_DAYS) for d, a in divs if d > t_days + 1e-9)
 
 
 def coefficients(rho: float, q: float, sigma: float, dx: float) -> tuple[float, float, float]:
@@ -86,6 +95,11 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
 
     def exercise_value(level: float) -> np.ndarray:
         return np.maximum(sgn * (xs + pv_owed(divs, rho, level / per_day) - strike), 0.0)
+
+    def exercise_value_after(level: float) -> np.ndarray:
+        """The exercise value just after the close of `level` (ex-dividend there): the obstacle that holds inside
+        a step ending at a cum close, where the dividend is owed only at the close itself."""
+        return np.maximum(sgn * (xs + pv_after(divs, rho, level / per_day) - strike), 0.0)
 
     def can_exercise(level: int) -> bool:
         if not american:
@@ -164,15 +178,25 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
     # exercise dates, since an obstacle inside the solve would also lift neighbouring continuation values
     # (Codex OB-12)
     continuous = american and allowed is None
+    # A step that ends at a cum close holds the ex-dividend obstacle inside its solve (every time in the step is
+    # after the close) and takes the cum exercise value by projection at the close only, as the model defines it
+    # and the lattice does. Imposing the cum value inside the solve made Crank-Nicolson ring at a day-0 close, where
+    # no damping step follows (T1-near-boundary/1351; design D-2). For a call the ex-dividend obstacle is the lower
+    # one, for a put the higher; no ordering is assumed.
+    closes = {d * per_day for d, _ in divs} if continuous else set()
     for k in range(n_steps, 0, -1):
+        close = (k - 1) in closes
+        end = exercise_value_after if close else exercise_value
         if k in restart:  # two implicit half-steps
             g = exercise_value(k - 0.5) if continuous else None
             v, active = step(v, 1.0, dt / 2.0, g, active)
-            g = exercise_value(k - 1) if continuous else None
+            g = end(k - 1) if continuous else None
             v, active = step(v, 1.0, dt / 2.0, g, active)
         else:
-            g = exercise_value(k - 1) if continuous else None
+            g = end(k - 1) if continuous else None
             v, active = step(v, 0.5, dt, g, active)
+        if close:
+            g = exercise_value(k - 1)
         if g is not None:
             np.maximum(v, g, out=v)
         else:
