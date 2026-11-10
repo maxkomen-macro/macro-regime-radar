@@ -62,9 +62,9 @@ UTC = timezone.utc
 # ── constants ─────────────────────────────────────────────────────────────────
 
 # The first key the queue ever expects: the first NYSE session strictly after
-# the CS-2 PR's merge day in America/New_York (design section 3, DR-33).
-# PROVISIONAL: 2026-11-11 is right only for a merge on 2026-11-10 (New York);
-# set it from the actual merge day before merging (the PR's merge checklist).
+# the CS-2 PR's merge day in America/New_York (design section 3, DR-33). The PR
+# merged on 2026-11-10 (New York), so it is 2026-11-11. The merge-day session
+# itself has no automated memo (the design's documented omission).
 # No daily or weekly key before it is ever queued. Until this date only manual
 # runs produce memos.
 QUEUE_START = date(2026, 11, 11)
