@@ -6,8 +6,10 @@ outside the domain; exempt (European, by theorem); the analytic interval (the mi
 when it is narrow enough); the lattice. The price and the delta are accepted by separate tests; a delta accepted
 before the price is held to the accepted price's own test (amendment A-2).
 
-Values are "estimated, cross-check pending" until the Phase 3 cross-check exists. Nothing under api/ imports
-this module; the design is .loop/design-P2-2.md (review-loop/options-adaptive/designs/ in the project files).
+`price` is unchanged from adaptive-p2.1 in every number. `phase3` adds the Phase 3 cross-check against the
+production FD (design-P3-approved.md section 10) and the Greek block (options_greeks); a price the cross-check
+does not confirm stays "estimated, cross-check pending". Nothing under api/ imports this module; the designs are
+in review-loop/options-adaptive/designs/ and review-loop/options-adaptive-p3/designs/ in the project files.
 Pure functions of numbers: no I/O, no clock. Each context is priced alone (a batch of one), so its numbers
 never depend on which other contexts share a lattice batch.
 """
@@ -15,7 +17,7 @@ never depend on which other contexts share a lattice batch.
 from __future__ import annotations
 
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Callable
 
 import numpy as np
@@ -23,7 +25,8 @@ import numpy as np
 from src.desk import options_engine as oe
 from src.desk import options_math as om
 
-VERSION = "adaptive-p2.1"   # p2.0: attempt 1 (freeze 2f7bf07); p2.1: amendment A-2
+VERSION = "adaptive-p3"     # p2.0: attempt 1 (freeze 2f7bf07); p2.1: amendment A-2; p3: the Phase 3 cross-check
+                            # and Greek block (phase3()), price and delta unchanged from p2.1
 ENGINE = "adaptive"
 
 SCHEDULES = {"doubling": (1, 2, 4, 8, 16, 32), "multiples": (1, 2, 3, 4, 5, 6)}
@@ -470,3 +473,119 @@ def _price(c: om.Context, cfg: Config, level_source) -> oe.Answer:
                        total, audit)
     return _answer(oe.ROUTE_LATTICE, oe.ESTIMATED, w.price["value"], w.price["estimate"], *dpart, None, dreason,
                    total, audit)
+
+
+# ── Phase 3: the FD cross-check and the Greek block (design-P3-approved.md sections 10 and 15) ────────────────
+
+XC_CHECKED = "cross-checked"
+XC_DISAGREE = "unresolved: methods disagree"
+XC_UNAVAILABLE = "cross-check unavailable"
+XC_NOT_APPLICABLE = "not applicable"
+XC_AGREE = 0.5                 # |V_T2 − V_FD| ≤ 0.5·price_tol (design section 10; not a calibrated value)
+XC_E_MAX = 0.25                # E_FD ≤ 0.25·price_tol
+XC_SHARES = (0.5, 0.25, 0.1)   # the agreement shares the scorer reports
+XC_NOT_VALIDATED = "FD not validated for these inputs"
+XC_E_ABOVE = "FD estimate above 0.25 tolerances"
+XC_EXACT = "the price is exact"
+XC_NO_PRICE = "no price to check"
+
+
+@dataclass(frozen=True)
+class XConfig:
+    """The cross-check's settings. f_p (F_P) is a placeholder until the Phase 3 freeze sets it from dev evidence,
+    as F_G for the Greeks; the production FD levels are the Greeks' own (one FD configuration)."""
+    f_p: float = 3.0
+
+    def __post_init__(self) -> None:
+        if not (math.isfinite(self.f_p) and self.f_p >= 1.0):
+            raise ValueError("f_p must be finite and at least 1")
+
+
+@dataclass(frozen=True)
+class CrossCheck:
+    status: str
+    reason: str | None
+    v_fd: float | None = None
+    e_fd: float | None = None
+    diff: float | None = None
+    tol: float | None = None
+    audit: dict = field(default_factory=dict, compare=False)
+
+
+@dataclass(frozen=True)
+class Phase3Answer:
+    tier2: oe.Answer            # price() exactly as adaptive-p2.1 computes it
+    cross_check: CrossCheck
+    greeks: dict                # {greek: options_greeks.GreekAnswer}
+    units: int                  # Tier 2's work plus the production FD's
+
+    @property
+    def price_status(self) -> str:
+        """The price's standing after the cross-check: only a lattice or analytic price the FD confirms is
+        "cross-checked"; every other keeps Tier 2's status (an unconfirmed estimate stays "estimated,
+        cross-check pending")."""
+        if self.cross_check.status == XC_CHECKED:
+            return XC_CHECKED
+        return self.tier2.price_status
+
+
+def cross_check(c: om.Context, a: oe.Answer, base: dict, xcfg: XConfig = XConfig(),
+                region: Callable[[om.Context], str | None] | None = None) -> CrossCheck:
+    """The cross-check of Tier 2's answer `a` against the production FD's L1 and L2 solves `base` ({0: L1, 1: L2},
+    each an options_fd.Solved or Refused). Only an estimated or analytic price is checked: an exact one (intrinsic,
+    or exempt by theorem) needs none, and a refusal has nothing to check. `region(c)` is the frozen FD role
+    predicate set (Ω_X, a reason or None; None only in development runs)."""
+    from src.desk import options_fd as fd
+    if a.price_status == oe.EXACT:
+        return CrossCheck(XC_NOT_APPLICABLE, XC_EXACT)
+    if a.price_status not in (oe.ESTIMATED, oe.ANALYTIC) or a.value is None:
+        return CrossCheck(XC_NOT_APPLICABLE, XC_NO_PRICE)
+    if region is not None:
+        why = region(c)
+        if why is not None:
+            return CrossCheck(XC_UNAVAILABLE, XC_NOT_VALIDATED, audit={"region": why})
+    for k in (0, 1):
+        b = base.get(k)
+        if not isinstance(b, fd.Solved):
+            reason = b.reason if isinstance(b, fd.Refused) else "no FD solve"
+            return CrossCheck(XC_UNAVAILABLE, reason, audit={"level": k + 1})
+    v1, v2 = base[0].value, base[1].value
+    tol = om.tolerance(a.value, c.spot)
+    e_fd = xcfg.f_p * abs(v2 - v1)
+    diff = abs(a.value - v2)
+    audit = {"L1": v1, "L2": v2, "levels": [(base[k].level.m, base[k].level.per_day) for k in (0, 1)],
+             "diff_over_tol": diff / tol, "e_fd_over_tol": e_fd / tol}
+    if not (math.isfinite(e_fd) and math.isfinite(diff)):
+        return CrossCheck(XC_UNAVAILABLE, fd.R_NONFINITE, v2, None, None, tol, audit)
+    if e_fd > XC_E_MAX * tol:
+        return CrossCheck(XC_UNAVAILABLE, XC_E_ABOVE, v2, e_fd, diff, tol, audit)
+    if diff <= XC_AGREE * tol:
+        return CrossCheck(XC_CHECKED, None, v2, e_fd, diff, tol, audit)
+    return CrossCheck(XC_DISAGREE, None, v2, e_fd, diff, tol, audit)
+
+
+def phase3(c: om.Context, cfg: Config = Config(), gcfg=None, xcfg: XConfig = XConfig(),
+           x_region: Callable[[om.Context], str | None] | None = None, g_region=None,
+           level_source: Callable[[om.Context, int], Level] = lattice_level) -> Phase3Answer:
+    """Tier 2's answer with the Phase 3 cross-check and Greek block. Unserved. The price and delta are price()'s,
+    untouched; the production FD solves once per level and both the Greeks and the cross-check read them."""
+    from src.desk import options_fd as fd
+    from src.desk import options_greeks as og
+    gcfg = gcfg if gcfg is not None else og.GreekConfig()
+    a = price(c, cfg, level_source)
+    budget = fd.Budget(gcfg.fd.work_cap)
+    gs = og.greeks(c, gcfg, region=g_region, decision_unresolved=a.delta_reason == D_DECISION, budget=budget)
+    base = dict(gs.get("_base", {}))
+    if (a.price_status in (oe.ESTIMATED, oe.ANALYTIC) and a.value is not None
+            and not all(isinstance(base.get(k), (fd.Solved, fd.Refused)) for k in (0, 1))):
+        # every Greek took an exact route, so no base solve ran: the cross-check solves the two levels itself
+        # (only when the region admits it, so an out-of-region context costs no FD work)
+        if x_region is None or x_region(c) is None:
+            lv = fd.levels(c, gcfg.fd)
+            for k in (0, 1):
+                base[k] = fd.price(c, lv[k], budget, penalty=gcfg.fd.penalty)
+                if not isinstance(base[k], fd.Solved):
+                    break
+    xc = cross_check(c, a, base, xcfg, x_region)
+    greeks = {g: gs[g] for g in og.GREEKS}
+    return Phase3Answer(a, xc, greeks, a.units + budget.used)

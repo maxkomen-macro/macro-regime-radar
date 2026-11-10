@@ -2,6 +2,9 @@
 
 - `fd_2ff3e8b.py`: scripts/options_bench/fd.py at 2ff3e8b (main after the dividend fix, #56), before Phase 3
   moved the kernel to src/desk/options_fd.py.
+- `options_math_2ff3e8b.py`: src/desk/options_math.py at 2ff3e8b, before the opt-in `_lattice(with_nodes=...)`.
+- `options_adaptive_2ff3e8b.py`: src/desk/options_adaptive.py at 2ff3e8b (adaptive-p2.1), before the Phase 3
+  cross-check; it imports the current options_math and options_engine.
 
 Tests load them with `load`, which first checks each file's git blob id, so a copy cannot drift from its commit.
 They are test references only: nothing outside tests imports them. A bit-identical guarantee is checked by running

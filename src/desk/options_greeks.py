@@ -291,6 +291,7 @@ def greeks(c: om.Context, cfg: GreekConfig = GreekConfig(), region: Callable[[om
     if rest:
         _fd_route(run, rest, out, decision_unresolved)
     out["_fd"] = {k: (s.value if isinstance(s, fd.Solved) else None) for k, s in run.base.items()}
+    out["_base"] = dict(run.base)   # the base solves themselves (fd.Solved or fd.Refused), for the cross-check
     out["_units"] = run.budget.used
     return out
 
