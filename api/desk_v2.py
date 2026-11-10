@@ -127,6 +127,22 @@ def desk_basket_shares(request: Request) -> Response:
     return _response(env.answer("/basket/shares", lambda: desk_basket.shares(list(request.query_params.multi_items()))))
 
 
+@router.get("/positioning")
+def desk_positioning(request: Request) -> Response:
+    """§12.20 (Desk P4): the CFTC's weekly futures positioning and SEC 13F holder concentration, as stored."""
+    return _response(env.answer("/positioning", lambda: positioning_answer(list(request.query_params.multi_items()))))
+
+
+def positioning_answer(params: list[tuple[str, str]]) -> dict:
+    """The desk_positioning item as stored, each part a block (api/desk_positioning.py); no parameters."""
+    from api.desk_v2_macro import stored_block
+
+    if params:
+        raise env.Unsupported(f"{params[0][0]} is not a parameter of /positioning.")
+    item = _result("desk_positioning")
+    return {"futures": stored_block(item["futures"]), "holdings": stored_block(item["holdings"])}
+
+
 @router.get("/basket/study")
 def desk_basket_study(request: Request) -> Response:
     """§12.19 (desk/basket-study, P1a): the event study on a basket kept in the browser, the engine run on its index."""

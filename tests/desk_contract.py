@@ -613,6 +613,49 @@ BASKET_STUDY = obj(
 )
 
 
+# ── §12.20 GET /positioning (Desk P4; docs/desk/POSITIONING_SPEC.md) ───────
+
+# Two lagged public disclosures, each a block: the CFTC's weekly futures positioning for five macro markets
+# and SEC 13F holder concentration for the names a basket may hold. Every figure carries its own dates.
+COT_MARKET_KEY = E("spx", "ust10y", "usd", "gold", "wti")
+COT_CATEGORY = E("dealer", "asset_manager", "leveraged_funds", "other_reportables", "nonreportables",
+                 "producer_merchant", "swap_dealers", "managed_money")
+COT_SET_ASIDE = Arr(obj(as_of=STR, reason=STR))  # a stored report not read, and why (its date may be the fault)
+COT_MARKET = obj(
+    key=COT_MARKET_KEY, label=STR, contract_code=STR, market_name=STR,
+    report=E("tff", "disaggregated"), report_title=E("Traders in Financial Futures", "Disaggregated"),
+    category=E("leveraged_funds", "managed_money"), category_label=E("Leveraged funds", "Managed money"),
+    as_of=DATE,  # the positions date
+    released=null(DATE), release_delayed=null(BOOL), release_basis=null(Const("cftc_schedule")), release_note=STR,
+    first_stored_at=TS, stored_at=TS,
+    long=INT, short=INT, spread=null(INT), net=INT, open_interest=INT, net_pct_oi=null(NUM),
+    change_1w=null(obj(**{"from": DATE}, net=INT, net_pct_oi=null(NUM))), change_reason=null(STR),
+    range_3y=null(obj(percentile=NUM, n=INT, **{"from": DATE}, to=DATE, min_pct_oi=NUM, min_on=DATE,
+                      max_pct_oi=NUM, max_on=DATE)),
+    range_reason=null(STR),
+    categories=Arr(obj(category=COT_CATEGORY, label=STR, long=INT, short=INT, spread=null(INT), net=INT,
+                       net_pct_oi=null(NUM)), min=5, max=5),
+    history_from=DATE, reports=INT, excluded=COT_SET_ASIDE,
+    series=Arr(obj(as_of=DATE, net=INT, net_pct_oi=null(NUM)), min=1),
+)
+POSITIONING_FUTURES = obj(
+    provider=Const("CFTC"), source=STR, credit=STR, lag_note=STR, range_years=Const(3), range_min_reports=INT,
+    markets=Arr(COT_MARKET, min=1, max=5),
+    missing=Arr(obj(key=COT_MARKET_KEY, label=STR, excluded=COT_SET_ASIDE, reason=STR), max=4),
+    revisions_stored=INT,
+)
+POSITIONING_HOLDINGS = obj(
+    provider=Const("SEC"), source=STR, credit=STR, lag_note=STR,
+    period=DATE, deadline=DATE, filings_through=DATE, previous_period=null(DATE), data_sets=Arr(STR, min=1),
+    large_filers_n=INT,
+    names=Arr(obj(symbol=STR, issuer=STR, title_of_class=STR, holders=INT, holders_prev=null(INT),
+                  holders_change=null(INT), shares=NUM, value_usd=NUM, top10_share=null(FRAC),
+                  large_filers_top10=INT, amendments=INT), min=1),
+    excluded=Arr(obj(symbol=STR, reason=STR)),
+)
+POSITIONING = obj(futures=Block(POSITIONING_FUTURES), holdings=Block(POSITIONING_HOLDINGS))
+
+
 # ── GET /options/finder (the Options Finder, design F3 §5; engine method finder-2) ─
 
 OPTION_TYPE = E("call", "put")
@@ -702,6 +745,7 @@ ROUTES: dict[str, Obj] = {
     "/basket/shares": BASKET_SHARES,  # desk/cap-weight (§12.18)
     "/options/finder": OPTIONS_FINDER,  # the Options Finder (design F3; its page ships unlisted)
     "/basket/study": BASKET_STUDY,  # desk P1a (§12.19)
+    "/positioning": POSITIONING,  # Desk P4 (§12.20)
 }
 
 # §12.13's deferred resources: GET stubs answering awaiting with these reasons

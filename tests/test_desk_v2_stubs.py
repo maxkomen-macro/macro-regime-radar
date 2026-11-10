@@ -183,6 +183,8 @@ def test_the_v2_router_is_get_only_and_every_route_is_enveloped():
         ("/api/desk/options/finder", ["GET"]),
         # desk/basket-study (§12.19, P1a)
         ("/api/desk/basket/study", ["GET"]),
+        # Desk P4 (§12.20): the CFTC and 13F disclosures
+        ("/api/desk/positioning", ["GET"]),
     ])
     for path, _ in routes:
         route = env.route_of(re.sub(r"\{[^}]+\}", "x", path)[len(desk_v2.PREFIX):])
