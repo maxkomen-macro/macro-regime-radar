@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from scripts.options_bench import score_p3 as S
@@ -162,3 +164,21 @@ def test_the_run_config_override_reaches_the_greeks_and_the_fd_grid():
     assert got.bump_factor("vega") == 2.0
     with pytest.raises(ValueError):
         run_p3.greek_config({"h_sgima": 0.001})
+
+
+def test_a_resumed_run_keeps_complete_records_and_runs_only_the_rest(tmp_path):
+    from scripts.options_bench import run_p3
+    out = tmp_path / "run"
+    args = ["--per-group", "1", "--out", str(out), "--workers", "2", "--no-refs"]
+    assert run_p3.main(args) == 0
+    lines = (out / "records-p3.jsonl").read_text().splitlines()
+    ids = [json.loads(x)["case"]["id"] for x in lines]
+    # a run stopped after 3 records with a 4th half written
+    (out / "records-p3.jsonl").write_text("\n".join(lines[:3]) + "\n" + lines[3][:40])
+    assert run_p3.main(args + ["--resume"]) == 0
+    again = (out / "records-p3.jsonl").read_text().splitlines()
+    assert [json.loads(x)["case"]["id"] for x in again] == ids
+    assert again[:3] == lines[:3]
+    assert json.loads((out / "manifest-p3.json").read_text())["resumed_after"] == 3
+    with pytest.raises(SystemExit):
+        run_p3.main(["--per-group", "2", "--out", str(out), "--workers", "2", "--no-refs", "--resume"])

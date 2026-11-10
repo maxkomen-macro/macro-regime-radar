@@ -1,13 +1,16 @@
 """scripts/options_bench/run_p3.py — run Phase 3 on bench cases and write one record per case (test tooling).
 
     python -m scripts.options_bench.run_p3 --seed 20261026 --per-group 12 --out DIR [--workers 3]
-        [--regions regions.json] [--no-refs] [--diagnostics] [--config greek-config.json]
+        [--regions regions.json] [--no-refs] [--diagnostics] [--config greek-config.json] [--resume]
 
 Per case: Tier 2's answer with the Phase 3 cross-check and Greek block (options_adaptive.phase3, under the claim
 regions when given), the corroborated references of every quantity (greek_reference), the FD-only price
 reference for Tier 2's lattice price (reference.py, unchanged), exact controls where every stencil state is
 exempt, the proved-bound checks, control C1, and the work and wall time of each part. `--diagnostics` adds the
 dev-only lattice gamma by delta differences (P3-A7) and QuantLib's Greeks. The records feed score_p3.py.
+`--resume` keeps the complete records already in DIR/records-p3.jsonl and runs only the cases not yet written
+(a run stopped part way loses at most the cases in flight; a partial last line is dropped). The resumed run must
+use the same seed, sizes and settings: the manifest from the first run is checked and kept.
 `--config` overrides the Greek configuration (h_sigma, h_r, h_d_frac, m_frac, p_frac, factors, bump_factors) for
 production, the references (h_ref is the production bump halved), the exact controls and C1 alike.
 Development seed only until the freeze: the held-out run is a separate, frozen procedure.
@@ -147,6 +150,7 @@ def main(argv=None) -> int:
     ap.add_argument("--no-refs", action="store_true")
     ap.add_argument("--diagnostics", action="store_true")
     ap.add_argument("--config")
+    ap.add_argument("--resume", action="store_true")
     a = ap.parse_args(argv)
     over = None if a.config is None else json.loads(Path(a.config).read_text())
     gcfg = greek_config(over)
@@ -157,16 +161,36 @@ def main(argv=None) -> int:
     regions = None if a.regions is None else json.loads(Path(a.regions).read_text())
     todo = pilot_cases(a.seed, a.per_group, a.named)
     path = out / "records-p3.jsonl"
+    settings = {"seed": a.seed, "per_group": a.per_group, "named": a.named, "regions": regions,
+                "config_overrides": over, "refs": not a.no_refs, "diagnostics": a.diagnostics}
+    done = {}
+    if a.resume and path.exists():
+        prior = json.loads((out / "settings-p3.json").read_text())
+        if prior != json.loads(json.dumps(settings)):
+            raise SystemExit("--resume needs the same seed, sizes and settings as the run it continues")
+        keep = []
+        for line in path.read_text().splitlines():
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                break                       # a partial last line: dropped, its case runs again
+            done[rec["case"]["id"]] = True
+            keep.append(line)
+        path.write_text("".join(x + "\n" for x in keep))
+    else:
+        (out / "settings-p3.json").write_text(json.dumps(settings, indent=1, default=str))
+    rest = [c for c in todo if c.id not in done]
     t0 = time.time()
-    with ProcessPoolExecutor(a.workers) as ex, path.open("w") as f:
-        for rec in ex.map(one, [(c.to_json(), regions, not a.no_refs, a.diagnostics, over) for c in todo]):
+    with ProcessPoolExecutor(a.workers) as ex, path.open("a" if done else "w") as f:
+        for rec in ex.map(one, [(c.to_json(), regions, not a.no_refs, a.diagnostics, over) for c in rest]):
             f.write(json.dumps(rec, allow_nan=True) + "\n")
             f.flush()
+    # records are in case order: the kept prefix, then the rest in suite order
     (out / "manifest-p3.json").write_text(json.dumps({
         "seed": a.seed, "per_group": a.per_group, "named": a.named, "cases": len(todo), "secs": time.time() - t0,
         "versions": {"tier2": oa.VERSION, "greeks": G.VERSION}, "regions": regions,
         "greek_config": asdict(gcfg), "config_overrides": over, "x_config": asdict(oa.XConfig()),
-        "ref_work_cap": GR.REF_WORK_CAP}, indent=1, default=str))
+        "ref_work_cap": GR.REF_WORK_CAP, "resumed_after": len(done)}, indent=1, default=str))
     print(f"{len(todo)} cases in {time.time() - t0:.0f} s -> {path}")
     return 0
 
