@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Publish generated files to main without committing the runner's checkout.
 #
-#   scripts/publish_artifacts.sh "<commit message>" <path> [<path> ...]
+#   scripts/publish_artifacts.sh [--expect <path>=<blob sha>|absent ...] "<commit message>" <path> [<path> ...]
 #
 # The workflows that write to git (refresh-data, daily-memo, weekly-memo) used to
 # commit in their own checkout, then `git fetch && git reset --soft origin/main &&
@@ -27,8 +27,16 @@
 # blob equals the generated file (a symlink or a directory on main at that path,
 # or a symlinked parent directory, fails the check).
 #
+# --expect (CS-2's memo ledger and source registry): before committing, in every
+# attempt, the blob of <path> in the exact main commit just fetched must equal
+# <blob sha> (or the path must be absent from it). A mismatch means another run
+# or a reviewed PR changed the file since the caller read it: the script exits 4
+# with nothing committed and does not retry. Unrelated changes on main still go
+# through the normal rebuild-and-retry. Callers without --expect are unchanged.
+#
 # Exit codes: 0 published or nothing to publish; 1 every attempt failed;
-# 2 bad arguments; 3 the built commit failed its own check (nothing pushed).
+# 2 bad arguments; 3 the built commit failed its own check (nothing pushed);
+# 4 an --expect check failed (nothing committed).
 
 set -uo pipefail
 
@@ -37,6 +45,9 @@ ALLOWED=(
   "output/playbook.json"
   "docs/memo/daily_memo.html"
   "docs/memo/weekly_memo.html"
+  "docs/memo/ledger-daily.json"
+  "docs/memo/ledger-weekly.json"
+  "docs/memo/sources.json"
 )
 REMOTE="origin"
 BRANCH="main"
@@ -46,7 +57,25 @@ case "$NET_TIMEOUT" in ""|*[!0-9]*|0*) NET_TIMEOUT=60 ;; esac
 
 die() { echo "publish_artifacts: $2" >&2; exit "$1"; }
 
-[ "$#" -ge 2 ] || die 2 "usage: publish_artifacts.sh \"<commit message>\" <path> [<path> ...]"
+EXPECT_PATHS=()
+EXPECT_BLOBS=()
+while [ "$#" -gt 0 ] && [ "$1" = "--expect" ]; do
+  [ "$#" -ge 2 ] || die 2 "--expect needs <path>=<blob sha>|absent"
+  spec="$2"; shift 2
+  case "$spec" in *=*) ;; *) die 2 "--expect '$spec' is not <path>=<blob sha>|absent" ;; esac
+  epath="${spec%=*}"; eblob="${spec##*=}"
+  ok=no
+  for a in "${ALLOWED[@]}"; do [ "$epath" = "$a" ] && ok=yes; done
+  [ "$ok" = yes ] || die 2 "--expect '$epath' is not an allowed generated file"
+  case "$eblob" in
+    absent) ;;
+    *) [ "${#eblob}" -eq 40 ] && [ -z "${eblob//[0-9a-f]/}" ] || die 2 "--expect '$epath': '$eblob' is not a 40-hex blob sha or 'absent'" ;;
+  esac
+  for q in "${EXPECT_PATHS[@]+"${EXPECT_PATHS[@]}"}"; do [ "$q" = "$epath" ] && die 2 "--expect '$epath' named twice"; done
+  EXPECT_PATHS+=("$epath"); EXPECT_BLOBS+=("$eblob")
+done
+
+[ "$#" -ge 2 ] || die 2 "usage: publish_artifacts.sh [--expect <path>=<blob>|absent ...] \"<commit message>\" <path> [<path> ...]"
 MSG="$1"; shift
 [ -n "$MSG" ] || die 2 "empty commit message"
 
@@ -89,12 +118,28 @@ for p in "${PATHS[@]}"; do
   mkdir -p "$SNAP/$(dirname "$p")" && cp -p "$p" "$SNAP/$p" || die 1 "cannot snapshot $p"
 done
 
-# One attempt. Returns 0 on success (or nothing to publish), 1 to retry, 3 fatal.
+# The --expect checks against one fetched main commit. Returns 0 when all hold, 4 otherwise.
+check_expect() {
+  local base="$1" i epath want got
+  for i in "${!EXPECT_PATHS[@]}"; do
+    epath="${EXPECT_PATHS[$i]}"; want="${EXPECT_BLOBS[$i]}"
+    got=$(git rev-parse --verify --quiet "$base:$epath" 2>/dev/null) || got="absent"
+    if [ "$got" != "absent" ] && [ "$(git cat-file -t "$got" 2>/dev/null)" != "blob" ]; then got="not-a-blob:$got"; fi
+    if [ "$got" != "$want" ]; then
+      echo "publish_artifacts: the ledger changed under this run: '$epath' on $BRANCH at ${base:0:12} is $got, expected $want" >&2
+      return 4
+    fi
+  done
+  return 0
+}
+
+# One attempt. Returns 0 on success (or nothing to publish), 1 to retry, 3 fatal, 4 expect mismatch.
 attempt() {
   local base new parents changed f want p dir want_blob got
   timeout --kill-after=10 "$NET_TIMEOUT" \
     git fetch --no-tags --quiet "$REMOTE" "+refs/heads/$BRANCH:refs/remotes/$REMOTE/$BRANCH" || return 1
   base=$(git rev-parse --verify --quiet "refs/remotes/$REMOTE/$BRANCH^{commit}") || return 1
+  check_expect "$base" || return 4
 
   WT=$(mktemp -d "$TMP_ROOT/publish-wt-XXXXXX") || return 1
   git worktree add --detach --quiet "$WT" "$base" || return 1
@@ -154,6 +199,7 @@ for i in $(seq 1 "$ATTEMPTS"); do
   remove_worktree
   if [ "$rc" -eq 0 ]; then echo "Push succeeded on attempt $i"; exit 0; fi
   if [ "$rc" -eq 3 ]; then echo "publish_artifacts: refusing to push a commit that failed its check" >&2; exit 3; fi
+  if [ "$rc" -eq 4 ]; then echo "publish_artifacts: nothing committed; the caller re-reads the file on its next run" >&2; exit 4; fi
   echo "Attempt $i failed (fetch/build/push), retrying on the current $REMOTE/$BRANCH..."
   if [ "$i" -lt "$ATTEMPTS" ] && [ "${PUBLISH_ARTIFACTS_NO_BACKOFF:-}" != "1" ]; then
     sleep $((RANDOM % 10 + 5))

@@ -637,6 +637,8 @@ def build_html(
     calendar:  list[dict],
     today:     date,
     narrative_html: str = "",
+    banner_html: str = "",
+    data_as_of: str | None = None,
 ) -> str:
 
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -678,6 +680,10 @@ def build_html(
             f"{pct_text(confidence)} conf &bull; as of {regime_as_of}</div>"
         )
 
+    # CS-2 queued memos only: the source snapshot's validation time (manual runs render nothing here)
+    as_of_line = (f'\n          <div style="color:#7f8c8d; font-size:11px; margin-top:2px;">Data as of {data_as_of}</div>'
+                  if data_as_of else "")
+
     # ── 1. HEADER ─────────────────────────────────────────────────────────────
     header_html = f"""
     <div {_CARD}>
@@ -686,7 +692,7 @@ def build_html(
           <div style="color:#e0e0e0; font-size:18px; font-weight:bold; margin-bottom:4px;">
             Macro Regime Radar
           </div>
-          <div style="color:#7f8c8d; font-size:13px;">Daily Briefing &mdash; {date_str}</div>
+          <div style="color:#7f8c8d; font-size:13px;">Daily Briefing &mdash; {date_str}</div>{as_of_line}
         </div>
         <div style="display:table-cell; vertical-align:middle; text-align:right;">
           <span style="background:{regime_color}; color:#fff; font-size:12px; font-weight:bold;
@@ -873,7 +879,7 @@ def build_html(
 <body style="margin:0; padding:16px; background:#1a1a2e; color:#e0e0e0;
              font-family:Arial, Helvetica, sans-serif;">
   <div style="max-width:600px; margin:0 auto;">
-    {header_html}
+    {banner_html}{header_html}
     {narrative_html}
     {levels_html}
     {watchlist_html}
@@ -886,6 +892,204 @@ def build_html(
 </html>
 """
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CS-2: the queued memo of one NYSE session (MEMO_SESSION set by daily-memo.yml)
+#
+# Design .loop/design-CS2.md sections 4 and 6. The memo job's database is the
+# source run's validated snapshot with every price row after the session removed
+# (scripts/memo_content.pin) and the weekly market rows recomputed at it. Prices,
+# changes and movers are read exactly at the session; news and the calendar
+# through the content clock (MEMO_CLOCK, the source's validation time). Both the
+# on-time and the delayed version are rendered here, once, so the workflow can
+# switch to the delayed one at any later checkpoint without another provider
+# call. Without MEMO_SESSION nothing below runs and the memo is as before.
+# ─────────────────────────────────────────────────────────────────────────────
+
+COMMENTARY_NOTES = {
+    "unavailable": "Commentary unavailable on this retry",
+    "omitted":     "Commentary omitted: this memo was sent after a newer session",
+}
+
+
+def _valid_close(v) -> float | None:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f > 0 and f == f and f not in (float("inf"),) else None
+
+
+def previous_session(p: date) -> date | None:
+    """The NYSE session immediately before p (searched back 10 days)."""
+    from src.market_data import session as _session
+    d = p - timedelta(days=1)
+    for _ in range(10):
+        if _session.is_trading_day(d):
+            return d
+        d -= timedelta(days=1)
+    return None
+
+
+def load_watchlist_at(p: date) -> tuple[list[dict], bool]:
+    """Prices exactly at p with a finite positive close; the change against the immediately
+    preceding session's close, under the same rule; otherwise "—" (DR-30, DR-39)."""
+    if not _table_exists("market_daily"):
+        return [], True
+    q = previous_session(p)
+    df = _load(
+        "SELECT symbol, date, close FROM market_daily WHERE symbol IN ({}) AND date IN (?, ?)".format(
+            ",".join("?" * len(WATCHLIST_ORDER))),
+        params=(*WATCHLIST_ORDER, p.isoformat(), q.isoformat() if q else ""),
+    )
+    at = {(r["symbol"], r["date"]): r["close"] for _, r in df.iterrows()}
+    rows, any_price = [], False
+    for sym in WATCHLIST_ORDER:
+        price = _valid_close(at.get((sym, p.isoformat())))
+        prev = _valid_close(at.get((sym, q.isoformat()))) if q else None
+        chg = None
+        if price is not None and prev is not None:
+            c = (price / prev - 1.0) * 100.0
+            chg = c if c == c and abs(c) != float("inf") else None
+        any_price = any_price or price is not None
+        rows.append({"symbol": sym, "name": SYMBOL_NAMES.get(sym, sym), "price": price, "chg_pct": chg})
+    return rows, not any_price
+
+
+def load_top_movers_at(p: date, n: int = 3) -> list[dict]:
+    """Top N by |z| among the symbols whose weekly bucket was observed exactly at p, each with
+    the return of that same bucket; a symbol without one is dropped, never shown as 0% (DR-41)."""
+    if not _table_exists("derived_metrics"):
+        return []
+    obs = _load(
+        "SELECT name, date FROM derived_metrics WHERE name LIKE '%\\_weekly\\_ret\\_obs' ESCAPE '\\' AND value = ?",
+        params=(float(p.toordinal()),),
+    )
+    movers = []
+    for _, row in obs.iterrows():
+        sym = row["name"][: -len("_weekly_ret_obs")]
+        vals = _load("SELECT name, value FROM derived_metrics WHERE date = ? AND name IN (?, ?)",
+                     params=(row["date"], f"{sym}_weekly_ret_z", f"{sym}_weekly_ret"))
+        got = {r["name"]: float(r["value"]) for _, r in vals.iterrows()}
+        z, ret = got.get(f"{sym}_weekly_ret_z"), got.get(f"{sym}_weekly_ret")
+        if z is None or ret is None or z != z or ret != ret:
+            continue
+        movers.append({"symbol": sym, "name": SYMBOL_NAMES.get(sym, sym), "z": z, "ret_pct": ret * 100.0})
+    movers.sort(key=lambda m: abs(m["z"]), reverse=True)
+    return movers[:n]
+
+
+def _sql_time(t: datetime) -> str:
+    return t.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def load_top_news_at(clock: datetime, n: int = 3) -> list[dict]:
+    """load_top_news through the content clock: the 36 hours up to the source's validation."""
+    if not _table_exists("news_feed"):
+        return []
+    df = _load(
+        """
+        SELECT headline, summary, regime_interpretation, perplexity_research,
+               overall_significance, published_at, source
+        FROM news_feed
+        WHERE overall_significance >= 4.0
+          AND datetime(published_at) >= datetime(?, '-36 hours')
+          AND datetime(published_at) <= datetime(?)
+        ORDER BY published_at DESC
+        LIMIT ?
+        """,
+        params=(_sql_time(clock), _sql_time(clock), n),
+    )
+    return [
+        {
+            "headline":              str(row["headline"]),
+            "summary":               str(row.get("summary") or "")[:280],
+            "regime_interpretation": str(row.get("regime_interpretation") or ""),
+            "perplexity_research":   str(row.get("perplexity_research") or ""),
+            "source":                str(row.get("source") or ""),
+        }
+        for _, row in df.iterrows()
+    ]
+
+
+def load_calendar_at(clock: datetime, days: int = 2) -> list[dict]:
+    """load_calendar through the content clock."""
+    if not _table_exists("event_calendar"):
+        return []
+    df = _load(
+        f"""
+        SELECT event_name, event_datetime, importance FROM event_calendar
+        WHERE datetime(event_datetime) >= datetime(?)
+          AND datetime(event_datetime) <= datetime(?, '+{int(days)} days')
+          AND COALESCE(source, '') <> 'finnhub_earnings'
+        ORDER BY event_datetime
+        """,
+        params=(_sql_time(clock), _sql_time(clock)),
+    )
+    events = []
+    for _, row in df.iterrows():
+        try:
+            dt = datetime.fromisoformat(str(row["event_datetime"]).replace("Z", "+00:00"))
+        except ValueError:
+            dt = None
+        events.append({"name": row["event_name"], "dt": dt, "importance": str(row["importance"]).lower()})
+    return events
+
+
+def _note_html(text: str) -> str:
+    return (f'<div {_CARD}><div style="color:#95a5a6; font-size:12px; font-style:italic;">'
+            f'{_html_mod.escape(text)}</div></div>')
+
+
+def _banner_html(text: str) -> str:
+    return (f'<div style="background:#3d2c12; border:1px solid #e67e22; color:#f5c06f; border-radius:8px; '
+            f'padding:10px 12px; margin-bottom:12px; font-size:13px; font-weight:bold;">{_html_mod.escape(text)}</div>\n    ')
+
+
+def session_main(key: str, out_dir: Path) -> dict:
+    """Render the queued daily memo of session `key` into out_dir (both versions)."""
+    import json as _json
+    from src.utils.memo_clock import memo_clock
+
+    s = date.fromisoformat(key)
+    clock = memo_clock()
+    commentary = os.environ.get("MEMO_COMMENTARY", "omitted")
+    if commentary not in ("paid", "unavailable", "omitted"):
+        raise ValueError(f"MEMO_COMMENTARY={commentary!r}")
+
+    regime     = load_regime()
+    levels     = load_key_levels()
+    watchlist, mkt_closed = load_watchlist_at(s)
+    signals    = load_signals()
+    movers     = load_top_movers_at(s, n=3)
+    calendar   = load_calendar_at(clock, days=2)
+    top_news   = load_top_news_at(clock, n=3)
+
+    narrative_html, generated_at = "", None
+    if commentary == "paid":
+        research = fetch_memo_research_context(regime.get("label", ""), top_news, os.environ.get("PERPLEXITY_API_KEY", ""))
+        narrative = generate_narrative(regime, levels, top_news, research, os.environ.get("ANTHROPIC_API_KEY", ""))
+        narrative_html = _render_narrative_html(narrative, research)
+        generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    else:
+        narrative_html = _note_html(COMMENTARY_NOTES[commentary])
+    as_of = clock.strftime("%Y-%m-%d %H:%M UTC")
+    common = dict(regime=regime, levels=levels, watchlist=watchlist, mkt_closed=mkt_closed, signals=signals,
+                  movers=movers, calendar=calendar, today=s, data_as_of=as_of)
+    normal = build_html(**common, narrative_html=narrative_html)
+    delayed = build_html(**common, narrative_html=_note_html(COMMENTARY_NOTES["omitted"]),
+                         banner_html=_banner_html(f"Delayed memo for the {key} session, sent __MEMO_SENT_DATE__"))
+    subject = f"📊 Daily Briefing — {key} — {regime['label']}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, text in (("page-normal.html", normal), ("email-normal.html", normal),
+                       ("page-delayed.html", delayed), ("email-delayed.html", delayed),
+                       ("subject-normal.txt", subject + "\n"), ("subject-delayed.txt", f"[Delayed] {subject}\n")):
+        (out_dir / name).write_text(text, encoding="utf-8")
+    meta = {"kind": "daily", "key": key, "pin_session": key, "validated_at": clock.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "commentary": commentary, "narrative_generated_at": generated_at, "regime": regime["label"]}
+    (out_dir / "meta.json").write_text(_json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return meta
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────────────────────────────────────
@@ -893,6 +1097,12 @@ def build_html(
 def main() -> None:
     _load_secrets_toml()
     today = date.today()
+    key = os.environ.get("MEMO_SESSION", "").strip()
+    if key:   # CS-2: a queued memo (daily-memo.yml automated or resend run)
+        meta = session_main(key, OUTPUT_DIR / "memo-bundle")
+        print(f"MEMO_DATE={key}")
+        print(f"MEMO_REGIME={meta['regime']}")
+        return
 
     regime     = load_regime()
     levels     = load_key_levels()

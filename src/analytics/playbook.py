@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.utils.format import pct_text
+from src.utils.memo_clock import memo_clock
 
 ROOT         = Path(__file__).resolve().parent.parent.parent
 DB_PATH      = ROOT / "data" / "macro_radar.db"
@@ -294,7 +295,8 @@ def upsert_playbook_metrics(conn: sqlite3.Connection, playbook: dict, today: str
 
 def run() -> None:
     conn  = _get_conn()
-    today = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
+    # the content clock (CS-2): the wall clock unless a queued memo sets MEMO_CLOCK
+    today = memo_clock().replace(tzinfo=None).strftime("%Y-%m-%d")
 
     try:
         regime = load_current_regime(conn)

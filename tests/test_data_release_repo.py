@@ -344,12 +344,19 @@ def test_the_fetch_never_builds_without_history_from_another_repo_and_is_unchang
 
 
 @pytest.mark.parametrize("name", ("daily-memo.yml", "weekly-memo.yml"))
-def test_a_manual_memo_reads_the_named_repo_and_a_dispatched_one_still_uses_the_run_artifact(name):
-    step = next(s for s in _steps(name) if s["name"] == "Use the validated snapshot (or the current release on manual runs)")
-    run = step["run"]
-    artifact, manual = run.split("else", 1)
-    assert "cp validated/macro_radar.db data/macro_radar.db" in artifact and "gh release" not in artifact
-    assert SWITCH in manual and 'gh release download data-latest --pattern macro_radar.db --dir data --clobber --repo "$DATA_RELEASE_REPO"' in manual
+def test_a_manual_memo_reads_the_named_repo_and_a_queued_one_uses_only_the_run_artifact(name):
+    # CS-2: a queued memo reads the validated-db artifact of the attempt its plan names; a manual run reads the
+    # current asset of DATA_RELEASE_REPO, as before
+    steps = _steps(name)
+    manual = next(s for s in steps if s["name"] == "Use the current release asset (manual run)")
+    assert manual["if"] == "env.MEMO_MODE == 'manual'"
+    assert SWITCH in manual["run"] and 'gh release download data-latest --pattern macro_radar.db --dir data --clobber --repo "$DATA_RELEASE_REPO"' in manual["run"]
+    queued = [s for s in steps if "steps.plan.outputs.go == 'true'" in str(s.get("if", ""))]
+    assert queued and not any("gh release" in str(s.get("run", "")) for s in queued)
+    dl = next(s for s in steps if s["name"] == "Download the source snapshot")
+    assert dl["uses"] == "actions/download-artifact@v4" and dl["with"]["name"] == "validated-db"
+    check = next(s for s in steps if s["name"] == "Check the source snapshot")
+    assert "cp validated/macro_radar.db data/macro_radar.db" in check["run"]
 
 
 def _switch(env: dict) -> subprocess.CompletedProcess:

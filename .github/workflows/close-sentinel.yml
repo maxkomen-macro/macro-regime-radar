@@ -11,9 +11,9 @@ name: Close Sentinel
 # own crons, the data-write group, validation and the deadline are unchanged.
 #
 # Off unless the repository variable CLOSE_SENTINEL_ENABLED is "true". Keep it
-# off until the once-per-session memo fix (CS-2) is merged: under today's memo
-# rule a sentinel full refresh that starts before 18:00 UTC would dispatch a
-# memo too.
+# off until the owner approves activation. The once-per-session memo queue (CS-2)
+# is the prerequisite: under the old clock-slot memo rule a sentinel full refresh
+# that started before 18:00 UTC would also have dispatched a memo.
 #
 # It writes nothing but its own reservation artifact (counted against the cap
 # of two dispatches per session) and the dispatch: no database, release or git.

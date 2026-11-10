@@ -885,49 +885,87 @@ def test_refresh_data_gains_only_the_label_and_keeps_its_schedules_group_and_mem
     text = (WF / "refresh-data.yml").read_text()
     assert text.count("close_session") == 3  # the input and the run-name only: no step reads it
     steps = {s["name"]: s for s in doc["jobs"]["refresh"]["steps"]}
-    assert "slot == 'morning'" in steps["Dispatch the memo workflows (validated morning full refresh only)"]["if"]  # CS-2 is separate
+    # CS-2 replaced the morning-only dispatch with the memo queues' wake-up (pinned below)
+    assert "slot" not in text and "Dispatch the memo workflows (validated morning full refresh only)" not in steps
+    assert "Wake the memo queues" in steps
 
 
-# V2-3 (verifier, #54): the memo hand-off is pinned whole, not by one substring. These are the steps exactly as they
-# stood before CS-1 (710c0ff0) and as #54 left them; CS-2 replaces them and must change this pin in the open.
-MEMO_HANDOFF_BEFORE_CS2 = {
+# V2-3 (verifier, #54): the memo hand-off is pinned whole, not by one substring. CS-2 replaced the steps #54 left
+# (record, upload, morning-only dispatch) in the open: this is the CS-2 hand-off, step by step (design v16 section 2a).
+FULL_PASS = "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'"
+MEMO_HANDOFF_CS2 = {
+    "Record the validation time": {
+        "name": "Record the validation time", "id": "validated", "if": FULL_PASS,
+        "run": 'echo "validated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"',
+    },
     "Record the validated run for downstream memos": {
-        "name": "Record the validated run for downstream memos",
-        "if": "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'",
-        "run": ("mkdir -p validated\ncp data/macro_radar.db validated/macro_radar.db\ncp validation.json validated/validation.json\n"
-                "printf 'mode=%s\\nslot=%s\\nrun_id=%s\\n' \"${{ steps.mode.outputs.mode }}\" \"${{ steps.mode.outputs.slot }}\" "
-                "\"${{ github.run_id }}\" > validated/refresh-meta.txt\n"),
+        "name": "Record the validated run for downstream memos", "id": "memo_meta", "if": FULL_PASS,
+        "continue-on-error": True,
+        "env": {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "VALIDATED_AT": "${{ steps.validated.outputs.validated_at }}"},
+        "run": ("mkdir -p validated validated-meta\ncp data/macro_radar.db validated/macro_radar.db\n"
+                "cp validation.json validated/validation.json\n"
+                "python scripts/memo_queue.py meta --db validated/macro_radar.db --validation validated/validation.json \\\n"
+                "  --validated-at \"${VALIDATED_AT:?}\" \\\n"
+                "  --out validated/refresh-meta.txt --out-meta validated-meta/validated-meta.txt\n"),
+    },
+    "Upload this attempt's memo metadata": {
+        "name": "Upload this attempt's memo metadata", "id": "meta_upload", "if": "steps.memo_meta.outcome == 'success'",
+        "continue-on-error": True, "uses": "actions/upload-artifact@v4",
+        "with": {"name": "validated-meta-${{ github.run_attempt }}", "path": "validated-meta/", "retention-days": 45},
     },
     "Upload the validated snapshot as a run artifact": {
-        "name": "Upload the validated snapshot as a run artifact",
-        "if": "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'",
+        "name": "Upload the validated snapshot as a run artifact", "id": "db_upload", "if": "steps.memo_meta.outcome == 'success'",
         "uses": "actions/upload-artifact@v4",
         "with": {"name": "validated-db", "path": "validated/", "retention-days": 3},
     },
-    "Dispatch the memo workflows (validated morning full refresh only)": {
-        "name": "Dispatch the memo workflows (validated morning full refresh only)",
-        "if": "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass' && steps.mode.outputs.slot == 'morning'",
+    "Record memo sources": {
+        "name": "Record memo sources",
+        "if": "steps.meta_upload.outcome == 'success' && steps.db_upload.outcome == 'success' && github.ref == 'refs/heads/main'",
+        "timeout-minutes": 20, "env": {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"},
+        "run": ('git config user.name "github-actions[bot]"\n'
+                'git config user.email "github-actions[bot]@users.noreply.github.com"\n'
+                "python scripts/memo_queue.py sources --meta validated-meta/validated-meta.txt\n"),
+    },
+    "Wake the memo queues": {
+        "name": "Wake the memo queues",
+        "if": "${{ !cancelled() && " + FULL_PASS + " && github.ref == 'refs/heads/main' }}",
+        "timeout-minutes": 2,
         "env": {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "RUN_ID": "${{ github.run_id }}"},
-        "run": ('DOW=$(date -u +%u)\nif [ "$DOW" -le 5 ]; then\n'
-                '  gh workflow run daily-memo.yml -f run_id="$RUN_ID" && echo "daily memo dispatched for run $RUN_ID"\nfi\n'
-                'if [ "$DOW" -eq 1 ]; then\n'
-                '  gh workflow run weekly-memo.yml -f run_id="$RUN_ID" && echo "weekly memo dispatched for run $RUN_ID"\nfi\n'),
+        "run": ('gh workflow run daily-memo.yml -f wake="$RUN_ID" || echo "::warning::the daily memo wake-up failed; '
+                'the next validated full refresh wakes it"\n'
+                'gh workflow run weekly-memo.yml -f wake="$RUN_ID" || echo "::warning::the weekly memo wake-up failed; '
+                'the next validated full refresh wakes it"\n'),
+    },
+    "Fail when the memo hand-off failed": {
+        "name": "Fail when the memo hand-off failed",
+        "if": "always() && (steps.memo_meta.outcome == 'failure' || steps.meta_upload.outcome == 'failure')",
+        "run": ('echo "::error::this attempt\'s memo metadata was not recorded or not uploaded; the sessions it may cover '
+                'are blocked visibly, never sourced from a later run"\nexit 1\n'),
     },
 }
 
 
-def test_the_memo_handoff_is_exactly_as_before_and_runs_only_after_validation_and_publication():
+def test_the_memo_handoff_is_the_cs2_handoff_and_runs_only_after_validation_and_publication():
     steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
     by_name = {s["name"]: s for s in steps}
-    for name, want in MEMO_HANDOFF_BEFORE_CS2.items():
+    for name, want in MEMO_HANDOFF_CS2.items():
         assert by_name[name] == want, name
     mode = next(s for s in steps if s.get("id") == "mode")
-    assert 'if [ "$(date -u +%H)" -lt 18 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi' in mode["run"]
+    assert "slot" not in mode["run"]
+    names = [s["name"] for s in steps]
     order = [s.get("id") or s["name"] for s in steps]
     validate, publish = order.index("validate"), order.index("publish")
-    handoff = [order.index(n) for n in MEMO_HANDOFF_BEFORE_CS2]
-    assert validate < publish < min(handoff) and handoff == sorted(handoff)
+    handoff = [names.index(n) for n in MEMO_HANDOFF_CS2]
+    assert validate < min(handoff) and handoff == sorted(handoff)
+    assert publish < names.index("Record the validated run for downstream memos")
+    # the metadata and the snapshot are uploaded before the playbook commit; sources and the wake-up come after it,
+    # and the hand-off's own failure is reported last, so it never holds back the playbook commit
+    commit = names.index("Commit playbook.json if it changed")
+    assert names.index("Upload the validated snapshot as a run artifact") < commit < names.index("Record memo sources")
+    assert by_name["Commit playbook.json if it changed"]["if"] == FULL_PASS + " && github.ref == 'refs/heads/main'"
     assert by_name["Publish validated DB snapshot to data-latest release"]["if"].count("steps.validate.outputs.upload == 'true'") == 1
+    text = (WF / "refresh-data.yml").read_text()
+    assert text.count("gh workflow run") == 2 and "run_id=" not in text
 
 
 def test_a_sentinel_dispatch_resolves_to_a_full_refresh():

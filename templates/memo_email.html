@@ -12,12 +12,13 @@
 
 <table width="700" cellpadding="0" cellspacing="0" border="0" bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #dde1e9;max-width:700px;">
 
-<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->
+<!-- ── HEADER ─────────────────────────────────────────────────────────────── -->{% if memo_banner %}
+<tr><td style="padding:12px 32px;background-color:#fff4e5;font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#7a4b00;">{{ memo_banner }}</td></tr>{% endif %}
 <tr>
   <td bgcolor="#0d1b2a" style="background-color:#0d1b2a;padding:24px 32px;">
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:19px;font-weight:700;color:#ffffff;letter-spacing:0.3px;">Macro Regime Radar</div>
     <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#a0aec0;margin-top:4px;letter-spacing:0.2px;">
-      Weekly Memo &nbsp;&bull;&nbsp; {{ as_of_long }} &nbsp;&bull;&nbsp; Generated {{ generated_at }}
+      Weekly Memo &nbsp;&bull;&nbsp; {{ as_of_long }} &nbsp;&bull;&nbsp; Generated {{ generated_at }}{% if data_as_of %} &nbsp;&bull;&nbsp; Data as of {{ data_as_of }}{% endif %}
     </div>
     <div style="margin-top:12px;">
       <a href="https://maxkomen-macro.github.io/macro-regime-radar/memo/weekly_memo.html"
@@ -171,7 +172,8 @@
       <span style="font-size:11px;color:#888;margin-left:8px;">{{ alert.date }}</span>
     </div>
     {% endfor %}
-    {% endif %}
+    {% endif %}{% if alerts_summary.note %}
+    <div style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7591;font-style:italic;margin-top:6px;">{{ alerts_summary.note }}</div>{% endif %}
   </td>
 </tr>
 
