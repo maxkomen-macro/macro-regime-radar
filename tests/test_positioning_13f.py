@@ -447,6 +447,31 @@ def test_without_a_declared_contact_nothing_is_fetched(tmp_path, monkeypatch, ca
     assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)]
 
 
+@pytest.mark.parametrize("contact", [
+    "Invented Person\ninvented@example.invalid",
+    "Invented Person\rX invented@example.invalid",
+    "Invented\tPerson invented@example.invalid",
+    "Invented Person invented@example.invalid\x7f",
+])
+def test_verifier_f2_a_contact_no_header_can_carry_is_refused_without_saying_it(tmp_path, monkeypatch, capsys, contact):
+    """A secret with a line break inside makes http.client raise an error that quotes the header; that text would
+    reach the watermark and the run log. Such a contact is refused before any request, in words that never quote it."""
+    from src.market_data import positioning
+
+    monkeypatch.setenv(s13.CONTACT_ENV, contact)
+    monkeypatch.setattr(s13, "Client", lambda *a, **kw: pytest.fail("no request with a contact no header can carry"))
+    f = tmp_path / "s.db"
+    assert positioning.main(["--db", str(f), "--sec-only"]) == 0
+    out = capsys.readouterr().out
+    assert "invented@" not in out and "Invented" not in out
+    assert "a control character" in out and "what is stored is kept" in out
+    with sqlite3.connect(f) as c:
+        for (t,) in c.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall():
+            for row in c.execute(f"SELECT * FROM {t}"):
+                assert not any(isinstance(x, str) and ("invented@" in x or "Invented" in x) for x in row), t
+    assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)]
+
+
 def test_the_13f_module_reads_no_environment_so_the_api_never_reads_the_contact():
     # The API imports sec_13f for its table names; the contact is read only by the step's runner.
     from tests.test_env_template import _api_closure, _env_reads
@@ -529,6 +554,18 @@ def test_a_ticker_written_another_way_is_the_same_name(store):
     assert [n["symbol"] for n in h["names"]] == ["BRK.B"]
 
 
+def test_verifier_f1_each_name_carries_the_spelling_it_was_asked_by(store):
+    """A basket leg typed BRK-B is asked for as BRK-B; the server reads it as BRK.B. Each served row and each
+    exclusion carries the spelling asked (`requested`), so the card can find the row for its own leg."""
+    with sqlite3.connect(store) as c:
+        c.execute(f"UPDATE {s13.TABLE} SET symbol_key = 'BRKB' WHERE symbol_key = 'NVDA'")
+    h = dp.holdings_for(hold(store), ["BRK.B", "BF.B"], requested=["BRK-B", "BF-B"])
+    assert [(n["symbol"], n["requested"]) for n in h["names"]] == [("BRK.B", "BRK-B")]
+    assert [(x["symbol"], x["requested"]) for x in h["excluded"]] == [("BF.B", "BF-B")]
+    h = dp.holdings_for(hold(store), ["BRK.B"])
+    assert h["names"][0]["requested"] == "BRK.B"
+
+
 def test_the_reader_awaits_without_the_tables_or_a_committed_run(tmp_path, store):
     empty = tmp_path / "e.db"
     sqlite3.connect(empty).close()
@@ -570,6 +607,8 @@ def test_the_route_serves_the_holdings_of_the_names_asked_for(store, serve):
     h = body["data"]["holdings"]
     assert h["status"] == "ready" and [n["symbol"] for n in h["data"]["names"]] == ["NVDA", "CEG"]
     assert [x["symbol"] for x in h["data"]["excluded"]] == ["BRK.B"]
+    assert [n["requested"] for n in h["data"]["names"]] == ["NVDA", "CEG"]
+    assert [x["requested"] for x in h["data"]["excluded"]] == ["BRK-B"]  # the spelling asked, trimmed and upper-cased
     assert body["data"]["futures"]["status"] == "awaiting"  # this store holds no CFTC report
     body = dc.check_response("/positioning", client.get("/api/desk/positioning"))
     assert body["data"]["holdings"]["data"]["names"] == [] and body["data"]["holdings"]["data"]["excluded"] == []

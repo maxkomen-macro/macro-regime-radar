@@ -715,6 +715,13 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, clien
                       "what is stored is kept")
             newest = conn.execute(f"SELECT MAX(period) FROM {PERIODS}").fetchone()[0]
             return _record(conn, newest, "error", detail, now, advanced=False)
+        if client is None and any(ord(ch) < 32 or ord(ch) == 127 for ch in contact):
+            # verifier F-2: http.client refuses such a header with an error that quotes it, and that text would
+            # reach the watermark and the run log. Say what is wrong, never the value.
+            detail = (f"not read: {CONTACT_ENV} holds a control character (a line break, tab or the like), which no "
+                      "request header can carry; what is stored is kept")
+            newest = conn.execute(f"SELECT MAX(period) FROM {PERIODS}").fetchone()[0]
+            return _record(conn, newest, "error", detail, now, advanced=False)
         client = client or Client(contact, cache_dir=cache_dir)
         run_id = None
         try:
