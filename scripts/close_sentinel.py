@@ -37,8 +37,10 @@ Rules (design .loop/design-CS1.md, reviewed by Codex in three passes):
   Watchers are serialized by the close-sentinel concurrency group; a run that
   decides not to dispatch after reserving (S got published, or a refresh is
   running) deletes its own reservation; an uncertain outcome keeps it.
-- No dispatch while any refresh-data run is queued, running or waiting, and
-  none within RETRY_GAP of a finished sentinel dispatch for the same session.
+- No dispatch while any run of the data-write group (refresh-data or
+  intraday-refresh) is queued, running or waiting: a pending dispatched run
+  could otherwise be replaced by another pending run of that group. None
+  within RETRY_GAP of a finished sentinel dispatch for the same session.
 - Every call and sleep is bounded by the step's remaining budget, so each
   step ends inside its own timeout.
 
@@ -94,6 +96,7 @@ PER_PAGE = 100
 MAX_PAGES = 50
 ACTIVE_STATUSES = ("queued", "in_progress", "waiting", "requested", "pending")
 WORKFLOW = "refresh-data.yml"
+DATA_WRITE_WORKFLOWS = (WORKFLOW, "intraday-refresh.yml")  # every workflow in the data-write concurrency group
 DB_ASSET = "macro_radar.db"
 TITLE = "Refresh Data (close {})"
 RESERVATION = "close-sentinel-dispatch-{}"
@@ -366,8 +369,9 @@ class Gh:
     # reads
     def active_runs(self) -> list[dict]:
         out: list[dict] = []
-        for status in ACTIVE_STATUSES:
-            out += self._api_pages(f"repos/{self.repo}/actions/workflows/{WORKFLOW}/runs", {"status": status}, "workflow_runs")
+        for workflow in DATA_WRITE_WORKFLOWS:
+            for status in ACTIVE_STATUSES:
+                out += self._api_pages(f"repos/{self.repo}/actions/workflows/{workflow}/runs", {"status": status}, "workflow_runs")
         return out
 
     def sentinel_runs(self, s: date) -> list[dict]:
@@ -572,8 +576,8 @@ def run_dispatch(env: dict, clock: Clock, s: date, runner: Runner = subprocess.r
         active = gh.active_runs()
         seen = {r.get("id") for r in gh.sentinel_runs(s)}  # earlier dispatches for s, so the confirmation names only the new run
     except OutOfTime:
-        print("::error::no time left to recheck; nothing is dispatched")
-        return 1
+        print("deadline: no time left to recheck; nothing is dispatched (the reservation stays counted)")
+        return 0
     except GhError as exc:
         print(f"::error::recheck incomplete ({exc}); nothing is dispatched, the reservation stays")
         return 1
@@ -592,6 +596,9 @@ def run_dispatch(env: dict, clock: Clock, s: date, runner: Runner = subprocess.r
     try:
         dispatched_at = clock.now()
         gh.dispatch(s)
+    except OutOfTime:
+        print("deadline: no time left for the dispatch call, so it was not made (the reservation stays counted)")
+        return 0
     except GhError as exc:
         print(f"::error::the dispatch call failed ({exc}); it may still have been accepted, so the reservation stays")
         return 1

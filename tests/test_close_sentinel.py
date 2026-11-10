@@ -107,8 +107,10 @@ class FakeGitHub:
             e["DATA_RELEASE_TOKEN"] = token
         return e
 
-    def add_run(self, title="Refresh Data", status="completed", conclusion="success", event="schedule", created=None, updated=None):
+    def add_run(self, title="Refresh Data", status="completed", conclusion="success", event="schedule", created=None, updated=None,
+                workflow="refresh-data.yml"):
         r = {"id": 5000 + self.next_id, "display_title": title, "status": status, "conclusion": conclusion, "event": event,
+             "workflow": workflow,
              "created_at": iso(created or self.clock.now()), "updated_at": iso(updated or self.clock.now()),
              "html_url": f"https://github.com/{HOME}/actions/runs/{5000 + self.next_id}"}
         self.next_id += 1
@@ -170,9 +172,10 @@ class FakeGitHub:
         return {key: items[(page - 1) * per: page * per], "total_count": len(items)}
 
     def _runs(self, rest):
-        assert rest[3] == f"repos/{HOME}/actions/workflows/refresh-data.yml/runs", rest[3]
+        workflow = rest[3].removeprefix(f"repos/{HOME}/actions/workflows/").removesuffix("/runs")
+        assert workflow in cs.DATA_WRITE_WORKFLOWS and rest[3] == f"repos/{HOME}/actions/workflows/{workflow}/runs", rest[3]
         f = self._fields(rest)
-        items = list(self.runs)
+        items = [r for r in self.runs if r["workflow"] == workflow]
         if "status" in f:
             items = [r for r in items if r["status"] == f["status"]]
         if "event" in f:
@@ -469,8 +472,8 @@ def test_an_active_run_on_a_later_page_is_honoured(tmp_path):
         fake.add_run(status="waiting", conclusion=None)
     gh = cs.Gh(fake.env(), cs.Budget(clock, 3600), fake)
     assert len(gh.active_runs()) == cs.PER_PAGE + 1
-    pages = [c for c in fake.calls if "status=waiting" in c["args"]]
-    assert len(pages) == 2
+    pages = [c for c in fake.calls if "status=waiting" in c["args"] and "refresh-data.yml/runs" in c["args"][3]]
+    assert len(pages) == 2  # #54 follow-up: intraday-refresh is listed too now, so only refresh-data's pages are counted
 
 
 def test_a_failed_later_page_is_incomplete_not_empty(tmp_path):
@@ -834,6 +837,11 @@ def test_the_sentinel_workflow_is_low_frequency_serialized_bounded_and_off_by_de
     job = doc["jobs"]["sentinel"]
     steps = job["steps"]
     assert job["timeout-minutes"] == 355 and sum(s["timeout-minutes"] for s in steps) <= 355
+    # V2-4 (verifier, #54): each step's own limit, so a change to one is a reviewed change, not hidden by the sum
+    assert [(s["name"], s["timeout-minutes"]) for s in steps] == [
+        ("Hold unless the sentinel is switched on", 1), ("Checkout repo", 5), ("Set up Python 3.12", 3),
+        ("Install the API dependencies (the symbol lists import asset_history)", 5), ("Wait for the close and decide", 320),
+        ("Reserve the dispatch", 5), ("Dispatch the full refresh for the session", 15)]
     assert steps[0]["if"] == "vars.CLOSE_SENTINEL_ENABLED != 'true'" and "held:" in steps[0]["run"]
     for s in steps[1:]:
         assert s["if"].startswith("vars.CLOSE_SENTINEL_ENABLED == 'true'"), s["name"]
@@ -880,6 +888,48 @@ def test_refresh_data_gains_only_the_label_and_keeps_its_schedules_group_and_mem
     assert "slot == 'morning'" in steps["Dispatch the memo workflows (validated morning full refresh only)"]["if"]  # CS-2 is separate
 
 
+# V2-3 (verifier, #54): the memo hand-off is pinned whole, not by one substring. These are the steps exactly as they
+# stood before CS-1 (710c0ff0) and as #54 left them; CS-2 replaces them and must change this pin in the open.
+MEMO_HANDOFF_BEFORE_CS2 = {
+    "Record the validated run for downstream memos": {
+        "name": "Record the validated run for downstream memos",
+        "if": "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'",
+        "run": ("mkdir -p validated\ncp data/macro_radar.db validated/macro_radar.db\ncp validation.json validated/validation.json\n"
+                "printf 'mode=%s\\nslot=%s\\nrun_id=%s\\n' \"${{ steps.mode.outputs.mode }}\" \"${{ steps.mode.outputs.slot }}\" "
+                "\"${{ github.run_id }}\" > validated/refresh-meta.txt\n"),
+    },
+    "Upload the validated snapshot as a run artifact": {
+        "name": "Upload the validated snapshot as a run artifact",
+        "if": "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'",
+        "uses": "actions/upload-artifact@v4",
+        "with": {"name": "validated-db", "path": "validated/", "retention-days": 3},
+    },
+    "Dispatch the memo workflows (validated morning full refresh only)": {
+        "name": "Dispatch the memo workflows (validated morning full refresh only)",
+        "if": "steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass' && steps.mode.outputs.slot == 'morning'",
+        "env": {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}", "RUN_ID": "${{ github.run_id }}"},
+        "run": ('DOW=$(date -u +%u)\nif [ "$DOW" -le 5 ]; then\n'
+                '  gh workflow run daily-memo.yml -f run_id="$RUN_ID" && echo "daily memo dispatched for run $RUN_ID"\nfi\n'
+                'if [ "$DOW" -eq 1 ]; then\n'
+                '  gh workflow run weekly-memo.yml -f run_id="$RUN_ID" && echo "weekly memo dispatched for run $RUN_ID"\nfi\n'),
+    },
+}
+
+
+def test_the_memo_handoff_is_exactly_as_before_and_runs_only_after_validation_and_publication():
+    steps = _load("refresh-data.yml")["jobs"]["refresh"]["steps"]
+    by_name = {s["name"]: s for s in steps}
+    for name, want in MEMO_HANDOFF_BEFORE_CS2.items():
+        assert by_name[name] == want, name
+    mode = next(s for s in steps if s.get("id") == "mode")
+    assert 'if [ "$(date -u +%H)" -lt 18 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi' in mode["run"]
+    order = [s.get("id") or s["name"] for s in steps]
+    validate, publish = order.index("validate"), order.index("publish")
+    handoff = [order.index(n) for n in MEMO_HANDOFF_BEFORE_CS2]
+    assert validate < publish < min(handoff) and handoff == sorted(handoff)
+    assert by_name["Publish validated DB snapshot to data-latest release"]["if"].count("steps.validate.outputs.upload == 'true'") == 1
+
+
 def test_a_sentinel_dispatch_resolves_to_a_full_refresh():
     from scripts.workflow_mode import resolve
 
@@ -895,3 +945,61 @@ def test_sentinel_refreshes_make_no_earnings_calls_and_the_budgets_are_unchanged
     assert ec.actions_gate(env, utc(2026, 11, 6, 15, 0)) == "not a scheduled full refresh"  # a mid-session catch-up too
     assert (ec.RUN_CAP, ec.DAY_CAP, ec.LATE) == (40, 80, timedelta(hours=12))
     assert osn.MAX_REQUESTS == 200
+
+
+# ── #54 pre-activation notes (verifier 2) ─────────────────────────────────────
+
+def test_an_active_intraday_run_holds_the_watcher_like_a_refresh(tmp_path):
+    # V2-1: intraday-refresh shares data-write; a pending sentinel run behind it could be replaced by the next queued run
+    clock = FakeClock(utc(2026, 11, 5, 22, 35))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    intraday = fake.add_run(title="Intraday Refresh", status="in_progress", conclusion=None, workflow="intraday-refresh.yml")
+
+    def finish(f, rest):
+        if clock.t >= 900:
+            intraday["status"] = "completed"
+    fake.hooks["runs"] = finish
+    rc, session = plan(fake, clock, tmp_path)
+    assert (rc, session) == (0, "2026-11-05") and clock.t >= 900
+    assert any("intraday-refresh.yml/runs" in c["args"][3] for c in fake.calls if c["kind"] == "runs")
+
+
+def test_an_intraday_run_that_starts_during_the_recheck_releases_the_reservation(tmp_path):
+    clock = FakeClock(utc(2026, 11, 5, 22, 32))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    fake.reserve("2026-11-05")
+    fake.add_run(title="Intraday Refresh", status="queued", conclusion=None, workflow="intraday-refresh.yml")
+    assert dispatch(fake, clock, "2026-11-05") == 0 and fake.dispatches == [] and fake.artifacts == []
+
+
+def test_the_data_write_list_matches_the_workflows_in_that_group():
+    group = {p.name for p in WF.glob("*.yml") if (_load(p.name).get("concurrency") or {}).get("group") == "data-write"}
+    assert group == set(cs.DATA_WRITE_WORKFLOWS)
+
+
+def test_running_out_of_time_in_the_recheck_exits_cleanly_without_dispatching(tmp_path, capsys):
+    # V2-2: the design's bound is "dispatch exits 0 without dispatching"
+    clock = FakeClock(utc(2026, 11, 5, 22, 32))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    fake.reserve("2026-11-05")
+
+    def slow(f, rest):  # the reservation listing takes all but the last MIN_LEFT_S of the step
+        clock.t = cs.DISPATCH_BUDGET_S - cs.MIN_LEFT_S
+    fake.hooks["artifacts"] = slow
+    assert dispatch(fake, clock, "2026-11-05") == 0
+    out = capsys.readouterr().out
+    assert "dispatch" not in fake.kinds() and len(fake.artifacts) == 1 and "no time left to recheck" in out
+
+
+def test_no_time_for_the_dispatch_call_says_it_was_not_made(tmp_path, capsys):
+    clock = FakeClock(utc(2026, 11, 5, 22, 32))
+    fake = FakeGitHub(clock, make_db(tmp_path / "db", *current("2026-11-04")))
+    fake.reserve("2026-11-05")
+    def slow_last_listing(f, rest):
+        if "/actions/workflows/refresh-data.yml/runs" in rest[3] and "event=workflow_dispatch" in rest:
+            clock.t = cs.DISPATCH_BUDGET_S - cs.MIN_LEFT_S
+    fake.hooks["runs"] = slow_last_listing
+    assert dispatch(fake, clock, "2026-11-05") == 0
+    out = capsys.readouterr().out
+    assert "dispatch" not in fake.kinds() and len(fake.artifacts) == 1
+    assert "was not made" in out and "may still have been accepted" not in out
