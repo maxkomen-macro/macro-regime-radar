@@ -173,7 +173,10 @@ def weekly_return_period(conn: sqlite3.Connection, sym: str, week: str) -> tuple
     return only for a complete five-session week: the phrase names both closes, counts the
     NYSE sessions between them, and says "partial week, later sessions not stored" while its week
     has NYSE sessions after that close (outside api/calendar's years it states neither).
-    Without an observation row the close is None and the phrase says the dates are not on file."""
+    Without an observation row the close is None and the phrase says the dates are not on file.
+    Every phrase with a close says "to the <Day> YYYY-MM-DD close": the web alert drawer
+    (web/src/screens/shell/alert-copy.ts, spyObservedClose) reads that phrase to tell an observed
+    close from a W-FRI label, so keep it when rewording."""
     end = date_from_ordinal(_derived_at(conn, f"{sym}_weekly_ret_obs", week))
     if end is None:
         logger.warning("[alerts] %s_weekly_ret_obs missing at %s: period not stated.", sym, week)

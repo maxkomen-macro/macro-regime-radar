@@ -67,6 +67,19 @@ describe("describeAlert: the SPY weekly drop", () => {
     expect(copy.trigger).toBe("SPY's change from the previous week's last close was -8.00% in the week to Apr 02, 2026, below the -7% risk line.");
   });
 
+  it("reads every observed form the pipeline writes, first week and unknown calendar years included", () => {
+    // the exact strings tests/test_surprise_provenance.py pins for src/analytics/alerts.py
+    for (const [date, message, when] of [
+      ["2026-11-04", "SPY return -5.00% from the previous week's last stored close to the Wed 2026-11-04 close (partial week, later sessions not stored) — below -3% watch threshold.", "Nov 04, 2026"],
+      ["2028-04-13", "SPY return -4.00% from the Fri 2028-04-07 close to the Thu 2028-04-13 close (NYSE calendar not on file for 2028) — below -3% watch threshold.", "Apr 13, 2028"],
+    ] as const) {
+      const copy = describeAlert(alert({ name: "SPY_drawdown", date, value: -0.05, threshold: -0.03, direction: "below", message }));
+      expect(copy.when).toBe(when);
+      expect(copy.trigger).toContain(`in the week to ${when}`);
+      expect(copy.status).not.toContain("not on file");
+    }
+  });
+
   // Without a named observed close the date is the W-FRI bucket's label (Fri Nov 13 while the week is
   // under way): it is never printed as "the week to" a close, and the drawer says the close is not on file.
   const unobserved = (message: string | null) =>
