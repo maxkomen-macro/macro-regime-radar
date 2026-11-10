@@ -362,3 +362,17 @@ def test_the_day_1_level_keeps_its_pre_projection_values():
     g1 = {}
     _ref_solve(is_call=False, strike=120.0, days=1, rho=0.08, q=0.0, sigma=0.25, divs=(), per_day=4, grids=g1)
     assert g1["free_day1"] is None and g1["v_day1"] is None
+
+
+def test_at_a_day_1_close_the_day_1_level_is_the_projection_on_the_cum_exercise_value():
+    # V-1 at d_1 = 1: the one-day level's free values are those before the close's cum projection, and the level
+    # is their maximum with the cum exercise value sgn·(X + PV_1 − K), PV_1 counting the dividend owed through day 1
+    g = {}
+    divs = ((1, 2.0), (20, 1.0))
+    _ref_solve(is_call=True, strike=80.0, days=30, rho=0.03, q=0.0, sigma=0.25, divs=divs, grids=g)
+    cum = g["xs"] + options_fd.pv_owed(divs, 0.03, 1.0) - 80.0
+    assert options_fd.pv_owed(divs, 0.03, 1.0) > options_fd.pv_owed(((20, 1.0),), 0.03, 1.0)
+    assert np.all(g["v_day1"] >= cum - 1e-12)
+    assert np.allclose(g["v_day1"], np.maximum(g["free_day1"], cum), rtol=0, atol=1e-9 * 100.0)
+    # deep in the money the call is exercised cum dividend at that close
+    assert np.any(g["free_day1"] < cum)
