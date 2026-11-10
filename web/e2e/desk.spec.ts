@@ -869,7 +869,7 @@ test.describe("desk v2", () => {
   test("basket & hedge: a first visit starts with AI Infrastructure 10, cap-weighted and priced; ?add= from Technicals joins the basket at equal weight", async ({ page }) => {
     const asked: string[] = [];
     page.on("request", (r) => {
-      if (/\/api\/desk\/basket\/(price|hedge)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
+      if (/\/api\/desk\/(basket\/(price|hedge)|positioning)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
     });
     await open(page, "/desk/basket-hedge");
     const basket = page.getByRole("region", { name: "Basket", exact: true });
