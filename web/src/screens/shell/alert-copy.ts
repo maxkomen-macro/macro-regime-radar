@@ -8,7 +8,7 @@
  */
 
 import type { Alert, Signal } from "../../api/types";
-import { fmtDate, fmtMonYr } from "../../lib/format";
+import { fmtDate, fmtMonYr, fmtPct } from "../../lib/format";
 import { SIGNALS_META } from "../dashboard/signals-meta";
 
 /** The metric noun each signal watches, for the sentence subject. */
@@ -91,6 +91,30 @@ function describeVixMove(a: Alert, move: (typeof VIX_MOVES)[string]): AlertCopy 
   };
 }
 
+/** SPY_drawdown (src/analytics/alerts.py): SPY_weekly_ret, the change from the previous W-FRI
+ *  week's last stored close to the newest stored close of its week, a week still under way
+ *  included, so never a "5-day" return. The row is dated by that close (SPY_weekly_ret_obs), so
+ *  "the week to" holds for a partial week and a complete one; the value and threshold are
+ *  fractions (-0.035 is -3.50%). */
+function describeSpyDrawdown(a: Alert): AlertCopy {
+  const level = a.level === "risk" ? "risk" : "watch";
+  const line = a.threshold != null ? `, below the ${fmtPct(a.threshold * 100, 0)} ${level} line` : "";
+  const span = `in the week to ${fmtDate(a.date)}`;
+  return {
+    title: "SPY weekly drop",
+    when: fmtDate(a.date),
+    severity: LEVEL_WORD[a.level] ?? "Informational",
+    trigger:
+      a.value != null
+        ? `SPY's change from the previous week's last close was ${fmtPct(a.value * 100)} ${span}${line}.`
+        : `SPY fell past its weekly line ${span}.`,
+    active: null,
+    status:
+      "Measured from stored daily SPY closes and recomputed with every daily refresh; a week still under way counts only its sessions so far.",
+    why: "A fall this large from the previous week's close marks broad selling in US equities.",
+  };
+}
+
 function humanName(name: string): string {
   return SIGNALS_META[name]?.display ?? name.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 }
@@ -98,6 +122,7 @@ function humanName(name: string): string {
 export function describeAlert(a: Alert, latest?: Signal): AlertCopy {
   const move = VIX_MOVES[a.name];
   if (move) return describeVixMove(a, move);
+  if (a.name === "SPY_drawdown") return describeSpyDrawdown(a);
   const meta = SIGNALS_META[a.name];
   const fmt = meta?.format ?? ((v: number) => v.toFixed(2));
   const subject = SUBJECT[a.name] ?? humanName(a.name);

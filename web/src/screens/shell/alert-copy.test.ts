@@ -38,3 +38,22 @@ describe("describeAlert: the VIX move alerts", () => {
     expect(copy.why).not.toMatch(/lasted|beyond a single session/);
   });
 });
+
+describe("describeAlert: the SPY weekly drop", () => {
+  it("states the weekly return from the previous week's last close, dated by its close, never as 5 days", () => {
+    // raised on Tuesday Nov 3 from SPY_weekly_ret (a week still under way), value and threshold as fractions
+    const copy = describeAlert(alert({ name: "SPY_drawdown", date: "2026-11-03", value: -0.035, threshold: -0.03, direction: "below" }));
+    expect(copy.title).toBe("SPY weekly drop");
+    expect(copy.when).toBe("Nov 03, 2026");
+    expect(copy.severity).toBe("Watch");
+    expect(copy.trigger).toBe("SPY's change from the previous week's last close was -3.50% in the week to Nov 03, 2026, below the -3% watch line.");
+    expect(copy.status).toContain("a week still under way counts only its sessions so far");
+    expect(`${copy.trigger} ${copy.status}`).not.toMatch(/5d|5-day|five|pp|Nov 2026\b/);
+  });
+
+  it("names the risk line for a risk alert", () => {
+    const copy = describeAlert(alert({ name: "SPY_drawdown", date: "2026-04-02", value: -0.08, threshold: -0.07, level: "risk", direction: "below" }));
+    expect(copy.severity).toBe("Risk");
+    expect(copy.trigger).toBe("SPY's change from the previous week's last close was -8.00% in the week to Apr 02, 2026, below the -7% risk line.");
+  });
+});

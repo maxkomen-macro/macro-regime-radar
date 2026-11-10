@@ -324,6 +324,89 @@ def test_a_daily_vix_jump_is_the_newest_sessions_rise_only(tmp_path):
     assert _alerts_on(tmp_path / "d.db", fall) == []
 
 
+def _spy_alert(path, rows):
+    _derived(path, rows)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [(r[0], r[2], r[3], r[4], r[5], r[7]) for r in alerts.build_market_alerts(conn) if r[2] == "SPY_drawdown"]
+    finally:
+        conn.close()
+
+
+def test_spy_weekly_alert_names_its_span_never_a_5d_return(tmp_path):
+    """SPY_weekly_ret is the W-FRI bucket's newest stored close over the previous week's:
+    a partial week reads fewer sessions, a holiday week four. The alert says which closes,
+    how many NYSE sessions, whether the week is complete, and is dated by its close."""
+    prior = [("SPY_weekly_ret", "2026-10-30", 0.001), ("SPY_weekly_ret_obs", "2026-10-30", ORD("2026-10-30"))]
+    # the bucket of Fri Nov 6 read Tue Nov 3: two sessions, week to date
+    partial = _spy_alert(tmp_path / "a.db", prior + [("SPY_weekly_ret", "2026-11-06", -0.035),
+                                                     ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-03"))])
+    assert partial == [("2026-11-03", "SPY_drawdown", "watch", -0.035, -0.03,
+                        "SPY return -3.50% over 2 NYSE sessions, from the Fri 2026-10-30 close to the "
+                        "Tue 2026-11-03 close (week to date) — below -3% watch threshold.")]
+    # Good Friday 2026-04-03: the week ends on Thursday, four sessions, complete
+    holiday = _spy_alert(tmp_path / "b.db", [("SPY_weekly_ret_obs", "2026-03-27", ORD("2026-03-27")),
+                                             ("SPY_weekly_ret", "2026-04-03", -0.08),
+                                             ("SPY_weekly_ret_obs", "2026-04-03", ORD("2026-04-02"))])
+    assert holiday == [("2026-04-02", "SPY_drawdown", "risk", -0.08, -0.07,
+                        "SPY return -8.00% over 4 NYSE sessions, from the Fri 2026-03-27 close to the "
+                        "Thu 2026-04-02 close (week complete) — below -7% risk threshold.")]
+    # a full five-session week
+    full = _spy_alert(tmp_path / "c.db", prior + [("SPY_weekly_ret", "2026-11-06", -0.04),
+                                                  ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-06"))])
+    assert full[0][0] == "2026-11-06"
+    assert "over 5 NYSE sessions, from the Fri 2026-10-30 close to the Fri 2026-11-06 close (week complete)" in full[0][5]
+    for got in (partial, holiday, full):
+        assert "5d" not in got[0][5]
+
+
+def test_spy_weekly_alert_thresholds_are_unchanged(tmp_path):
+    obs = [("SPY_weekly_ret_obs", "2026-10-30", ORD("2026-10-30")), ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-06"))]
+    level = lambda name, v: [a[2] for a in _spy_alert(tmp_path / name, obs + [("SPY_weekly_ret", "2026-11-06", v)])]  # noqa: E731
+    assert level("a.db", -0.03) == []  # strictly below the line
+    assert level("b.db", -0.0301) == ["watch"]
+    assert level("c.db", -0.07) == ["watch"]
+    assert level("d.db", -0.0701) == ["risk"]
+    assert level("e.db", 0.05) == []
+
+
+def test_spy_weekly_alert_without_observation_dates_says_so(tmp_path):
+    # an older store: no provenance rows, so the bucket date stays and the message says the dates are missing
+    got = _spy_alert(tmp_path / "a.db", [("SPY_weekly_ret", "2026-11-06", -0.05)])
+    assert got == [("2026-11-06", "SPY_drawdown", "watch", -0.05, -0.03,
+                    "SPY return -5.00% for the W-FRI week labelled 2026-11-06 (its observation dates are "
+                    "not on file) — below -3% watch threshold.")]
+    # the close is known but no earlier week is: the span is stated without a session count
+    first = _spy_alert(tmp_path / "b.db", [("SPY_weekly_ret", "2026-11-06", -0.05),
+                                           ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-04"))])
+    assert first[0][5] == ("SPY return -5.00% from the previous week's last stored close to the Wed 2026-11-04 "
+                           "close (week to date) — below -3% watch threshold.")
+
+
+def test_spy_weekly_alert_end_to_end_from_stored_closes(tmp_path):
+    """The weekly rows surprise.build_market_metrics writes from invented daily closes give the
+    alert its span: a fall on Mon-Tue of a week still under way is two sessions, not five."""
+    from api import calendar as cal
+    path = tmp_path / "e.db"
+    conn = sqlite3.connect(path)
+    conn.executescript(DERIVED + ";" + ALERTS + "; CREATE TABLE market_daily (symbol TEXT, date TEXT, close REAL);")
+    days = [d for d in pd.bdate_range("2026-01-02", "2026-11-03") if cal.is_trading_day(d.date())]
+    closes = [100.0 + (i % 5) * 0.1 for i in range(len(days))]
+    closes[-1] = closes[-3] * 0.95  # Fri Oct 30 -> Tue Nov 3: -5%
+    conn.executemany("INSERT INTO market_daily VALUES ('SPY', ?, ?)", [(d.strftime("%Y-%m-%d"), c) for d, c in zip(days, closes)])
+    conn.commit()
+    surprise.upsert_derived_metrics(conn, surprise.build_market_metrics(conn, ["SPY"]))
+    conn.row_factory = sqlite3.Row
+    try:
+        got = [r for r in alerts.build_market_alerts(conn) if r[2] == "SPY_drawdown"]
+    finally:
+        conn.close()
+    assert [(r[0], r[3]) for r in got] == [("2026-11-03", "watch")]
+    assert got[0][4] == pytest.approx(-0.05)
+    assert "over 2 NYSE sessions, from the Fri 2026-10-30 close to the Tue 2026-11-03 close (week to date)" in got[0][7]
+
+
 def test_a_stored_jump_is_cleared_when_the_newest_move_is_ineligible(tmp_path, monkeypatch):
     path = tmp_path / "t.db"
     _derived(path, [("VIX_daily_chg_z", "2026-10-19", 3.5), ("VIX_daily_chg", "2026-10-19", 4.0),
