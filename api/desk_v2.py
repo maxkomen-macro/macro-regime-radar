@@ -136,8 +136,9 @@ def desk_positioning(request: Request) -> Response:
 POSITIONING_PARAMS = ("names",)
 
 
-def positioning_names(params: list[tuple[str, str]]) -> list[str]:
-    """`names=TICKER,TICKER,…`: the basket's names whose 13F holders the holdings block serves (none when absent)."""
+def positioning_names(params: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """`names=TICKER,TICKER,…`: the basket's names whose 13F holders the holdings block serves (none when absent),
+    each as (the spelling asked, trimmed and upper-cased; its canonical ticker)."""
     from api.desk_basket import MAX_LEGS
     from api.providers.symbols import SymbolError, parse
 
@@ -150,7 +151,7 @@ def positioning_names(params: list[tuple[str, str]]) -> list[str]:
     raw = (dict(params).get("names") or "").strip()
     if not raw:
         return []
-    out: list[str] = []
+    out: list[tuple[str, str]] = []
     for part in raw.split(","):
         try:
             inst = parse(part)
@@ -158,9 +159,9 @@ def positioning_names(params: list[tuple[str, str]]) -> list[str]:
             raise env.Unsupported(str(exc)) from exc
         if inst.exchange != "US" or inst.kind != "equity":
             raise env.Unsupported(f"{part.strip().upper()} is not a US listing; a basket holds US-listed stocks and ETFs.")
-        if inst.canonical in out:
+        if inst.canonical in (c for _, c in out):
             raise env.Unsupported(f"{inst.canonical} is named twice.")
-        out.append(inst.canonical)
+        out.append((part.strip().upper(), inst.canonical))
     if len(out) > MAX_LEGS:
         raise env.Unsupported(f"A basket holds at most {MAX_LEGS} names; this asks for {len(out)}.")
     return out
@@ -175,7 +176,8 @@ def positioning_answer(params: list[tuple[str, str]]) -> dict:
     names = positioning_names(params)
     item = _result("desk_positioning")
     h = item["holdings"]
-    holdings = env.block_ready(holdings_for(h["data"], names)) if h.get("ok") else stored_block(h)
+    holdings = (env.block_ready(holdings_for(h["data"], [c for _, c in names], [r for r, _ in names]))
+                if h.get("ok") else stored_block(h))
     return {"futures": stored_block(item["futures"]), "holdings": holdings}
 
 

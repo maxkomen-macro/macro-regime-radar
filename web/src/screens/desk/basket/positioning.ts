@@ -78,10 +78,11 @@ export function historyLine(m: CotMarket): string {
   );
 }
 
-/** The basket's names the 13F block serves, in basket order, and the names it does not, each with the server's why. */
+/** The basket's names the 13F block serves, in basket order, and the names it does not, each with the server's why.
+ * A row is found by the spelling the leg asked by (`requested`: a leg typed BRK-B is served as BRK.B, verifier F-1). */
 export function holdingsFor(h: PositioningHoldings, symbols: readonly string[]) {
-  const by = new Map(h.names.map((n) => [n.symbol, n]));
-  const why = new Map(h.excluded.map((x) => [x.symbol, x.reason]));
+  const by = new Map(h.names.map((n) => [n.requested ?? n.symbol, n]));
+  const why = new Map(h.excluded.map((x) => [x.requested ?? x.symbol, x.reason]));
   const rows = symbols.flatMap((s) => (by.has(s) ? [by.get(s)!] : []));
   const missing = symbols.filter((s) => !by.has(s)).map((s) => ({ symbol: s, reason: why.get(s) ?? "not served for this basket" }));
   return { rows, missing };

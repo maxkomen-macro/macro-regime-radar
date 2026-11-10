@@ -651,9 +651,9 @@ POSITIONING_HOLDINGS = obj(
     filers=INT, filings=INT, restatements=INT, new_holdings=INT, revised_names=INT, computed_at=TS,
     large_filers_n=Const(100), top_positions_n=Const(10), top_holders_n=Const(10),
     # the names a request asks for (names=…), in its order: none when it asks for none
-    names=Arr(obj(symbol=STR, issuer=STR, holders=INT, holders_prev=null(INT), holders_change=null(INT), shares=INT,
+    names=Arr(obj(symbol=STR, requested=STR, issuer=STR, holders=INT, holders_prev=null(INT), holders_change=null(INT), shares=INT,
                   top10_share=FRAC, large_filers_top10=INT), max=25),
-    excluded=Arr(obj(symbol=STR, reason=STR), max=25),
+    excluded=Arr(obj(symbol=STR, requested=STR, reason=STR), max=25),
 )
 POSITIONING = obj(futures=Block(POSITIONING_FUTURES), holdings=Block(POSITIONING_HOLDINGS))
 

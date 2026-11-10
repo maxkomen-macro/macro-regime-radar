@@ -1076,6 +1076,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       names: l(
         o({
           symbol: "s!",
+          requested: "s?",
           issuer: "s",
           holders: "n!",
           holders_prev: "n",
@@ -1085,7 +1086,7 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
           large_filers_top10: "n",
         }),
       ),
-      excluded: l(o({ symbol: "s!", reason: "s" })),
+      excluded: l(o({ symbol: "s!", requested: "s?", reason: "s" })),
     }),
   }),
   // The Options Finder (api/desk_options.py, method finder-2): a row is read only with its contract, expiry, strike,

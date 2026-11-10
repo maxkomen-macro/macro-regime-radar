@@ -101,6 +101,21 @@ describe("the basket's 13F holders", () => {
     ]);
   });
 
+  it("verifier F-1: a leg typed BRK-B finds the row the server serves as BRK.B, by the spelling it asked by", () => {
+    const nvda = holdings.names.find((n) => n.symbol === "NVDA")!;
+    const h: PositioningHoldings = {
+      ...holdings,
+      names: [{ ...nvda, symbol: "BRK.B", requested: "BRK-B" }],
+      excluded: [{ symbol: "BF.B", requested: "BF-B", reason: "refused for a stated reason" }],
+    };
+    const { rows, missing } = holdingsFor(h, ["BRK-B", "BF-B"]);
+    expect(rows.map((r) => r.symbol)).toEqual(["BRK.B"]);
+    expect(missing).toEqual([{ symbol: "BF-B", reason: "refused for a stated reason" }]);
+    // A server that sends no spelling: the canonical ticker is the key.
+    const old = holdingsFor({ ...h, names: [{ ...nvda, requested: null }], excluded: [] }, ["NVDA"]);
+    expect(old.rows.map((r) => r.symbol)).toEqual(["NVDA"]);
+  });
+
   it("the holders' change is signed, and a change the server could not compute reads a dash", () => {
     const nvda = holdings.names.find((n) => n.symbol === "NVDA")!;
     expect(holdersChange(nvda)).toBe(contracts(nvda.holders_change));

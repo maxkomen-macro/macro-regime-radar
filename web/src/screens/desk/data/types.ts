@@ -1573,7 +1573,10 @@ export interface PositioningHoldings {
   top_holders_n: number;
   /** The names the request asked for (`names=`), in its order. */
   names: {
+    /** The canonical ticker the server read (BRK.B). */
     symbol: string;
+    /** The spelling the request asked by (BRK-B): the card finds its leg's row by it (null from a server without it). */
+    requested: string | null;
     issuer: string;
     holders: number;
     holders_prev: number | null;
@@ -1583,7 +1586,7 @@ export interface PositioningHoldings {
     top10_share: number;
     large_filers_top10: number;
   }[];
-  excluded: { symbol: string; reason: string }[];
+  excluded: { symbol: string; requested: string | null; reason: string }[];
 }
 
 /** §12.20 GET /positioning: two lagged public disclosures, each a block (one can await while the other serves). */

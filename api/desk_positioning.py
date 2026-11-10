@@ -329,22 +329,27 @@ def holdings_block(conn: sqlite3.Connection) -> dict:
     }
 
 
-def holdings_for(stored: dict, symbols: list[str]) -> dict:
+def holdings_for(stored: dict, symbols: list[str], requested: list[str] | None = None) -> dict:
     """The served holdings block: the stored quarter, and the requested tickers in request order, each served or
-    excluded with why. The stored maps (`_rows`, `_refused`) are not served."""
+    excluded with why. The stored maps (`_rows`, `_refused`) are not served. `symbols` are the canonical tickers
+    the route read; `requested` the spellings the request asked by (BRK-B for BRK.B), served beside each so the
+    card finds the row for its own leg (verifier F-1); without it each is its canonical ticker."""
     from src.market_data import sec_13f as s13
 
+    asked = list(requested) if requested is not None else list(symbols)
+    if len(asked) != len(symbols):
+        raise ValueError("holdings_for: one requested spelling per symbol")
     names, excluded = [], []
-    for sym in symbols:
+    for sym, req in zip(symbols, asked):
         key = s13.symbol_key(sym)
         row = stored["_rows"].get(key)
         if row is not None:
-            names.append({"symbol": sym, **row})
+            names.append({"symbol": sym, "requested": req, **row})
             continue
         why = stored["_refused"].get(key) or (
             f"no 13F row stored: the SEC's fails-to-deliver files read pair no CUSIP with {sym}, or no 13F filer "
             f"reports a long position in its shares for {stored['period']}")
-        excluded.append({"symbol": sym, "reason": why})
+        excluded.append({"symbol": sym, "requested": req, "reason": why})
     return {k: v for k, v in stored.items() if not k.startswith("_")} | {"names": names, "excluded": excluded}
 
 
