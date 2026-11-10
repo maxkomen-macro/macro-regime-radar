@@ -60,6 +60,9 @@ describe("Positioning figures", () => {
 describe("a market's report", () => {
   it("the percentile is the server's, rounded to an ordinal; none served reads a dash", () => {
     expect(percentileText(spx)).toBe(`${Math.round(spx.range_3y!.percentile)}th`);
+    const at = (percentile: number) => percentileText({ ...spx, range_3y: { ...spx.range_3y!, percentile } });
+    expect([1, 2, 3, 4, 11, 12, 13, 21, 22, 23, 100].map(at)).toEqual(["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd", "23rd", "100th"]);
+    expect([21.4, 22.5].map(at)).toEqual(["21st", "23rd"]);
     expect(percentileText({ ...spx, range_3y: null })).toBe("—");
     expect(percentileText({ ...spx, range_3y: { ...spx.range_3y!, percentile: Number.NaN } })).toBe("—");
   });
