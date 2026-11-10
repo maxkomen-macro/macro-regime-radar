@@ -22,7 +22,13 @@ Alert levels:
     "risk":  severity >= threshold_high OR  duration >= 6 months
 
 Market alerts (from derived_metrics):
-    SPY_drawdown:   SPY_weekly_ret < -7% → risk; < -3% → watch
+    SPY_drawdown:   SPY_weekly_ret < -7% → risk; < -3% → watch. The return runs from the
+                    previous W-FRI week's last stored close to the newest stored close of
+                    its week (SPY_weekly_ret_obs), so a week still under way covers only its
+                    sessions so far; the row is dated by that close when its observation row is
+                    on file (else by the W-FRI bucket, and the message says the dates are missing),
+                    and the message names both closes, the NYSE sessions between them and
+                    whether the week is complete (only where api/calendar knows the year)
     credit_stress:  HYG_weekly_ret - SPY_weekly_ret < -3% → watch
     VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch (week-over-week, daily closes),
                     only when the VIX rose that week; dated by VIX_weekly_chg_obs
@@ -36,11 +42,12 @@ alerts leaves the feed empty.
 import logging
 import math
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
 
+from api import calendar as cal  # stdlib only, the NYSE calendar src/analytics/surprise.py reads
 from src.analytics.surprise_dates import date_from_ordinal
 
 ROOT    = Path(__file__).resolve().parent.parent.parent
@@ -143,6 +150,54 @@ def _vix_rise(conn: sqlite3.Connection, raw_name: str, date_str: str | None) -> 
         logger.warning("[alerts] %s missing at %s: no VIX alert.", raw_name, date_str)
         return None
     return raw if math.isfinite(raw) and raw > 0 else None
+
+
+def _obs_before(conn: sqlite3.Connection, name: str, date_str: str) -> date | None:
+    """The observation date of the newest provenance row dated before `date_str`, or None."""
+    row = conn.execute(
+        "SELECT value FROM derived_metrics WHERE name=? AND date<? ORDER BY date DESC LIMIT 1",
+        (name, date_str),
+    ).fetchone()
+    return date_from_ordinal(float(row["value"])) if row else None
+
+
+def _session_day(d: date) -> str:
+    return d.strftime("%a %Y-%m-%d")
+
+
+def weekly_return_period(conn: sqlite3.Connection, sym: str, week: str) -> tuple[date | None, str]:
+    """(the close a `{sym}_weekly_ret` row read, the phrase saying what span it covers).
+
+    The row labelled by W-FRI bucket `week` compares the newest stored close of that week
+    (`{sym}_weekly_ret_obs`) with the previous weekly row's close, so it is a five-session
+    return only for a complete five-session week: the phrase names both closes, counts the
+    NYSE sessions between them, and says "partial week, later sessions not stored" while its week
+    has NYSE sessions after that close (outside api/calendar's years it states neither).
+    Without an observation row the close is None and the phrase says the dates are not on file.
+    Every phrase with a close says "to the <Day> YYYY-MM-DD close": the web alert drawer
+    (web/src/screens/shell/alert-copy.ts, spyObservedClose) reads that phrase to tell an observed
+    close from a W-FRI label, so keep it when rewording."""
+    end = date_from_ordinal(_derived_at(conn, f"{sym}_weekly_ret_obs", week))
+    if end is None:
+        logger.warning("[alerts] %s_weekly_ret_obs missing at %s: period not stated.", sym, week)
+        return None, f"for the W-FRI week labelled {week} (its observation dates are not on file)"
+    start = _obs_before(conn, f"{sym}_weekly_ret_obs", week)
+    known = start is not None and start < end
+    since = f"the {_session_day(start)} close" if known else "the previous week's last stored close"
+    span = f"from {since} to the {_session_day(end)} close"
+    week_end = date.fromisoformat(week)
+    first = start if known else end
+    unknown = [y for y in range(first.year, week_end.year + 1) if not cal.calendar_known(date(y, 1, 1))]
+    if unknown:
+        # outside api/calendar's holiday table a holiday would count as a session: state no count or status
+        logger.warning("[alerts] NYSE calendar unknown for %s: session count and week status not stated.", unknown)
+        return end, f"{span} (NYSE calendar not on file for {unknown[0]})"
+    to_come = any(cal.is_trading_day(end + timedelta(days=k)) for k in range(1, (week_end - end).days + 1))
+    status = "partial week, later sessions not stored" if to_come else "week complete"
+    if not known:
+        return end, f"{span} ({status})"
+    n = sum(cal.is_trading_day(start + timedelta(days=k)) for k in range(1, (end - start).days + 1))
+    return end, f"over {n} NYSE session{'' if n == 1 else 's'}, {span} ({status})"
 
 
 # How many months back to look for recently-triggered (but currently inactive) signals.
@@ -248,15 +303,18 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
         ))
         logger.info("[alerts] Market alert: %s [%s]", name, level.upper())
 
-    # SPY drawdown
+    # SPY drawdown: the W-FRI weekly return (a week still under way included), dated by
+    # the close it read and described by the span it covers, never as a 5-day return
     spy_ret, spy_date = _get_latest_derived(conn, "SPY_weekly_ret")
-    if spy_ret is not None:
+    if spy_ret is not None and spy_ret < -0.03:
+        close, period = weekly_return_period(conn, "SPY", spy_date)
+        when = close.isoformat() if close else spy_date
         if spy_ret < -0.07:
-            _add(spy_date, "SPY_drawdown", "risk", spy_ret, -0.07, "below",
-                 f"SPY 5d return {spy_ret:.2%} — below -7% risk threshold.")
-        elif spy_ret < -0.03:
-            _add(spy_date, "SPY_drawdown", "watch", spy_ret, -0.03, "below",
-                 f"SPY 5d return {spy_ret:.2%} — below -3% watch threshold.")
+            _add(when, "SPY_drawdown", "risk", spy_ret, -0.07, "below",
+                 f"SPY return {spy_ret:.2%} {period} — below -7% risk threshold.")
+        else:
+            _add(when, "SPY_drawdown", "watch", spy_ret, -0.03, "below",
+                 f"SPY return {spy_ret:.2%} {period} — below -3% watch threshold.")
 
     # Credit stress: HYG underperforms SPY
     hyg_ret, hyg_date = _get_latest_derived(conn, "HYG_weekly_ret")
