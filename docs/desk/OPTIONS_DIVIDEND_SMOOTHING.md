@@ -96,11 +96,12 @@ every output bit for bit. The copies are `options_math.py` at `38916cb` and `fd.
 The first version compared against float.hex values recorded on one machine. Those values are specific to the
 platform's numpy and libm. On another machine the old and the new code both give other bits, identical to each
 other, so the recorded values failed there although nothing had changed. Limiting numpy's SIMD dispatch here
-(`NPY_DISABLE_CPU_FEATURES`) reproduces that failure for the recorded values; the same-process comparison passes
-under it and still fails on a one-ulp change to either path.
+(`NPY_DISABLE_CPU_FEATURES`) reproduces that kind of failure for the recorded values (here 5 assertions: one
+lattice case and the four FD cases; the Mac showed 4). The same-process comparison passes under it and still
+fails on a one-ulp change to either path.
 
-The same SIMD limit also fails `tests/test_options_engine.py::test_baseline_matches_the_golden_file`, at
-G1-nodiv/33's delta (a case with no dividend), identically on main `f61112b` before this PR. That is the golden
+The same SIMD limit also fails `tests/test_options_engine.py::test_baseline_matches_the_golden_file`. Its first
+mismatch is G1-nodiv/33's delta (a case with no dividend), identical on main `f61112b` before this PR. That is the golden
 file's platform dependence, not an effect of this fix, and the frozen golden file is not regenerated for it.
 
 ## Existing tests changed
