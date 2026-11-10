@@ -16,6 +16,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import subprocess
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -28,6 +29,48 @@ from . import cases, reference
 PER_GROUP_TARGET = 1000
 OVERALL_TARGET = 10_000
 LATTICE_DISPUTE_TOL = 0.05   # tolerances of slack on top of both uncertainties
+QUANTLIB_DISPUTE_TOL = 0.5   # QuantLib escrowed FD (q = 0): tolerances of slack on top of u and QuantLib's spread
+EXACT_QUANTLIB = ("qdfp-high-precision", "qdfp-day0")   # QuantLib methods read against the reference's u
+
+
+ARBITER_CATEGORIES = ("unavailable", "arbiter-unresolved", "reference-consistent", "qdfp-consistent-only", "neither")
+
+
+def arbiter_selected(qlr: dict | None, rv: dict) -> bool:
+    """A QdFp comparison outside the reference's stated uncertainty: the cases the QuantLib FD arbiter is run
+    for (run.py) and the scorer's "outside u" count, one rule for both (design B, item 4)."""
+    return (bool(qlr) and qlr.get("method") in EXACT_QUANTLIB and qlr.get("value") is not None
+            and rv.get("status") == "reliable" and bool(rv.get("u")) and abs(qlr["value"] - rv["ref"]) > rv["u"])
+
+
+def arbiter_category(ref: float, u: float, qdfp: float, arb: dict | None) -> str:
+    """Exactly one category per selected case (comparisons inclusive). A diagnostic: agreement or disagreement
+    between estimates, never the cause of a disagreement and never a pass (design B, item 4; Codex DR-B01/B02)."""
+    if not arb or "error" in arb:
+        return "unavailable"
+    a, ua = arb.get("value"), arb.get("u")
+    if any(x is None or not math.isfinite(x) for x in (ref, u, qdfp, a, ua)):
+        return "unavailable"
+    if arb.get("kind") in reference.BAD_KINDS:
+        return "arbiter-unresolved"
+    if abs(a - ref) <= u + ua:
+        return "reference-consistent"
+    if abs(a - qdfp) <= ua:
+        return "qdfp-consistent-only"
+    return "neither"
+
+
+def unresolved_reason(status: str) -> list[str]:
+    """The reasons of an unresolved reference status, with the case's numbers taken out so they can be counted."""
+    if not status.startswith("unresolved: "):
+        return []
+    out = []
+    for part in status[len("unresolved: "):].split("; "):
+        if part.startswith("convection-dominated"):
+            out.append("convection-dominated (cell Péclet above 1 on the coarsest space level)")
+        else:
+            out.append(re.sub(r"\d+(\.\d+)?(e[-+]?\d+)?", "N", part))
+    return out
 
 
 def clopper_pearson(x: int, n: int, conf: float = 0.95) -> tuple[float, float, float]:
@@ -120,9 +163,15 @@ def classify(rec: dict) -> dict:
         out["lattice_diff_tol"] = diff / tol
         out["lattice_disputed"] = diff > rv["u"] + lat["change"] + LATTICE_DISPUTE_TOL * tol
     qlr = rec.get("quantlib")
+    if arbiter_selected(qlr, rv):
+        out["arbiter"] = arbiter_category(rv["ref"], rv["u"], qlr["value"], rec.get("quantlib_arbiter"))
     if qlr and qlr.get("value") is not None:
         out["quantlib_method"] = qlr["method"]
         out["quantlib_diff_tol"] = abs(qlr["value"] - rv["ref"]) / tol
+        if "spread" in qlr:   # the three-grid escrowed FD (q = 0) states its own spread; older records have none
+            out["quantlib_spread_tol"] = qlr["spread"] / tol
+            out["quantlib_disputed"] = (abs(qlr["value"] - rv["ref"]) >
+                                        rv["u"] + qlr["spread"] + QUANTLIB_DISPUTE_TOL * tol)
     ce = rec.get("control_european")
     if ce:
         e = ce["value"]
@@ -138,8 +187,11 @@ def classify(rec: dict) -> dict:
         out["iv_status"] = iv["status"]
         if iv["status"] == "solved":
             vega = iv.get("vega")
-            # identifiable: one volatility point moves the price by at least one tolerance
-            out["iv_identifiable"] = vega is not None and abs(vega) * 0.01 >= tol
+            # identifiable: one volatility point moves the price by at least one tolerance; unknown (None) when the
+            # work cap refused the bench's vega measurement after the solve (Codex S-02)
+            out["iv_identifiable"] = None if "vega_refused" in iv else (vega is not None and abs(vega) * 0.01 >= tol)
+            if "vega_refused" in iv or "back_refused" in iv:
+                out["iv_measure_refused"] = [k[:-len("_refused")] for k in ("vega_refused", "back_refused") if k in iv]
             out["iv_sigma_err"] = abs(iv["sigma_err"])
             if vega:
                 out["iv_err_vega_tol"] = abs(iv["sigma_err"]) * abs(vega) / tol
@@ -218,14 +270,25 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
     s["lattice_check"] = {"compared": len(lat), "disputed": sum(r["lattice_disputed"] for r in lat),
                           "diff_tol_max": max((r["lattice_diff_tol"] for r in lat), default=None)}
     qlr = [r["quantlib_diff_tol"] for r in rows if "quantlib_diff_tol" in r]
-    qdf = [r for r in rows if r.get("quantlib_method") == "qdfp-high-precision" and r.get("ref_value_status") == "reliable"]
+    qdf = [r for r in rows if r.get("quantlib_method") in EXACT_QUANTLIB and r.get("ref_value_status") == "reliable"]
     cov = [r["quantlib_diff_tol"] / r["ref_u_tol"] for r in qdf if r.get("ref_u_tol")]
     s["bound_route"] = {"checked": sum("bound" in r for r in rows)} | dict(Counter(r["bound"] for r in rows if "bound" in r))
     s["bound_checked"] = s["bound_route"]["checked"]
-    s["quantlib_coverage"] = {"compared": len(cov), "outside_u": sum(x > 1 for x in cov),
+    arb = [r for r in rows if "arbiter" in r]
+    cats = Counter(r["arbiter"] for r in arb)
+    s["quantlib_arbiter"] = {"selected": len(arb), "categories": {k: cats.get(k, 0) for k in ARBITER_CATEGORIES},
+                             "ids": {k: [r["id"] for r in arb if r["arbiter"] == k]
+                                     for k in ARBITER_CATEGORIES if k != "reference-consistent"}}
+    s["unresolved_reasons"] = {q: dict(Counter(x for r in rows for x in unresolved_reason(r.get(f"ref_{q}_status") or "")))
+                               for q in ("value", "delta")}
+    s["quantlib_coverage"] = {"compared": len(cov), "outside_u": len(arb),
                               "ratio_p50": _q(cov, 0.5), "ratio_p99": _q(cov, 0.99), "ratio_max": max(cov) if cov else None}
     s["quantlib_check"] = {"compared": len(qlr), "over_half_tol": sum(x > 0.5 for x in qlr),
                            "diff_tol_p50": _q(qlr, 0.5), "diff_tol_max": max(qlr) if qlr else None}
+    qfd = [r for r in rows if "quantlib_disputed" in r]
+    s["quantlib_dividend_fd"] = {"compared": len(qfd), "disputed": sum(r["quantlib_disputed"] for r in qfd),
+                                 "disputed_ids": [r["id"] for r in qfd if r["quantlib_disputed"]],
+                                 "spread_tol_max": max((r["quantlib_spread_tol"] for r in qfd), default=None)}
     ivs = [r for r in rows if "iv_status" in r]
     se = [r["iv_sigma_err"] for r in ivs if r.get("iv_identifiable")]
     ev = [r["iv_err_vega_tol"] for r in ivs if r.get("iv_identifiable") and "iv_err_vega_tol" in r]
@@ -234,8 +297,12 @@ def _summary(rows: list[dict], sampled: bool = True) -> dict:
                          "sigma_err_p50": _q(se, 0.5), "sigma_err_p99": _q(se, 0.99), "sigma_err_max": max(se) if se else None,
                          "residual_tol_max": max(rs) if rs else None,
                          "identifiable": sum(bool(r.get("iv_identifiable")) for r in ivs),
-                         "unidentifiable_sigma_err_max": max((r["iv_sigma_err"] for r in ivs if "iv_sigma_err" in r and not r.get("iv_identifiable")), default=None),
-                         "err_vega_tol_max": max(ev) if ev else None}
+                         "unidentifiable_sigma_err_max": max((r["iv_sigma_err"] for r in ivs if "iv_sigma_err" in r and r.get("iv_identifiable") is False), default=None),
+                         "err_vega_tol_max": max(ev) if ev else None,
+                         # the Finder's own refusal (request work cap) during the solve: a refusal, not a crash
+                         "refused_ids": [r["id"] for r in ivs if r["iv_status"] == "refused"],
+                         # solved, but the work cap refused a later bench measurement (vega or back-pricing)
+                         "measure_refused_ids": [r["id"] for r in ivs if r.get("iv_measure_refused")]}
     dv = [r for r in rows if "divsens" in r]
     s["divsens"] = {"attempted": len(dv), "outcome": dict(Counter(r["divsens"] for r in dv)),
                     "err_tol_max": max((r["divsens_err_tol"] for r in dv if "divsens_err_tol" in r), default=None),
@@ -579,9 +646,15 @@ def markdown(sc: dict) -> str:
           f"- European control (exercise off, against Black-76): {c['european_cases']} cases, {c['european_reliable']} reliable, "
           f"{c['european_within_u']} with the error inside the stated uncertainty (worst error {_f(c['european_err_over_u_max'], 2)} u, {_f(c['european_err_tol_max'], 4)} tol); "
           f"delta inside its uncertainty on {c['european_delta_within_u']}.",
-          "- American references against QuantLib's high-precision QdFp engine (no dividends; an independent third method, its own error not estimated): "
+          "- American references against QuantLib's high-precision QdFp engine (no dividends, or one dividend paid today by exact decomposition; an independent third method, its own error not estimated): "
           + "; ".join(f"{g} {s['quantlib_coverage']['compared']} compared, {s['quantlib_coverage']['outside_u']} outside the stated uncertainty (|QL − R|/u p99 {_f(s['quantlib_coverage']['ratio_p99'], 2)}, max {_f(s['quantlib_coverage']['ratio_max'], 2)})"
                       for g, s in sc["groups"].items() if s["quantlib_coverage"]["compared"]),
+          "- Those outside, against a fourth method (QuantLib's Crank-Nicolson FD on three grids, read with the reference's "
+          "refinement rule; its estimate is not a bound either, and agreement or disagreement here assigns no cause): "
+          + "; ".join(f"{g} {a['selected']}: " + ", ".join(f"{k} {v}" for k, v in a["categories"].items())
+                      + "".join(f" [{k}: {', '.join(ids[:20])}{' …' if len(ids) > 20 else ''}]" for k, ids in a["ids"].items() if ids)
+                      for g, a in ((g, s["quantlib_arbiter"]) for g, s in sc["groups"].items()) if a["selected"])
+          + ("." if any(s["quantlib_arbiter"]["selected"] for s in sc["groups"].values()) else "none."),
           "- Early-exercise bound (bound-European route, served value European): "
           + "; ".join(f"{g} {s['bound_route']['checked']} checked: {s['bound_route'].get('covered', 0)} covered, "
                       f"{s['bound_route'].get('violated', 0)} violated, {s['bound_route'].get('indeterminate', 0)} indeterminate, "
@@ -589,11 +662,21 @@ def markdown(sc: dict) -> str:
                       for g, s in sc["groups"].items() if s["bound_route"]["checked"]) + ".",
           f"- Exempt group, American reference against Black-76: {c['exempt_american_within_u']} of {c['exempt_american_cases']} inside the stated uncertainty.",
           ""]
-    L += ["## Cross-checks (diagnostics, not references)", ""]
+    L += ["## Unresolved references by reason (counted, never scored)", ""]
+    for g, s in sc["groups"].items():
+        ur = s["unresolved_reasons"]
+        if ur["value"] or ur["delta"]:
+            L.append(f"- {g}: value: " + (", ".join(f"{k} {v}" for k, v in sorted(ur["value"].items())) or "none")
+                     + "; delta: " + (", ".join(f"{k} {v}" for k, v in sorted(ur["delta"].items())) or "none"))
+    L += ["", "## Cross-checks (diagnostics, not references)", ""]
     for g, s in sc["groups"].items():
         lc, qc = s["lattice_check"], s["quantlib_check"]
         L.append(f"- {g}: lattice (same code family) {lc['compared']} compared, {lc['disputed']} disputed, max {_f(lc['diff_tol_max'])} tol; "
-                 f"QuantLib {qc['compared']} compared, {qc['over_half_tol']} over 0.5 tol, max {_f(qc['diff_tol_max'])} tol")
+                 f"QuantLib {qc['compared']} compared, {qc['over_half_tol']} over 0.5 tol, max {_f(qc['diff_tol_max'])} tol"
+                 + (f"; QuantLib escrowed FD (q = 0, three grids) {s['quantlib_dividend_fd']['compared']} compared, "
+                    f"{s['quantlib_dividend_fd']['disputed']} beyond u + its spread + {QUANTLIB_DISPUTE_TOL:g} tol"
+                    + (f" ({', '.join(s['quantlib_dividend_fd']['disputed_ids'][:20])})" if s['quantlib_dividend_fd']['disputed'] else "")
+                    if s.get("quantlib_dividend_fd", {}).get("compared") else ""))
     L += ["", "## Implied volatility round trip (the Finder's solver on reference prices)", "",
           "The engine's own American IV solve, started at sigma 0.3 as the Finder does, on the reference price of a served case; sigma error is |recovered − true| in absolute volatility; residual is the engine's value at the recovered sigma minus the reference price. Identifiable: one volatility point moves the engine's price by at least one tolerance; elsewhere the price barely depends on sigma and a large sigma error is expected.", ""]
     for g, s in sc["groups"].items():
@@ -601,7 +684,9 @@ def markdown(sc: dict) -> str:
         if iv["attempted"]:
             L.append(f"- {g}: {iv['attempted']} attempted, " + ", ".join(f"{k} {v}" for k, v in sorted(iv["status"].items()))
                      + f"; identifiable {iv['identifiable']}: sigma error p50 {_f(iv['sigma_err_p50'], 6)}, p99 {_f(iv['sigma_err_p99'], 6)}, max {_f(iv['sigma_err_max'], 6)}, max error × vega {_f(iv['err_vega_tol_max'], 3)} tol; "
-                     f"not identifiable: max sigma error {_f(iv['unidentifiable_sigma_err_max'], 4)}; residual max {_f(iv['residual_tol_max'], 4)} tol")
+                     f"not identifiable: max sigma error {_f(iv['unidentifiable_sigma_err_max'], 4)}; residual max {_f(iv['residual_tol_max'], 4)} tol"
+                     + (f"; solve refused by the Finder's work cap: {', '.join(iv['refused_ids'])}" if iv.get("refused_ids") else "")
+                     + (f"; solved, but the work cap refused a later measurement (identifiability or residual not measured): {', '.join(iv['measure_refused_ids'])}" if iv.get("measure_refused_ids") else ""))
     L += ["", "## Dividend sensitivity (provisional gate, decision 11)", "",
           "Every owed dividend scaled by 1.1 and by 0.9: the engine's price change between the two must match the reference's within one price tolerance (the reference uncertainties of both states counted against it).", ""]
     for g, s in sc["groups"].items():

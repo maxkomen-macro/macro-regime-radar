@@ -85,6 +85,9 @@ def work(job: tuple) -> dict:
             rec["lattice"] = engine.lattice_check(opts["engine_root"], c)
         if opts["quantlib"]:
             rec["quantlib"] = crosscheck.quantlib(c)
+            if score.arbiter_selected(rec["quantlib"], ref["value"]):
+                rec["quantlib_arbiter"] = crosscheck.quantlib_arbiter(
+                    c, day0=rec["quantlib"]["method"] == "qdfp-day0")
         if opts["controls"]:
             eu = reference.reference(c, american=False)
             bs = crosscheck.black76_case(c)
