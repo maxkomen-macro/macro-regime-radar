@@ -14,6 +14,10 @@ references on synthetic contexts and writes a reproducible scorecard.
   convergence (grid-convergence index). A reference is used only when its uncertainty is at most a tenth of
   the tolerance it judges; the rest stay visible as unresolved. The uncertainty is an estimate, not a bound.
 - **Controls**: the same solver with exercise off against Black-76, and exempt contracts against Black-76.
+- **Phase 3 Greek references** (`greek_reference.py`): the same refinement study run on each Greek and on the
+  FD price, corroborated by the lattice (`om._lattice`, read only; step-2 node gamma), each side within its own
+  budget and one aggregate work cap per context charged before every solve. An FD study alone never scores an
+  FD quantity.
 - **Cross-checks** (diagnostics, never references): a fine plain lattice (same code family as the engine)
   and QuantLib where its conventions match (no dividends, or q = 0 with escrowed dividends).
 - **Implied volatility round trip** with the Finder's solver, split by whether the price identifies sigma.
