@@ -95,11 +95,10 @@ export function holdersChange(n: PositioningHoldings["names"][number]): string {
 /** The Advanced line on what the 13F block read. */
 export function holdingsReadLine(h: PositioningHoldings): string {
   const amend = `${grouped(h.restatements)} restatements applied and ${grouped(h.new_holdings)} new-holdings amendments added`;
-  const aside = h.set_aside ? `; ${grouped(h.set_aside)} ${h.set_aside === 1 ? "amendment" : "amendments"} of no stated type set aside` : "";
   const prev = h.previous_period ? ` The change is against ${dayLong(h.previous_period)}.` : ` No change: ${h.previous_reason ?? "the quarter before is not stored"}.`;
   return (
     `${grouped(h.filings)} holdings reports and amendments for ${dayLong(h.period)} from ${grouped(h.filers)} filers, ` +
-    `filed through ${dayLong(h.newest_filing ?? h.filings_through)}: ${amend}${aside}.${prev} Data sets: ${h.data_sets.join(", ")}. ` +
+    `filed through ${dayLong(h.newest_filing ?? h.filings_through)}: ${amend}.${prev} Data sets: ${h.data_sets.join(", ")}. ` +
     `Tickers paired from the SEC's fails-to-deliver files ${h.ftd_files.join(", ")}.`
   );
 }

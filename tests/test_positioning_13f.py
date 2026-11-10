@@ -112,9 +112,8 @@ def test_a_restatement_replaces_the_report_and_new_holdings_filed_after_it_add()
         F("a2", "2026-07-25", "13F-HR/A", "NEW HOLDINGS"),   # superseded by the restatement filed after it
         F("a3", "2026-08-01", "13F-HR/A", "RESTATEMENT"),
         F("a4", "2026-08-05", "13F-HR/A", "NEW HOLDINGS"),
-        F("a5", "2026-08-06", "13F-HR/A", ""),               # no stated type: set aside
     ])
-    assert sorted(keep) == ["a3", "a4"] and n["restatements"] == 1 and n["new_holdings"] == 1 and n["set_aside"] == 1
+    assert sorted(keep) == ["a3", "a4"] and n["restatements"] == 1 and n["new_holdings"] == 1
     # the latest base by filing date, then accession number
     keep, _ = s13.effective([F("b2", "2026-07-20"), F("b1", "2026-07-20", "13F-HR/A", "RESTATEMENT")])
     assert sorted(keep) == ["b2"]
@@ -190,9 +189,16 @@ def test_a_filer_writing_values_in_the_wrong_unit_moves_no_rank(tmp_path):
 
 # ── the store ───────────────────────────────────────────────────────────────
 
+def test_an_amendment_of_no_stated_type_refuses_the_quarter():
+    # Its effect cannot be applied: were it a restatement, leaving it out would publish the numbers it replaced.
+    with pytest.raises(s13.Refused, match="a5 .*states no amendment type.*nothing replaced"):
+        s13.effective([F("a1", "2026-07-20"), F("a5", "2026-08-06", "13F-HR/A", "")])
+
+
 def test_a_run_stores_both_quarters_with_their_dates_and_counts(store):
-    periods = rows_of(store, f"SELECT period, deadline, data_sets, filings_through, filers, restatements, new_holdings, set_aside, "
-                             f"method FROM {s13.PERIODS} ORDER BY period")
+    periods = rows_of(store, f"SELECT period, deadline, data_sets, filings_through, filers, restatements, new_holdings, "
+                             f"(SELECT COUNT(*) FROM {s13.TABLE} t WHERE t.period = p.period), "
+                             f"method FROM {s13.PERIODS} p ORDER BY period")
     assert [p[:4] for p in periods] == [
         ("2026-03-31", "2026-05-15", "01mar2026-31may2026_form13f.zip,01jun2026-31aug2026_form13f.zip", "2026-08-31"),
         ("2026-06-30", "2026-08-14", "01mar2026-31may2026_form13f.zip,01jun2026-31aug2026_form13f.zip", "2026-08-31")]
@@ -314,6 +320,9 @@ UNREADABLE = {
     "a fails file with no trailer": ("cnsfails202609b.zip", "cnsfails202609b.txt",
                                      lambda b: b"\n".join(l for l in b.split(b"\n") if not l.startswith(b"Trailer record count")),
                                      "its trailer counts no records"),
+    "a filing with no cover page": ("01jun2026-31aug2026_form13f.zip", "COVERPAGE.tsv",
+                                    lambda b: b"\n".join(l for i, l in enumerate(b.split(b"\n")) if i != 1),
+                                    "has no COVERPAGE.tsv row"),
     "a ticker with no CUSIP": ("cnsfails202609a.zip", "cnsfails202609a.txt", lambda b: b.replace(b"|SYN", b"|SYN?", 1),
                                "with no readable CUSIP or date"),
 }
@@ -341,6 +350,23 @@ def test_codex_s2_one_holder_of_two_is_never_published(tmp_path):
     s = refresh(f, fx.FakeSec(fs))
     assert s["status"] == "error" and "nothing replaced" in s["detail"]
     assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)] == rows_of(f, f"SELECT COUNT(*) FROM {s13.PERIODS}")
+
+
+def test_codex_s3_a_restatement_without_its_cover_row_never_leaves_the_original_standing(store, monkeypatch):
+    # Codex S-3's repro: the original reports 10 shares and a RESTATEMENT 90; the amendment's cover row is gone.
+    # The type is unknown, so the run is refused and the stored quarter stays, rather than serving the 10.
+    monkeypatch.setattr(s13, "METHOD", "13f-test")
+    before = snapshot(store)
+    fs = files()
+    path = next(p for p in fs if p.endswith("01jun2026-31aug2026_form13f.zip"))
+    with zipfile.ZipFile(io.BytesIO(fs[path])) as z:
+        cover = z.read("COVERPAGE.tsv").decode().split("\n")
+    restated = next(l.split("\t")[0] for l in cover[1:] if "\tRESTATEMENT\t" in l)
+    _edit_member(fs, "01jun2026-31aug2026_form13f.zip", "COVERPAGE.tsv",
+                 lambda b: b"\n".join(l for l in b.split(b"\n") if not l.startswith(restated.encode() + b"\t")))
+    s = refresh(store, fx.FakeSec(fs))
+    assert s["status"] == "error" and f"(filing {restated}) has no COVERPAGE.tsv row" in s["detail"]
+    assert snapshot(store) == before
 
 
 def test_an_empty_read_is_refused_not_stored_as_a_quarter_nobody_held(store, monkeypatch):

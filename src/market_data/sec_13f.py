@@ -20,8 +20,10 @@ why, in `holdings_13f_refused`. US government data; the Desk credits the SEC.
 Amendments: a 13F-HR/A marked RESTATEMENT replaces the filer's report for the
 quarter (the latest original or restatement by filing date and accession
 number is the base); one marked NEW HOLDINGS adds its positions, when filed
-after the base. Notices (13F-NT) hold no positions. An amendment of no stated
-type is set aside and counted.
+after the base. Notices (13F-NT) hold no positions. A filing with no cover
+row, or an amendment of no stated type, refuses the run: were it a
+restatement, leaving it out would publish the numbers it replaced. So does
+any row that cannot be read (docs/desk/POSITIONING_SPEC.md §3.2).
 
 Identifiers: a 13F row names a security by CUSIP, not by ticker. The SEC's own
 fails-to-deliver files pair each ticker with its CUSIP; a ticker is mapped to
@@ -127,7 +129,6 @@ CREATE TABLE IF NOT EXISTS {PERIODS} (
     filings         INTEGER NOT NULL,  -- holdings reports and amendments read for the period
     restatements    INTEGER NOT NULL,  -- RESTATEMENT amendments that replaced a report
     new_holdings    INTEGER NOT NULL,  -- NEW HOLDINGS amendments added
-    set_aside       INTEGER NOT NULL,  -- amendments of no stated type
     names           INTEGER NOT NULL,  -- tickers stored for the period
     revised_names   INTEGER NOT NULL,  -- tickers whose figures changed when the period was last recomputed
     method          TEXT NOT NULL,
@@ -387,7 +388,10 @@ def read_filings(z: zipfile.ZipFile, periods: set[date], set_name: str) -> list[
         if period not in periods:
             continue
         acc = r[ix["ACCESSION_NUMBER"]].strip()
-        _is_amend, amend_type, report_type = cover.get(acc, ("", "", ""))
+        if acc not in cover:
+            # Codex S-3: without it the amendment type is unknown, and a restatement would be passed over
+            raise Refused(_unreadable(set_name, "SUBMISSION.tsv", line, f"(filing {acc}) has no COVERPAGE.tsv row"))
+        _is_amend, amend_type, report_type = cover[acc]
         out.append({"accession": acc, "cik": r[ix["CIK"]].strip().lstrip("0") or "0", "period": period, "filed": filed,
                     "kind": kind, "amendment": amend_type if kind == "13F-HR/A" else "", "report_type": report_type,
                     "data_set": set_name})
@@ -405,8 +409,12 @@ def effective(filings: list[dict]) -> tuple[dict[str, dict], Counter]:
         group.sort(key=lambda f: (f["filed"], f["accession"]))
         if any(f["report_type"] == "13F NOTICE" for f in group if f["kind"] == "13F-HR"):
             group = [f for f in group if not (f["kind"] == "13F-HR" and f["report_type"] == "13F NOTICE")]
-        untyped = [f for f in group if f["kind"] == "13F-HR/A" and f["amendment"] not in ("RESTATEMENT", "NEW HOLDINGS")]
-        n["set_aside"] += len(untyped)
+        for f in group:
+            if f["kind"] == "13F-HR/A" and f["amendment"] not in ("RESTATEMENT", "NEW HOLDINGS"):
+                # its effect cannot be applied: a restatement left out would publish the numbers it replaced
+                raise Refused(f"{f['data_set']}: amendment {f['accession']} (filer {f['cik']}, {f['period']}) states no "
+                              "amendment type, RESTATEMENT or NEW HOLDINGS, so the quarter cannot be computed whole; "
+                              "nothing replaced")
         bases = [f for f in group if f["kind"] == "13F-HR" or f["amendment"] == "RESTATEMENT"]
         base = bases[-1] if bases else None
         after = (base["filed"], base["accession"]) if base else (date.min, "")
@@ -595,9 +603,6 @@ def compute(set_files: list[tuple[str, Path]], ftd_blobs: list[tuple[str, bytes]
             per_period[f["period"]]["restatements"] += 1
         elif f["amendment"] == "NEW HOLDINGS":
             per_period[f["period"]]["new_holdings"] += 1
-    for f in filings:
-        if f["kind"] == "13F-HR/A" and f["amendment"] not in ("RESTATEMENT", "NEW HOLDINGS"):
-            per_period[f["period"]]["set_aside"] += 1
     newest = {p: max((f["filed"] for f in filings if f["period"] == p), default=None) for p in periods}
     names: dict[date, dict[str, Counter]] = {p: defaultdict(Counter) for p in periods}
     with tempfile.TemporaryDirectory(dir=workdir) as tmp:
@@ -670,11 +675,11 @@ def write(conn: sqlite3.Connection, result: dict, sets: list[DataSet], ftd: list
         c = result["per_period"][p]
         newest = result["newest_filing"][p]
         conn.execute(f"INSERT OR REPLACE INTO {PERIODS} (period, deadline, data_sets, filings_through, newest_filing, ftd_files, "
-                     f"filers, filings, restatements, new_holdings, set_aside, names, revised_names, method, run_id, computed_at) "
-                     f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                     f"filers, filings, restatements, new_holdings, names, revised_names, method, run_id, computed_at) "
+                     f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                      (ps, deadline_of(p).isoformat(), ",".join(s.name for s in sets), max(s.end for s in sets).isoformat(),
                       newest.isoformat() if newest else None, ",".join(f.rsplit("/", 1)[-1] for f in ftd),
-                      result["filers"][p], c["filings"], c["restatements"], c["new_holdings"], c["set_aside"],
+                      result["filers"][p], c["filings"], c["restatements"], c["new_holdings"],
                       len(new), revised, METHOD, run_id, cot.stamp(now)))
         counts[ps] = {"names": len(new), "refused": len(result["refused"][p]), "revised": revised, "filers": result["filers"][p]}
     return counts

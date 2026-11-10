@@ -1566,7 +1566,6 @@ export interface PositioningHoldings {
   filings: number;
   restatements: number;
   new_holdings: number;
-  set_aside: number;
   revised_names: number;
   computed_at: string;
   large_filers_n: number;

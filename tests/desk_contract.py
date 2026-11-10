@@ -648,7 +648,7 @@ POSITIONING_HOLDINGS = obj(
     provider=Const("SEC"), source=STR, credit=STR, lag_note=STR,
     period=DATE, previous_period=null(DATE), previous_reason=null(STR), deadline=DATE, filings_through=DATE,
     newest_filing=null(DATE), data_sets=Arr(STR, min=1), ftd_files=Arr(STR, min=1),
-    filers=INT, filings=INT, restatements=INT, new_holdings=INT, set_aside=INT, revised_names=INT, computed_at=TS,
+    filers=INT, filings=INT, restatements=INT, new_holdings=INT, revised_names=INT, computed_at=TS,
     large_filers_n=Const(100), top_positions_n=Const(10), top_holders_n=Const(10),
     # the names a request asks for (names=…), in its order: none when it asks for none
     names=Arr(obj(symbol=STR, issuer=STR, holders=INT, holders_prev=null(INT), holders_change=null(INT), shares=INT,

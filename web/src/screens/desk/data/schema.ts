@@ -1068,7 +1068,6 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
       filings: "n",
       restatements: "n",
       new_holdings: "n",
-      set_aside: "n",
       revised_names: "n",
       computed_at: "s",
       large_filers_n: "n",

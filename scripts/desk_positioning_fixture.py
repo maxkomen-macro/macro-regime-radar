@@ -175,8 +175,6 @@ def synth_sec(seed: int = SEED, symbols: tuple[str, ...] | None = None) -> dict[
                 extra = next(x for x in held if x not in book)
                 file(cik, period, min(filed + timedelta(days=25), date(2026, 8, 31)), "13F-HR/A", "NEW HOLDINGS", "13F HOLDINGS REPORT",
                      [(extra[2], extra[1], 1_000 * int(price[extra[1]]), 1_000, "SH", "")])
-            if cik % 80 == 13:  # an amendment of no stated type: set aside
-                file(cik, period, filed + timedelta(days=3), "13F-HR/A", "", "13F HOLDINGS REPORT", rows[:1])
     for cik in (901, 902):  # notices hold no positions
         file(cik, date(2026, 6, 30), date(2026, 8, 1), "13F-NT", "", "13F NOTICE", [])
     out: dict[str, bytes] = {}

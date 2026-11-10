@@ -277,7 +277,7 @@ def holdings_block(conn: sqlite3.Connection) -> dict:
         raise env.Awaiting(HOLDINGS_NOT_STORED)
     periods = conn.execute(
         f"SELECT p.period, p.deadline, p.data_sets, p.filings_through, p.newest_filing, p.ftd_files, p.filers, p.filings, "
-        f"p.restatements, p.new_holdings, p.set_aside, p.names, p.revised_names, p.run_id, p.computed_at "
+        f"p.restatements, p.new_holdings, p.names, p.revised_names, p.run_id, p.computed_at "
         f"FROM {s13.PERIODS} p JOIN {s13.RUNS} r ON r.run_id = p.run_id WHERE r.status = 'committed' "
         f"ORDER BY p.period DESC").fetchall()
     # point in time: a quarter is served only when the filings read reach its deadline
@@ -285,13 +285,13 @@ def holdings_block(conn: sqlite3.Connection) -> dict:
     if not periods:
         raise env.Awaiting(HOLDINGS_NOT_STORED)
     (period, deadline, data_sets, through, newest_filing, ftd_files, filers, filings, restatements, new_holdings,
-     set_aside, _n, revised, run_id, computed_at) = periods[0]
+     _n, revised, run_id, computed_at) = periods[0]
     prev = s13.previous_quarter_end(date.fromisoformat(period)).isoformat()
     prev_row = next((r for r in periods if r[0] == prev), None)
     held_prev = {}
     if prev_row is not None:
         held_prev = {k: h for k, h in conn.execute(f"SELECT symbol_key, holders FROM {s13.TABLE} WHERE period = ? AND run_id = ?",
-                                                   (prev, prev_row[13]))}
+                                                   (prev, prev_row[-2]))}  # its run_id
     rows = {}
     for key, symbol, issuer, holders, shares, top10, large in conn.execute(
             f"SELECT symbol_key, symbol, issuer, holders, shares, top10_shares, large_filers_top10 FROM {s13.TABLE} "
@@ -319,7 +319,6 @@ def holdings_block(conn: sqlite3.Connection) -> dict:
         "filings": int(filings),
         "restatements": int(restatements),
         "new_holdings": int(new_holdings),
-        "set_aside": int(set_aside),
         "revised_names": int(revised),
         "computed_at": computed_at,
         "large_filers_n": s13.LARGE_FILERS,

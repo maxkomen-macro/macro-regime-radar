@@ -169,9 +169,11 @@ quarterly-named sets before 2024 are not read). A run reads:
   kept (`revised_names`).
 - **Amendments:** per filer and quarter, the filings are ordered by filing date and accession number. The
   latest original or RESTATEMENT amendment is the report; NEW HOLDINGS amendments filed after it add their
-  positions; NEW HOLDINGS filed before a restatement are part of what it restates. An amendment of no
-  stated type is set aside and counted (`set_aside`). The block counts the restatements applied and the
-  new-holdings amendments added.
+  positions; NEW HOLDINGS filed before a restatement are part of what it restates. The type is read from
+  each filing's `COVERPAGE.tsv` row. A holdings report or amendment with no cover row, or an amendment of
+  no stated type, refuses the run (Codex S-3): were it a restatement, leaving it out would publish the
+  numbers it replaced. (The real files read on 2026-11-10 hold neither.) The block counts the
+  restatements applied and the new-holdings amendments added.
 
 ### 3.4 Figures (per ticker, per quarter)
 
