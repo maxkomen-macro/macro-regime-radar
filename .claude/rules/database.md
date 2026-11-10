@@ -26,7 +26,7 @@ download the sources"). As of Jun 2026 the DB is **gitignored** and shipped as a
 - **Writers** (`refresh-data.yml`, `intraday-refresh.yml`) `gh release download` the DB from
   `data-latest` at job start, run their incremental update, then `gh release upload … --clobber`
   it back. They are in the `data-write` concurrency group so uploads don't race.
-- **Readers** (`daily-memo.yml`, `weekly-memo.yml`) download it read-only to build the memos.
+- **Readers** (`daily-memo.yml`, `weekly-memo.yml`): a manual run downloads it read-only to build the memo. A queued run (CS-2) never reads the Release; it builds from its source refresh attempt's `validated-db` run artifact, checked by hash.
 - **API** (`api/bootstrap.py`) downloads the asset at startup when `GH_DB_TOKEN` is set, and
   swaps it in atomically; no token → no-op, dev keeps the on-disk DB (`.claude/rules/api.md`).
 - **Legacy dashboard** (`dashboard/app.py`) downloads the latest asset into `DB_PATH` at startup

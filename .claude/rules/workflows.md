@@ -29,11 +29,13 @@ The two workflows queue against each other instead of racing, which matters beca
 the DB to the same `data-latest` release asset (serialized so `--clobber` uploads don't race).
 
 The DB is not committed to git: it is downloaded from and uploaded to the `data-latest` Release
-(see **Database**). Three workflows write to git, each one generated file:
-`refresh-data.yml` (`output/playbook.json`, full mode after a passing validation), `daily-memo.yml`
-(`docs/memo/daily_memo.html`) and `weekly-memo.yml` (`docs/memo/weekly_memo.html`).
-`intraday-refresh.yml` and `keep-api-warm.yml` never push. The memo workflows are not in the
-`data-write` group (they only read the DB).
+(see **Database**). Three workflows write to git: `refresh-data.yml` (`output/playbook.json`,
+full mode after a passing validation, and the memo source registry `docs/memo/sources.json`),
+`daily-memo.yml` (`docs/memo/daily_memo.html`, `docs/memo/ledger-daily.json`) and `weekly-memo.yml`
+(`docs/memo/weekly_memo.html`, `docs/memo/ledger-weekly.json`). The registry and ledgers are written
+only by compare-and-swap (`publish_artifacts.sh --expect`). `intraday-refresh.yml` and
+`keep-api-warm.yml` never push. The memo workflows are not in the `data-write` group (they only read
+the DB).
 
 ### The Git writer: `scripts/publish_artifacts.sh` (2026-11-04)
 
@@ -113,6 +115,6 @@ Every database, snapshot, verdict and refresh-status release command takes `--re
 - **Cap:** at most two dispatches per session. They are counted from `close-sentinel-dispatch-<S>` artifacts, each uploaded before its dispatch. A run that then decides not to dispatch deletes its own artifact. An uncertain outcome keeps it. A re-run of a watcher (attempt 2 or later) never plans or dispatches.
 - **No earnings calls:** sentinel runs make no earnings calls, because `actions_gate` refuses `workflow_dispatch`.
 - **What stays:** the refresh-data crons, validation and the deadline are unchanged.
-- **Keep it off until CS-2 (once-per-session memos) merges.** Under today's clock-slot memo rule, a sentinel full run that starts before 18:00 UTC would also dispatch a memo.
+- **Keep it off until the owner approves activation.** CS-2 (once-per-session memos) is the prerequisite: under the old clock-slot memo rule, a sentinel full run that started before 18:00 UTC would also have dispatched a memo. Merging CS-2 does not turn the watcher on.
 
 `refresh-data`'s `close_session` input is a title label only (`run-name: Refresh Data (close <S>)`), and no step reads it. The sentinel's release reads follow `DATA_RELEASE_REPO` in Python. They are pinned in `tests/test_data_release_repo.py` and `tests/test_close_sentinel.py`.
