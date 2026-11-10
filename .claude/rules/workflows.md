@@ -69,15 +69,23 @@ YAML) and shows the old step reverting the merge on the same scenario.
 
 ### Rules for future workflow edits
 
+These are rules for workflow steps. How a person or an assistant branches, stages, pushes and
+merges in a checkout is in `CLAUDE.md` / `AGENTS.md` ("Git, approval and deploy rules"); the
+publisher's fetch, fresh worktree and push are not a routine to run by hand.
+
 1. A workflow that writes to git calls `scripts/publish_artifacts.sh` with explicit paths. Never
    `git commit` or `git push` in a workflow step, never commit the runner's checkout (no
    `reset --soft`, no stash/rebase), and never force-push. A new generated file is a reviewed
    addition to `ALLOWED`.
 2. If adding a third workflow that uploads the DB Release asset, give it the same `concurrency: { group: data-write, cancel-in-progress: false }` block.
 3. Keep at least 3 attempts and the backoff in the publisher.
-4. After merging a PR, check that `main` still contains it: `git diff <merge> origin/main --stat`
-   should list only bot artifact paths. A run that started before a workflow change still uses
-   the workflow it started with.
+4. After merging a PR, check that `main` still contains it. Two checks, both needed:
+   `git merge-base --is-ancestor <merge> origin/main` succeeds, and
+   `git diff <merge> origin/main -- <the PR's files>` shows only changes that a later merged PR
+   or a bot artifact commit explains. Other PRs may merge afterwards, so a whole-tree diff is
+   not the test. Ancestry alone is not the test either: `d9359019` had the merges of #35 and #30
+   as ancestors and still removed their files. A run that started before a workflow change
+   still uses the workflow it started with.
 5. If a scheduled run fails, investigate it as a new bug.
 
 ### `.gitattributes`

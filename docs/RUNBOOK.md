@@ -1,8 +1,8 @@
 # Macro Regime Radar — operations runbook (React/FastAPI build)
 
-Written 2026-09-06 for the owner. Everything here was exercised locally on
-branch `react-rebuild`; nothing has been committed, pushed, dispatched or
-deployed by the build session. Commands assume the repo root.
+Written 2026-09-06 for the owner, before launch, and amended since. The site is
+now live (static bundle on Vercel, API on Render: `docs/redesign/DEPLOY.md`).
+Commands assume the repo root.
 
 ## 1. What runs where
 
