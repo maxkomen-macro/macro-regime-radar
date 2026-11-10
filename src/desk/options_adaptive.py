@@ -488,6 +488,8 @@ XC_NOT_VALIDATED = "FD not validated for these inputs"
 XC_E_ABOVE = "FD estimate above 0.25 tolerances"
 XC_EXACT = "the price is exact"
 XC_NO_PRICE = "no price to check"
+XC_SLACK = 0.1                 # analytic prices: the interval test's floor, s = max(E_FD, 0.1·price_tol) (P3-AM1)
+XC_NO_INTERVAL = "no proved interval to check"
 
 
 @dataclass(frozen=True)
@@ -533,7 +535,8 @@ def cross_check(c: om.Context, a: oe.Answer, base: dict, xcfg: XConfig = XConfig
                 region: Callable[[om.Context], str | None] | None = None) -> CrossCheck:
     """The cross-check of Tier 2's answer `a` against the production FD's L1 and L2 solves `base` ({0: L1, 1: L2},
     each an options_fd.Solved or Refused). Only an estimated or analytic price is checked: an exact one (intrinsic,
-    or exempt by theorem) needs none, and a refusal has nothing to check. `region(c)` is the frozen FD role
+    or exempt by theorem) needs none, and a refusal has nothing to check. A lattice price is checked at its value
+    (|V_T2 − V_FD| ≤ 0.5·tol), an analytic one at its proved interval (L − s ≤ V_FD ≤ U + s, amendment P3-AM1). `region(c)` is the frozen FD role
     predicate set (Ω_X, a reason or None; None only in development runs)."""
     from src.desk import options_fd as fd
     if a.price_status == oe.EXACT:
@@ -559,6 +562,17 @@ def cross_check(c: om.Context, a: oe.Answer, base: dict, xcfg: XConfig = XConfig
         return CrossCheck(XC_UNAVAILABLE, fd.R_NONFINITE, v2, None, None, tol, audit)
     if e_fd > XC_E_MAX * tol:
         return CrossCheck(XC_UNAVAILABLE, XC_E_ABOVE, v2, e_fd, diff, tol, audit)
+    if a.price_status == oe.ANALYTIC:
+        # amendment P3-AM1: an analytic price claims its proved interval [L, U], not its midpoint, so the FD value
+        # is tested against the interval, widened by s = max(E_FD, 0.1·tol) (the padding Tier 2 adds itself)
+        lo, hi = a.audit.get("L"), a.audit.get("U")
+        if lo is None or hi is None or not (math.isfinite(lo) and math.isfinite(hi)):
+            return CrossCheck(XC_UNAVAILABLE, XC_NO_INTERVAL, v2, e_fd, diff, tol, audit)
+        s = max(e_fd, XC_SLACK * tol)
+        audit.update(L=lo, U=hi, s=s)
+        if lo - s <= v2 <= hi + s:
+            return CrossCheck(XC_CHECKED, None, v2, e_fd, diff, tol, audit)
+        return CrossCheck(XC_DISAGREE, None, v2, e_fd, diff, tol, audit)
     if diff <= XC_AGREE * tol:
         return CrossCheck(XC_CHECKED, None, v2, e_fd, diff, tol, audit)
     return CrossCheck(XC_DISAGREE, None, v2, e_fd, diff, tol, audit)

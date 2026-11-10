@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ast
 import dataclasses
+import math
 from pathlib import Path
 
 import pytest
@@ -126,9 +127,67 @@ def test_outside_the_fd_role_region_the_check_is_unavailable_from_the_inputs_alo
     assert oa.cross_check(C, _est(V), _base(V, V), region=lambda c: None).status == oa.XC_CHECKED
 
 
+def _analytic(lo, hi, value=None):
+    """An analytic-bound answer: the midpoint of the proved interval [lo, hi] (or `value`), as price() serves it."""
+    mid = lo + (hi - lo) / 2.0 if value is None else value
+    return dataclasses.replace(_est(mid), route=oe.ROUTE_ANALYTIC,
+                               price_status=oe.ANALYTIC, audit={"L": lo, "U": hi})
+
+
+# amendment P3-AM1 (pilot D1): an analytic price is checked against its proved interval, widened by
+# s = max(E_FD, 0.1·tol); the midpoint's 0.5·tol test does not apply to it
+@pytest.mark.parametrize("v_fd,status", [
+    (V - 0.9 * TOL, oa.XC_CHECKED),                       # inside, 0.9 tol from the midpoint
+    (V + 0.9 * TOL, oa.XC_CHECKED),
+    (V - TOL, oa.XC_CHECKED),                             # on L
+    (V - TOL - 0.1 * TOL * (1 - 1e-9), oa.XC_CHECKED),    # inside the floor below L
+    (V - TOL - 0.1 * TOL * (1 + 1e-9), oa.XC_DISAGREE),   # just past it
+    (V + TOL + 0.1 * TOL * (1 + 1e-9), oa.XC_DISAGREE),
+    (V + 3.0 * TOL, oa.XC_DISAGREE)])
+def test_an_analytic_price_is_checked_against_its_proved_interval(v_fd, status):
+    got = oa.cross_check(C, _analytic(V - TOL, V + TOL), _base(v_fd, v_fd))
+    assert got.status == status and got.v_fd == v_fd and got.e_fd == 0.0
+    assert got.audit["L"] == V - TOL and got.audit["U"] == V + TOL and got.audit["s"] == oa.XC_SLACK * TOL
+
+
+def test_the_interval_test_is_stricter_than_the_midpoint_test_where_the_interval_is_narrow():
+    # 0.3 tol from the midpoint passes the lattice rule, but lies outside a proved interval of half-width 0.01 tol
+    lo, hi = V - 0.01 * TOL, V + 0.01 * TOL
+    v_fd = V + 0.3 * TOL
+    assert oa.cross_check(C, _est(V), _base(v_fd, v_fd)).status == oa.XC_CHECKED
+    assert oa.cross_check(C, _analytic(lo, hi), _base(v_fd, v_fd)).status == oa.XC_DISAGREE
+
+
+def test_the_interval_slack_is_the_fd_estimate_when_that_is_larger():
+    f_p = oa.XConfig().f_p
+    e = 0.2 * TOL                                          # E_FD = 0.2 tol, under the 0.25 tol limit
+    v2 = V + TOL + 0.15 * TOL                              # past U by 0.15 tol: outside the floor, inside E_FD
+    got = oa.cross_check(C, _analytic(V - TOL, V + TOL), _base(v2 - e / f_p, v2))
+    assert got.status == oa.XC_CHECKED and math.isclose(got.audit["s"], e)
+    v2 = V + TOL + 0.25 * TOL
+    got = oa.cross_check(C, _analytic(V - TOL, V + TOL), _base(v2 - e / f_p, v2))
+    assert got.status == oa.XC_DISAGREE
+
+
+def test_an_analytic_price_with_an_unsettled_fd_value_is_unavailable():
+    got = oa.cross_check(C, _analytic(V - TOL, V + TOL), _base(V + 5 * TOL, V + 2 * TOL))
+    assert got.status == oa.XC_UNAVAILABLE and got.reason == oa.XC_E_ABOVE
+
+
+def test_an_analytic_answer_without_its_interval_is_never_checked_at_its_midpoint():
+    got = oa.cross_check(C, dataclasses.replace(_est(V), price_status=oe.ANALYTIC), _base(V, V))
+    assert got.status == oa.XC_UNAVAILABLE and got.reason == oa.XC_NO_INTERVAL
+
+
+def test_the_lattice_rule_is_unchanged_by_the_amendment():
+    for frac, status in ((0.5 * (1 - 1e-9), oa.XC_CHECKED), (0.5 * (1 + 1e-9), oa.XC_DISAGREE)):
+        v2 = V + frac * TOL
+        assert oa.cross_check(C, _est(V), _base(v2, v2)).status == status
+
+
 def test_only_estimated_and_analytic_prices_are_checked():
     a = _est(V)
-    assert oa.cross_check(C, dataclasses.replace(a, price_status=oe.ANALYTIC), _base(V, V)).status == oa.XC_CHECKED
+    assert oa.cross_check(C, _analytic(V, V, V), _base(V, V)).status == oa.XC_CHECKED
     got = oa.cross_check(C, dataclasses.replace(a, price_status=oe.EXACT), _base(V + TOL, V + TOL))
     assert got.status == oa.XC_NOT_APPLICABLE and got.reason == oa.XC_EXACT
     for st in (oe.UNRESOLVED, oe.OUTSIDE, oe.INPUT, oe.CONTROL):
@@ -222,3 +281,16 @@ def test_no_served_module_imports_phase_3_code():
         for name in _imports(path):
             for p3 in ("options_adaptive", "options_greeks", "options_fd"):
                 assert p3 not in name, (path, name)
+
+
+def test_a_short_dated_analytic_price_more_than_half_a_tolerance_from_fd_is_cross_checked_inside_its_interval():
+    # the dev pilot's G1-nodiv/3 inputs (bench-generated, invented): Tier 2 serves the interval midpoint about
+    # 0.57 tol from the FD value; the FD value lies inside [L, U], so the price is cross-checked (P3-AM1)
+    c = ctx(is_call=False, strike=109.880205, days=3, rho=-0.00871271, q=-0.01667728, sigma=0.76046348)
+    a = oa.price(c)
+    assert a.price_status == oe.ANALYTIC
+    got = oa.phase3(c)
+    xc = got.cross_check
+    assert xc.diff > oa.XC_AGREE * xc.tol                     # the midpoint rule alone would say "disagree"
+    assert a.audit["L"] <= xc.v_fd <= a.audit["U"]
+    assert xc.status == oa.XC_CHECKED and got.price_status == oa.XC_CHECKED
