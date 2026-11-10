@@ -1,8 +1,15 @@
 """scripts/options_bench/crosscheck.py — third-method checks and positive controls for the reference.
 
-- QuantLib (test-only; never a dependency of the API): QdFp high-precision American engine without dividends,
-  and its escrowed-dividend finite-difference engine when q = 0 (its escrowed engine uses another convention
-  when q ≠ 0, so those cases are skipped). QdFp refuses some negative-rate puts; those are skipped too.
+- QuantLib (test-only; never a dependency of the API): QdFp high-precision American engine without dividends.
+  A single dividend paid today (day 0), any q: exact by decomposition, max(exercise today with the dividend,
+  QdFp American value of S - D with no dividends). Other dividend cases only when q = 0: its escrowed-dividend
+  finite-difference engine (Crank-Nicolson) on three grids (k·T, k·X), k = 1, 2, 4, Richardson-extrapolated, with
+  the last two grids' difference as its stated spread. QuantLib 1.44's escrowed engine discounts the escrowed
+  dividends at r - q where the Finder's model uses r, so the two agree only when q = 0 and q ≠ 0 dividend cases
+  are skipped. QdFp refuses some negative-rate puts; those are recorded as refused.
+- QuantLib FD arbiter: for a case whose QdFp value falls outside the reference's stated uncertainty, QuantLib's
+  own Crank-Nicolson FD on three grids, read with the reference's gci() rule. A diagnostic, not a gate, and its
+  estimate is not a bound either (design B).
 - Closed forms: Black-76 on the escrowed forward, the European value the bench's FD must reproduce with
   exercise switched off, and the American value of an exempt case (no early exercise, by theorem).
 """
@@ -12,11 +19,15 @@ from __future__ import annotations
 import math
 
 from .cases import Case
+from .reference import gci
 
 try:  # optional: the bench runs without it and records that it did
     import QuantLib as ql
 except ImportError:  # pragma: no cover - depends on the environment
     ql = None
+
+
+QL_GRIDS = (1, 2, 4)   # escrowed FD grid multipliers on (time steps, space points) = (max(500, 4·days), 500)
 
 
 def quantlib_version() -> str | None:
@@ -42,7 +53,7 @@ def black76_case(c: Case) -> tuple[float, float]:
 def quantlib(c: Case) -> dict | None:
     if ql is None:
         return None
-    if c.divs and c.q != 0.0:
+    if c.divs and c.q != 0.0 and not (len(c.divs) == 1 and c.divs[0][0] == 0):
         return None
     today = ql.Date(26, 10, 2026)
     ql.Settings.instance().evaluationDate = today
@@ -55,14 +66,69 @@ def quantlib(c: Case) -> dict | None:
                                         ql.BlackVolTermStructureHandle(ql.BlackConstantVol(today, ql.NullCalendar(), c.sigma, dc)))
     opt = ql.VanillaOption(ql.PlainVanillaPayoff(ql.Option.Call if c.is_call else ql.Option.Put, c.strike),
                            ql.AmericanExercise(today, today + c.days))
+
+    def qdfp(spot: float) -> float:
+        p = ql.BlackScholesMertonProcess(ql.QuoteHandle(ql.SimpleQuote(spot)), flat(c.q), flat(c.rho),
+                                         ql.BlackVolTermStructureHandle(ql.BlackConstantVol(today, ql.NullCalendar(), c.sigma, dc)))
+        opt.setPricingEngine(ql.QdFpAmericanEngine(p, ql.QdFpAmericanEngine.highPrecisionScheme()))
+        return opt.NPV()
+
     try:
         if not c.divs:
-            opt.setPricingEngine(ql.QdFpAmericanEngine(proc, ql.QdFpAmericanEngine.highPrecisionScheme()))
-            return {"method": "qdfp-high-precision", "value": opt.NPV()}
+            return {"method": "qdfp-high-precision", "value": qdfp(c.spot)}
+        if len(c.divs) == 1 and c.divs[0][0] == 0:
+            # paid at today's close: exercise today keeps the dividend, holding takes S - D with no dividends left
+            hold = qdfp(c.spot - c.divs[0][1])
+            ex = max((1.0 if c.is_call else -1.0) * (c.spot - c.strike), 0.0)
+            return {"method": "qdfp-day0", "value": max(ex, hold), "hold": hold, "exercise": ex}
         dd = ql.DividendVector([today + d for d, _ in c.divs], [a for _, a in c.divs])
-        opt.setPricingEngine(ql.FdBlackScholesVanillaEngine(proc, dd, max(1000, 8 * c.days), 2000, 0,
-                                                             ql.FdmSchemeDesc.CrankNicolson(), False, -1.0,
-                                                             ql.FdBlackScholesVanillaEngine.Escrowed))
-        return {"method": "fd-escrowed", "value": opt.NPV()}
+        got = []
+        for k in QL_GRIDS:
+            t, x = k * max(500, 4 * c.days), k * 500
+            opt.setPricingEngine(ql.FdBlackScholesVanillaEngine(proc, dd, t, x, max(2, t // 50),
+                                                                 ql.FdmSchemeDesc.CrankNicolson(), False, -1.0,
+                                                                 ql.FdBlackScholesVanillaEngine.Escrowed))
+            got.append(opt.NPV())
+        return {"method": "fd-escrowed-3grid", "value": got[-1] + (got[-1] - got[-2]) / 3.0,
+                "spread": abs(got[-1] - got[-2]), "grids": got}
     except RuntimeError as e:
         return {"method": "refused", "value": None, "why": str(e)[:200]}
+
+
+ARBITER_GRIDS = (1, 2, 4)   # QuantLib FD grid multipliers on (time steps, space points) = (max(800, 4·days), 800)
+
+
+def quantlib_arbiter(c: Case, day0: bool) -> dict:
+    """A fourth method for a case whose QdFp value falls outside the reference's stated uncertainty: QuantLib's
+    own Crank-Nicolson FD (independent of fd.py and of QdFp) on three grids refined by 2 in both dimensions, read
+    with the reference's gci() rule (value, estimate, study kind). A diagnostic only: its estimate is not a
+    bound either, and it assigns no cause to a disagreement (design B, item 4). `day0` uses the same exact
+    decomposition as quantlib() for a single dividend paid today."""
+    if ql is None:
+        return {"method": "ql-fd-cn-3grid", "error": "QuantLib not installed"}
+    try:
+        today = ql.Date(26, 10, 2026)
+        ql.Settings.instance().evaluationDate = today
+        dc = ql.Actual365Fixed()
+
+        def flat(r):
+            return ql.YieldTermStructureHandle(ql.FlatForward(today, r, dc, ql.Continuous))
+
+        spot = c.spot - (c.divs[0][1] if day0 else 0.0)
+        proc = ql.BlackScholesMertonProcess(ql.QuoteHandle(ql.SimpleQuote(spot)), flat(c.q), flat(c.rho),
+                                            ql.BlackVolTermStructureHandle(ql.BlackConstantVol(today, ql.NullCalendar(), c.sigma, dc)))
+        opt = ql.VanillaOption(ql.PlainVanillaPayoff(ql.Option.Call if c.is_call else ql.Option.Put, c.strike),
+                               ql.AmericanExercise(today, today + c.days))
+        levels = []
+        for k in ARBITER_GRIDS:
+            t, x = k * max(800, 4 * c.days), k * 800
+            opt.setPricingEngine(ql.FdBlackScholesVanillaEngine(proc, t, x, max(2, t // 50), ql.FdmSchemeDesc.CrankNicolson()))
+            levels.append(opt.NPV())
+        if day0:
+            ex = max((1.0 if c.is_call else -1.0) * (c.spot - c.strike), 0.0)
+            levels = [max(ex, v) for v in levels]
+        g = gci(*levels, 1e-12 * c.spot)
+        return {"method": "ql-fd-cn-3grid", "levels": levels, "value": levels[-1] + g["corr"], "u": g["u"],
+                "kind": g["kind"], "order": g["order"]}
+    except Exception as e:   # recorded, never a crash of the case: the arbiter is a diagnostic
+        return {"method": "ql-fd-cn-3grid", "error": f"{type(e).__name__}: {e}"[:300]}

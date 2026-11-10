@@ -162,25 +162,42 @@ def iv_roundtrip(root: str, c: Case, price: float) -> dict:
     ctx = to_context(om, c)
     pricer = of.Pricer(of.Work(of.WORK_LIMIT))
     start = ctx.with_sigma(0.3)
-    if om.exempt(start):
-        sig, used = om.iv_european(start, price), None
-    else:
-        got = om.drive({0: om.iv_american_gen(start, price)}, pricer.values)[0]
-        if isinstance(got, om.OutOfDomain):
-            return {"status": "unpriceable", "reason": str(got)}
-        sig, used = got
+    try:
+        if om.exempt(start):
+            sig, used = om.iv_european(start, price), None
+        else:
+            got = om.drive({0: om.iv_american_gen(start, price)}, pricer.values)[0]
+            if isinstance(got, om.OutOfDomain):
+                return {"status": "unpriceable", "reason": str(got)}
+            sig, used = got
+    except of.FinderError as e:
+        # the Finder's own refusal of the solve (the request work cap): what a request does, so recorded as a
+        # refusal, as run() does; any other exception still crashes the case (design B, item 3; seed 20261117
+        # G6-long/1840)
+        return {"status": "refused", "reason": str(e)}
     if sig is None:
         return {"status": "no-root", "evals": used}
-    # identifiability: how much one volatility point moves the engine's price at the true sigma
-    lo_s, hi_s = max(om.SIGMA_LO, c.sigma - IV_BUMP), c.sigma + IV_BUMP
-    vl, vh = pricer.many([ctx.with_sigma(lo_s), ctx.with_sigma(hi_s)])
-    vega = None if isinstance(vl, str) or isinstance(vh, str) else (vh.value - vl.value) / (hi_s - lo_s)
-    back = pricer.many([ctx.with_sigma(sig)])[0]
-    out = {"status": "solved", "sigma": sig, "sigma_err": sig - c.sigma, "evals": used, "vega": vega,
+    out = {"status": "solved", "sigma": sig, "sigma_err": sig - c.sigma, "evals": used, "vega": None,
            "in_finder_range": bool(of.IV_MIN <= sig <= of.IV_MAX)}
-    if isinstance(back, str):
+    # the measurements after the solve are the bench's, not the Finder's (implied_vols does not price them), and
+    # share its work budget: a refusal there keeps the solve's outcome and says which measurement is missing
+    # (Codex S-02)
+    try:
+        # identifiability: how much one volatility point moves the engine's price at the true sigma
+        lo_s, hi_s = max(om.SIGMA_LO, c.sigma - IV_BUMP), c.sigma + IV_BUMP
+        vl, vh = pricer.many([ctx.with_sigma(lo_s), ctx.with_sigma(hi_s)])
+        out["vega"] = None if isinstance(vl, str) or isinstance(vh, str) else (vh.value - vl.value) / (hi_s - lo_s)
+    except of.FinderError as e:
+        out["vega_refused"] = str(e)
+    try:
+        back = pricer.many([ctx.with_sigma(sig)])[0]
+    except of.FinderError as e:
+        back = None
+        out["back_refused"] = str(e)
+    if back is None or isinstance(back, str):
         out["residual"] = None
-        out["back_reason"] = back
+        if isinstance(back, str):
+            out["back_reason"] = back
     else:
         out["residual"] = back.value - price
     return out

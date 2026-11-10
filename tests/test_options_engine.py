@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts.options_bench import cases
 from scripts.options_bench import engine as bench_engine
 from scripts.options_bench import golden
 from scripts.options_bench.cases import Case
@@ -38,11 +39,13 @@ def today() -> dict:
 
 def test_golden_covers_the_named_cases_r1_and_the_stratified_subset(frozen):
     ids = [r["case"]["id"] for r in frozen["rows"]]
-    assert ids[:8] == ["named/DR-47", "named/DR-48", "named/DR-49", "named/DR-50", "named/B8", "named/B9a",
-                       "named/B9b", "named/R-1"]
-    assert len(ids) == len(set(ids)) == 8 + 300
+    named = len(cases.NAMED) + 1                      # the named regressions, then R-1
+    assert ids[:7] == ["named/DR-47", "named/DR-48", "named/DR-49", "named/DR-50", "named/B8", "named/B9a",
+                       "named/B9b"]
+    assert ids[:named] == [c.id for c in cases.NAMED] + ["named/R-1"]
+    assert len(ids) == len(set(ids)) == named + 300
     by_group = {}
-    for r in frozen["rows"][8:]:
+    for r in frozen["rows"][named:]:
         by_group[r["case"]["group"]] = by_group.get(r["case"]["group"], 0) + 1
     assert by_group == golden.PER_GROUP
     g6 = [r["case"]["days"] for r in frozen["rows"] if r["case"]["group"] == "G6-long"]
