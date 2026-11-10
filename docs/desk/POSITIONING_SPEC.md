@@ -158,7 +158,9 @@ quarterly-named sets before 2024 are not read). A run reads:
   rows, held none.)
 - **A data set of another shape** (a missing table or column) refuses the run: nothing is replaced.
 - **Unchanged inputs:** a run whose needed data sets and method (`METHOD`) are the ones the stored quarter
-  was computed from reads only the index page. The data sets change about once a quarter.
+  was computed from reads only the index page. The data sets change about once a quarter. A change to
+  the reading rules moves `METHOD` (`13f-2` since the refusals of §3.2, §3.3 and §3.5), so a quarter an
+  earlier method accepted is read again under the new rules, never kept because its inputs are unchanged.
 
 ### 3.3 Dates and amendments
 

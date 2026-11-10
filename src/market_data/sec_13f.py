@@ -88,7 +88,10 @@ TABLE = "holdings_13f"
 PERIODS = "holdings_13f_periods"
 REFUSED = "holdings_13f_refused"
 RUNS = cot.RUNS
-METHOD = "13f-1"  # stored with each quarter; a stored quarter computed by another method is recomputed
+# Stored with each quarter; a stored quarter computed by another method is recomputed. 13f-2 (Codex S-2, S-3, S-5):
+# an unreadable row, a filing with no cover row or an amendment of no stated type refuses the run, so a quarter
+# 13f-1 accepted is read again under these rules rather than kept because its data sets are unchanged.
+METHOD = "13f-2"
 
 SITE = "https://www.sec.gov"
 SETS_PAGE = f"{SITE}/data-research/sec-markets-data/form-13f-data-sets"
@@ -188,6 +191,10 @@ def ensure_tables(conn: sqlite3.Connection) -> None:
     cot.ensure_tables(conn)  # positioning_runs
     for ddl in DDL:
         conn.execute(ddl)
+    # Codex S-4: a store written by method 13f-1 has a set_aside column (amendments of no stated type), which no
+    # quarter carries now that such an amendment refuses the run. Dropped in place; the quarter is recomputed.
+    if "set_aside" in {r[1] for r in conn.execute(f"PRAGMA table_info({PERIODS})")}:
+        conn.execute(f"ALTER TABLE {PERIODS} DROP COLUMN set_aside")
 
 
 def symbol_key(symbol: str) -> str:

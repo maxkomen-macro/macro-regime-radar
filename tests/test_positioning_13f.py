@@ -245,6 +245,49 @@ def test_a_second_run_on_the_same_data_sets_downloads_nothing(store):
     assert snapshot(store) == before
 
 
+def _as_method_13f_1(path: Path) -> None:
+    """Turn a store into one method 13f-1 wrote: its periods table with the NOT NULL set_aside column it had (no
+    default) and every quarter stamped 13f-1, the data sets unchanged."""
+    with sqlite3.connect(path) as c:
+        cols = [r[1] for r in c.execute(f"PRAGMA table_info({s13.PERIODS})")]
+        ddl = c.execute("SELECT sql FROM sqlite_master WHERE name = ?", (s13.PERIODS,)).fetchone()[0]
+        c.execute(f"ALTER TABLE {s13.PERIODS} RENAME TO old_periods")
+        c.execute(ddl.replace("new_holdings    INTEGER NOT NULL,",
+                              "new_holdings    INTEGER NOT NULL,\n    set_aside       INTEGER NOT NULL,", 1))
+        c.execute(f"INSERT INTO {s13.PERIODS} ({', '.join(cols)}, set_aside) SELECT {', '.join(cols)}, 0 FROM old_periods")
+        c.execute("DROP TABLE old_periods")
+        c.execute(f"UPDATE {s13.PERIODS} SET method = '13f-1'")
+
+
+def test_a_store_method_13f_1_wrote_is_read_again_under_the_new_rules(store):
+    # Codex S-4, S-5, without patching METHOD: the data sets are the stored ones, yet the quarters are recomputed
+    # (13f-1 accepted what 13f-2 refuses), and the old NOT NULL set_aside column does not stop the write.
+    assert s13.METHOD != "13f-1"
+    _as_method_13f_1(store)
+    assert "set_aside" in {r[1] for r in rows_of(store, f"PRAGMA table_info({s13.PERIODS})")}
+    sec = fx.FakeSec(files())
+    s = refresh(store, sec)
+    assert s["status"] == "ok" and "unchanged" not in s["detail"], s["detail"]
+    assert any(p.endswith("_form13f.zip") for p in sec.paths)
+    assert "set_aside" not in {r[1] for r in rows_of(store, f"PRAGMA table_info({s13.PERIODS})")}
+    assert {m for (m,) in rows_of(store, f"SELECT method FROM {s13.PERIODS}")} == {s13.METHOD}
+    # a store 13f-1 wrote, read again with an unreadable row: refused, and the old quarters stay as they were
+    other = store.with_name("other.db")
+    import shutil
+    shutil.copyfile(store, other)
+    _as_method_13f_1(other)
+    before = snapshot(other)
+    fs = files()
+    _edit_member(fs, "01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", _blank_value_of_a_counted_row)
+    s = refresh(other, fx.FakeSec(fs))
+    assert s["status"] == "error" and "nothing replaced" in s["detail"]
+    # the stored figures stay; only the obsolete column is gone (dropped before the read)
+    after = snapshot(other)
+    aside = 10  # set_aside's place in 13f-1's periods row, after new_holdings
+    assert after[:2] == before[:2]
+    assert after[2] == [r[:aside] + r[aside + 1:] for r in before[2]] and all(r[aside] == 0 for r in before[2])
+
+
 def test_a_new_method_recomputes_and_counts_the_revised_names(store, monkeypatch):
     monkeypatch.setattr(s13, "METHOD", "13f-test")
     monkeypatch.setattr(s13, "TOP_HOLDERS", 5)
