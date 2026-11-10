@@ -24,6 +24,9 @@ report the CFTC corrects is seen: a stored row whose numbers change keeps its
 old numbers in `cot_revisions` (when the store learned of the change, and which
 runs wrote the old and new numbers), and a stored report the CFTC no longer
 serves is marked withdrawn, never deleted; the API sets withdrawn rows aside.
+A read that leaves out more than MAX_WITHDRAWN_PER_READ (2) stored reports of a
+market is treated as incomplete, not as withdrawals: nothing of that market is
+replaced or withdrawn, and the watermark says how many reports it left out.
 Each report must satisfy the CFTC's own identity before it is stored: the
 categories' long positions plus their spreading equal the open interest, and
 so do the short positions plus spreading. A row that fails it, or misses a
@@ -79,6 +82,10 @@ TIMEOUT_S = 60
 RETRIES = 3
 RETRY_WAIT_S = 5.0
 ROW_LIMIT = 50000  # one request per report; the five markets hold about 1,100 weekly reports each
+# A whole-history read that leaves out more than this many stored reports of one market is treated as incomplete
+# (a truncated or partial answer), not as the CFTC withdrawing them: nothing of that market is replaced or withdrawn
+# until a read serves its history again. The CFTC corrects reports in place; it does not remove weeks in bulk.
+MAX_WITHDRAWN_PER_READ = 2
 
 
 @dataclass(frozen=True)
@@ -356,6 +363,22 @@ def write_rows(conn: sqlite3.Connection, report: str, codes: list[str], rows: li
     return {"new": new, "revised": revised, "restored": restored, "withdrawn": len(gone)}
 
 
+def unserved_reports(conn: sqlite3.Connection, report: str, codes: list[str], rows: list[dict]) -> dict[str, tuple[int, str]]:
+    """The markets whose read leaves out more than MAX_WITHDRAWN_PER_READ of their readable stored reports:
+    {contract code: (how many, the newest one left out)}. Reports already withdrawn are not counted."""
+    served: dict[str, set[str]] = {}
+    for r in rows:
+        served.setdefault(r["contract_code"], set()).add(r["as_of"])
+    out: dict[str, tuple[int, str]] = {}
+    for code in codes:
+        stored = {d for (d,) in conn.execute(f"SELECT DISTINCT as_of FROM {TABLE} WHERE report = ? AND contract_code = ? "
+                                             "AND withdrawn_at IS NULL", (report, code))}
+        gone = stored - served.get(code, set())
+        if len(gone) > MAX_WITHDRAWN_PER_READ:
+            out[code] = (len(gone), max(gone))
+    return out
+
+
 def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: Callable[[str], Any] | None = None,
             retry_wait: float = RETRY_WAIT_S) -> dict:
     """Read the five markets' whole history from the CFTC, store it, record the run and the watermark, commit once.
@@ -390,6 +413,14 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
                 # a read that serves none of a market's reports is not a full read of it: nothing is marked withdrawn
                 failed.append(f"{report.title}: no report served for {', '.join(missing)}")
                 codes = [c for c in codes if c in served]
+            short = unserved_reports(conn, report.key, codes, rows)
+            if short:
+                # A valid answer that leaves out many stored reports is more likely cut short than a bulk withdrawal:
+                # withdrawing them would leave the market a few readable weeks. Those markets keep what is stored.
+                failed.append(f"{report.title}: the read leaves out more than {MAX_WITHDRAWN_PER_READ} stored reports of "
+                              + ", ".join(f"{c} ({n} stored reports not served, newest {d})" for c, (n, d) in short.items())
+                              + ", so it is treated as incomplete: nothing of those markets was replaced or withdrawn")
+                codes = [c for c in codes if c not in short]
             if codes:
                 c = write_rows(conn, report.key, codes, [r for r in rows if r["contract_code"] in codes], run_id, now)
                 wrote = True

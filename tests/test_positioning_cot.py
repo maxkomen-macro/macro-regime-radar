@@ -148,6 +148,100 @@ def test_a_report_the_cftc_stops_serving_is_withdrawn_kept_and_restored(tmp_path
     assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL") == [(0,)]
 
 
+def _latest_week_only(rows):
+    newest = max(r["report_date_as_yyyy_mm_dd"] for r in rows)
+    return [r for r in rows if r["report_date_as_yyyy_mm_dd"] == newest]
+
+
+def _readable(path: Path) -> dict[str, int]:
+    return {m["key"]: m["reports"] for m in block(path)["markets"]}
+
+
+def test_owner_repro_a_shortened_valid_read_keeps_the_stored_history_and_says_why(tmp_path):
+    """Max's reproduction (2026-11-10): 210 reports per market stored, then a read serving only the latest week for
+    every market, each row valid. It withdrew 5,225 category rows and left one readable report per market. A read
+    that leaves out more than MAX_WITHDRAWN_PER_READ stored reports of a market is incomplete: nothing of that
+    market is replaced or withdrawn, and the run says why."""
+    f = tmp_path / "s.db"
+    refresh(f)
+    assert _readable(f) == {k: fx.WEEKS for k in ("spx", "ust10y", "usd", "gold", "wti")}
+    before = rows_of(f, f"SELECT * FROM {cot.TABLE} ORDER BY report, contract_code, as_of, category")
+    s = refresh(f, served(tff=_latest_week_only, disaggregated=_latest_week_only), now=NOW + timedelta(days=1))
+    assert s["counts"]["withdrawn"] == 0 and s["status"] == "partial"
+    assert s["failed"] and all("treated as incomplete" in x for x in s["failed"])
+    assert f"{fx.WEEKS - 1} stored reports not served" in s["detail"]
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL") == [(0,)]
+    assert rows_of(f, f"SELECT * FROM {cot.TABLE} ORDER BY report, contract_code, as_of, category") == before
+    assert _readable(f) == {k: fx.WEEKS for k in ("spx", "ust10y", "usd", "gold", "wti")}
+    # the run wrote nothing, so it did not commit; the watermark says why
+    assert rows_of(f, f"SELECT status FROM {cot.RUNS} WHERE run_id = ?", s["run_id"]) == [("failed",)]
+    (detail,) = rows_of(f, "SELECT detail FROM source_watermarks WHERE source = ?", cot.WATERMARK)[0]
+    assert "treated as incomplete" in detail
+    # the next complete read stores normally
+    s = refresh(f, now=NOW + timedelta(days=2))
+    assert s["status"] == "ok" and s["counts"]["withdrawn"] == 0 and s["counts"]["new"] == 0
+
+
+def test_a_shortened_market_is_held_while_the_others_are_stored(tmp_path):
+    f = tmp_path / "s.db"
+    refresh(f)
+    later = END + timedelta(days=7)
+    newer = lambda key: (lambda rows: fx.synth_rows(cot.REPORTS[key], CODES[key], end=later, weeks=fx.WEEKS + 1))  # noqa: E731
+    cut_gold = lambda rows: [r for r in newer("disaggregated")(rows)  # noqa: E731
+                             if r["cftc_contract_market_code"] != "088691" or r["report_date_as_yyyy_mm_dd"] >= "2026-01"]
+    s = refresh(f, served(tff=newer("tff"), disaggregated=cut_gold), now=NOW + timedelta(days=8))
+    assert s["status"] == "partial" and "088691" in s["detail"] and "treated as incomplete" in s["detail"]
+    assert s["counts"]["withdrawn"] == 0
+    newest = s["newest"]
+    assert newest["gold"] == "2026-09-22"  # held: its new week is not stored either
+    assert {newest[k] for k in ("spx", "ust10y", "usd", "wti")} == {"2026-09-29"}
+
+
+@pytest.mark.parametrize("dropped, held", [(2, False), (3, True)])
+def test_at_most_two_reports_of_a_market_are_withdrawn_by_one_read(tmp_path, dropped, held):
+    """A complete read that leaves out one or two stored reports of a market withdraws them (kept, restorable);
+    three or more is an incomplete read, and nothing is withdrawn."""
+    assert cot.MAX_WITHDRAWN_PER_READ == 2
+    f = tmp_path / "s.db"
+    refresh(f)
+    weeks = [(END - timedelta(days=7 * i)).isoformat() for i in (3, 40, 100)][:dropped]
+    drop = lambda rows: [r for r in rows if not (r["cftc_contract_market_code"] == "13874A"  # noqa: E731
+                                                  and r["report_date_as_yyyy_mm_dd"][:10] in weeks)]
+    s = refresh(f, served(tff=drop), now=NOW + timedelta(days=1))
+    if held:
+        assert s["status"] == "partial" and s["counts"]["withdrawn"] == 0 and "13874A (3 stored reports not served" in s["detail"]
+        assert _readable(f)["spx"] == fx.WEEKS
+    else:
+        assert s["status"] == "ok" and s["counts"]["withdrawn"] == dropped * 5
+        assert _readable(f)["spx"] == fx.WEEKS - dropped
+        s = refresh(f, now=NOW + timedelta(days=2))
+        assert s["counts"]["restored"] == dropped * 5 and _readable(f)["spx"] == fx.WEEKS
+
+
+def test_an_amendment_is_stored_while_another_market_is_held(tmp_path):
+    f = tmp_path / "s.db"
+    refresh(f)
+
+    def amend_and_cut(rows):
+        out = []
+        for r in rows:
+            if r["cftc_contract_market_code"] == "043602" and r["report_date_as_yyyy_mm_dd"] < "2025":
+                continue  # the 10-year note cut short
+            if r["cftc_contract_market_code"] == "13874A" and r["report_date_as_yyyy_mm_dd"].startswith("2026-09-15"):
+                r = dict(r)
+                r["lev_money_positions_long"] = str(int(r["lev_money_positions_long"]) + 7)
+                r["open_interest_all"] = str(int(r["open_interest_all"]) + 7)
+                r["lev_money_positions_short"] = str(int(r["lev_money_positions_short"]))
+                r["dealer_positions_short_all"] = str(int(r["dealer_positions_short_all"]) + 7)
+            out.append(r)
+        return out
+
+    s = refresh(f, served(tff=amend_and_cut), now=NOW + timedelta(days=1))
+    assert s["status"] == "partial" and "043602" in s["detail"] and s["counts"]["revised"] > 0
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.REVISIONS} WHERE contract_code = '13874A' AND as_of = '2026-09-15'") != [(0,)]
+    assert _readable(f)["ust10y"] == fx.WEEKS
+
+
 def test_a_market_the_read_does_not_serve_is_not_withdrawn(tmp_path):
     """A read that serves none of a market's reports is not a full read of it: its stored reports stay readable."""
     f = tmp_path / "s.db"

@@ -62,6 +62,14 @@ spreading contracts, the market's open interest, the market name, the CFTC's row
   `cot_revisions` (old and new numbers, the runs that wrote each, and when the store read the change),
   and the row takes the new numbers. A stored report the CFTC no longer serves, in a read that served
   that market, is marked `withdrawn_at` and kept; one served again is restored. Nothing is deleted.
+- **A shortened read is not a withdrawal (owner repro, 2026-11-10).** The CFTC corrects reports in place;
+  it does not remove weeks in bulk. A valid read that leaves out more than `MAX_WITHDRAWN_PER_READ` (2)
+  of a market's readable stored reports is treated as incomplete: nothing of that market is replaced or
+  withdrawn, the run's other markets are stored as usual, and the watermark (status `partial`) names the
+  market, how many stored reports the read left out and the newest of them. The market stays held until a
+  read serves its history again. One or two reports left out are still withdrawn, kept and restorable as
+  above. Without this rule, a read serving only the latest week withdrew 5,225 category rows and left one
+  readable report per market.
 - **Runs.** Each run is a row of `positioning_runs` (started, then committed when it wrote anything, or
   failed). The reader reads a row only when its run committed.
 - **Never fails the refresh.** A failed read keeps what is stored, records the watermark (status `ok`,
