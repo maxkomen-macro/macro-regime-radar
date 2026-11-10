@@ -191,3 +191,13 @@ def test_the_cross_check_counts_interval_consistency_apart_from_point_agreement(
     rows[0]["cross_check"]["basis"] = oa.XC_BASIS_INTERVAL   # a newer record: basis as recorded
     got = S.score_cross_check(rows)["G1-nodiv"]["cross_checked_by_basis"]
     assert got == {oa.XC_BASIS_INTERVAL: 3, oa.XC_BASIS_POINT: 2}
+
+
+def test_an_exact_answer_misses_coverage_only_when_the_reference_resolves_a_difference():
+    # exercised now: Γ = 0 exactly; a resolved reference of 1e-11 with u = 5e-6 is no evidence against it
+    ok = S.score_greek(rec(gamma=0.0, est=0.0, status=G.EXACT_EXERCISED, ref=1e-11, u=5e-6), G.GAMMA)
+    assert ok["result"] == "pass" and not ok["coverage_miss"]
+    off = S.score_greek(rec(gamma=0.0, est=0.0, status=G.EXACT_EXERCISED, ref=2e-5, u=5e-6), G.GAMMA)
+    assert off["coverage_miss"]                       # the reference resolves 2e-5 > u: the claim "exact" is contradicted
+    # an estimated value is still judged on its stated estimate alone
+    assert S.score_greek(rec(gamma=0.0300001, est=0.0, ref=0.03, u=5e-6), G.GAMMA)["coverage_miss"]

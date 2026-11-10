@@ -79,8 +79,13 @@ def score_greek(rec: dict, greek: str) -> dict:
     R, u, src = ref
     tol = G.tolerance(greek, R, rec["case"]["spot"])
     err = abs(a["value"] - R)
+    # an estimated value misses when |g − R| > E_G (8.3). An exact answer (exempt closed form, exercised now) has no
+    # estimator, E_G = 0: it misses when the reference resolves a difference, |g − R| > u, since no numerical
+    # reference can show a difference below its own uncertainty (found in dev calibration: 1e-11 differences
+    # between an exercised-now 0 and a resolved reference counted as misses under err > 0)
+    allow = (a["estimate"] or 0.0) if a["status"] == G.RETURNED else u
     out.update(result="fail" if bound else judge(a["value"], R, u, tol), R=R, u=u, tol=tol, source=src,
-               err_over_tol=err / tol, coverage_miss=err > (a["estimate"] or 0.0))
+               err_over_tol=err / tol, coverage_miss=err > allow)
     return out
 
 
