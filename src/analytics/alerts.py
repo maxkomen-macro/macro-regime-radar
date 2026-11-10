@@ -25,9 +25,10 @@ Market alerts (from derived_metrics):
     SPY_drawdown:   SPY_weekly_ret < -7% → risk; < -3% → watch. The return runs from the
                     previous W-FRI week's last stored close to the newest stored close of
                     its week (SPY_weekly_ret_obs), so a week still under way covers only its
-                    sessions so far; the row is dated by that close, never by the W-FRI bucket,
+                    sessions so far; the row is dated by that close when its observation row is
+                    on file (else by the W-FRI bucket, and the message says the dates are missing),
                     and the message names both closes, the NYSE sessions between them and
-                    whether the week is complete
+                    whether the week is complete (only where api/calendar knows the year)
     credit_stress:  HYG_weekly_ret - SPY_weekly_ret < -3% → watch
     VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch (week-over-week, daily closes),
                     only when the VIX rose that week; dated by VIX_weekly_chg_obs
@@ -170,23 +171,30 @@ def weekly_return_period(conn: sqlite3.Connection, sym: str, week: str) -> tuple
     The row labelled by W-FRI bucket `week` compares the newest stored close of that week
     (`{sym}_weekly_ret_obs`) with the previous weekly row's close, so it is a five-session
     return only for a complete five-session week: the phrase names both closes, counts the
-    NYSE sessions between them, and says "week to date" while the week has sessions to come.
+    NYSE sessions between them, and says "partial week, later sessions not stored" while its week
+    has NYSE sessions after that close (outside api/calendar's years it states neither).
     Without an observation row the close is None and the phrase says the dates are not on file."""
     end = date_from_ordinal(_derived_at(conn, f"{sym}_weekly_ret_obs", week))
     if end is None:
         logger.warning("[alerts] %s_weekly_ret_obs missing at %s: period not stated.", sym, week)
         return None, f"for the W-FRI week labelled {week} (its observation dates are not on file)"
-    week_end = date.fromisoformat(week)
-    to_come = any(cal.is_trading_day(end + timedelta(days=k)) for k in range(1, (week_end - end).days + 1))
-    status = "week to date" if to_come else "week complete"
     start = _obs_before(conn, f"{sym}_weekly_ret_obs", week)
-    if start is None or not start < end:
-        return end, f"from the previous week's last stored close to the {_session_day(end)} close ({status})"
+    known = start is not None and start < end
+    since = f"the {_session_day(start)} close" if known else "the previous week's last stored close"
+    span = f"from {since} to the {_session_day(end)} close"
+    week_end = date.fromisoformat(week)
+    first = start if known else end
+    unknown = [y for y in range(first.year, week_end.year + 1) if not cal.calendar_known(date(y, 1, 1))]
+    if unknown:
+        # outside api/calendar's holiday table a holiday would count as a session: state no count or status
+        logger.warning("[alerts] NYSE calendar unknown for %s: session count and week status not stated.", unknown)
+        return end, f"{span} (NYSE calendar not on file for {unknown[0]})"
+    to_come = any(cal.is_trading_day(end + timedelta(days=k)) for k in range(1, (week_end - end).days + 1))
+    status = "partial week, later sessions not stored" if to_come else "week complete"
+    if not known:
+        return end, f"{span} ({status})"
     n = sum(cal.is_trading_day(start + timedelta(days=k)) for k in range(1, (end - start).days + 1))
-    return end, (
-        f"over {n} NYSE session{'' if n == 1 else 's'}, from the {_session_day(start)} close "
-        f"to the {_session_day(end)} close ({status})"
-    )
+    return end, f"over {n} NYSE session{'' if n == 1 else 's'}, {span} ({status})"
 
 
 # How many months back to look for recently-triggered (but currently inactive) signals.

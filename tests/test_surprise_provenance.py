@@ -344,7 +344,7 @@ def test_spy_weekly_alert_names_its_span_never_a_5d_return(tmp_path):
                                                      ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-03"))])
     assert partial == [("2026-11-03", "SPY_drawdown", "watch", -0.035, -0.03,
                         "SPY return -3.50% over 2 NYSE sessions, from the Fri 2026-10-30 close to the "
-                        "Tue 2026-11-03 close (week to date) — below -3% watch threshold.")]
+                        "Tue 2026-11-03 close (partial week, later sessions not stored) — below -3% watch threshold.")]
     # Good Friday 2026-04-03: the week ends on Thursday, four sessions, complete
     holiday = _spy_alert(tmp_path / "b.db", [("SPY_weekly_ret_obs", "2026-03-27", ORD("2026-03-27")),
                                              ("SPY_weekly_ret", "2026-04-03", -0.08),
@@ -357,8 +357,27 @@ def test_spy_weekly_alert_names_its_span_never_a_5d_return(tmp_path):
                                                   ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-06"))])
     assert full[0][0] == "2026-11-06"
     assert "over 5 NYSE sessions, from the Fri 2026-10-30 close to the Fri 2026-11-06 close (week complete)" in full[0][5]
-    for got in (partial, holiday, full):
+    # a Thursday close of a normal week: Friday is still to come
+    thursday = _spy_alert(tmp_path / "d.db", prior + [("SPY_weekly_ret", "2026-11-06", -0.04),
+                                                      ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-05"))])
+    assert "over 4 NYSE sessions, from the Fri 2026-10-30 close to the Thu 2026-11-05 close (partial week, later sessions not stored)" in thursday[0][5]
+    # Thanksgiving 2026-11-26: Friday's half-day is a session, so a Wednesday close is a partial week
+    thanks = _spy_alert(tmp_path / "e.db", [("SPY_weekly_ret_obs", "2026-11-20", ORD("2026-11-20")),
+                                            ("SPY_weekly_ret", "2026-11-27", -0.04),
+                                            ("SPY_weekly_ret_obs", "2026-11-27", ORD("2026-11-25"))])
+    assert "over 3 NYSE sessions, from the Fri 2026-11-20 close to the Wed 2026-11-25 close (partial week, later sessions not stored)" in thanks[0][5]
+    for got in (partial, holiday, full, thursday, thanks):
         assert "5d" not in got[0][5]
+
+
+def test_spy_weekly_alert_states_no_count_outside_the_calendars_years(tmp_path):
+    # 2028 is past api/calendar's holiday table: Good Friday 2028-04-14 would count as a session
+    got = _spy_alert(tmp_path / "a.db", [("SPY_weekly_ret_obs", "2028-04-07", ORD("2028-04-07")),
+                                         ("SPY_weekly_ret", "2028-04-14", -0.04),
+                                         ("SPY_weekly_ret_obs", "2028-04-14", ORD("2028-04-13"))])
+    assert got[0][0] == "2028-04-13"
+    assert got[0][5] == ("SPY return -4.00% from the Fri 2028-04-07 close to the Thu 2028-04-13 close "
+                         "(NYSE calendar not on file for 2028) — below -3% watch threshold.")
 
 
 def test_spy_weekly_alert_thresholds_are_unchanged(tmp_path):
@@ -381,7 +400,7 @@ def test_spy_weekly_alert_without_observation_dates_says_so(tmp_path):
     first = _spy_alert(tmp_path / "b.db", [("SPY_weekly_ret", "2026-11-06", -0.05),
                                            ("SPY_weekly_ret_obs", "2026-11-06", ORD("2026-11-04"))])
     assert first[0][5] == ("SPY return -5.00% from the previous week's last stored close to the Wed 2026-11-04 "
-                           "close (week to date) — below -3% watch threshold.")
+                           "close (partial week, later sessions not stored) — below -3% watch threshold.")
 
 
 def test_spy_weekly_alert_end_to_end_from_stored_closes(tmp_path):
@@ -404,7 +423,7 @@ def test_spy_weekly_alert_end_to_end_from_stored_closes(tmp_path):
         conn.close()
     assert [(r[0], r[3]) for r in got] == [("2026-11-03", "watch")]
     assert got[0][4] == pytest.approx(-0.05)
-    assert "over 2 NYSE sessions, from the Fri 2026-10-30 close to the Tue 2026-11-03 close (week to date)" in got[0][7]
+    assert "over 2 NYSE sessions, from the Fri 2026-10-30 close to the Tue 2026-11-03 close (partial week, later sessions not stored)" in got[0][7]
 
 
 def test_a_stored_jump_is_cleared_when_the_newest_move_is_ineligible(tmp_path, monkeypatch):
