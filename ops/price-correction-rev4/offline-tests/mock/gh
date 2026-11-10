@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+"""Offline stand-in for the gh CLI, for test-owner-correction.sh only. No network.
+
+State lives in $MOCK_GH_DIR:
+  assets/<name>          published file bytes; assets/<name>.meta = "<updated_at> <id>"
+  workflows.tsv          <path>\t<state> for every workflow in the repository
+  runs/<file>.json       gh run list output for that workflow (default [])
+  uploads.log            one line per upload attempt: <asset name>
+  calls.log              every call, for the test record
+  fail/<knob>            failure switches (see below)
+
+Failure switches (an empty file under fail/ turns one on):
+  release                metadata read of the release exits 1
+  release-garbled        metadata read exits 0 but prints a truncated JSON document
+  release-mutate-after-N the Nth metadata read onward reports a newer macro_radar.db (writes other bytes)
+  workflows              workflow-state read exits 1
+  workflows-garbled      workflow-state read exits 0 with a truncated document
+  workflows-one          workflow-state read lists only one of the two writers
+  runs                   run listing (gh run list, or the runs API) exits 1
+  runs-garbled           the runs API exits 0 with a truncated document
+  runs-seq/<workflow>    (a file, not a switch) one status per runs API call for a single run of that workflow
+  download-<name>        download of <name> exits 1 (timeout or permission error)
+  truncate-<name>        download of <name> exits 0 but writes only half the bytes
+  upload-<name>          upload of <name> deletes the old asset (as --clobber does) and then exits 1
+"""
+import json, os, re, shutil, sys
+
+D = os.environ["MOCK_GH_DIR"]
+A = os.path.join(D, "assets")
+args = sys.argv[1:]
+with open(os.path.join(D, "calls.log"), "a") as f:
+    f.write(" ".join(args) + "\n")
+
+
+def knob(name):
+    return os.path.exists(os.path.join(D, "fail", name))
+
+
+def tick():
+    p = os.path.join(D, "clock")
+    n = int(open(p).read()) + 1 if os.path.exists(p) else 1
+    open(p, "w").write(str(n))
+    return n
+
+
+def stamp(n):
+    return f"2026-11-06T{6 + n // 3600:02d}:{n // 60 % 60:02d}:{n % 60:02d}Z"
+
+
+def meta(name):
+    return open(os.path.join(A, name + ".meta")).read().split()
+
+
+def put(name, src_bytes):
+    n = tick()
+    open(os.path.join(A, name), "wb").write(src_bytes)
+    open(os.path.join(A, name + ".meta"), "w").write(f"{stamp(n)} {1000 + n}")
+
+
+def names():
+    return sorted(x for x in os.listdir(A) if not x.endswith(".meta"))
+
+
+def opt(flag, many=False):
+    out, i = [], 0
+    while i < len(args):
+        if args[i] == flag and i + 1 < len(args):
+            out.append(args[i + 1]); i += 2
+        else:
+            i += 1
+    return out if many else (out[0] if out else None)
+
+
+def emit(doc):
+    """Print a JSON document; with --jq, filter it as gh does (jq -r semantics, via the jq binary)."""
+    expr = opt("--jq")
+    if expr is None:
+        print(doc)
+        return
+    import subprocess
+    r = subprocess.run(["jq", "-r", expr], input=doc, text=True, capture_output=True)
+    sys.stdout.write(r.stdout)
+    if r.returncode:
+        die("jq: " + r.stderr.strip())
+
+
+def die(msg, code=1):
+    print(msg, file=sys.stderr)
+    sys.exit(code)
+
+
+if args[:2] == ["auth", "status"]:
+    sys.exit(0)
+
+if args and args[0] == "api":
+    path = args[1]
+    if path.endswith("/releases/tags/data-latest"):
+        if knob("release"):
+            die("error connecting to api.github.com: i/o timeout")
+        reads = tick()
+        for x in os.listdir(os.path.join(D, "fail")) if os.path.isdir(os.path.join(D, "fail")) else []:
+            if x.startswith("release-mutate-after-"):
+                p = os.path.join(D, "mutated")
+                cnt = int(open(p).read()) + 1 if os.path.exists(p) else 1
+                open(p, "w").write(str(cnt))
+                if cnt >= int(x.rsplit("-", 1)[1]) and not os.path.exists(p + "-done"):
+                    put("macro_radar.db", b"NEWER DATABASE WRITTEN BY A WRITER RUN\n")
+                    open(p + "-done", "w").write("1")
+        assets = [{"state": "uploaded", "name": n, "size": os.path.getsize(os.path.join(A, n)),
+                   "updated_at": meta(n)[0], "id": int(meta(n)[1])} for n in names()]
+        doc = json.dumps({"tag_name": "data-latest", "assets": assets})
+        emit(doc[: len(doc) // 2] if knob("release-garbled") else doc)
+        sys.exit(0)
+    m = re.match(r"repos/[^/]+/[^/]+/actions/workflows/([^/]+)/runs\?(.*)$", path)
+    if m:
+        if knob("runs"):
+            die("error connecting to api.github.com: connection reset")
+        wf, q = m.group(1), dict(kv.split("=", 1) for kv in m.group(2).split("&"))
+        p = os.path.join(D, "runs", wf + ".json")
+        seq = os.path.join(D, "runs-seq", wf)
+        if os.path.exists(seq):  # the one run's status at this call; the run advances between calls
+            states = open(seq).read().split()
+            open(seq, "w").write(" ".join(states[1:] or states))
+            json.dump([{"id": 1, "status": states[0], "createdAt": "2026-11-06T06:00:00Z"}], open(p, "w"))
+        rows = json.load(open(p)) if os.path.exists(p) else []
+        for k, r in enumerate(rows):
+            r.setdefault("id", 9000 + k)
+        if "status" in q:
+            rows = [r for r in rows if r["status"] == q["status"]]
+        per, page = int(q.get("per_page", 30)), int(q.get("page", 1))
+        doc = json.dumps({"total_count": len(rows), "workflow_runs": rows[(page - 1) * per: page * per]})
+        emit(doc[: len(doc) // 2] if knob("runs-garbled") else doc)
+        sys.exit(0)
+    if "/actions/workflows" in path:
+        if knob("workflows"):
+            die("HTTP 403: Resource not accessible by integration")
+        rows = [l.rstrip("\n").split("\t") for l in open(os.path.join(D, "workflows.tsv")) if l.strip()]
+        if knob("workflows-one"):
+            rows = [r for r in rows if not r[0].endswith("intraday-refresh.yml")]
+        doc = json.dumps({"total_count": len(rows), "workflows": [{"path": p, "state": s, "name": p} for p, s in rows]})
+        emit(doc[: len(doc) // 2] if knob("workflows-garbled") else doc)
+        sys.exit(0)
+    die(f"mock gh: unhandled api path {path}", 2)
+
+if args[:2] == ["run", "list"]:
+    if knob("runs"):
+        die("error connecting to api.github.com: connection reset")
+    p = os.path.join(D, "runs", opt("--workflow") + ".json")
+    rows = json.load(open(p)) if os.path.exists(p) else []
+    emit(json.dumps(rows[: int(opt("--limit") or 20)]))  # gh run list returns the newest N runs only
+    sys.exit(0)
+
+if args[:2] == ["release", "download"]:
+    out = opt("--dir") or "."
+    os.makedirs(out, exist_ok=True)
+    pats = opt("--pattern", many=True)
+    for pat in pats:
+        if knob("download-" + pat):
+            die("error downloading " + pat + ": context deadline exceeded")
+        if pat not in names():
+            die("no assets match the file pattern")
+        data = open(os.path.join(A, pat), "rb").read()
+        if knob("truncate-" + pat):
+            data = data[: len(data) // 2]
+        open(os.path.join(out, pat), "wb").write(data)
+    sys.exit(0)
+
+if args[:2] == ["release", "upload"]:
+    src = args[3]
+    name = os.path.basename(src)
+    with open(os.path.join(D, "uploads.log"), "a") as f:
+        f.write(name + "\n")
+    if knob("upload-" + name):
+        for x in (name, name + ".meta"):
+            if os.path.exists(os.path.join(A, x)):
+                os.remove(os.path.join(A, x))
+        die("upload failed: connection reset by peer")
+    put(name, open(src, "rb").read())
+    sys.exit(0)
+
+if args[:1] == ["workflow"] and args[1] in ("disable", "enable"):
+    wf = args[2]
+    p = os.path.join(D, "workflows.tsv")
+    rows = [l.rstrip("\n").split("\t") for l in open(p) if l.strip()]
+    rows = [[r[0], ("disabled_manually" if args[1] == "disable" else "active") if r[0].endswith("/" + wf) else r[1]] for r in rows]
+    open(p, "w").write("".join(f"{a}\t{b}\n" for a, b in rows))
+    with open(os.path.join(D, "workflow-changes.log"), "a") as f:
+        f.write(f"{args[1]} {wf}\n")
+    sys.exit(0)
+
+die("mock gh: unhandled call: " + " ".join(args), 2)
