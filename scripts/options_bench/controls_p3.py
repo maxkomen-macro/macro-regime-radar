@@ -29,6 +29,7 @@ from src.desk import options_greeks as G
 from src.desk import options_math as om
 
 from . import cases, greek_reference as GR
+from . import ql_escrowed as qe
 from .score import clopper_pearson
 
 C2_RATE_MAX = 0.01   # the 95% one-sided upper limit of the miss rate, at most this
@@ -168,6 +169,39 @@ def c2_lattice(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=G
         out[k] = {"status": "scored", "G_L": lat["G"], "u_L": u, "exact": ex, "err": err, "covered": err <= u,
                   "within_budget": lat["u_seq"] <= GR.U_REF_MAX * tol and lat["u_bump"] <= GR.U_BUMP_MAX * tol}
     out["_work"] = {"used": budget.used, "lattice_calls": budget.lattice_calls}
+    return out
+
+
+def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUANTITIES, cap=GR.REF_WORK_CAP) -> dict:
+    """C2-Q (P3-AM2, section E): Q in European mode, with exactly the estimator of section C (the escalation
+    included), against the closed form: covered when |R_Q,E − exact| ≤ u_Q,E = u_Q,ref + u_Q,bump. A sequence
+    that does not converge is "unresolved: Q sequence not converging", reported and never a pass. The study runs
+    with the reference budgets, so it escalates exactly as in American use; coverage is then checked on the
+    stated estimate whatever its size ("within_budget" says whether it would have qualified)."""
+    budget = GR.RefBudget(cap)
+    cache: dict = {}
+    out = {}
+    for k in quantities:
+        sp = GR.spec(c, k, cfg)
+        if isinstance(sp, str) or c.days == 0:
+            out[k] = {"status": sp if isinstance(sp, str) else G.R_EXPIRY}
+            continue
+        ex = exact(c, k)
+        tol = GR._tol(k, ex, c.spot)
+        try:
+            q = qe.study(c, sp, tol, False, budget.take, cache)
+        except GR.CapHit as e:
+            out[k] = {"status": GR.R_CAP, "detail": str(e)}
+            continue
+        if q["G"] is None or q["u_ref"] is None:
+            out[k] = {"status": "unresolved: " + "; ".join(q["flags"]), "levels": q["levels"], "values": q["values"]}
+            continue
+        u = q["u_ref"] + q["u_bump"]
+        err = abs(q["G"] - ex)
+        out[k] = {"status": "scored", "G_Q": q["G"], "u_Q": u, "exact": ex, "err": err, "covered": err <= u,
+                  "levels": q["levels"], "within_budget": q["u_ref"] <= GR.U_REF_MAX * tol
+                  and q["u_bump"] <= GR.U_BUMP_MAX * tol}
+    out["_work"] = {"used": budget.used}
     return out
 
 

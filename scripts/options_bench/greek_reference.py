@@ -13,6 +13,11 @@ sequence u_L,seq ≤ 0.07 and bump u_L,bump ≤ 0.03 (zero for node gamma, the p
 estimate is floored at REF_FLOOR = 0.02·tol_G (the production floor 0.1·tol_G never applies here). Resolved:
 both sides within budget, no study flagged, |R_FD − G_L| ≤ 0.1·tol_G; then R = R_FD and u = max(u_FD, |R_FD − G_L|).
 
+Amendment P3-AM2 (design-P3-AM2-approved.md): a second corroborator Q, the same model solved by QuantLib's own
+FDM kernel (ql_escrowed.py), runs for every quantity. Resolved when the FD side meets its budgets, at least one
+qualified corroborator (lattice or Q, each within its own budgets and unflagged) agrees within 0.1·tol_G, and no
+qualified corroborator disagrees ("corroborators disagree"); R = R_FD, u = max(u_FD, the agreeing differences).
+
 Work (section 12): every FD solve and every lattice call goes through one per-context budget, charged before the
 solve allocates or runs; at exhaustion the quantity is unresolved "reference work cap" and its study stops. The
 stated ceiling is therefore exact, initial studies included. Configuration values marked placeholder are set by
@@ -31,6 +36,7 @@ from src.desk import options_fd as fd
 from src.desk import options_greeks as G
 from src.desk import options_math as om
 
+from . import ql_escrowed as qe
 from . import reference as ref
 
 PRICE = "price"
@@ -52,6 +58,8 @@ R_NOT_CORROBORATED = "not independently corroborated"
 R_NODE_NEAR = "lattice node gamma near an exercise decision"
 R_LATTICE_SHORT = "the lattice schedule cannot reach four levels"
 R_NOT_APPLICABLE = "not applicable"
+R_DISAGREE = "corroborators disagree"
+CORROBORATE_Q = True   # P3-AM2: Q (QuantLib-kernel solve of the same model) runs for every quantity
 
 
 class CapHit(Exception):
@@ -303,10 +311,66 @@ def lattice_seq(r: Runner, c: om.Context, sp: Spec, tol: float) -> dict:
 
 # ── combining the two sides (pure) ─────────────────────────────────────────
 
-def resolve(tol: float, f: dict, lat: dict | None) -> dict:
+def resolve(tol: float, f: dict, lat: dict | None, q: dict | None = None) -> dict:
     """The reference (R, u) when both sides meet their budgets, nothing is flagged and they agree within
     0.1·tol_G; otherwise unresolved with every failing condition named. `lat` None: FD only, which never
-    resolves an FD quantity (section 7.1)."""
+    resolves an FD quantity (section 7.1).
+
+    With `q` (amendment P3-AM2, section D): the FD side must meet its budgets; a corroborator (the lattice or
+    Q) is qualified when it meets its own budgets and nothing is flagged, and agrees when |R_FD − G| ≤ 0.1·tol.
+    Resolved when at least one qualified corroborator agrees and no qualified corroborator disagrees; a
+    qualified disagreement is "corroborators disagree" whatever the other says. R = R_FD; u = max(u_FD, the
+    agreeing corroborators' differences)."""
+    if q is None:
+        return _resolve_lattice_only(tol, f, lat)
+    fd_why = list(f.get("flags", []))
+    if f["u_ref"] > U_REF_MAX * tol:
+        fd_why.append("FD refinement uncertainty above 0.07 tolerances")
+    if f["u_bump"] > U_BUMP_MAX * tol:
+        fd_why.append("FD bump term above 0.03 tolerances")
+    out = {"tol": tol, "R_FD": f["R"], "u_FD": f["u_ref"] + f["u_bump"]}
+    sides = {}
+    for name, side, u_key in (("lattice", lat, "u_seq"), ("Q", q, "u_ref")):
+        if side is None:
+            continue
+        why = list(side.get("flags", []))
+        if side.get("G") is not None:
+            if side[u_key] is not None and side[u_key] > U_REF_MAX * tol:
+                why.append(f"{name} {'sequence' if name == 'lattice' else 'refinement'} uncertainty above 0.07 tolerances")
+            if side["u_bump"] is not None and side["u_bump"] > U_BUMP_MAX * tol:
+                why.append(f"{name} bump term above 0.03 tolerances")
+            diff = abs(f["R"] - side["G"])
+        else:
+            diff = None
+        why = list(dict.fromkeys(why))
+        qualified = side.get("G") is not None and side.get(u_key) is not None and not why
+        sides[name] = {"qualified": qualified, "agrees": qualified and diff <= AGREE * tol, "diff": diff,
+                       "why": why}
+    if lat is not None and lat.get("G") is not None:
+        out.update(G_L=lat["G"], u_L=lat["u_seq"] + lat["u_bump"], diff=sides["lattice"]["diff"])
+    if q.get("G") is not None:
+        out.update(G_Q=q["G"], u_Q=None if q["u_ref"] is None else q["u_ref"] + q["u_bump"],
+                   diff_Q=sides["Q"]["diff"])
+    out["corroborators"] = {k: {kk: v[kk] for kk in ("qualified", "agrees", "why")} for k, v in sides.items()}
+    agreeing = [k for k, v in sides.items() if v["agrees"]]
+    disagreeing = [k for k, v in sides.items() if v["qualified"] and not v["agrees"]]
+    why = list(fd_why)
+    if disagreeing:
+        why.append(R_DISAGREE + ": " + ", ".join(f"FD and {k} differ by {sides[k]['diff'] / tol:.3g} tolerances"
+                                                 for k in disagreeing))
+    elif not agreeing:
+        for k, v in sides.items():
+            why += v["why"] or ([f"FD and {k} differ by more than 0.1 tolerances"] if v["qualified"] else [])
+        if not sides:
+            why.append(R_NOT_CORROBORATED)
+    if why:
+        return {**out, "status": "unresolved: " + "; ".join(why), "R": None, "u": None}
+    u = max([out["u_FD"]] + [sides[k]["diff"] for k in agreeing])
+    return {**out, "status": RESOLVED, "R": f["R"], "u": u, "corroborated_by": agreeing}
+
+
+def _resolve_lattice_only(tol: float, f: dict, lat: dict | None) -> dict:
+    """The approved design's rule (7.2 item 3) with the lattice as the only corroborator, unchanged."""
     why = list(f.get("flags", []))
     if f["u_ref"] > U_REF_MAX * tol:
         why.append("FD refinement uncertainty above 0.07 tolerances")
@@ -345,12 +409,20 @@ def score(g: float, R: float, u: float, tol: float) -> str:
 # ── one context ────────────────────────────────────────────────────────────
 
 def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=QUANTITIES, american: bool = True,
-               cap: float = REF_WORK_CAP, smooth_divs: bool = False) -> dict:
+               cap: float = REF_WORK_CAP, smooth_divs: bool = False, corroborate_q: bool | None = None) -> dict:
     """Every requested quantity's reference for context c, under one aggregate budget. `american=False` is the
-    C2 FD adequacy control: the FD study in European mode, no lattice side, scored against closed forms."""
+    C2 FD adequacy control: the FD study in European mode, no lattice side, scored against closed forms.
+    `corroborate_q` (default CORROBORATE_Q): Q runs for every quantity and section D of P3-AM2 resolves."""
     t0 = time.time()
     budget = RefBudget(cap)
     r = Runner(budget, american, smooth_divs)
+    use_q = CORROBORATE_Q if corroborate_q is None else corroborate_q
+    q_cache: dict = {}
+    q_cells = [0.0]
+
+    def q_take(units: float) -> None:
+        budget.take(units)
+        q_cells[0] += units
     out: dict = {}
     bad = G.state_failure(c)
     for name in quantities:
@@ -371,11 +443,14 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
                              "u_FD": f["u_ref"] + f["u_bump"], "tol": f["tol"]}
                 continue
             lat = lattice_seq(r, c, sp, f["tol"])
+            qs = qe.study(c, sp, f["tol"], True, q_take, q_cache) if use_q else None
         except CapHit as e:
             out[name] = {"status": f"unresolved: {R_CAP}", "detail": str(e)}
             continue
-        res = resolve(f["tol"], f, lat)
+        res = resolve(f["tol"], f, lat, qs)
         out[name] = {**res, "fd": f, "lattice": lat}
+        if qs is not None:
+            out[name]["q"] = qs
     out["_work"] = {"used": budget.used, "cap": budget.cap, "fd_solves": budget.fd_solves,
-                    "lattice_calls": budget.lattice_calls, "secs": time.time() - t0}
+                    "lattice_calls": budget.lattice_calls, "q_cells": q_cells[0], "secs": time.time() - t0}
     return out

@@ -62,6 +62,7 @@ def delta_difference_gamma(c: om.Context, mults=(1, 2, 3, 4, 5, 6)) -> dict:
 
 
 FD_KEYS = ("m_frac", "p_frac", "work_cap", "penalty")
+REF_KEYS = ("smooth_divs",)   # reference settings, not GreekConfig: the lattice side's dividend smoothing (V-3)
 
 
 def greek_config(over: dict | None) -> G.GreekConfig:
@@ -73,7 +74,7 @@ def greek_config(over: dict | None) -> G.GreekConfig:
     from src.desk import options_fd as fd
     fd_over = {k: v for k, v in over.items() if k in FD_KEYS}
     rest = {k: (tuple(tuple(x) for x in v) if k in ("factors", "bump_factors") else v)
-            for k, v in over.items() if k not in FD_KEYS}
+            for k, v in over.items() if k not in FD_KEYS + REF_KEYS}
     unknown = set(rest) - {f for f in G.GreekConfig.__dataclass_fields__ if f != "fd"}
     if unknown:
         raise ValueError(f"unknown Greek config keys {sorted(unknown)}")
@@ -82,7 +83,9 @@ def greek_config(over: dict | None) -> G.GreekConfig:
 
 def one(args) -> dict:
     case_json, regions_json, with_refs, diagnostics, *more = args
-    cfg = greek_config(more[0] if more else None)
+    over = more[0] if more else None
+    cfg = greek_config(over)
+    smooth = bool((over or {}).get("smooth_divs", False))
     case = cases.Case.from_json(case_json)
     c = C.to_ctx(case)
     regions = None if regions_json is None else Regions.from_json(regions_json)
@@ -118,10 +121,13 @@ def one(args) -> dict:
         rec["secs_c1"] = time.time() - t0
     if with_refs and in_domain and c.days > 0:
         t0 = time.time()
-        refs = GR.references(c, cfg)
+        refs = GR.references(c, cfg, smooth_divs=smooth)
         rec["secs_refs"] = time.time() - t0
         rec["refs_work"] = refs.pop("_work")
-        rec["refs"] = {k: {kk: v.get(kk) for kk in ("status", "R", "u", "tol", "R_FD", "u_FD", "G_L", "u_L", "diff")}
+        rec["refs"] = {k: {**{kk: v.get(kk) for kk in ("status", "R", "u", "tol", "R_FD", "u_FD", "G_L", "u_L", "diff",
+                                                      "G_Q", "u_Q", "diff_Q", "corroborated_by", "corroborators")},
+                           "q": {kk: (v.get("q") or {}).get(kk) for kk in ("levels", "values", "u_ref", "u_bump", "flags")}
+                           if v.get("q") is not None else None}
                        for k, v in refs.items()}
         t0 = time.time()
         pr = reference.reference(case)
