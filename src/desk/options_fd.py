@@ -74,11 +74,25 @@ def smoothed_payoff(is_call: bool, x: np.ndarray, dx: float, strike: float) -> n
 def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: float, sigma: float,
           divs: Sequence[tuple[int, float]], m: int, per_day: int, width: float, american: bool = True,
           exercise_days: Iterable[int] | None = None, penalty: float = PENALTY,
-          diag: dict | None = None) -> tuple[float, float]:
+          diag: dict | None = None, grids: dict | None = None) -> tuple[float, float]:
     """(value, delta) at t = 0 on an m-interval grid of half-width `width` in ln X, `per_day` steps a day.
     delta is dV/dS with the owed dividends' PV held fixed (dS = dX), by central difference at the centre node.
     `exercise_days`: when given, exercise only at the close of these day indices (0 = today) and at expiry.
-    `diag`, when given, receives the solver's counters (penalty steps that hit the iteration cap)."""
+    `diag`, when given, receives the solver's counters (penalty steps that hit the iteration cap).
+    `grids`, when given, receives the solver's state for the Greeks (Phase 3, design section 3.3), copied, never
+    recomputed, so the return value and every operation of a solve are the same with or without it:
+      "x": the grid in ln X; "xs": X at each node; "v0": the solution at t = 0 (after its projection);
+      "g0": the exercise value at t = 0 (cum-dividend at a close on day 0; zeros when t = 0 is not an exercise
+      time: exercise off, or a Bermudan schedule without day 0);
+      "free0": the solution at t = 0 before its projection max(V, exercise value): the last (half-)step's solve
+      (with the penalty when the obstacle is held inside it; at a day-0 close that obstacle is ex-dividend);
+      "active0": the last step's penalty active set (all False when no obstacle is held inside the solve);
+      "exercise0": the nodes exercised at t = 0: free0 < g0, or pinned by the penalty (not at a day-0 close,
+      where the pinned obstacle is the ex-dividend one, part of holding); all False when t = 0 is not an
+      exercise time;
+      "v_day1": the solution at the time level one calendar day after t = 0 (after its projection; at a cum close
+      on day 1 that is the cum value), or None when days < 2 (for days = 1 that level is expiry, whose exact payoff
+      the Greeks use instead of the smoothed initial data)."""
     if m % 2:
         raise ValueError("m must be even (the centre must be a node)")
     tau = days / YEAR_DAYS
@@ -188,6 +202,7 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
     # no damping step follows (T1-near-boundary/1351; design D-2). For a call the ex-dividend obstacle is the lower
     # one, for a put the higher; no ordering is assumed.
     closes = {d * per_day for d, _ in divs} if continuous else set()
+    v_day1 = pre0 = None   # written only when `grids` is given (Python-level tests, no array operation)
     for k in range(n_steps, 0, -1):
         close = (k - 1) in closes
         end = exercise_value_after if close else exercise_value
@@ -199,6 +214,8 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
         else:
             g = end(k - 1) if continuous else None
             v, active = step(v, 0.5, dt, g, active)
+        if grids is not None and k == 1:
+            pre0 = v.copy()
         if close:
             g = exercise_value(k - 1)
         if g is not None:
@@ -207,8 +224,21 @@ def solve(is_call: bool, spot: float, strike: float, days: int, rho: float, q: f
             active[:] = False
         if not continuous and can_exercise(k - 1):
             np.maximum(v, exercise_value(k - 1), out=v)
+        if grids is not None and k - 1 == per_day and days >= 2:
+            v_day1 = v.copy()
     if diag is not None:
         diag.update(stats)
     i = m // 2
     delta = (v[i + 1] - v[i - 1]) / (xs[i + 1] - xs[i - 1])
+    if grids is not None:
+        active0 = np.asarray(active, dtype=bool).copy()
+        if can_exercise(0):
+            g0 = exercise_value(0)
+            # at a day-0 close the penalty held the ex-dividend obstacle (exercise just after the close), which
+            # is part of holding now; elsewhere a pinned node (penalty tie rule) is exercised
+            exercise0 = (pre0 < g0) | (active0 if 0 not in closes else False)
+        else:
+            g0, exercise0 = np.zeros(n), np.zeros(n, dtype=bool)
+        grids.update({"x": x.copy(), "xs": xs.copy(), "v0": v.copy(), "g0": g0, "free0": pre0,
+                      "active0": active0, "exercise0": exercise0, "v_day1": v_day1})
     return float(v[i]), float(delta)

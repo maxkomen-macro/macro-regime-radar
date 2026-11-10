@@ -123,3 +123,108 @@ def test_no_copy_of_the_kernel_stays_in_the_bench():
         if path.name == "options_fd.py":
             continue
         assert "solve_banded" not in path.read_text(), path
+
+
+# ---- Step 3: the opt-in solver state for the Greeks (design section 3.3) -------------------------------------
+
+import numpy as np  # noqa: E402
+
+
+@pytest.mark.parametrize("s", SOLVES)
+def test_asking_for_the_grids_changes_no_bit_of_the_solve(s, pre_move_fd):
+    grids, diag, old_diag = {}, {}, {}
+    new = options_fd.solve(**_args(s), diag=diag, grids=grids)
+    old = pre_move_fd.solve(**_args(s), diag=old_diag)
+    _same_bits(new, old)
+    assert diag == old_diag
+    a = _args(s)
+    i = a["m"] // 2
+    v0, xs = grids["v0"], grids["xs"]
+    assert v0[i].hex() == new[0].hex()
+    assert float((v0[i + 1] - v0[i - 1]) / (xs[i + 1] - xs[i - 1])).hex() == new[1].hex()
+    for k in ("x", "xs", "v0", "g0", "free0", "active0", "exercise0"):
+        assert grids[k].shape == (a["m"] + 1,), k
+    assert (grids["v_day1"] is None) == (a["days"] < 2)
+
+
+def _ref_solve(**kw):
+    return options_fd.solve(**{**BASE, **kw})
+
+
+def test_the_t0_state_is_the_projection_of_the_free_values():
+    # an American put deep in the money: exercised at the low nodes, held at the high ones
+    g = {}
+    _ref_solve(is_call=False, strike=120.0, days=60, rho=0.08, q=0.0, sigma=0.25, divs=(), grids=g)
+    assert np.all(g["v0"] >= g["g0"])
+    assert g["exercise0"].any() and not g["exercise0"].all()
+    # where holding wins the projection changes nothing; where exercise wins the value is the exercise value (to
+    # the penalty's tie rule: a pinned node may sit a few ulps above it)
+    held = ~g["exercise0"]
+    assert np.array_equal(g["v0"][held], g["free0"][held])
+    ex = g["exercise0"]
+    assert np.allclose(g["v0"][ex], g["g0"][ex], rtol=1e-14, atol=0)
+    assert np.all(g["free0"][held] >= g["g0"][held])
+
+
+def test_a_european_solve_has_no_exercise_state():
+    g = {}
+    v, _ = _ref_solve(is_call=True, strike=100.0, days=30, rho=0.03, q=0.0, sigma=0.3, divs=((10, 1.0),),
+                      american=False, grids=g)
+    assert not g["g0"].any() and not g["exercise0"].any() and not g["active0"].any()
+    assert g["free0"].tobytes() == g["v0"].tobytes()   # no projection: the last solve is the solution
+
+
+def test_at_a_day_0_close_the_exercise_value_is_cum_dividend():
+    # V-1: a call whose dividend's cum close is today. g0 is the cum exercise value X + D − K at each node; the
+    # free value is held against the ex-dividend obstacle inside the last step (D-2)
+    s = dict(is_call=True, strike=86.0, days=38, rho=0.038, q=0.054, sigma=0.51, divs=((0, 1.55),))
+    g = {}
+    _ref_solve(**s, grids=g)
+    cum = np.maximum(g["xs"] + 1.55 - 86.0, 0.0)
+    assert np.array_equal(g["g0"], cum)
+    assert np.all(g["v0"] >= cum)
+
+
+@pytest.mark.parametrize("s", [
+    dict(is_call=False, strike=105.0, days=30, rho=0.05, q=0.0, sigma=0.3, divs=()),
+    dict(is_call=True, strike=97.0, days=30, rho=0.02, q=0.0, sigma=0.3, divs=((1, 1.2),)),        # cum close day 1
+    dict(is_call=False, strike=102.0, days=40, rho=0.05, q=0.01, sigma=0.3, divs=((1, 0.8), (20, 1.0))),
+    dict(is_call=True, strike=100.0, days=25, rho=0.03, q=0.0, sigma=0.3, divs=((12, 1.5),), american=False),
+])
+def test_the_day_1_level_is_the_solve_from_one_day_later(s):
+    # V-2: the level one day after t = 0 is what a solve over days − 1, with every dividend one day earlier and
+    # the same X grid (spot X0 + PV_1), returns at its own t = 0; at a cum close on day 1 that is the cum value.
+    # The arithmetic is the same step for step; only the dividends' PV exponents round differently (d − t against
+    # (d − 1) − (t − 1)), so the match is to rounding, not to the bit.
+    a = _args(s)
+    g, g1 = {}, {}
+    options_fd.solve(**a, grids=g)
+    x0 = a["spot"] - options_fd.pv_owed(a["divs"], a["rho"], 0.0)
+    shifted = tuple((d - 1, amt) for d, amt in a["divs"])
+    spot1 = x0 + options_fd.pv_owed(shifted, a["rho"], 0.0)
+    options_fd.solve(**{**a, "days": a["days"] - 1, "divs": shifted, "spot": spot1}, grids=g1)
+    assert np.allclose(g1["x"], g["x"], rtol=0, atol=1e-13)
+    assert np.allclose(g["v_day1"], g1["v0"], rtol=1e-11, atol=1e-11)
+    assert options_fd.pv_owed(a["divs"], a["rho"], 1.0) == pytest.approx(spot1 - x0, abs=1e-13)
+
+
+def test_at_a_day_0_close_a_put_waits_for_the_dividend():
+    # a deep in-the-money put whose dividend's cum close is today: exercising just after the close (ex-dividend,
+    # S lower by D) beats exercising now, so the nodes the penalty pinned to the ex-dividend obstacle are held now
+    s = dict(is_call=False, strike=130.0, days=20, rho=0.01, q=0.0, sigma=0.2, divs=((0, 2.0),))
+    g = {}
+    _ref_solve(**s, grids=g)
+    pinned = g["active0"]
+    assert pinned.any()
+    assert not g["exercise0"][pinned].any()
+    after = np.maximum(130.0 - g["xs"], 0.0)          # ex-dividend exercise value, X − K with nothing owed
+    assert np.allclose(g["v0"][pinned], after[pinned], rtol=1e-12, atol=0)
+    assert np.all(g["v0"][pinned] > g["g0"][pinned])
+
+
+def test_a_bermudan_schedule_without_day_0_has_no_exercise_at_t0():
+    g = {}
+    _ref_solve(is_call=False, strike=110.0, days=30, rho=0.05, q=0.0, sigma=0.3, divs=(), exercise_days=(10, 20),
+               grids=g)
+    assert not g["g0"].any() and not g["exercise0"].any()
+    assert g["free0"].tobytes() == g["v0"].tobytes()
