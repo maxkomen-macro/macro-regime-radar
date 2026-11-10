@@ -91,26 +91,39 @@ function describeVixMove(a: Alert, move: (typeof VIX_MOVES)[string]): AlertCopy 
   };
 }
 
+/** The observed close a SPY_drawdown message names ("… to the Tue 2026-11-03 close …"), only when
+ *  it is the row's own date: the pipeline dates the row by that close (SPY_weekly_ret_obs). A row
+ *  whose observation dates were not on file, a legacy "5d" row and a row with no message are all
+ *  dated by their W-FRI bucket label instead, so none of them names an observed close. */
+function spyObservedClose(a: Alert): string | null {
+  const m = /\bto the (?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (\d{4}-\d{2}-\d{2}) close\b/.exec(a.message ?? "");
+  return m && m[1] === a.date.slice(0, 10) ? m[1] : null;
+}
+
 /** SPY_drawdown (src/analytics/alerts.py): SPY_weekly_ret, the change from the previous W-FRI
  *  week's last stored close to the newest stored close of its week, a week still under way
- *  included, so never a "5-day" return. The row is dated by that close (SPY_weekly_ret_obs), so
- *  "the week to" holds for a partial week and a complete one; the value and threshold are
- *  fractions (-0.035 is -3.50%). */
+ *  included, so never a "5-day" return. When the stored message names the close the row read,
+ *  the row is dated by it and "the week to" holds for a partial week and a complete one; without
+ *  it the date is only the week's label and is never printed as a close. The value and threshold
+ *  are fractions (-0.035 is -3.50%). */
 function describeSpyDrawdown(a: Alert): AlertCopy {
   const level = a.level === "risk" ? "risk" : "watch";
   const line = a.threshold != null ? `, below the ${fmtPct(a.threshold * 100, 0)} ${level} line` : "";
-  const span = `in the week to ${fmtDate(a.date)}`;
+  const observed = spyObservedClose(a);
+  const span = observed ? `in the week to ${fmtDate(observed)}` : `for the week labelled ${fmtDate(a.date)}`;
+  const status = observed
+    ? "Measured from stored daily SPY closes and recomputed with every daily refresh; a week still under way counts only its sessions so far."
+    : "The close this return was measured to is not on file, so the date is the week's label, not an observed close, and the week may be incomplete.";
   return {
     title: "SPY weekly drop",
-    when: fmtDate(a.date),
+    when: observed ? fmtDate(observed) : `Week labelled ${fmtDate(a.date)}`,
     severity: LEVEL_WORD[a.level] ?? "Informational",
     trigger:
       a.value != null
         ? `SPY's change from the previous week's last close was ${fmtPct(a.value * 100)} ${span}${line}.`
         : `SPY fell past its weekly line ${span}.`,
     active: null,
-    status:
-      "Measured from stored daily SPY closes and recomputed with every daily refresh; a week still under way counts only its sessions so far.",
+    status,
     why: "A fall this large from the previous week's close marks broad selling in US equities.",
   };
 }
