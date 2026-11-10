@@ -50,3 +50,50 @@ def test_no_candidate_meeting_the_rule_leaves_the_choice_empty():
 def test_calibration_refuses_any_seed_but_the_development_seed(tmp_path):
     with pytest.raises(SystemExit):
         K.main(["bumps", "--seed", "20261111", "--out", str(tmp_path)])
+
+
+def _grow(group, ref, cands):
+    """cands: {(m_frac, p_frac): (units, v2 or a refusal reason)}."""
+    rows = []
+    for (mf, pf), (units, v) in cands.items():
+        row = {"m_frac": mf, "p_frac": pf, "units": units}
+        if isinstance(v, str):
+            row["refused"] = v
+        else:
+            row.update(v1=v, v2=v)
+        rows.append(row)
+    return {"case": f"{group}/x", "group": group, "ref": ref, "cands": rows}
+
+
+REF = {"status": "resolved", "R": 10.0, "u": 0.001, "tol": 0.01}
+
+
+def test_the_cheapest_grid_agreeing_in_every_group_is_chosen():
+    rows = [_grow(g, REF, {(0.125, 0.25): (1, 10.0 + 0.2 * 0.01), (0.25, 0.25): (2, 10.0 + 0.05 * 0.01),
+                           (0.5, 0.5): (8, 10.0)}) for g in ("G1", "G2")]
+    got = K.choose_grid(rows)
+    assert got["chosen"] == {"m_frac": 0.25, "p_frac": 0.25}
+    assert [c["qualifies"] for c in got["candidates"]] == [False, True, True]
+
+
+def test_one_group_below_99_percent_or_one_confirmed_failure_disqualifies_a_grid():
+    good = [_grow("G1", REF, {(0.25, 0.25): (1, 10.0), (0.5, 0.5): (4, 10.0)}) for _ in range(99)]
+    near = _grow("G1", REF, {(0.25, 0.25): (1, 10.0 + 0.5 * 0.01), (0.5, 0.5): (4, 10.0)})   # 1 in 100: fine
+    assert K.choose_grid(good + [near])["chosen"] == {"m_frac": 0.25, "p_frac": 0.25}
+    bad = _grow("G2", REF, {(0.25, 0.25): (1, 10.0 + 1.2 * 0.01), (0.5, 0.5): (4, 10.0)})     # beyond tol + u
+    got = K.choose_grid(good + [near, bad])
+    assert got["chosen"] == {"m_frac": 0.5, "p_frac": 0.5}
+    assert got["candidates"][0]["groups"]["G2"]["failures"] == ["G2/x"]
+
+
+def test_an_fd_refusal_counts_as_not_agreeing_and_unresolved_references_are_not_counted():
+    rows = [_grow("G1", REF, {(0.25, 0.25): (1, "grid not monotone"), (0.5, 0.5): (4, 10.0)}),
+            _grow("G1", dict(REF, status="unresolved: x"), {(0.25, 0.25): (1, 99.0), (0.5, 0.5): (4, 99.0)})]
+    got = K.choose_grid(rows)
+    assert got["chosen"] == {"m_frac": 0.5, "p_frac": 0.5}
+    g = got["candidates"][0]["groups"]["G1"]
+    assert g["resolved"] == 1 and g["refused"] == 1 and g["agree"] == 0
+
+
+def test_no_qualifying_grid_leaves_the_choice_empty():
+    assert K.choose_grid([_grow("G1", REF, {(0.25, 0.25): (1, 11.0)})])["chosen"] is None
