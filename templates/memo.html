@@ -497,7 +497,8 @@
   </style>
 </head>
 <body>
-<div class="page">
+<div class="page">{% if memo_banner %}
+  <div style="background:#fff4e5;border:1px solid #f0b46b;color:#7a4b00;padding:10px 14px;margin-bottom:12px;font-size:13px;font-weight:600;border-radius:4px;">{{ memo_banner }}</div>{% endif %}
 
   <!-- ══════════════════════════════════════════════════════════════════════
        HEADER
@@ -507,7 +508,8 @@
     <div class="subtitle">Quantitative macro regime classification &amp; risk signal monitor</div>
     <div class="dates">
       <div class="date-chip"><strong>As of:</strong>&nbsp; {{ as_of }}</div>
-      <div class="date-chip"><strong>Generated:</strong>&nbsp; {{ generated_at }}</div>
+      <div class="date-chip"><strong>Generated:</strong>&nbsp; {{ generated_at }}</div>{% if data_as_of %}
+      <div class="date-chip"><strong>Data as of:</strong>&nbsp; {{ data_as_of }}</div>{% endif %}
     </div>
   </div>
 
@@ -822,7 +824,8 @@
     <p style="color:#888;font-size:13px;">No alerts — run <code>python -m src.analytics.alerts</code></p>
     {% else %}
     <p style="color:#27ae60;font-size:13px;">✓ No risk-level alerts currently active.</p>
-    {% endif %}
+    {% endif %}{% if alerts_summary.note %}
+    <p style="color:#6b7591;font-size:12px;font-style:italic;">{{ alerts_summary.note }}</p>{% endif %}
   </div>
 
   <!-- ══════════════════════════════════════════════════════════════════════

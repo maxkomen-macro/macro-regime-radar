@@ -29,6 +29,7 @@ from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 # Run as a module from the repo root (`python -m src.memo`), so the package imports resolve. `python src/memo.py`
 # put src/ on sys.path instead and failed with "No module named 'src'" (fix/site-audit S-06).
 from src.utils.format import pct_text, z_interpretation
+from src.utils.memo_clock import memo_clock
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Paths
@@ -882,6 +883,9 @@ def build_whats_priced_memo(derived_df: pd.DataFrame) -> dict:
     def _get(col):
         if col not in derived_df.columns:
             return None
+        if _session_mode():   # CS-2 (DR-71): each metric's own newest value, not the newest pivot row's
+            s = derived_df[col].dropna()
+            return float(s.iloc[0]) if not s.empty else None
         v = latest.get(col)
         return float(v) if v is not None and not (isinstance(v, float) and np.isnan(v)) else None
 
@@ -976,7 +980,7 @@ def build_next_week_memo(calendar_df: pd.DataFrame, signal_rows: list, alerts_df
     }
 
     if not calendar_df.empty:
-        now    = pd.Timestamp.now(tz="UTC").tz_localize(None)
+        now    = pd.Timestamp(memo_clock()).tz_convert("UTC").tz_localize(None)   # the content clock (CS-2)
         cutoff = now + pd.Timedelta(days=7)
         cal    = calendar_df.copy()
         cal    = cal.assign(event_dt_naive=cal["event_dt"].dt.tz_localize(None))
@@ -1035,9 +1039,13 @@ PROVIDER_WORDS = {"polygon": "Polygon.io", "yfinance": "yfinance"}
 
 def _market_chart_rows(market_df: pd.DataFrame, as_of: pd.Timestamp) -> dict[str, pd.DataFrame]:
     """The rows the market chart plots, per symbol: the last 12 months from
-    `as_of` onward, symbols with at least 5 rows, rows with a close."""
+    `as_of` onward, symbols with at least 5 rows, rows with a close. A queued
+    memo (CS-2, DR-45) keeps only finite, positive closes, before the 5-row rule."""
     if market_df.empty:
         return {}
+    if _session_mode():
+        c = pd.to_numeric(market_df["close"], errors="coerce")
+        market_df = market_df[np.isfinite(c) & (c > 0)]
     cutoff = as_of - pd.DateOffset(months=12)
     out: dict[str, pd.DataFrame] = {}
     for sym in MARKET_CHART_SYMBOLS:
@@ -1110,6 +1118,10 @@ def build_market_chart(market_df: pd.DataFrame, as_of: pd.Timestamp) -> str | No
             if s.empty:
                 continue
             indexed = s / s.iloc[0] * 100  # index to 100
+            if _session_mode():   # CS-2 (DR-45): drop non-finite points; fewer than 5 left is no series
+                indexed = indexed[np.isfinite(indexed.to_numpy(dtype=float))]
+                if len(indexed) < 5:
+                    continue
             ax.plot(indexed.index, indexed.values, label=sym,
                     color=colors.get(sym, "#333"), linewidth=1.5)
             plotted = True
@@ -1193,6 +1205,122 @@ def _build_key_indicators(derived: pd.DataFrame) -> list:
     return rows
 
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# CS-2: the queued weekly memo (MEMO_SESSION and MEMO_KEY set by weekly-memo.yml)
+#
+# Design .loop/design-CS2.md sections 4 and 6. The database is the source run's
+# validated snapshot pinned to session P (MEMO_SESSION), with the market weekly
+# rows recomputed at P and the analytics re-run on it. Without MEMO_SESSION
+# nothing below runs and the memo is as before.
+# ─────────────────────────────────────────────────────────────────────────────
+
+ALERT_NOTE_PATH = OUTPUT_DIR / "memo-alert-note.txt"
+
+
+def _session_mode() -> bool:
+    import os
+    return bool(os.environ.get("MEMO_SESSION", "").strip())
+
+
+def _sessions_back(p, n: int):
+    """The NYSE session n sessions before p."""
+    from datetime import timedelta
+    from src.market_data import session as _session
+    d, left = p, n
+    for _ in range(40):
+        d -= timedelta(days=1)
+        if _session.is_trading_day(d):
+            left -= 1
+            if left == 0:
+                return d
+    return None
+
+
+def _close_at(market_df: pd.DataFrame, sym: str, d) -> float | None:
+    if market_df.empty or d is None:
+        return None
+    hit = market_df[(market_df["symbol"] == sym) & (market_df["date"] == pd.Timestamp(d))]
+    if len(hit) != 1:
+        return None
+    v = pd.to_numeric(hit["close"], errors="coerce").iloc[0]
+    return float(v) if np.isfinite(v) and v > 0 else None
+
+
+def build_market_snapshot_at(market_df: pd.DataFrame, derived_df: pd.DataFrame, wide_df: pd.DataFrame, p) -> list:
+    """build_market_snapshot at session P (DR-39, DR-41, DR-44): the 1-week return from the
+    close five NYSE sessions before P to P's close, both exact and valid, else "—"; the z-score
+    of the bucket observed at P, shown only when that bucket measured the same interval."""
+    q = _sessions_back(p, 5)
+    rows = []
+    for sym in ["SPY", "HYG", "TLT", "GLD", "UUP", "USO", "QQQ"]:
+        c_p, c_q = _close_at(market_df, sym, p), _close_at(market_df, sym, q)
+        ret_1w = None
+        if c_p is not None and c_q is not None:
+            r = (c_p / c_q - 1) * 100
+            ret_1w = r if np.isfinite(r) else None
+        z_val = None
+        z_col, obs_col, from_col = f"{sym}_weekly_ret_z", f"{sym}_weekly_ret_obs", f"{sym}_weekly_ret_from"
+        if not derived_df.empty and {z_col, obs_col, from_col} <= set(derived_df.columns):
+            zs = derived_df[z_col].dropna()
+            if not zs.empty:
+                label = zs.index[0]
+                obs, frm = derived_df.at[label, obs_col], derived_df.at[label, from_col]
+                if q is not None and obs == float(p.toordinal()) and frm == float(q.toordinal()):
+                    z_val = float(zs.iloc[0])
+        rows.append({
+            "symbol":     sym,
+            "label":      _WATCHLIST_LABELS.get(sym, sym),
+            "ret_1w":     ret_1w,
+            "ret_1w_str": f"{ret_1w:+.2f}%" if ret_1w is not None else "—",
+            "direction":  "up" if ret_1w is not None and ret_1w > 0 else "down",
+            "z_score":    z_val,
+            "z_str":      f"{z_val:+.1f}σ" if z_val is not None else "",
+        })
+    if not wide_df.empty and "DGS10" in wide_df.columns:
+        gs10 = wide_df["DGS10"].dropna()
+        if not gs10.empty:
+            rows.append({
+                "symbol": "DGS10", "label": "10Y Treasury Yield",
+                "ret_1w": float(gs10.iloc[-1]), "ret_1w_str": f"{float(gs10.iloc[-1]):.2f}%",
+                "direction": "—", "z_score": None, "z_str": "",
+            })
+    return rows
+
+
+def playbook_sha256() -> str | None:
+    """The hash of output/playbook.json without its generated_at stamp (provenance)."""
+    import hashlib
+    try:
+        pb = json.loads(PLAYBOOK_PATH.read_text())
+    except (OSError, ValueError):
+        return None
+    pb.pop("generated_at", None)
+    return hashlib.sha256(json.dumps(pb, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def write_session_bundle(env: "Environment", ctx: dict) -> dict:
+    """Both versions of the queued weekly memo into output/memo-bundle/ (CS-2)."""
+    import os
+    from datetime import date as _date
+    key, p = os.environ["MEMO_KEY"].strip(), _date.fromisoformat(os.environ["MEMO_SESSION"].strip())
+    clock = memo_clock()
+    out = OUTPUT_DIR / "memo-bundle"
+    out.mkdir(parents=True, exist_ok=True)
+    subject = "Macro Regime Radar — Weekly Memo"
+    banner = f"Delayed memo for the week {key}, sent __MEMO_SENT_DATE__"
+    for variant, extra in (("normal", {}), ("delayed", {"memo_banner": banner})):
+        c = {**ctx, **extra}
+        (out / f"page-{variant}.html").write_text(env.get_template("memo.html").render(**c), encoding="utf-8")
+        (out / f"email-{variant}.html").write_text(env.get_template("memo_email.html").render(**c), encoding="utf-8")
+    (out / "subject-normal.txt").write_text(subject + "\n", encoding="utf-8")
+    (out / "subject-delayed.txt").write_text(f"[Delayed] {subject}\n", encoding="utf-8")
+    meta = {"kind": "weekly", "key": key, "pin_session": p.isoformat(),
+            "validated_at": clock.strftime("%Y-%m-%dT%H:%M:%SZ"), "commentary": "local",
+            "playbook_sha256": playbook_sha256()}
+    (out / "meta.json").write_text(json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return meta
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Orchestrator
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1232,7 +1360,7 @@ def generate_memo() -> None:
         as_of = wide.index.max()
     else:
         print("[memo] WARNING: All tables are empty — generating skeleton memo.")
-        as_of = pd.Timestamp.now().normalize()
+        as_of = pd.Timestamp(memo_clock()).tz_convert("UTC").tz_localize(None).normalize()   # the content clock (CS-2)
 
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
     print(f"[memo] As-of: {as_of.strftime('%B %Y')}  |  Generated: {generated_at}")
@@ -1304,10 +1432,18 @@ def generate_memo() -> None:
 
     # ── Trader Pack sections ───────────────────────────────────────────────
     print("[memo] Building Trader Pack sections ...")
-    market_snapshot   = build_market_snapshot(market_daily, derived_dm, wide)
+    if _session_mode():
+        from datetime import date as _date
+        import os as _os
+        pin_p = _date.fromisoformat(_os.environ["MEMO_SESSION"].strip())
+        market_snapshot = build_market_snapshot_at(market_daily, derived_dm, wide, pin_p)
+    else:
+        market_snapshot = build_market_snapshot(market_daily, derived_dm, wide)
     surprise_ranking  = build_surprise_ranking(derived_dm, top_n=10)
     whats_priced      = build_whats_priced_memo(derived_dm)
     alerts_summary    = build_alerts_summary_memo(alerts_df, signal_rows)
+    if _session_mode() and ALERT_NOTE_PATH.exists():   # CS-2 (DR-68): the credit comparison's disclosure
+        alerts_summary["note"] = ALERT_NOTE_PATH.read_text(encoding="utf-8").strip()
     next_week         = build_next_week_memo(calendar_df, signal_rows, alerts_df)
     playbook_ctx      = build_playbook_commentary_memo(playbook)
 
@@ -1339,6 +1475,9 @@ def generate_memo() -> None:
         market_sources    = market_sources,
         key_indicators    = key_indicators,
     )
+    if _session_mode():   # CS-2: the pinned session and the snapshot's validation time
+        ctx.update(as_of=pin_p.strftime("%B %d, %Y"), as_of_long=pin_p.strftime("%B %d, %Y"),
+                   data_as_of=memo_clock().strftime("%Y-%m-%d %H:%M UTC"))
 
     # ── Render browser version ─────────────────────────────────────────────
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1362,6 +1501,10 @@ def generate_memo() -> None:
         print(f"[memo] Email memo written → {MEMO_EMAIL_PATH}  ({email_kb:.0f} KB)")
     except TemplateNotFound:
         print("[memo] WARNING: templates/memo_email.html not found — skipping email version")
+
+    if _session_mode():
+        meta = write_session_bundle(env, ctx)
+        print(f"[memo] Queued weekly memo {meta['key']} pinned to {meta['pin_session']} → output/memo-bundle/")
 
     # ── Validation ─────────────────────────────────────────────────────────
     print_validation(regimes, signals, MEMO_PATH)

@@ -38,7 +38,7 @@ on:
 
 permissions:
   contents: write
-  actions: write   # dispatches the memo workflows after a validated morning full refresh
+  actions: write   # wakes the memo queues after a validated full refresh; reads run history for memo sources
 
 concurrency:
   group: data-write
@@ -84,7 +84,6 @@ jobs:
           MODE=$(python scripts/workflow_mode.py --event "$EVENT_NAME" --schedule "$SCHEDULE" --input "$INPUT_MODE")
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "Resolved mode: $MODE (event=$EVENT_NAME schedule='$SCHEDULE')"
-          if [ "$(date -u +%H)" -lt 18 ]; then echo "slot=morning" >> "$GITHUB_OUTPUT"; else echo "slot=evening" >> "$GITHUB_OUTPUT"; fi
 
       # Release-aware freshness F-3 (Max, 2026-11-04): a full refresh records its attempt in the
       # refresh-status.json release asset even when it fails, so the API never shows a monthly print as
@@ -354,6 +353,14 @@ jobs:
             exit 1
           fi
 
+      # CS-2: when this attempt's validation finished (t_R in docs/memo coverage, design section 1).
+      # scripts/memo_queue.py reads this step's success as "this attempt validated a full refresh",
+      # independently of the metadata step below (keep its name and condition).
+      - name: Record the validation time
+        id: validated
+        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'
+        run: echo "validated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Build the public static snapshot
         if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'
         env:
@@ -440,35 +447,46 @@ jobs:
         if: steps.mode.outputs.mode != 'verify-only' && steps.validate.outputs.upload != 'true'
         run: echo "Validation passed but nothing changed for mode ${{ steps.mode.outputs.mode }}; the previous asset stands." >> "$GITHUB_STEP_SUMMARY"
 
+      # CS-2 (design section 2a): refresh-meta.txt records this attempt's identity, its validation
+      # time, the NYSE sessions it covers (every configured symbol has a row dated exactly that
+      # session, 15 minutes after its close) and the newest such session, plus the database's
+      # hashes. The same lines go to validated-meta-<attempt> (45 days, no provider data), so
+      # each validated attempt's coverage outlives the 3-day database artifact.
+      # A failure here never holds back the playbook commit below: it continues, and the
+      # last step fails the job visibly ("Fail when the memo hand-off failed").
       - name: Record the validated run for downstream memos
+        id: memo_meta
         if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VALIDATED_AT: ${{ steps.validated.outputs.validated_at }}
         run: |
-          mkdir -p validated
+          mkdir -p validated validated-meta
           cp data/macro_radar.db validated/macro_radar.db
           cp validation.json validated/validation.json
-          printf 'mode=%s\nslot=%s\nrun_id=%s\n' "${{ steps.mode.outputs.mode }}" "${{ steps.mode.outputs.slot }}" "${{ github.run_id }}" > validated/refresh-meta.txt
+          python scripts/memo_queue.py meta --db validated/macro_radar.db --validation validated/validation.json \
+            --validated-at "${VALIDATED_AT:?}" \
+            --out validated/refresh-meta.txt --out-meta validated-meta/validated-meta.txt
+
+      - name: Upload this attempt's memo metadata
+        id: meta_upload
+        if: steps.memo_meta.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: validated-meta-${{ github.run_attempt }}
+          path: validated-meta/
+          retention-days: 45
 
       - name: Upload the validated snapshot as a run artifact
-        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass'
+        id: db_upload
+        if: steps.memo_meta.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: validated-db
           path: validated/
           retention-days: 3
-
-      - name: Dispatch the memo workflows (validated morning full refresh only)
-        if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass' && steps.mode.outputs.slot == 'morning'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUN_ID: ${{ github.run_id }}
-        run: |
-          DOW=$(date -u +%u)
-          if [ "$DOW" -le 5 ]; then
-            gh workflow run daily-memo.yml -f run_id="$RUN_ID" && echo "daily memo dispatched for run $RUN_ID"
-          fi
-          if [ "$DOW" -eq 1 ]; then
-            gh workflow run weekly-memo.yml -f run_id="$RUN_ID" && echo "weekly memo dispatched for run $RUN_ID"
-          fi
 
       - name: Commit playbook.json if it changed
         if: steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass' && github.ref == 'refs/heads/main'
@@ -482,6 +500,40 @@ jobs:
           # Five attempts with backoff; a moved main rebuilds on the newer main;
           # an unchanged playbook makes no commit. See scripts/publish_artifacts.sh.
           bash scripts/publish_artifacts.sh "Update playbook [skip ci]" output/playbook.json
+
+      # CS-2 (design section 3): register, for every NYSE session and ISO week in the window
+      # (from scripts/memo_queue.py QUEUE_START) that has no record yet, the validated attempt
+      # that first covered it, from the run history and the validated-meta artifacts. Complete
+      # or nothing: an unreadable listing, a bound reached or another attempt still running
+      # writes nothing and the next run retries. One compare-and-swap commit of
+      # docs/memo/sources.json; an existing record is never changed by automation.
+      - name: Record memo sources
+        if: steps.meta_upload.outcome == 'success' && steps.db_upload.outcome == 'success' && github.ref == 'refs/heads/main'
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          python scripts/memo_queue.py sources --meta validated-meta/validated-meta.txt
+
+      # Wake both memo queues after every validated full main run; each memo run drains its
+      # queue from the records, so a lost wake-up is recovered by the next one (no cron).
+      - name: Wake the memo queues
+        if: ${{ !cancelled() && steps.mode.outputs.mode == 'full' && steps.validate.outputs.verdict == 'pass' && github.ref == 'refs/heads/main' }}
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          gh workflow run daily-memo.yml -f wake="$RUN_ID" || echo "::warning::the daily memo wake-up failed; the next validated full refresh wakes it"
+          gh workflow run weekly-memo.yml -f wake="$RUN_ID" || echo "::warning::the weekly memo wake-up failed; the next validated full refresh wakes it"
+
+      - name: Fail when the memo hand-off failed
+        if: always() && (steps.memo_meta.outcome == 'failure' || steps.meta_upload.outcome == 'failure')
+        run: |
+          echo "::error::this attempt's memo metadata was not recorded or not uploaded; the sessions it may cover are blocked visibly, never sourced from a later run"
+          exit 1
 
       # F-3: the attempt's outcome, whatever happened above (always(): failures and cancellations too).
       # The macro outcome comes from the FRED, validation and publish steps only (api/refresh_status.py

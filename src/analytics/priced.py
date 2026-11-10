@@ -29,6 +29,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.utils.memo_clock import memo_clock
+
 ROOT    = Path(__file__).resolve().parent.parent.parent
 DB_PATH = ROOT / "data" / "macro_radar.db"
 
@@ -88,7 +90,8 @@ def build_priced_metrics(conn: sqlite3.Connection) -> list:
     Returns list of (metric_name, date_str, value) tuples.
     """
     rows = []
-    today = datetime.now(timezone.utc).replace(tzinfo=None).strftime("%Y-%m-%d")
+    # the content clock (CS-2): the wall clock unless a queued memo sets MEMO_CLOCK
+    today = memo_clock().replace(tzinfo=None).strftime("%Y-%m-%d")
 
     for series_id in ALL_PRICED_SERIES:
         s = load_series(conn, series_id)
