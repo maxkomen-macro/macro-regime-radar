@@ -4,7 +4,7 @@ mode-scoped SLA verdicts, the upload decision and the step summary."""
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -1548,3 +1548,114 @@ def test_a_vault_table_that_cannot_be_read_only_warns(tmp_path):
     assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
     assert not rep["corruption"]["not_executed"]
     assert any(w.startswith("advisory check not run: earnings_cache_vault fingerprint") for w in rep["warnings"])
+
+
+# ── Desk P4: the CFTC futures positions, advisory ───────────────────────────
+
+def _with_cot(path: Path, *, edit=None, down: bool = False, now: datetime = NOW) -> dict:
+    """The CFTC positions step run on `path` against invented reports to 2026-09-01 (test-data rule), after
+    `edit(rows)` changes what the fake CFTC serves; `down` fails every read."""
+    from scripts import desk_positioning_fixture as fx
+    from src.market_data import cot
+
+    def get(url):
+        if down:
+            raise OSError("no route to host")
+        for report in cot.REPORTS.values():
+            if f"/{report.dataset}.json" in url:
+                rows = fx.synth_rows(report, [m.contract_code for m in cot.MARKETS if m.report == report.key],
+                                     end=datetime(2026, 9, 1).date(), weeks=40)
+                return edit(rows) if edit else rows
+        raise AssertionError(url)
+
+    return cot.refresh(path, now=now, get=get, retry_wait=0)
+
+
+def test_a_full_refresh_without_cftc_positions_passes_and_says_so(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert any(w.startswith("cot_positions: not stored") for w in rep["warnings"])
+
+
+def test_a_failed_cftc_read_still_validates_and_uploads(tmp_path):
+    prev, cur = tmp_path / "prev.db", tmp_path / "cur.db"
+    _make(prev, daily="2026-09-03")
+    _make(cur)
+    assert _with_cot(cur, down=True)["status"] == "error"
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass" and rep["upload"] is True, rep["failures"]
+    assert any(w.startswith("cftc_cot error: CFTC 0 of 5 markets") for w in rep["warnings"])
+
+
+def test_new_or_amended_cftc_reports_alone_are_published_and_a_same_read_is_not(tmp_path):
+    import shutil
+
+    prev = _make_path(tmp_path, "prev.db")
+    _with_cot(prev)
+    same = tmp_path / "same.db"
+    shutil.copy(prev, same)
+    _with_cot(same, now=NOW + timedelta(hours=1))  # the same reports: a run row, no rewritten number
+    rep = v.validate(same, prev, "full", now=NOW + timedelta(hours=1))
+    assert "cot_positions" not in rep["changed_tables"], rep["changed_tables"]
+
+    def amend(rows):
+        if "dealer_positions_long_all" not in rows[-1]:
+            return rows  # the disaggregated report is served unchanged
+        r = rows[-1]
+        r["dealer_positions_long_all"] = str(int(r["dealer_positions_long_all"]) + 7)
+        r["dealer_positions_short_all"] = str(int(r["dealer_positions_short_all"]) + 7)
+        r["open_interest_all"] = str(int(r["open_interest_all"]) + 7)
+        return rows
+
+    amended = tmp_path / "amended.db"
+    shutil.copy(prev, amended)
+    assert _with_cot(amended, edit=amend, now=NOW + timedelta(hours=1))["counts"]["revised"] == 5
+    rep = v.validate(amended, prev, "full", now=NOW + timedelta(hours=1))
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert "cot_positions" in rep["changed_tables"] and rep["upload"] is True
+
+
+def test_a_stored_cftc_report_the_api_sets_aside_only_warns(tmp_path):
+    prev = _make_path(tmp_path, "prev.db")
+    _with_cot(prev)
+    cur = _make_path(tmp_path, "cur.db")
+    _with_cot(cur)
+    conn = sqlite3.connect(cur)
+    conn.execute("UPDATE cot_positions SET long = long + 1 WHERE contract_code = '13874A' AND as_of = '2026-09-01' AND category = 'dealer'")
+    conn.execute("UPDATE cot_positions SET withdrawn_at = '2026-09-05T22:00:00Z' WHERE contract_code = '088691' AND as_of = '2026-09-01'")
+    conn.execute("DELETE FROM cot_positions WHERE contract_code = '067651' AND as_of = '2026-08-25'")
+    conn.commit()
+    conn.close()
+    rep = v.validate(cur, prev, "full", now=NOW)
+    assert rep["verdict"] == "pass", rep["failures"]
+    # the S&P's broken identity is one; the withdrawn gold report is not a fault; a deleted report is no report at all
+    assert any(w.startswith("cot_positions: 1 stored report(s) the API sets aside") for w in rep["warnings"]), rep["warnings"]
+    assert any(w.startswith("cot_positions: rows fell") for w in rep["warnings"])
+    assert not any("cot_positions" in f for f in rep["failures"])
+
+
+def test_the_unreadable_cftc_count_agrees_with_the_reader(tmp_path):
+    """validate_db's SQL counts exactly the reports api/desk_positioning sets aside (withdrawn ones apart)."""
+    from api import desk_positioning as dp
+
+    f = _make_path(tmp_path, "cur.db")
+    _with_cot(f)
+    conn = sqlite3.connect(f)
+    conn.execute("INSERT INTO positioning_runs VALUES ('r-open', 'cftc_pre', '2026-09-05T21:00:00Z', NULL, 'started', NULL)")
+    edits = [
+        "UPDATE cot_positions SET run_id = 'r-open' WHERE contract_code = '13874A' AND as_of = '2026-09-01' AND category = 'dealer'",
+        "UPDATE cot_positions SET open_interest = open_interest + 1 WHERE contract_code = '043602' AND as_of = '2026-09-01' AND category = 'dealer'",
+        "DELETE FROM cot_positions WHERE contract_code = '098662' AND as_of = '2026-09-01' AND category = 'nonreportables'",
+        "UPDATE cot_positions SET first_stored_at = '2026-08-31T00:00:00Z' WHERE contract_code = '088691' AND as_of = '2026-09-01'",
+        "UPDATE cot_positions SET short = short + 3 WHERE contract_code = '067651' AND as_of = '2026-08-25' AND category = 'swap_dealers'",
+        "UPDATE cot_positions SET withdrawn_at = '2026-09-05T22:00:00Z' WHERE contract_code = '067651' AND as_of = '2026-09-01'",
+    ]
+    for e in edits:
+        conn.execute(e)
+    conn.commit()
+    set_aside = sum(1 for m in dp.futures_block(conn)["markets"] for x in m["excluded"] if "withdrawn" not in x["reason"])
+    assert set_aside == 5 and conn.execute(v.COT_REPORTS_UNREADABLE).fetchone()[0] == 5
+    conn.close()

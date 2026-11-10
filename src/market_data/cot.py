@@ -269,8 +269,10 @@ def parse_row(report: Report, row: Mapping[str, Any], codes: set[str]) -> list[d
     if not m:
         raise ValueError(f"{code}: positions date {row.get('report_date_as_yyyy_mm_dd')!r} is not a date")
     as_of = m.group(1)
-    if date.fromisoformat(as_of).isoformat() != as_of:
-        raise ValueError(f"{code}: positions date {as_of!r} is not a date")
+    try:
+        date.fromisoformat(as_of)
+    except ValueError:
+        raise ValueError(f"{code}: positions date {as_of!r} is not a date") from None
     name = str(row.get("market_and_exchange_names", "")).strip()
     rid = str(row.get("id", "")).strip()
     if not name or not rid:
