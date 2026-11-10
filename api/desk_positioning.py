@@ -47,7 +47,8 @@ HOLDINGS_NOT_STORED = "Awaiting refresh: SEC 13F holdings are not stored in this
 HOLDINGS_SOURCE = ("SEC Form 13F data sets (www.sec.gov), long positions in shares; tickers paired with CUSIPs from the "
                    "SEC's fails-to-deliver data")
 HOLDINGS_CREDIT = "Source: U.S. Securities and Exchange Commission, Form 13F data sets and fails-to-deliver data."
-HOLDINGS_LAG_NOTE = ("Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it; "
+HOLDINGS_LAG_NOTE = ("Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it (the next business "
+                     "day when that day is a weekend or federal holiday); "
                      "long positions only, from managers with $100 million or more in 13(f) securities.")
 
 # The window for "where it sits": three calendar years of weekly reports ending at the report, at least this many.

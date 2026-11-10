@@ -42,6 +42,16 @@ SEED = 20261110
 DEFAULT_SYMBOLS = "NVDA,AVGO,AMD,TSM,MU,ANET,VRT,CEG,CRWV,NBIS,AAPL,MSFT,BRK.B,SPY"
 
 
+def _share_row(kind: str, option: str, where: str) -> bool:
+    """A position in shares (SH, no put or call). This reading's own rule, written apart from the step's (Codex S-8):
+    an amount type other than SH/PRN or a put/call other than Put/Call/none stops the check rather than being
+    passed over, so a row the step should refuse is never silently left out of both readings."""
+    k, o = kind.strip().upper(), option.strip().upper()
+    if k not in ("SH", "PRN") or o not in ("", "PUT", "CALL"):
+        raise RuntimeError(f"{where}: unreadable amount type {kind!r} or put/call {option!r}")
+    return k == "SH" and not o
+
+
 def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
@@ -64,7 +74,7 @@ def edgar_positions(client: s13.Client, cik: str, accession: str) -> dict[str, i
             f = {}
             for el in row.iter():
                 f[_local(el.tag)] = (el.text or "").strip()
-            if f.get("putCall") or f.get("sshPrnamtType", "").upper() != "SH":
+            if not _share_row(f.get("sshPrnamtType", ""), f.get("putCall", ""), f"{accession} on EDGAR"):
                 continue
             shares = s13._count(f.get("sshPrnamt", ""))
             cusip = f.get("cusip", "").upper()
@@ -82,7 +92,9 @@ def data_set_positions(z: zipfile.ZipFile, accessions: set[str]) -> dict[str, di
         if len(r) <= max(ix.values()):
             continue
         acc = r[ix["ACCESSION_NUMBER"]].strip()
-        if acc not in accessions or r[ix["PUTCALL"]].strip() or r[ix["SSHPRNAMTTYPE"]].strip().upper() != "SH":
+        if acc not in accessions:
+            continue
+        if not _share_row(r[ix["SSHPRNAMTTYPE"]], r[ix["PUTCALL"]], f"{acc} in the data set"):
             continue
         shares, cusip = s13._count(r[ix["SSHPRNAMT"]]), r[ix["CUSIP"]].strip().upper()
         if shares and s13.CUSIP_RE.match(cusip):
@@ -171,7 +183,10 @@ def main(argv: list[str] | None = None) -> int:
                     continue
                 f = keep.get(r[ix["ACCESSION_NUMBER"]].strip())
                 cusip = r[ix["CUSIP"]].strip().upper()
-                if f is None or cusip not in cusips or r[ix["PUTCALL"]].strip() or r[ix["SSHPRNAMTTYPE"]].strip().upper() != "SH":
+                if f is None:
+                    continue
+                if not _share_row(r[ix["SSHPRNAMTTYPE"]], r[ix["PUTCALL"]], f"{r[ix['ACCESSION_NUMBER']].strip()} in the data set") \
+                        or cusip not in cusips:
                     continue
                 shares = s13._count(r[ix["SSHPRNAMT"]])
                 if shares:

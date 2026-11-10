@@ -90,8 +90,10 @@ REFUSED = "holdings_13f_refused"
 RUNS = cot.RUNS
 # Stored with each quarter; a stored quarter computed by another method is recomputed. 13f-2 (Codex S-2, S-3, S-5):
 # an unreadable row, a filing with no cover row or an amendment of no stated type refuses the run, so a quarter
-# 13f-1 accepted is read again under these rules rather than kept because its data sets are unchanged.
-METHOD = "13f-2"
+# 13f-1 accepted is read again under these rules rather than kept because its data sets are unchanged. 13f-3
+# (Codex S-7, S-8): an unreadable amount type or put/call refuses the run too, and the stored deadline moves to
+# the next business day after a weekend or federal holiday.
+METHOD = "13f-3"
 
 SITE = "https://www.sec.gov"
 SETS_PAGE = f"{SITE}/data-research/sec-markets-data/form-13f-data-sets"
@@ -116,6 +118,8 @@ FTD_TRAILER_RE = re.compile(r"Trailer record count (\d+)", re.I)
 
 SUBMISSION_COLUMNS = ("ACCESSION_NUMBER", "FILING_DATE", "SUBMISSIONTYPE", "CIK", "PERIODOFREPORT")
 COVER_COLUMNS = ("ACCESSION_NUMBER", "ISAMENDMENT", "AMENDMENTTYPE", "REPORTTYPE")
+AMOUNT_TYPES = {"SH", "PRN"}      # SSHPRNAMTTYPE: shares, or a principal amount
+PUT_CALL = {"", "PUT", "CALL"}      # PUTCALL: none for the holding itself
 INFO_COLUMNS = ("ACCESSION_NUMBER", "NAMEOFISSUER", "CUSIP", "VALUE", "SSHPRNAMT", "SSHPRNAMTTYPE", "PUTCALL")
 FTD_COLUMNS = ("SETTLEMENT DATE", "CUSIP", "SYMBOL", "DESCRIPTION")
 
@@ -123,7 +127,7 @@ DDL = (
     f"""
 CREATE TABLE IF NOT EXISTS {PERIODS} (
     period          TEXT PRIMARY KEY,  -- YYYY-MM-DD: the quarter end the holdings are as of
-    deadline        TEXT NOT NULL,     -- YYYY-MM-DD: 45 days after the period
+    deadline        TEXT NOT NULL,     -- YYYY-MM-DD: 45 days after the period, or the next business day (deadline_of)
     data_sets       TEXT NOT NULL,     -- the SEC data sets read, comma-separated file names
     filings_through TEXT NOT NULL,     -- YYYY-MM-DD: the last filing date the data sets cover
     newest_filing   TEXT,              -- YYYY-MM-DD: the newest filing date read for the period
@@ -216,8 +220,43 @@ def previous_quarter_end(q: date) -> date:
     return quarter_end_on_or_before(q.replace(day=1) - timedelta(days=1))
 
 
+def _nth_weekday(year: int, month: int, weekday: int, n: int) -> date:
+    """The n-th `weekday` (Monday 0) of the month; n = -1 is the last."""
+    if n > 0:
+        first = date(year, month, 1)
+        return first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (n - 1))
+    last = (date(year + (month == 12), month % 12 + 1, 1) - timedelta(days=1))
+    return last - timedelta(days=(last.weekday() - weekday) % 7)
+
+
+def _observed(d: date) -> date:
+    """A holiday on a Saturday is observed the Friday before, on a Sunday the Monday after (5 U.S.C. 6103(b))."""
+    return d - timedelta(days=1) if d.weekday() == 5 else d + timedelta(days=1) if d.weekday() == 6 else d
+
+
+def federal_holidays(year: int) -> set[date]:
+    """The days in `year` the SEC is closed for a federal holiday (5 U.S.C. 6103), on their observed days: a
+    New Year's Day on a Saturday is observed on Dec 31 of the year before. A closure the law does not fix (a
+    national day of mourning) is not known in advance and is not here."""
+    def fixed(y: int) -> list[date]:
+        days = [date(y, 1, 1), date(y, 7, 4), date(y, 11, 11), date(y, 12, 25)]
+        if y >= 2021:
+            days.append(date(y, 6, 19))  # Juneteenth, a federal holiday since 2021
+        return [_observed(d) for d in days]
+    days = set(fixed(year)) | {d for d in fixed(year + 1) if d.year == year}
+    days |= {_nth_weekday(year, 1, 0, 3), _nth_weekday(year, 2, 0, 3), _nth_weekday(year, 5, 0, -1),
+             _nth_weekday(year, 9, 0, 1), _nth_weekday(year, 10, 0, 2), _nth_weekday(year, 11, 3, 4)}
+    return {d for d in days if d.year == year}
+
+
 def deadline_of(period: date) -> date:
-    return period + timedelta(days=DEADLINE_DAYS)
+    """The 13F deadline: 45 days after the quarter's end (Rule 13f-1), moved to the next business day when that
+    day is a Saturday, a Sunday or a federal holiday (Exchange Act Rule 0-3; Codex S-7: Q4 2025's 45th day,
+    Feb 14 2026, is a Saturday and Feb 16 Presidents' Day, so it is due Feb 17)."""
+    d = period + timedelta(days=DEADLINE_DAYS)
+    while d.weekday() >= 5 or d in federal_holidays(d.year):
+        d += timedelta(days=1)
+    return d
 
 
 def _sec_date(s: str) -> date:
@@ -453,7 +492,13 @@ def load_positions(work: sqlite3.Connection, z: zipfile.ZipFile, keep: dict[str,
         f = keep.get(acc)
         if f is None:
             continue
-        if r[ix["PUTCALL"]].strip() or r[ix["SSHPRNAMTTYPE"]].strip().upper() != "SH":
+        kind, option = r[ix["SSHPRNAMTTYPE"]].strip().upper(), r[ix["PUTCALL"]].strip().upper()
+        if kind not in AMOUNT_TYPES or option not in PUT_CALL:
+            # Codex S-8: a row that cannot be told apart as shares, principal or an option would be dropped
+            # silently, so the quarter would be published without it.
+            raise Refused(_unreadable(set_name, "INFOTABLE.tsv", line,
+                                      f"(filing {acc}) has no readable amount type (SH or PRN) or put/call (Put, Call or none)"))
+        if option or kind != "SH":
             continue  # options rows and principal amounts are not shares held
         cusip = r[ix["CUSIP"]].strip().upper()
         shares, value = _count(r[ix["SSHPRNAMT"]]), _count(r[ix["VALUE"]])

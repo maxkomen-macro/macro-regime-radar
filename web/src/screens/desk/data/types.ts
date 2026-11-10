@@ -1555,7 +1555,7 @@ export interface PositioningHoldings {
   period: string;
   previous_period: string | null;
   previous_reason: string | null;
-  /** 45 days after the period. */
+  /** 45 days after the period, or the next business day when that is a weekend or federal holiday. */
   deadline: string;
   /** The last filing date the data sets read cover. */
   filings_through: string;

@@ -87,7 +87,38 @@ def test_the_newest_quarter_is_the_one_whose_deadline_the_data_sets_cover():
     # a newest set that stops before the 45-day deadline (2026-08-14) leaves the quarter before as the newest
     period, prev, needed = s13.choose(sets[:2] + [W("01jun2026", "10aug2026")])
     assert (period, prev) == (Q1, date(2025, 12, 31)) and len(needed) == 3
-    assert s13.deadline_of(Q2) == date(2026, 8, 14) and s13.deadline_of(date(2025, 12, 31)) == date(2026, 2, 14)
+    assert s13.deadline_of(Q2) == date(2026, 8, 14)
+
+
+@pytest.mark.parametrize("period, due", [
+    # Codex S-7: the 45th day, moved to the next business day when it is a weekend or a federal holiday (Exchange
+    # Act Rule 0-3). Feb 14 2026 is a Saturday and Feb 16 Presidents' Day, so Q4 2025 is due Feb 17 (the SEC's FAQ).
+    (date(2025, 12, 31), date(2026, 2, 17)),
+    (date(2026, 3, 31), date(2026, 5, 15)),   # a Friday
+    (date(2026, 6, 30), date(2026, 8, 14)),   # a Friday
+    (date(2026, 9, 30), date(2026, 11, 16)),  # Nov 14 is a Saturday
+    (date(2026, 12, 31), date(2027, 2, 16)),  # Feb 14 a Sunday, Feb 15 Presidents' Day
+    (date(2020, 9, 30), date(2020, 11, 16)),
+    (date(2023, 12, 31), date(2024, 2, 14)),  # a Wednesday
+])
+def test_codex_s7_the_deadline_is_the_next_business_day_after_a_weekend_or_holiday(period, due):
+    assert s13.deadline_of(period) == due
+
+
+def test_codex_s7_a_data_set_that_stops_before_the_moved_deadline_does_not_make_the_quarter_newest():
+    sets = [W("01jun2025", "31aug2025"), W("01sep2025", "30nov2025"), W("01dec2025", "16feb2026")]
+    period, prev, _ = s13.choose(sets)
+    assert period == date(2025, 9, 30)  # Q4 2025 is due Feb 17; filings read to Feb 16 do not cover it
+    period, _, _ = s13.choose(sets[:2] + [W("01dec2025", "17feb2026")])
+    assert period == date(2025, 12, 31)
+
+
+def test_the_federal_holidays_follow_5_usc_6103_with_their_observed_days():
+    h = s13.federal_holidays(2026)
+    assert h == {date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16), date(2026, 5, 25), date(2026, 6, 19),
+                 date(2026, 7, 3), date(2026, 9, 7), date(2026, 10, 12), date(2026, 11, 11), date(2026, 11, 26),
+                 date(2026, 12, 25)}  # Jul 4 2026 is a Saturday: observed Friday Jul 3
+    assert date(2027, 12, 24) in s13.federal_holidays(2027) and date(2022, 12, 26) in s13.federal_holidays(2022)
 
 
 def test_a_gap_in_the_data_sets_is_refused():
@@ -288,6 +319,19 @@ def test_a_store_method_13f_1_wrote_is_read_again_under_the_new_rules(store):
     assert after[2] == [r[:aside] + r[aside + 1:] for r in before[2]] and all(r[aside] == 0 for r in before[2])
 
 
+def test_codex_s7_s8_a_store_method_13f_2_wrote_is_read_again_and_its_deadline_restated(store):
+    # 13f-2 accepted an unreadable amount type and stored a 45th-day deadline without the business-day move.
+    assert s13.METHOD not in ("13f-1", "13f-2")
+    with sqlite3.connect(store) as c:
+        c.execute(f"UPDATE {s13.PERIODS} SET method = '13f-2', deadline = '2026-08-13'")
+    sec = fx.FakeSec(files())
+    s = refresh(store, sec)
+    assert s["status"] == "ok" and "unchanged" not in s["detail"], s["detail"]
+    assert any(p.endswith("_form13f.zip") for p in sec.paths)
+    assert dict(rows_of(store, f"SELECT period, deadline FROM {s13.PERIODS}")) == {"2026-06-30": "2026-08-14", "2026-03-31": "2026-05-15"}
+    assert {m for (m,) in rows_of(store, f"SELECT method FROM {s13.PERIODS}")} == {s13.METHOD}
+
+
 def test_a_new_method_recomputes_and_counts_the_revised_names(store, monkeypatch):
     monkeypatch.setattr(s13, "METHOD", "13f-test")
     monkeypatch.setattr(s13, "TOP_HOLDERS", 5)
@@ -349,9 +393,32 @@ def _blank_value_of_a_counted_row(blob: bytes) -> bytes:
     raise AssertionError("no share row")
 
 
+def _set_cell_of_a_counted_row(column: str, value: str):
+    """Codex S-8's repro: a counted filing's share row whose discriminator (amount type, put/call) is unreadable."""
+    def edit(blob: bytes) -> bytes:
+        lines = blob.decode().split("\n")
+        head = lines[0].split("\t")
+        for i, line in enumerate(lines[1:], start=1):
+            cells = line.split("\t")
+            if len(cells) == len(head) and cells[head.index("SSHPRNAMTTYPE")] == "SH" and not cells[head.index("PUTCALL")]:
+                cells[head.index(column)] = value
+                lines[i] = "\t".join(cells)
+                return "\n".join(lines).encode()
+        raise AssertionError("no share row")
+    return edit
+
+
+DISCRIMINATOR = "has no readable amount type (SH or PRN) or put/call (Put, Call or none)"
+
 UNREADABLE = {
     "a counted row's value": ("01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", _blank_value_of_a_counted_row,
                               "has no readable CUSIP, share count or value"),
+    "a counted row with no amount type": ("01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv",
+                                          _set_cell_of_a_counted_row("SSHPRNAMTTYPE", ""), DISCRIMINATOR),
+    "a counted row of an unknown amount type": ("01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv",
+                                                _set_cell_of_a_counted_row("SSHPRNAMTTYPE", "SHS"), DISCRIMINATOR),
+    "a counted row of an unknown put/call": ("01mar2026-31may2026_form13f.zip", "INFOTABLE.tsv",
+                                             _set_cell_of_a_counted_row("PUTCALL", "Straddle"), DISCRIMINATOR),
     "a short holdings row": ("01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", lambda b: b + b"SYN-0001-26-000001\tX\n",
                              "INFOTABLE.tsv line"),
     "a short submission row": ("01mar2026-31may2026_form13f.zip", "SUBMISSION.tsv", lambda b: b + b"SYN-1\n",
@@ -393,6 +460,26 @@ def test_codex_s2_one_holder_of_two_is_never_published(tmp_path):
     s = refresh(f, fx.FakeSec(fs))
     assert s["status"] == "error" and "nothing replaced" in s["detail"]
     assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)] == rows_of(f, f"SELECT COUNT(*) FROM {s13.PERIODS}")
+
+
+def test_codex_s8_one_holder_of_two_is_never_published_when_its_amount_type_is_blank(tmp_path):
+    # Codex S-8's repro: a second holder's row loses its SSHPRNAMTTYPE; it was dropped as "not shares" and the
+    # quarter stored without it. Now nothing is stored.
+    f = tmp_path / "s.db"
+    fs = files()
+    _edit_member(fs, "01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", _set_cell_of_a_counted_row("SSHPRNAMTTYPE", ""))
+    s = refresh(f, fx.FakeSec(fs))
+    assert s["status"] == "error" and DISCRIMINATOR in s["detail"] and "nothing replaced" in s["detail"]
+    assert rows_of(f, f"SELECT COUNT(*) FROM {s13.TABLE}") == [(0,)] == rows_of(f, f"SELECT COUNT(*) FROM {s13.PERIODS}")
+
+
+def test_principal_amounts_and_options_rows_are_still_left_out_not_refused(tmp_path):
+    # PRN rows and Put/Call rows are readable and are not shares held: the quarter is computed without them.
+    f = tmp_path / "s.db"
+    fs = files()
+    _edit_member(fs, "01jun2026-31aug2026_form13f.zip", "INFOTABLE.tsv", _set_cell_of_a_counted_row("SSHPRNAMTTYPE", "PRN"))
+    _edit_member(fs, "01mar2026-31may2026_form13f.zip", "INFOTABLE.tsv", _set_cell_of_a_counted_row("PUTCALL", "Call"))
+    assert refresh(f, fx.FakeSec(fs))["status"] == "ok"
 
 
 def test_codex_s3_a_restatement_without_its_cover_row_never_leaves_the_original_standing(store, monkeypatch):
@@ -702,3 +789,16 @@ def test_the_contact_is_sent_in_the_header_and_stored_nowhere(tmp_path, monkeypa
             for row in c.execute(f"SELECT * FROM {t}"):
                 assert not any(isinstance(x, str) and "invented@" in x for x in row), t
 
+
+
+def test_codex_s8_the_reference_check_stops_at_a_row_it_cannot_classify():
+    # The second reading (scripts/check_13f_reference.py) passed over the same rows the step dropped; it now
+    # stops, so it can catch a row the step should refuse.
+    from scripts import check_13f_reference as ref
+
+    assert ref._share_row("SH", "", "x") is True
+    assert ref._share_row("sh ", " ", "x") is True
+    assert ref._share_row("PRN", "", "x") is False and ref._share_row("SH", "Put", "x") is False
+    for kind, option in (("", ""), ("SHS", ""), ("SH", "Straddle")):
+        with pytest.raises(RuntimeError, match="unreadable amount type"):
+            ref._share_row(kind, option, "x")

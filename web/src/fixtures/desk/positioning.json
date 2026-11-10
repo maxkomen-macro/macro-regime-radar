@@ -4402,7 +4402,7 @@
   "provider": "SEC",
   "source": "SEC Form 13F data sets (www.sec.gov), long positions in shares; tickers paired with CUSIPs from the SEC's fails-to-deliver data",
   "credit": "Invented filings, not SEC data: seeded 13F filers and issuers run through the served parser, store and reader.",
-  "lag_note": "Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it; long positions only, from managers with $100 million or more in 13(f) securities.",
+  "lag_note": "Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it (the next business day when that day is a weekend or federal holiday); long positions only, from managers with $100 million or more in 13(f) securities.",
   "period": "2026-06-30",
   "previous_period": "2026-03-31",
   "previous_reason": null,

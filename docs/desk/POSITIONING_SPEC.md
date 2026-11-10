@@ -143,7 +143,7 @@ filers reporting a shared position each count it).
 The SEC's page lists the data sets by filing-date window (`01jun2026-31aug2026_form13f.zip`; the
 quarterly-named sets before 2024 are not read). A run reads:
 
-- **The quarter (`period`):** the newest quarter end whose filing deadline (45 days after it) the newest
+- **The quarter (`period`):** the newest quarter end whose filing deadline (§3.3) the newest
   data set's window reaches, and the quarter before it (`previous_period`), for the change.
 - **The data sets:** every one whose window ends after the earlier quarter's end; their windows must run
   on without a gap from the day after it, or the run is refused. Their newest date is `filings_through`.
@@ -152,19 +152,25 @@ quarterly-named sets before 2024 are not read). A run reads:
   `INFOTABLE.tsv` rows in shares (`SSHPRNAMTTYPE` = `SH`) with no put or call.
 - **A row that cannot be read refuses the run** (Codex S-2): a row of any of the three tables with too
   few fields, a holdings report or amendment with no readable period or filing date, or a counted
-  filing's share row with no readable CUSIP, share count or value. Leaving it out would publish a
+  filing's share row with no readable CUSIP, share count or value, or a counted filing's row whose amount
+  type (`SSHPRNAMTTYPE`) is not `SH` or `PRN` or whose `PUTCALL` is not `Put`, `Call` or empty (Codex S-8:
+  it cannot be told apart as shares, principal or an option). Leaving it out would publish a
   quarter short of a holder or a position as if it were whole, so nothing is replaced and the watermark
   names the data set, the table and the line. (The real files read on 2026-11-10, 7.65 million holdings
-  rows, held none.)
+  rows, held none: their amount types are only `SH` and `PRN`, their put/call only `Put`, `Call` and empty.)
 - **A data set of another shape** (a missing table or column) refuses the run: nothing is replaced.
 - **Unchanged inputs:** a run whose needed data sets and method (`METHOD`) are the ones the stored quarter
   was computed from reads only the index page. The data sets change about once a quarter. A change to
-  the reading rules moves `METHOD` (`13f-2` since the refusals of §3.2, §3.3 and §3.5), so a quarter an
+  the reading rules moves `METHOD` (`13f-2` since the refusals of §3.2, §3.3 and §3.5; `13f-3` since Codex S-7 and S-8: the amount-type and
+  put/call refusal, and the deadline's business-day move), so a quarter an
   earlier method accepted is read again under the new rules, never kept because its inputs are unchanged.
 
 ### 3.3 Dates and amendments
 
-- **Period (`period`):** the quarter end the holdings are as of. **Deadline:** 45 days after it. A quarter
+- **Period (`period`):** the quarter end the holdings are as of. **Deadline:** 45 days after it (Rule 13f-1),
+  moved to the next business day when that day is a Saturday, a Sunday or a federal holiday (Exchange Act
+  Rule 0-3; `deadline_of`, `federal_holidays`: 5 U.S.C. 6103 on its observed days; Q4 2025's is Feb 17,
+  2026: Feb 14 is a Saturday and Feb 16 Presidents' Day). An unscheduled closure (a day of mourning) is not known in advance. A quarter
   is served only when the filings read reach its deadline; the card prints the period, the deadline and
   `filings_through`. Late filings and amendments filed after `filings_through` are not read until a later
   data set holds them; the quarter is then recomputed, and the count of tickers whose figures changed is
