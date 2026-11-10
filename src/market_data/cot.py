@@ -24,9 +24,14 @@ report the CFTC corrects is seen: a stored row whose numbers change keeps its
 old numbers in `cot_revisions` (when the store learned of the change, and which
 runs wrote the old and new numbers), and a stored report the CFTC no longer
 serves is marked withdrawn, never deleted; the API sets withdrawn rows aside.
-A read that leaves out more than MAX_WITHDRAWN_PER_READ (2) stored reports of a
-market is treated as incomplete, not as withdrawals: nothing of that market is
-replaced or withdrawn, and the watermark says how many reports it left out.
+Withdrawal needs confirmation (owner F-3, Codex S-9): a read that leaves out
+a readable stored report marks it unserved and keeps it readable (status
+partial); only the next read that also leaves it out marks it withdrawn, and a
+read that serves it clears the mark. A read that leaves out more than
+MAX_WITHDRAWN_PER_READ (2) readable stored reports of a market is treated as
+incomplete: nothing of that market is replaced, marked or withdrawn, and the
+watermark says how many reports it left out. So a run of ever-shorter reads
+holds the market rather than wearing its history down.
 Each report must satisfy the CFTC's own identity before it is stored: the
 categories' long positions plus their spreading equal the open interest, and
 so do the short positions plus spreading. A row that fails it, or misses a
@@ -159,7 +164,8 @@ CREATE TABLE IF NOT EXISTS {TABLE} (
     run_id          TEXT NOT NULL,     -- the run that last wrote the numbers (positioning_runs)
     first_stored_at TEXT NOT NULL,     -- UTC: when this store first held the report
     stored_at       TEXT NOT NULL,     -- UTC: when its numbers were last written
-    withdrawn_at    TEXT,              -- UTC: when a full read of the source no longer served it
+    withdrawn_at    TEXT,              -- UTC: when a second read in a row no longer served it
+    unserved_since  TEXT,              -- UTC: when a read first left it out (unconfirmed while withdrawn_at is NULL)
     PRIMARY KEY (report, contract_code, as_of, category)
 ) WITHOUT ROWID
 """,
@@ -179,7 +185,7 @@ CREATE TABLE IF NOT EXISTS {REVISIONS} (
 """,
 )
 COLUMNS = ("report", "contract_code", "as_of", "category", "long", "short", "spread", "open_interest", "market_name",
-           "source_row_id", "provider", "run_id", "first_stored_at", "stored_at", "withdrawn_at")
+           "source_row_id", "provider", "run_id", "first_stored_at", "stored_at", "withdrawn_at", "unserved_since")
 NUMBERS = ("long", "short", "spread", "open_interest")
 
 
@@ -190,6 +196,9 @@ class FetchFailed(RuntimeError):
 def ensure_tables(conn: sqlite3.Connection) -> None:
     for ddl in DDL:
         conn.execute(ddl)
+    # A store written before the confirmation rule (F-3/S-9) gets the column in place; its rows start unmarked.
+    if "unserved_since" not in {r[1] for r in conn.execute(f"PRAGMA table_info({TABLE})")}:
+        conn.execute(f"ALTER TABLE {TABLE} ADD COLUMN unserved_since TEXT")
 
 
 def stamp(now: datetime) -> str:
@@ -326,11 +335,13 @@ def parse_rows(report: Report, rows: list[Mapping[str, Any]], codes: set[str]) -
 # ── write ───────────────────────────────────────────────────────────────────
 
 def write_rows(conn: sqlite3.Connection, report: str, codes: list[str], rows: list[dict], run_id: str, now: datetime) -> dict:
-    """Insert new reports, revise changed ones (keeping the old numbers), mark reports the source no longer serves as
-    withdrawn and bring back one it serves again. Returns counts."""
+    """Insert new reports, revise changed ones (keeping the old numbers) and bring back one the source serves again.
+    A readable report the read leaves out is marked unserved (still readable); one a second read in a row leaves out
+    is marked withdrawn. Returns counts, and under "unconfirmed" {contract code: the dates newly marked unserved}."""
     ts = stamp(now)
     stored = {(r[0], r[1], r[2]): r for r in conn.execute(
-        f"SELECT contract_code, as_of, category, long, short, spread, open_interest, run_id, withdrawn_at FROM {TABLE} "
+        f"SELECT contract_code, as_of, category, long, short, spread, open_interest, run_id, withdrawn_at, unserved_since "
+        f"FROM {TABLE} "
         f"WHERE report = ? AND contract_code IN ({', '.join('?' * len(codes))})", (report, *codes))}
     new = revised = restored = 0
     seen: set[tuple[str, str, str]] = set()
@@ -341,26 +352,37 @@ def write_rows(conn: sqlite3.Connection, report: str, codes: list[str], rows: li
         nums = tuple(r[k] for k in NUMBERS)
         if old is None:
             conn.execute(f"INSERT INTO {TABLE} ({', '.join(COLUMNS)}) VALUES ({', '.join('?' * len(COLUMNS))})",
-                         (report, *key, *nums, r["market_name"], r["source_row_id"], PROVIDER, run_id, ts, ts, None))
+                         (report, *key, *nums, r["market_name"], r["source_row_id"], PROVIDER, run_id, ts, ts, None, None))
             new += 1
             continue
         if tuple(old[3:7]) != nums:
             conn.execute(f"INSERT INTO {REVISIONS} VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                          (report, *key, *old[3:7], *nums, old[7], run_id, ts))
             conn.execute(f"UPDATE {TABLE} SET long = ?, short = ?, spread = ?, open_interest = ?, market_name = ?, "
-                         "source_row_id = ?, run_id = ?, stored_at = ?, withdrawn_at = NULL "
+                         "source_row_id = ?, run_id = ?, stored_at = ?, withdrawn_at = NULL, unserved_since = NULL "
                          "WHERE report = ? AND contract_code = ? AND as_of = ? AND category = ?",
                          (*nums, r["market_name"], r["source_row_id"], run_id, ts, report, *key))
             revised += 1
-        elif old[8] is not None:
-            conn.execute(f"UPDATE {TABLE} SET withdrawn_at = NULL WHERE report = ? AND contract_code = ? AND as_of = ? "
-                         "AND category = ?", (report, *key))
-            restored += 1
-    gone = [k for k, v in stored.items() if k not in seen and v[8] is None]
-    for key in gone:
-        conn.execute(f"UPDATE {TABLE} SET withdrawn_at = ? WHERE report = ? AND contract_code = ? AND as_of = ? AND category = ?",
-                     (ts, report, *key))
-    return {"new": new, "revised": revised, "restored": restored, "withdrawn": len(gone)}
+        elif old[8] is not None or old[9] is not None:
+            # served again: a withdrawn report is restored, an unconfirmed one is simply served
+            conn.execute(f"UPDATE {TABLE} SET withdrawn_at = NULL, unserved_since = NULL WHERE report = ? AND contract_code = ? "
+                         "AND as_of = ? AND category = ?", (report, *key))
+            restored += old[8] is not None
+    withdrawn = 0
+    unconfirmed: dict[str, set[str]] = {}
+    for key, v in stored.items():
+        if key in seen or v[8] is not None:
+            continue
+        if v[9] is None:
+            # the first read to leave it out: kept readable until the next read says the same
+            conn.execute(f"UPDATE {TABLE} SET unserved_since = ? WHERE report = ? AND contract_code = ? AND as_of = ? "
+                         "AND category = ?", (ts, report, *key))
+            unconfirmed.setdefault(key[0], set()).add(key[1])
+        else:
+            conn.execute(f"UPDATE {TABLE} SET withdrawn_at = ? WHERE report = ? AND contract_code = ? AND as_of = ? AND category = ?",
+                         (ts, report, *key))
+            withdrawn += 1
+    return {"new": new, "revised": revised, "restored": restored, "withdrawn": withdrawn, "unconfirmed": unconfirmed}
 
 
 def unserved_reports(conn: sqlite3.Connection, report: str, codes: list[str], rows: list[dict]) -> dict[str, tuple[int, str]]:
@@ -390,6 +412,7 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
         run_id = start_run(conn, SOURCE, now)
         conn.commit()
         failed: list[str] = []
+        unconfirmed: list[str] = []
         counts = {"new": 0, "revised": 0, "restored": 0, "withdrawn": 0, "refused": 0}
         wrote = False
         for report in REPORTS.values():
@@ -424,6 +447,9 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
             if codes:
                 c = write_rows(conn, report.key, codes, [r for r in rows if r["contract_code"] in codes], run_id, now)
                 wrote = True
+                for code, dates in sorted(c.pop("unconfirmed").items()):
+                    unconfirmed.append(f"{report.title}: {len(dates)} stored report(s) of {code} not served (newest {max(dates)}), "
+                                       "kept readable until the next read confirms them withdrawn")
                 for k, v in c.items():
                     counts[k] += v
         newest = {}
@@ -433,17 +459,19 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
             newest[m.key] = row[0] if row else None
         # The watermark's observation is the oldest market's newest report, so one market that stops arriving holds it back.
         oldest = min(newest.values()) if all(newest.values()) else None
-        status = "ok" if not failed and oldest else ("partial" if oldest else "error")
+        status = "ok" if not failed and not unconfirmed and oldest else ("partial" if oldest else "error")
         detail = " · ".join([f"CFTC {sum(1 for v in newest.values() if v)} of {len(MARKETS)} markets, newest report "
                              f"{oldest or 'none'}", ", ".join(f"{k} {v}" for k, v in counts.items())]
-                            + ([f"not read: {'; '.join(failed)}"] if failed else []))
+                            + ([f"not read: {'; '.join(failed)}"] if failed else [])
+                            + ([f"unconfirmed: {'; '.join(unconfirmed)}"] if unconfirmed else []))
         watermarks.record(conn, WATERMARK, oldest, status=status, detail=detail, now=now)
         # The rows a run wrote are readable only when it committed: every run that wrote any row commits.
         finish_run(conn, run_id, "committed" if wrote else "failed", detail, now)
         conn.commit()
     finally:
         conn.close()
-    return {"run_id": run_id, "status": status, "detail": detail, "newest": newest, "counts": counts, "failed": failed}
+    return {"run_id": run_id, "status": status, "detail": detail, "newest": newest, "counts": counts, "failed": failed,
+            "unconfirmed": unconfirmed}
 
 
 def main(argv: list[str] | None = None) -> int:

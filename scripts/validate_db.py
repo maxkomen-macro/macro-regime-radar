@@ -123,10 +123,11 @@ ADVISORY_FINGERPRINT_SQL = {
     # Options Finder earnings cache (design EC 4.1): the encrypted vault's public digest of its observations,
     # so a run that read Finnhub publishes and a skip that only records bookkeeping does not
     "earnings_cache_vault": "SELECT key_id, content_digest FROM earnings_cache_vault ORDER BY id",
-    # Desk P4: every number, the run that wrote it and whether the CFTC still serves it, so an amendment or a
-    # withdrawal publishes and a run that read the same reports (which rewrites nothing) does not
-    "cot_positions": ("SELECT report, contract_code, as_of, category, long, short, spread, open_interest, run_id, withdrawn_at "
-                      "FROM cot_positions ORDER BY report, contract_code, as_of, category"),
+    # Desk P4: every number, the run that wrote it and whether the CFTC still serves it, so an amendment, a
+    # withdrawal or a report first left out (whose mark the next run must read to confirm it) publishes, and a run
+    # that read the same reports (which rewrites nothing) does not
+    "cot_positions": ("SELECT report, contract_code, as_of, category, long, short, spread, open_interest, run_id, withdrawn_at, "
+                      "unserved_since FROM cot_positions ORDER BY report, contract_code, as_of, category"),
     # Desk P4: every ticker's figures and the run that computed them, so a recomputed quarter publishes
     "holdings_13f": ("SELECT symbol_key, period, holders, shares, top10_shares, large_filers_top10, run_id "
                      "FROM holdings_13f ORDER BY symbol_key, period"),

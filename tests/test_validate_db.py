@@ -1618,6 +1618,21 @@ def test_new_or_amended_cftc_reports_alone_are_published_and_a_same_read_is_not(
     assert "cot_positions" in rep["changed_tables"] and rep["upload"] is True
 
 
+def test_a_cftc_read_that_only_marks_a_report_unserved_is_published(tmp_path):
+    """F-3 / Codex S-9: the next run confirms a withdrawal from this mark, so the mark alone must publish."""
+    import shutil
+
+    prev = _make_path(tmp_path, "prev.db")
+    _with_cot(prev)
+    cur = tmp_path / "cur.db"
+    shutil.copy(prev, cur)
+    s = _with_cot(cur, edit=lambda rows: rows[1:], now=NOW + timedelta(hours=1))
+    assert s["counts"] == {"new": 0, "revised": 0, "restored": 0, "withdrawn": 0, "refused": 0} and s["unconfirmed"]
+    rep = v.validate(cur, prev, "full", now=NOW + timedelta(hours=1))
+    assert rep["verdict"] == "pass", rep["failures"]
+    assert "cot_positions" in rep["changed_tables"] and rep["upload"] is True
+
+
 def test_a_stored_cftc_report_the_api_sets_aside_only_warns(tmp_path):
     prev = _make_path(tmp_path, "prev.db")
     _with_cot(prev)

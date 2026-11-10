@@ -131,10 +131,19 @@ def _drop(as_of: str, code: str = "13874A"):
 
 
 def test_a_report_the_cftc_stops_serving_is_withdrawn_kept_and_restored(tmp_path):
+    """Owner F-3 / Codex S-9: a withdrawal is confirmed by a second read in a row. The first read that leaves the
+    report out marks it unserved and keeps it readable; the next one that leaves it out withdraws it."""
     f = tmp_path / "s.db"
     refresh(f)
     s = refresh(f, served(tff=_drop("2026-09-22")), now=NOW + timedelta(days=1))
-    assert s["counts"]["withdrawn"] == 5
+    assert s["counts"]["withdrawn"] == 0 and s["status"] == "partial"
+    assert s["unconfirmed"] == ["Traders in Financial Futures, futures only: 1 stored report(s) of 13874A not served "
+                                "(newest 2026-09-22), kept readable until the next read confirms them withdrawn"]
+    assert "unconfirmed: " in s["detail"]
+    assert _spx(f)["as_of"] == "2026-09-22" and _spx(f)["excluded"] == [] and _spx(f)["reports"] == fx.WEEKS
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL") == [(5,)]
+    s = refresh(f, served(tff=_drop("2026-09-22")), now=NOW + timedelta(days=2))
+    assert s["counts"]["withdrawn"] == 5 and s["unconfirmed"] == []
     assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL") == [(5,)]
     spx = next(m for m in block(f)["markets"] if m["key"] == "spx")
     # Set aside, never read: the newest readable S&P report is the week before.
@@ -143,8 +152,9 @@ def test_a_report_the_cftc_stops_serving_is_withdrawn_kept_and_restored(tmp_path
     assert spx["reports"] == fx.WEEKS - 1
     # The watermark follows the oldest market's newest report.
     assert s["newest"]["spx"] == "2026-09-15" and s["status"] == "ok"
-    s = refresh(f, now=NOW + timedelta(days=2))
+    s = refresh(f, now=NOW + timedelta(days=3))
     assert s["counts"]["restored"] == 5 and s["counts"]["withdrawn"] == 0
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL OR withdrawn_at IS NOT NULL") == [(0,)]
     assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL") == [(0,)]
 
 
@@ -199,8 +209,8 @@ def test_a_shortened_market_is_held_while_the_others_are_stored(tmp_path):
 
 @pytest.mark.parametrize("dropped, held", [(2, False), (3, True)])
 def test_at_most_two_reports_of_a_market_are_withdrawn_by_one_read(tmp_path, dropped, held):
-    """A complete read that leaves out one or two stored reports of a market withdraws them (kept, restorable);
-    three or more is an incomplete read, and nothing is withdrawn."""
+    """A complete read that leaves out one or two stored reports of a market marks them unserved, and a second such
+    read withdraws them (kept, restorable); three or more is an incomplete read, and nothing is marked or withdrawn."""
     assert cot.MAX_WITHDRAWN_PER_READ == 2
     f = tmp_path / "s.db"
     refresh(f)
@@ -211,11 +221,60 @@ def test_at_most_two_reports_of_a_market_are_withdrawn_by_one_read(tmp_path, dro
     if held:
         assert s["status"] == "partial" and s["counts"]["withdrawn"] == 0 and "13874A (3 stored reports not served" in s["detail"]
         assert _readable(f)["spx"] == fx.WEEKS
+        assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL") == [(0,)]
     else:
+        assert s["status"] == "partial" and s["counts"]["withdrawn"] == 0 and _readable(f)["spx"] == fx.WEEKS
+        s = refresh(f, served(tff=drop), now=NOW + timedelta(days=2))
         assert s["status"] == "ok" and s["counts"]["withdrawn"] == dropped * 5
         assert _readable(f)["spx"] == fx.WEEKS - dropped
-        s = refresh(f, now=NOW + timedelta(days=2))
+        s = refresh(f, now=NOW + timedelta(days=3))
         assert s["counts"]["restored"] == dropped * 5 and _readable(f)["spx"] == fx.WEEKS
+
+
+def _oldest_cut(n):
+    return lambda rows: [r for r in rows if r["report_date_as_yyyy_mm_dd"][:10] > (END - timedelta(weeks=fx.WEEKS - 1 - n + 1)).isoformat()]
+
+
+def _newest_cut(n):
+    return lambda rows: [r for r in rows if r["report_date_as_yyyy_mm_dd"][:10] <= (END - timedelta(weeks=n)).isoformat()]
+
+
+@pytest.mark.parametrize("cut", [_oldest_cut, _newest_cut], ids=["oldest weeks cut", "newest weeks cut"])
+def test_codex_s9_ever_shorter_reads_never_wear_the_history_down(tmp_path, cut):
+    """Codex S-9: 210 reports stored, then reads of 208, 206 and 204 (identity-valid) withdrew 50 category rows each
+    with status ok. Now the first marks two reports unserved, the next ones leave out more than two and are held."""
+    f = tmp_path / "s.db"
+    refresh(f)
+    for i, n in enumerate((2, 4, 6), start=1):
+        assert len({r["report_date_as_yyyy_mm_dd"] for r in cut(n)(fx.synth_rows(cot.REPORTS["tff"], CODES["tff"], end=END))}) == fx.WEEKS - n
+        s = refresh(f, served(tff=cut(n), disaggregated=cut(n)), now=NOW + timedelta(days=i))
+        assert s["status"] == "partial" and s["counts"]["withdrawn"] == 0, (n, s["detail"])
+        assert _readable(f) == {k: fx.WEEKS for k in ("spx", "ust10y", "usd", "gold", "wti")}
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL") == [(0,)]
+    # the full history served again clears every mark
+    s = refresh(f, now=NOW + timedelta(days=5))
+    assert s["status"] == "ok" and s["counts"] == {"new": 0, "revised": 0, "restored": 0, "withdrawn": 0, "refused": 0}
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL") == [(0,)]
+
+
+def test_a_newest_week_a_lagging_read_leaves_out_stays_readable_and_is_served_again(tmp_path):
+    f = tmp_path / "s.db"
+    refresh(f)
+    s = refresh(f, served(tff=_newest_cut(1), disaggregated=_newest_cut(1)), now=NOW + timedelta(hours=1))
+    assert s["status"] == "partial" and s["counts"]["withdrawn"] == 0 and len(s["unconfirmed"]) == 5
+    assert set(s["newest"].values()) == {END.isoformat()}  # the watermark keeps the newest stored report
+    s = refresh(f, now=NOW + timedelta(hours=2))
+    assert s["status"] == "ok" and s["counts"]["restored"] == 0 and s["unconfirmed"] == []
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL OR withdrawn_at IS NOT NULL") == [(0,)]
+
+
+def test_a_store_written_before_the_confirmation_rule_gets_the_column(tmp_path):
+    f = tmp_path / "s.db"
+    refresh(f)
+    with sqlite3.connect(f) as c:
+        c.execute(f"ALTER TABLE {cot.TABLE} DROP COLUMN unserved_since")
+    s = refresh(f, served(tff=_drop("2026-09-22")), now=NOW + timedelta(days=1))
+    assert s["counts"]["withdrawn"] == 0 and rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE unserved_since IS NOT NULL") == [(5,)]
 
 
 def test_an_amendment_is_stored_while_another_market_is_held(tmp_path):

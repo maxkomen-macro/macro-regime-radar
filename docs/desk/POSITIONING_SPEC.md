@@ -60,16 +60,26 @@ spreading contracts, the market's open interest, the market name, the CFTC's row
 - **Amendments.** The CFTC occasionally corrects a published report. Because every run reads the whole
   history, a correction is seen: a stored row whose numbers change keeps its old numbers in
   `cot_revisions` (old and new numbers, the runs that wrote each, and when the store read the change),
-  and the row takes the new numbers. A stored report the CFTC no longer serves, in a read that served
-  that market, is marked `withdrawn_at` and kept; one served again is restored. Nothing is deleted.
-- **A shortened read is not a withdrawal (owner repro, 2026-11-10).** The CFTC corrects reports in place;
-  it does not remove weeks in bulk. A valid read that leaves out more than `MAX_WITHDRAWN_PER_READ` (2)
-  of a market's readable stored reports is treated as incomplete: nothing of that market is replaced or
-  withdrawn, the run's other markets are stored as usual, and the watermark (status `partial`) names the
-  market, how many stored reports the read left out and the newest of them. The market stays held until a
-  read serves its history again. One or two reports left out are still withdrawn, kept and restorable as
-  above. Without this rule, a read serving only the latest week withdrew 5,225 category rows and left one
-  readable report per market.
+  and the row takes the new numbers. A stored report the CFTC no longer serves, in two reads in a row
+  that served that market (below), is marked `withdrawn_at` and kept; one served again is restored.
+  Nothing is deleted.
+- **A withdrawal is confirmed, and a shortened read is not one (owner F-3 and Codex S-9, 2026-11-10).**
+  The CFTC corrects reports in place; it does not remove weeks in bulk. Two rules hold before a stored
+  report is marked withdrawn:
+  - *Confirmation.* A read that leaves out a readable stored report marks it `unserved_since` and keeps
+    it readable; the run's status is `partial` and the watermark names the market, how many reports and
+    the newest. Only the next read that leaves it out again marks it `withdrawn_at`. A read that serves it
+    clears the mark, so a lagging read that misses the newest week changes nothing readable.
+  - *Completeness.* A valid read that leaves out more than `MAX_WITHDRAWN_PER_READ` (2) of a market's
+    readable stored reports is treated as incomplete: nothing of that market is replaced, marked or
+    withdrawn, the run's other markets are stored as usual, and the watermark (status `partial`) names the
+    market, how many stored reports the read left out and the newest of them. The market stays held until
+    a read serves its history again.
+
+  So reads that keep getting shorter hold the market and never wear its history down. Before these rules, a
+  read serving only the latest week withdrew 5,225 category rows and left one readable report per market,
+  and reads of 208, 206 and 204 of 210 weeks withdrew 50 rows each, all with status `ok`. The mark is part
+  of `validate_db`'s publication fingerprint, so the next run reads it.
 - **Runs.** Each run is a row of `positioning_runs` (started, then committed when it wrote anything, or
   failed). The reader reads a row only when its run committed.
 - **Never fails the refresh.** A failed read keeps what is stored, records the watermark (status `ok`,
