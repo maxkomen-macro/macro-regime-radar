@@ -11,7 +11,8 @@ motion (the escrowed-dividend model).
 
 - European: Black-76 on S*'s forward.
 - American: a binomial lattice with a step on every calendar day (so every dividend falls exactly on a
-  step), Black-Scholes values on the last step, and Richardson extrapolation over N and 2N steps.
+  step), Black-Scholes values on the last step, the step into each cum-dividend close smoothed near the
+  hold/exercise crossing (design S), and Richardson extrapolation over N and 2N steps.
 - Exempt contexts (never exercised early, by theorem) and contexts whose early-exercise premium is
   provably below a fifth of the tolerance take the European value.
 """
@@ -405,8 +406,58 @@ def lattice_units(days: int) -> int:
     return n * n // 2 + (2 * n) * (2 * n) // 2
 
 
+SMOOTH_WINDOW = 2   # parents within this many nodes of a hold/exercise crossing take the smoothed step (design S)
+
+
+def _cum_steps(divs: Sequence[Sequence[tuple[int, float]]], per: int) -> dict[int, np.ndarray]:
+    """Rows with a cum-dividend close at each step c >= 1 (step c = day·per). A close at the root (day 0) has
+    no parent step and is not smoothed."""
+    out: dict[int, list[int]] = {}
+    for r, rows in enumerate(divs):
+        for c in sorted({d * per for d, _ in rows if d >= 1}):
+            out.setdefault(c, []).append(r)
+    return {c: np.asarray(rs, dtype=np.intp) for c, rs in out.items()}
+
+
+def _smooth_parents(nv, rows, f, e, i, base, ratio, g, disc, sig, dt):
+    """The step into a cum-dividend close, smoothed (design S). At the close (step i + 1) the node value is
+    max(H, E): E the exercise value, linear in S*, and f = H − E. For each parent at step i within
+    SMOOTH_WINDOW nodes of a sign change of f between adjacent children, f is taken linear in S* through the
+    parent's two children, f = α + β·S*, and the binomial expectation of max(H, E) = E + max(f, 0) is replaced
+    by its expectation over the one-step lognormal of S* (forward F, log-variance σ²·dt):
+    the lattice's own expectation of E (exact, E being linear) plus β⁺·C(F, X_c) + β⁻·P(F, X_c), with C and P
+    undiscounted Black values at strike X_c = −α/β. The result is exact for that local model (hold linear
+    between two children), not a bound on the lattice's error. `rows` are the batch rows with this close; `f`
+    and `e` hold their step-(i + 1) values before the maximum. Writes into `nv` (step i, before its maximum)."""
+    pos = f > 0.0
+    flip = pos[:, :-1] != pos[:, 1:]          # parent j's children j and j + 1 straddle the crossing
+    near = flip.copy()
+    for k in range(1, SMOOTH_WINDOW + 1):
+        near[:, k:] |= flip[:, :-k]
+        near[:, :-k] |= flip[:, k:]
+    rr, jj = np.nonzero(near)
+    if rr.size == 0:
+        return
+    r = rows[rr]
+    xd = base[r, i + 1] * ratio[r, jj]
+    xu = base[r, i + 1] * ratio[r, jj + 1]
+    fd, fu = f[rr, jj], f[rr, jj + 1]
+    ed, eu = e[rr, jj], e[rr, jj + 1]
+    beta = (fu - fd) / (xu - xd)
+    alpha = fd - beta * xd
+    fwd = base[r, i] * ratio[r, jj] * g[r]
+    pu = (fwd - xd) / (xu - xd)
+    flat = beta == 0.0
+    with np.errstate(divide="ignore", invalid="ignore"):
+        xc = np.where(flat, 0.0, -alpha / np.where(flat, 1.0, beta))
+    call = black76(True, fwd, xc, dt, sig[r], 1.0)
+    put = black76(False, fwd, xc, dt, sig[r], 1.0)
+    opt = np.where(flat, np.maximum(alpha, 0.0), np.where(beta > 0.0, beta * call, -beta * put))
+    nv[r, jj] = disc[r] * (pu * eu + (1.0 - pu) * ed + opt)
+
+
 def _lattice(is_call, ks, rho, q, sig, divs: Sequence[Sequence[tuple[int, float]]], days: int, steps: int,
-             with_cont: bool = False):
+             with_cont: bool = False, smooth_divs: bool = False):
     """One batch of contexts sharing `days` and `steps`, in units of S = 1: strikes `ks` = K/S and dividend
     amounts already divided by S. Returns (root values, step-1 deltas, exercised at the root), values and
     deltas per unit of S, and with `with_cont` the root continuation values too (the value of holding over the
@@ -414,7 +465,12 @@ def _lattice(is_call, ks, rho, q, sig, divs: Sequence[Sequence[tuple[int, float]
     the continuation value at the root.
 
     A step-i node j holds S* = S*_0·d^i·(u/d)^j; the exercise value there is sgn·(S* + esc_i − K), written
-    a_i·(u/d)^j + b_i with per-row constants, so each step is five array passes into preallocated buffers."""
+    a_i·(u/d)^j + b_i with per-row constants, so each step is five array passes into preallocated buffers.
+
+    `smooth_divs` (Tier 1 only; off by default, so Tier 2 and other callers are unchanged): the step into each
+    cum-dividend close at step c >= 1 is smoothed near the hold/exercise crossing (_smooth_parents), which makes
+    the error regular in N so the (N, 2N) Richardson pair cancels it. A close on the first layer built
+    (c = steps − 1) is captured before that layer's maximum with the exercise value."""
     m = len(ks)
     calls = np.asarray(is_call, dtype=bool)
     sgn = np.where(calls, 1.0, -1.0)[:, None]
@@ -443,7 +499,13 @@ def _lattice(is_call, ks, rho, q, sig, divs: Sequence[Sequence[tuple[int, float]
     st = base[:, last : last + 1] * ratio[:, : last + 1]
     args = (st * g[:, None], k_col - esc[:, steps : steps + 1], dt, sig[:, None], disc[:, None])
     v = np.where(calls[:, None], black76(True, *args), black76(False, *args))
-    np.maximum(v, sgn * (st + esc[:, last : last + 1] - k_col), out=v)
+    ex_last = sgn * (st + esc[:, last : last + 1] - k_col)
+    cums = _cum_steps(divs, per) if smooth_divs else {}
+    pending = None   # (rows, f, e) at the step just built, for the next step's parents
+    if last in cums:
+        rr = cums[last]
+        pending = (rr, v[rr] - ex_last[rr], ex_last[rr])
+    np.maximum(v, ex_last, out=v)
     buf = np.empty((m, steps))
     ex = np.empty((m, steps))
     delta = np.full(m, np.nan)
@@ -457,6 +519,12 @@ def _lattice(is_call, ks, rho, q, sig, divs: Sequence[Sequence[tuple[int, float]
         nv += e
         np.multiply(ratio[:, :w], a_col[:, i : i + 1], out=e)
         e += b_col[:, i : i + 1]
+        if pending is not None:
+            _smooth_parents(nv, *pending, i, base, ratio, g, disc, sig, dt)
+            pending = None
+        if i in cums:
+            rr = cums[i]
+            pending = (rr, nv[rr] - e[rr], e[rr])
         if i == 0:
             root_ex = e[:, 0] >= nv[:, 0]
             cont = nv[:, 0].copy()
@@ -523,7 +591,7 @@ def american(contexts: Sequence[Context], charge: Callable[[int], None] | None =
             v, d, x, h = _lattice([c.is_call for c in cs], [c.strike / c.spot for c in cs],
                                   np.array([c.rho for c in cs]), np.array([c.q for c in cs]),
                                   np.array([c.sigma for c in cs]), [[(dd, a / c.spot) for dd, a in c.divs] for c in cs],
-                                  days, steps, with_cont=True)
+                                  days, steps, with_cont=True, smooth_divs=True)
             for k, i in enumerate(gi):
                 got[i][mult] = (float(v[k]) * contexts[i].spot, float(d[k]), bool(x[k]), float(h[k]) * contexts[i].spot)
 

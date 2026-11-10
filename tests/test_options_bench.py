@@ -57,7 +57,19 @@ def test_groups_keep_their_domain_and_exemption_rules():
 
 def test_named_regressions_carry_the_documented_inputs():
     named = {c.id.split("/")[1]: c for c in cases.NAMED}
-    assert set(named) == {"DR-47", "DR-48", "DR-49", "DR-50", "B8", "B9a", "B9b"}
+    assert set(named) == {"DR-47", "DR-48", "DR-49", "DR-50", "B8", "B9a", "B9b",
+                          # the dividend regressions (design S): exact inputs of seeds 20261029 (S29) and 20261026 (S26)
+                          "S29-G2-1239", "S29-G4-54", "S29-G2-1725", "S29-G2-224", "S29-G2-963", "S29-G2-1780",
+                          "S29-G2-2025", "S29-G2-2199", "S29-G2-1949", "S29-T1-57", "S29-T1-1351",
+                          "S26-G2-1158", "S26-G2-880", "S26-G2-375", "S26-G2-175", "S26-T1-1295"}
+    for k, c in named.items():
+        if k[:3] in ("S29", "S26"):
+            seed = 20261029 if k.startswith("S29") else 20261026
+            group, i = c.note.split(":")[0].split()[-1].split("/")
+            drawn = cases.case(seed, group, int(i))
+            assert (c.is_call, c.strike, c.days, c.rho, c.q, c.sigma, c.divs) == (
+                drawn.is_call, drawn.strike, drawn.days, drawn.rho, drawn.q, drawn.sigma, drawn.divs), k
+            assert cases.domain_reason(c) is None
     assert math.isclose(sum(a for _, a in named["DR-48"].divs), 28.249649080935125, rel_tol=1e-12)
     assert named["DR-47"].divs == ((3, 28.249649080935125),)
     assert (named["DR-50"].strike, named["DR-50"].q, named["DR-50"].divs) == (109.78, -0.82, ((4, 1.01),))
