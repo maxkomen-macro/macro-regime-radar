@@ -69,15 +69,23 @@ YAML) and shows the old step reverting the merge on the same scenario.
 
 ### Rules for future workflow edits
 
+These are rules for workflow steps. How a person or an assistant branches, stages, pushes and
+merges in a checkout is in `CLAUDE.md` / `AGENTS.md` ("Git, approval and deploy rules"); the
+publisher's fetch, fresh worktree and push are not a routine to run by hand.
+
 1. A workflow that writes to git calls `scripts/publish_artifacts.sh` with explicit paths. Never
    `git commit` or `git push` in a workflow step, never commit the runner's checkout (no
    `reset --soft`, no stash/rebase), and never force-push. A new generated file is a reviewed
    addition to `ALLOWED`.
 2. If adding a third workflow that uploads the DB Release asset, give it the same `concurrency: { group: data-write, cancel-in-progress: false }` block.
 3. Keep at least 3 attempts and the backoff in the publisher.
-4. After merging a PR, check that `main` still contains it: `git diff <merge> origin/main --stat`
-   should list only bot artifact paths. A run that started before a workflow change still uses
-   the workflow it started with.
+4. After merging a PR, check that `main` still contains it. Two checks, both needed:
+   `git merge-base --is-ancestor <merge> origin/main` succeeds, and
+   `git diff <merge> origin/main -- <the PR's files>` shows only changes that a later merged PR
+   or a bot artifact commit explains. Other PRs may merge afterwards, so a whole-tree diff is
+   not the test. Ancestry alone is not the test either: `d9359019` had the merges of #35 and #30
+   as ancestors and still removed their files. A run that started before a workflow change
+   still uses the workflow it started with.
 5. If a scheduled run fails, investigate it as a new bug.
 
 ### `.gitattributes`
@@ -97,3 +105,14 @@ Still contains `data/macro_radar.db merge=ours`. Harmless, left in place. Do not
 ### Which repo holds data-latest (private storage)
 
 Every database, snapshot, verdict and refresh-status release command takes `--repo "$DATA_RELEASE_REPO"`, from the workflow-level env `${{ vars.DATA_RELEASE_REPO || github.repository }}`: unset = this repo, exactly as before. Its first run line is the token switch (the `DATA_RELEASE_TOKEN` secret only when the repo differs). The earnings ledger steps never read it. A new step that touches `data-latest` follows the same pattern, and `tests/test_data_release_repo.py` checks every `gh release` line. The cutover mirror (`scripts/mirror_data_release.sh`) runs only while `vars.DATA_RELEASE_MIRROR == 'true'`. Procedure: `docs/data/PRIVATE_STORAGE.md`.
+
+## Close sentinel (CS-1, Max 2026-11-05): dormant until `vars.CLOSE_SENTINEL_ENABLED == 'true'`
+
+`close-sentinel.yml` exists because GitHub starts this repo's crons 5–9.5 h late, so the 00:23 UTC full refresh misses the 06:00 UTC deadline. A few low-frequency weekday crons start a watcher (`scripts/close_sentinel.py`, group `close-sentinel`, never `data-write`). At 17:30 New York time it dispatches `refresh-data.yml -f mode=full -f close_session=<S>` only when the published database lacks session S's closes. Coverage is checked per symbol: every `config/assets.yml` daily symbol and every `asset_history.DAILY_SYMBOLS` series. The watcher does not dispatch while any refresh-data run is active.
+
+- **Cap:** at most two dispatches per session. They are counted from `close-sentinel-dispatch-<S>` artifacts, each uploaded before its dispatch. A run that then decides not to dispatch deletes its own artifact. An uncertain outcome keeps it. A re-run of a watcher (attempt 2 or later) never plans or dispatches.
+- **No earnings calls:** sentinel runs make no earnings calls, because `actions_gate` refuses `workflow_dispatch`.
+- **What stays:** the refresh-data crons, validation and the deadline are unchanged.
+- **Keep it off until CS-2 (once-per-session memos) merges.** Under today's clock-slot memo rule, a sentinel full run that starts before 18:00 UTC would also dispatch a memo.
+
+`refresh-data`'s `close_session` input is a title label only (`run-name: Refresh Data (close <S>)`), and no step reads it. The sentinel's release reads follow `DATA_RELEASE_REPO` in Python. They are pinned in `tests/test_data_release_repo.py` and `tests/test_close_sentinel.py`.

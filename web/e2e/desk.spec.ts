@@ -412,6 +412,65 @@ test.describe("desk v2", () => {
     await expect(page.getByTestId("dk-act")).toHaveAttribute("href", "/desk/position-monitor?from=gold-2sigma-spx-weak");
   });
 
+  test("event study: the Range shown switch (desk P1d): native radios, one Tab stop, arrow keys; 95% draws its ranges, never a request parameter; palette, words, every width", async ({ page }) => {
+    // The fixture predates the fields; this served copy adds invented 80%/95% pairs nested around its 90% (test-data rule).
+    const study = payloadOf(deskFixture("GET", "/api/desk/study?preset=gold-2sigma-spx-weak")!) as { horizons: Record<string, unknown>[] };
+    const pairs: Record<number, [number, number, number | null, number | null]> = { 5: [-0.01, 0.02, -0.025, 0.035], 10: [-0.005, 0.025, null, null], 20: [-0.01, 0.03, -0.02, 0.05], 60: [-0.03, 0.05, -0.05, 0.07] };
+    const served = { ...study, horizons: study.horizons.map((h) => { const [a, b, c, d] = pairs[h.h as number]; return { ...h, ci80_lo: a, ci80_hi: b, ci95_lo: c, ci95_hi: d }; }) };
+    const calls = await routeDesk(page, { "/api/desk/study": { status: 200, body: served } });
+    await page.goto("/desk/event-study?preset=gold-2sigma-spx-weak", { waitUntil: "domcontentloaded" });
+    await settle(page, 500);
+    const group = page.getByRole("group", { name: "Range shown" });
+    await expect(group.getByRole("radio")).toHaveCount(3);
+    await expect(group.getByRole("radio", { name: "90%" })).toBeChecked();
+    await group.getByRole("radio", { name: "90%" }).focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(group.getByRole("radio", { name: "95%" })).toBeChecked();
+    await expect(page).toHaveURL(/[?&]ci=95/);
+    await expect(page.getByTestId("es-conf")).toHaveText("95% range");
+    await expect(page.locator(".es-range-head ~ .es-ranges li").nth(1)).toContainText("This range cannot be computed for this horizon.");
+    await expect(page.getByTestId("es-level-note")).toContainText("Verdicts are judged at the engine's 90% range");
+    await expect(page.getByRole("region", { name: "The answer" }).getByTestId("es-whisker")).toHaveCount(3);
+    // one Tab stop: Tab from the checked radio leaves the group
+    await page.keyboard.press("Tab");
+    expect(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.name ?? "")).not.toBe("es-ci");
+    await page.keyboard.press("Shift+Tab");
+    await expect(group.getByRole("radio", { name: "95%" })).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(group.getByRole("radio", { name: "80%" })).toBeChecked();
+    await expect(page).toHaveURL(/[?&]ci=80/);
+    await page.keyboard.press("ArrowRight");
+    await expect(group.getByRole("radio", { name: "90%" })).toBeChecked();
+    await expect(page).not.toHaveURL(/[?&]ci=/);
+    await page.keyboard.press("ArrowLeft");
+    await expect(page).toHaveURL(/[?&]ci=80/);
+    await page.keyboard.press("ArrowLeft");
+    await expect(page).toHaveURL(/[?&]ci=95/);
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
+    for (const width of [1440, 1101, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      await settle(page, 300);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `overflow at ${width}`).toBeLessThanOrEqual(1);
+      const cut = await group.evaluate((el) => [...el.querySelectorAll("*")].some((c) => (c as HTMLElement).scrollWidth > (c as HTMLElement).clientWidth + 1 && getComputedStyle(c).display !== "inline"));
+      expect(cut, `the switch is cut at ${width}`).toBe(false);
+    }
+    await page.setViewportSize({ width: 1440, height: 960 });
+    expect(calls.some((c) => c.includes("/api/desk/study") && /[?&]ci=/.test(c))).toBe(false);
+  });
+
+  test("event study: ?ci=95 on an answer from before the 80%/95% fields draws the engine's 90% and says so (desk P1d)", async ({ page }) => {
+    await open(page, "/desk/event-study?preset=gold-2sigma-spx-weak&ci=95");
+    await expect(page.getByTestId("es-conf")).toHaveText("90% range");
+    await expect(page.getByTestId("es-level-note")).toContainText("The 95% range is not served for this answer yet; showing the engine's 90%.");
+    const r95 = page.getByRole("group", { name: "Range shown" }).getByRole("radio", { name: "95%" });
+    await expect(r95).toBeChecked();
+    await expect(r95).toBeEnabled();
+    await expect(page.getByRole("region", { name: "The answer" }).getByTestId("es-whisker")).toHaveCount(4);
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await bannedWordsOnPage(page)).toEqual([]);
+  });
+
   test("macro: the two rows are equal and sized to their cards; the gauge's caption gives way to a band name and follows a resize", async ({ page }) => {
     await open(page, "/desk/macro");
     // The 2×2's own cards (desk/matrix: the correlation matrix is a full-width card under the grid, not a fifth cell).

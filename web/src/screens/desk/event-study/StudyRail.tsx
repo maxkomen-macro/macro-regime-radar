@@ -6,7 +6,10 @@
  * events prints its count and "too few cases to say"); the last five events; the range against a normal stretch at
  * the engine's 90%; and the footer: Advanced and Export. desk/usability §14.3:
  * no control does nothing, so the disabled `Price it →` and the 80% / 95%
- * confidence chips are gone; the interval's level is said in words.
+ * confidence chips are gone; the interval's level is said in words. Desk P1d
+ * (docs/desk/INTERVALS_SPEC.md) serves the 80% and 95% ranges of the same
+ * resampled medians, so a working "Range shown" switch draws them; the
+ * verdicts stay at 90%.
  */
 
 import type { StudyResponse } from "../data/types";
@@ -18,6 +21,8 @@ import { targetLabel } from "./question";
 import { isUnit, moveText, rangeText, tipOf } from "../kit/units";
 import type { TargetUnit } from "../data/types";
 import { Term, defineTerms } from "../kit/Term";
+import { useId } from "react";
+import { ENGINE_LEVEL, LEVELS, PREDATES, rowRange, serves, type Level } from "./levels";
 
 /**
  * desk/pdf-polish item 6, reworded by the owner for Codex R-09: the hover on "Edge vs a normal period" says, in
@@ -106,6 +111,9 @@ export default function StudyRail({
   onExport,
   exporting,
   busy = false,
+  level = ENGINE_LEVEL,
+  shown = ENGINE_LEVEL,
+  onLevel,
 }: {
   study: StudyResponse;
   todayRegime: string | null;
@@ -116,7 +124,12 @@ export default function StudyRail({
   exporting: boolean;
   /** A new answer is on its way: nothing here acts on the old one. */
   busy?: boolean;
+  /** P1d: the range level the address asks (`ci`), and the one drawn for this answer (levels.ts effectiveLevel). */
+  level?: Level;
+  shown?: Level;
+  onLevel?: (level: Level) => void;
 }) {
+  const levelNote = useId();
   const verdict = study.verdict;
   // Each block guards itself (Codex R-10): a list that was not served says so under its label.
   const byRegime = Array.isArray(study.by_regime) ? study.by_regime : null;
@@ -224,31 +237,65 @@ export default function StudyRail({
       <DroppedNote n={droppedOf(study, "last_events")} one="event" />
 
       <div className="es-range-head">
-        {/* desk/pdf-polish 6: "Edge vs a normal period · 90% range", the level the engine's one (§14.3,
-            `verdict_confidence`), said in words; there is no control for another. */}
+        {/* desk/pdf-polish 6: "Edge vs a normal period · 90% range", the level drawn said in words (P1d: the
+            effective one, so nothing is labelled with a level whose range it is not). */}
         <p className="dk-stat-label">
           <EdgeLabel target={target} /> ·{" "}
           <span className="es-conf-word" data-testid="es-conf">
-            {fin(study.verdict_confidence) ? `${roundHalfUp(study.verdict_confidence, 2)}% range` : "the engine's range"}
+            {shown !== ENGINE_LEVEL ? `${shown}% range` : fin(study.verdict_confidence) ? `${roundHalfUp(study.verdict_confidence, 2)}% range` : "the engine's range"}
           </span>
         </p>
       </div>
+      {horizons && onLevel ? (
+        // P1d (DR-07): native radios, so the browser gives the group one tab stop, arrow keys and the checked state.
+        // A level this answer does not serve stays reachable and says why (never disabled).
+        <fieldset className="es-level" data-testid="es-level">
+          <legend>Range shown</legend>
+          {LEVELS.map((L) => {
+            const off = !serves(horizons, L);
+            return (
+              <label key={L} data-off={off || undefined} title={off ? PREDATES : undefined}>
+                <input type="radio" name="es-ci" value={L} checked={level === L} onChange={() => onLevel(L)} aria-describedby={off ? levelNote : undefined} />
+                <span>{L}%</span>
+              </label>
+            );
+          })}
+        </fieldset>
+      ) : null}
+      {horizons && onLevel && level !== shown ? (
+        <p className="es-note" id={levelNote} data-testid="es-level-note">
+          The {level}% range is not served for this answer yet; showing the engine's 90%. {PREDATES}
+        </p>
+      ) : horizons && onLevel && LEVELS.some((L) => !serves(horizons, L)) ? (
+        <p className="dk-sr" id={levelNote}>
+          {PREDATES}
+        </p>
+      ) : null}
+      {horizons && onLevel && shown !== ENGINE_LEVEL ? (
+        <p className="es-note" data-testid="es-level-note">
+          Verdicts are judged at the engine's 90% range; this view shows the {shown}% range of the same resampled medians.
+        </p>
+      ) : null}
       {horizons ? (
         <ul className="es-ranges">
-          {horizons.map((h) => (
-            <li key={h.h}>
-              <span>{h.label}</span>
-              {/* An interval served null with its reason (under five blocks, §12.2) says why in words; one that did not arrive is Awaiting refresh. */}
-              {!rangeText(h.ci_lo, h.ci_hi, unit) && typeof h.reason === "string" && h.reason ? (
-                <span className="es-range-why">{h.reason}</span>
-              ) : (
-                <span className="es-range-pts" title={rangeText(h.ci_lo, h.ci_hi, unit) ? tip : undefined}>
-                  {rangeWords(h.ci_lo, h.ci_hi, unit)}
-                </span>
-              )}
-              <VerdictWord verdict={h.verdict} />
-            </li>
-          ))}
+          {horizons.map((h) => {
+            // An interval served null with its reason (under five blocks, §12.2) says why in words; one that did not
+            // arrive is Awaiting refresh. P1d: the effective level's pair, never another level's (levels.ts rowRange).
+            const r = rowRange(h, shown, unit);
+            return (
+              <li key={h.h}>
+                <span>{h.label}</span>
+                {r.kind === "why" ? (
+                  <span className="es-range-why">{r.text}</span>
+                ) : (
+                  <span className="es-range-pts" title={r.kind === "range" ? tip : undefined}>
+                    {r.text}
+                  </span>
+                )}
+                <VerdictWord verdict={h.verdict} />
+              </li>
+            );
+          })}
         </ul>
       ) : (
         <Awaiting />
