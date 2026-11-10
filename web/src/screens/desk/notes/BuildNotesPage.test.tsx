@@ -12,11 +12,13 @@ import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
-import { deskPageBySlug } from "../desk-sections";
+import { DESK_PAGES, deskPageBySlug } from "../desk-sections";
+import { OPTIONS_FINDER_SLUG } from "../options/flag";
 import { BYLINE, BuildNotesView, NOTES_MD, SCOPE_ID, figureUrl, leadWithoutByline, sectionOrder } from "./BuildNotesPage";
 import { BUILT_AFTER, BUILT_ID, BUILT_PARAGRAPHS, BUILT_TITLE } from "./built";
 import { HELD_HEADING, HELD_MARK, holdBanned, readNotes, sentences } from "./notes";
 import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
+import { CLIENT_VIEW_NAME, scopeLink } from "./scope-links";
 import { PROTOTYPES } from "../prototypes/registry";
 
 const SPEC = Object.values(import.meta.glob<string>("../../../../../docs/desk/DESK_FRAME3_SPEC.md", { query: "?raw", import: "default", eager: true }))[0] ?? "";
@@ -245,6 +247,45 @@ describe("Build Notes tab", () => {
     expect(within(section).getAllByRole("listitem").map((li) => li.textContent)).toEqual(lists.flatMap((l) => l.items));
     const links = within(screen.getByRole("navigation", { name: "Contents" })).getAllByRole("link");
     expect(links[links.length - 1]).toHaveAttribute("href", `#${SCOPE_ID}`);
+  });
+
+  it("links each live item's page name to its page, so the list says where each one is", async () => {
+    const live = SCOPE_LISTS.find((l) => l.title === "Live")!.items;
+    // Every live item names a listed Desk page (or the Client view) before its colon: a renamed page fails here.
+    for (const it of live) {
+      const link = scopeLink(it);
+      expect(link, it).not.toBeNull();
+      expect(link!.name + link!.rest).toBe(it);
+      expect(link!.slug === OPTIONS_FINDER_SLUG).toBe(false);
+      expect(DESK_PAGES.some((p) => p.slug === link!.slug)).toBe(true);
+    }
+    // Every listed page but Build Notes itself is in the guide once.
+    const linked = live.map((it) => scopeLink(it)!).filter((l) => !l.client).map((l) => l.slug);
+    expect(new Set(linked).size).toBe(linked.length);
+    expect(DESK_PAGES.map((p) => p.slug).filter((s) => !linked.includes(s))).toEqual(["build-notes"]);
+    renderTab();
+    const section = await screen.findByRole("region", { name: SCOPE_TITLE });
+    const [liveList, designed] = within(section).getAllByRole("list");
+    const hrefs = within(liveList).getAllByRole("link").map((a) => [a.textContent, a.getAttribute("href")]);
+    expect(hrefs).toEqual(live.map((it) => {
+      const l = scopeLink(it)!;
+      return [l.name, l.client ? `/desk/${l.slug}?view=client` : `/desk/${l.slug}`];
+    }));
+    expect(hrefs.find(([name]) => name === CLIENT_VIEW_NAME)?.[1]).toBe("/desk/event-study?view=client");
+    // The designed, not yet served items stay plain words.
+    expect(within(designed).queryAllByRole("link")).toEqual([]);
+  });
+
+  it("states the served Event Study ranges and Macro windows, and keeps verdicts at 90%, in the notes and the list alike", () => {
+    const live = SCOPE_LISTS[0].items.join("\n");
+    const designed = SCOPE_LISTS[1].items;
+    expect(live).toMatch(/every verdict judged at the engine's 90% interval; the range drawn can be switched to 80% or 95%/);
+    expect(live).toMatch(/each correlation over 20, 60 or 120 sessions; each asset's correlation with the S&P within each regime, on revised regime history/);
+    expect(designed).toContain("Verdicts judged at a confidence level other than 90%.");
+    expect(designed).not.toContain("Confidence levels other than 90%.");
+    expect(NOTES_MD).toMatch(/optional 80% or 95% range drawn beside the 90% every verdict\nis judged at/);
+    expect(NOTES_MD).toMatch(/each over 20, 60 or 120 sessions, and each asset's correlation with the S&P within each regime/);
+    expect(NOTES_MD).not.toMatch(/The confidence selector/);
   });
 
   it("a figure resolves only to a file in docs/desk/screens/ of this build", () => {
