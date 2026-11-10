@@ -9,8 +9,8 @@ references on synthetic contexts and writes a reproducible scorecard.
 - **Price and delta** of every case through the Finder's own route (`options_finder.Pricer`): intrinsic,
   the European value where a theorem or the early-exercise bound allows it, the lattice otherwise, or a
   refusal. Each outcome is one of refused, unscored (reference unresolved), pass, fail or indeterminate.
-- **References** (`reference.py`): the bench's Crank-Nicolson solver (`fd.py`, no code shared with the
-  lattice), refined in time, space, boundary width and penalty weight, with an uncertainty from the observed
+- **References** (`reference.py`): the Crank-Nicolson solver (`src/desk/options_fd.py`, re-exported
+  as `fd.py`; no code shared with the lattice), refined in time, space, boundary width and penalty weight, with an uncertainty from the observed
   convergence (grid-convergence index). A reference is used only when its uncertainty is at most a tenth of
   the tolerance it judges; the rest stay visible as unresolved. The uncertainty is an estimate, not a bound.
 - **Controls**: the same solver with exercise off against Black-76, and exempt contracts against Black-76.

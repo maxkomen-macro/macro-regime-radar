@@ -12,8 +12,13 @@ import math
 
 import pytest
 
+from pathlib import Path
+
 from scripts.options_bench import fd as bench_fd
+from src.desk import options_fd
 from tests.fixtures import options_pre_phase3 as frozen
+
+REPO = Path(__file__).resolve().parent.parent
 
 PRE_MOVE_FILE, PRE_MOVE_BLOB = "fd_2ff3e8b.py", "3b0bbb57b5fba23dccc904c711c9938d4a187c54"
 
@@ -61,9 +66,9 @@ def _same_bits(new, old):
 
 
 @pytest.mark.parametrize("s", SOLVES)
-def test_the_bench_kernel_is_bit_identical_to_before_the_move(s, pre_move_fd):
+def test_the_moved_kernel_is_bit_identical_to_before_the_move(s, pre_move_fd):
     new_diag, old_diag = {}, {}
-    new = bench_fd.solve(**_args(s), diag=new_diag)
+    new = options_fd.solve(**_args(s), diag=new_diag)
     old = pre_move_fd.solve(**_args(s), diag=old_diag)
     _same_bits(new, old)
     assert new_diag == old_diag
@@ -96,3 +101,25 @@ def test_the_kernel_refusals_are_unchanged(pre_move_fd):
             mod.solve(True, 100.0, 100.0, 10, 0.0, 0.0, 0.3, (), 241, 2, 1.0)
         with pytest.raises(ValueError, match="at or below the owed dividends"):
             mod.solve(True, 100.0, 100.0, 10, 0.0, 0.0, 0.3, ((2, 100.0),), 240, 2, 1.0)
+
+
+KERNEL_NAMES = ("PENALTY", "PENALTY_ITER_MAX", "PENALTY_STOP", "TIE_ULPS", "YEAR_DAYS", "coefficients", "pv_after",
+                "pv_owed", "smoothed_payoff", "solve")
+
+
+def test_the_bench_re_exports_the_one_kernel():
+    for name in KERNEL_NAMES:
+        assert getattr(bench_fd, name) is getattr(options_fd, name), name
+    assert bench_fd.solve.__module__ == "src.desk.options_fd"
+
+
+def test_no_copy_of_the_kernel_stays_in_the_bench():
+    text = (REPO / "scripts" / "options_bench" / "fd.py").read_text()
+    for marker in ("def solve", "def pv_owed", "def pv_after", "def coefficients", "def smoothed_payoff",
+                   "solve_banded"):
+        assert marker not in text, marker
+    # nothing else in the bench or in src grows its own Crank-Nicolson solver
+    for path in list((REPO / "scripts" / "options_bench").glob("*.py")) + list((REPO / "src").rglob("*.py")):
+        if path.name == "options_fd.py":
+            continue
+        assert "solve_banded" not in path.read_text(), path
