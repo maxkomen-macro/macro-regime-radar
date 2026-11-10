@@ -26,8 +26,11 @@ runs wrote the old and new numbers), and a stored report the CFTC no longer
 serves is marked withdrawn, never deleted; the API sets withdrawn rows aside.
 Each report must satisfy the CFTC's own identity before it is stored: the
 categories' long positions plus their spreading equal the open interest, and
-so do the short positions plus spreading. A report that fails it, or misses a
-field, is not stored and the watermark says how many and why.
+so do the short positions plus spreading. A row that fails it, or misses a
+field, is refused; because a refused row may be a stored report's replacement,
+a run that refuses any row of a CFTC report (TFF or Disaggregated) replaces
+nothing of that report's markets: the stored rows stay, none is marked
+withdrawn, and the watermark says how many rows were refused and why.
 
 Every run is recorded in `positioning_runs` (started, then committed or
 failed); the API reads a row only when the run that wrote it committed.
@@ -363,7 +366,6 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
         ensure_tables(conn)
         run_id = start_run(conn, SOURCE, now)
         conn.commit()
-        parts: list[str] = []
         failed: list[str] = []
         counts = {"new": 0, "revised": 0, "restored": 0, "withdrawn": 0, "refused": 0}
         wrote = False
@@ -375,6 +377,13 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
                 failed.append(str(exc))
                 continue
             rows, refused = parse_rows(report, raw, set(codes))
+            counts["refused"] += len(refused)
+            if refused:
+                # A refused row may be a stored report's replacement: writing the rest would mark that report
+                # withdrawn, or publish a partial read. Nothing is written for the report's markets; the stored rows stay.
+                failed.append(f"{report.title}: {len(refused)} row(s) refused, so nothing of it was replaced "
+                              f"({'; '.join(refused[:3])}{' …' if len(refused) > 3 else ''})")
+                continue
             served = {r["contract_code"] for r in rows}
             missing = [c for c in codes if c not in served]
             if missing:
@@ -386,9 +395,6 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
                 wrote = True
                 for k, v in c.items():
                     counts[k] += v
-            counts["refused"] += len(refused)
-            if refused:
-                parts.append(f"{report.key}: {len(refused)} refused ({'; '.join(refused[:3])}{' …' if len(refused) > 3 else ''})")
         newest = {}
         for m in MARKETS:
             row = conn.execute(f"SELECT MAX(as_of) FROM {TABLE} WHERE report = ? AND contract_code = ? AND withdrawn_at IS NULL",
@@ -399,7 +405,7 @@ def refresh(db_path: Path | str = DB_PATH, *, now: datetime | None = None, get: 
         status = "ok" if not failed and oldest else ("partial" if oldest else "error")
         detail = " · ".join([f"CFTC {sum(1 for v in newest.values() if v)} of {len(MARKETS)} markets, newest report "
                              f"{oldest or 'none'}", ", ".join(f"{k} {v}" for k, v in counts.items())]
-                            + parts + ([f"not read: {'; '.join(failed)}"] if failed else []))
+                            + ([f"not read: {'; '.join(failed)}"] if failed else []))
         watermarks.record(conn, WATERMARK, oldest, status=status, detail=detail, now=now)
         # The rows a run wrote are readable only when it committed: every run that wrote any row commits.
         finish_run(conn, run_id, "committed" if wrote else "failed", detail, now)

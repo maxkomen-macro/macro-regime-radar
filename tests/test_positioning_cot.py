@@ -236,16 +236,37 @@ def test_a_report_served_twice_is_refused_both_times():
     assert parsed == [] and refused == [f"13874A {END.isoformat()}: served more than once"]
 
 
-def test_refused_rows_are_counted_in_the_watermark_and_never_stored(tmp_path):
-    def spoil(rows):
-        rows = copy.deepcopy(rows)
-        rows[0]["open_interest_all"] = "7"
-        return rows
+def _spoil(rows, at=0):
+    rows = copy.deepcopy(rows)
+    rows[at]["open_interest_all"] = "7"
+    return rows
 
+
+def test_a_refused_row_stops_its_report_being_stored_and_says_why(tmp_path):
+    # Codex S-1: no partial read is published. The other report is stored as usual.
     f = tmp_path / "s.db"
-    s = refresh(f, served(tff=spoil))
-    assert s["counts"]["refused"] == 1 and "tff: 1 refused" in s["detail"]
-    assert rows_of(f, f"SELECT COUNT(DISTINCT as_of || contract_code) FROM {cot.TABLE} WHERE report = 'tff'") == [(fx.WEEKS * 3 - 1,)]
+    s = refresh(f, served(tff=_spoil))
+    # nothing stored for three of the five markets yet: the watermark holds no observation
+    assert s["counts"]["refused"] == 1 and s["status"] == "error"
+    assert "Traders in Financial Futures, futures only: 1 row(s) refused, so nothing of it was replaced" in s["detail"]
+    assert "is not the open interest 7" in s["detail"]
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE report = 'tff'") == [(0,)]
+    assert rows_of(f, f"SELECT COUNT(DISTINCT as_of || contract_code) FROM {cot.TABLE} WHERE report = 'disaggregated'") == [(fx.WEEKS * 2,)]
+
+
+def test_an_invalid_replacement_keeps_the_stored_reports_and_withdraws_nothing(tmp_path):
+    # Codex S-1's counterexample: valid reports stored, then served again with the newest one's open interest broken.
+    f = tmp_path / "s.db"
+    refresh(f)
+    before = rows_of(f, f"SELECT * FROM {cot.TABLE} ORDER BY report, contract_code, as_of, category")
+    newest = max(range(fx.WEEKS * 3), key=lambda i: fx.synth_rows(cot.REPORTS["tff"], CODES["tff"], end=END)[i]["report_date_as_yyyy_mm_dd"])
+    s = refresh(f, served(tff=lambda rows: _spoil(rows, newest)), now=NOW + timedelta(days=7))
+    assert s["counts"] == {"new": 0, "revised": 0, "restored": 0, "withdrawn": 0, "refused": 1}
+    assert s["status"] == "partial" and "nothing of it was replaced" in s["detail"]
+    assert rows_of(f, f"SELECT * FROM {cot.TABLE} ORDER BY report, contract_code, as_of, category") == before
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.TABLE} WHERE withdrawn_at IS NOT NULL") == [(0,)]
+    assert rows_of(f, f"SELECT COUNT(*) FROM {cot.REVISIONS}") == [(0,)]
+    assert block(f)["markets"][0]["as_of"] == END.isoformat()
 
 
 # ── the reader: what is set aside ───────────────────────────────────────────
