@@ -457,7 +457,7 @@ def _smooth_parents(nv, rows, f, e, i, base, ratio, g, disc, sig, dt):
 
 
 def _lattice(is_call, ks, rho, q, sig, divs: Sequence[Sequence[tuple[int, float]]], days: int, steps: int,
-             with_cont: bool = False, smooth_divs: bool = False):
+             with_cont: bool = False, smooth_divs: bool = False, with_nodes: bool = False):
     """One batch of contexts sharing `days` and `steps`, in units of S = 1: strikes `ks` = K/S and dividend
     amounts already divided by S. Returns (root values, step-1 deltas, exercised at the root), values and
     deltas per unit of S, and with `with_cont` the root continuation values too (the value of holding over the
@@ -470,7 +470,16 @@ def _lattice(is_call, ks, rho, q, sig, divs: Sequence[Sequence[tuple[int, float]
     `smooth_divs` (Tier 1 only; off by default, so Tier 2 and other callers are unchanged): the step into each
     cum-dividend close at step c >= 1 is smoothed near the hold/exercise crossing (_smooth_parents), which makes
     the error regular in N so the (N, 2N) Richardson pair cancels it. A close on the first layer built
-    (c = steps − 1) is captured before that layer's maximum with the exercise value."""
+    (c = steps − 1) is captured before that layer's maximum with the exercise value.
+
+    `with_nodes` (Phase 3 diagnostics, design P3 section 16; off by default, and no caller in the served or Tier 2
+    paths passes it): also returns, as the last element, a dict of the three step-2 nodes per row, copied when the
+    backward loop reaches step 2: "spot" (S*_0·d²·(u/d)^j + esc_2, per unit S), "value" (after the maximum with
+    the exercise value), "cont" (before it, after any smoothing) and "exercise" (exercise value at least the
+    continuation value). It needs steps >= 4, so that step 2 is built inside the loop. With the default the
+    return value and every array operation are unchanged."""
+    if with_nodes and steps < 4:
+        raise ValueError("the step-2 node diagnostics need steps >= 4")
     m = len(ks)
     calls = np.asarray(is_call, dtype=bool)
     sgn = np.where(calls, 1.0, -1.0)[:, None]
@@ -528,11 +537,18 @@ def _lattice(is_call, ks, rho, q, sig, divs: Sequence[Sequence[tuple[int, float]
         if i == 0:
             root_ex = e[:, 0] >= nv[:, 0]
             cont = nv[:, 0].copy()
+        if with_nodes and i == 2:
+            nodes = {"cont": nv[:, :3].copy(), "exercise": e[:, :3] >= nv[:, :3]}
         np.maximum(nv, e, out=nv)
         v, buf = nv, v
+        if with_nodes and i == 2:
+            nodes["value"] = v[:, :3].copy()
+            nodes["spot"] = base[:, 2:3] * ratio[:, :3] + esc[:, 2:3]
         if i == 1:
             s1 = base[:, 1:2] * ratio[:, :2] + esc[:, 1:2]
             delta = (v[:, 1] - v[:, 0]) / (s1[:, 1] - s1[:, 0])
+    if with_nodes:
+        return (v[:, 0].copy(), delta, root_ex) + ((cont,) if with_cont else ()) + (nodes,)
     if with_cont:
         return v[:, 0].copy(), delta, root_ex, cont
     return v[:, 0].copy(), delta, root_ex
