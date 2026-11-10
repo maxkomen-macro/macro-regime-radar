@@ -149,3 +149,16 @@ def test_the_runner_refuses_any_seed_but_the_development_seed():
     from scripts.options_bench import run_p3
     with pytest.raises(SystemExit):
         run_p3.main(["--seed", "20261118", "--out", "/nonexistent-never-written"])
+
+
+def test_the_run_config_override_reaches_the_greeks_and_the_fd_grid():
+    from scripts.options_bench import run_p3
+    from src.desk import options_greeks as G
+    assert run_p3.greek_config(None) == G.GreekConfig()
+    got = run_p3.greek_config({"h_sigma": 0.00125, "m_frac": 0.5, "p_frac": 0.25,
+                               "bump_factors": [["vega", 2.0], ["rho", 4 / 3], ["dividend", 3.0]]})
+    assert got.h_sigma == 0.00125 and got.fd.m_frac == 0.5 and got.fd.p_frac == 0.25
+    assert got.fd.work_cap == G.GreekConfig().fd.work_cap and got.h_r == G.GreekConfig().h_r
+    assert got.bump_factor("vega") == 2.0
+    with pytest.raises(ValueError):
+        run_p3.greek_config({"h_sgima": 0.001})

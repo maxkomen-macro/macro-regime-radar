@@ -1,13 +1,15 @@
 """scripts/options_bench/run_p3.py — run Phase 3 on bench cases and write one record per case (test tooling).
 
     python -m scripts.options_bench.run_p3 --seed 20261026 --per-group 12 --out DIR [--workers 3]
-        [--regions regions.json] [--no-refs] [--diagnostics]
+        [--regions regions.json] [--no-refs] [--diagnostics] [--config greek-config.json]
 
 Per case: Tier 2's answer with the Phase 3 cross-check and Greek block (options_adaptive.phase3, under the claim
 regions when given), the corroborated references of every quantity (greek_reference), the FD-only price
 reference for Tier 2's lattice price (reference.py, unchanged), exact controls where every stencil state is
 exempt, the proved-bound checks, control C1, and the work and wall time of each part. `--diagnostics` adds the
 dev-only lattice gamma by delta differences (P3-A7) and QuantLib's Greeks. The records feed score_p3.py.
+`--config` overrides the Greek configuration (h_sigma, h_r, h_d_frac, m_frac, p_frac, factors, bump_factors) for
+production, the references (h_ref is the production bump halved), the exact controls and C1 alike.
 Development seed only until the freeze: the held-out run is a separate, frozen procedure.
 """
 
@@ -56,14 +58,34 @@ def delta_difference_gamma(c: om.Context, mults=(1, 2, 3, 4, 5, 6)) -> dict:
     return {"levels": ms, "values": ys, "G": g, "E": e}
 
 
+FD_KEYS = ("m_frac", "p_frac", "work_cap", "penalty")
+
+
+def greek_config(over: dict | None) -> G.GreekConfig:
+    """GreekConfig with the given overrides; FD keys go to its FDConfig, tuples are given as lists of pairs."""
+    base = G.GreekConfig()
+    if not over:
+        return base
+    from dataclasses import replace
+    from src.desk import options_fd as fd
+    fd_over = {k: v for k, v in over.items() if k in FD_KEYS}
+    rest = {k: (tuple(tuple(x) for x in v) if k in ("factors", "bump_factors") else v)
+            for k, v in over.items() if k not in FD_KEYS}
+    unknown = set(rest) - {f for f in G.GreekConfig.__dataclass_fields__ if f != "fd"}
+    if unknown:
+        raise ValueError(f"unknown Greek config keys {sorted(unknown)}")
+    return replace(base, fd=replace(base.fd, **fd_over) if fd_over else base.fd, **rest)
+
+
 def one(args) -> dict:
-    case_json, regions_json, with_refs, diagnostics = args
+    case_json, regions_json, with_refs, diagnostics, *more = args
+    cfg = greek_config(more[0] if more else None)
     case = cases.Case.from_json(case_json)
     c = C.to_ctx(case)
     regions = None if regions_json is None else Regions.from_json(regions_json)
     rec: dict = {"case": case.to_json(), "versions": {"tier2": oa.VERSION, "greeks": G.VERSION}}
     t0 = time.time()
-    p3 = oa.phase3(c, x_region=None if regions is None else regions.fd_role_region,
+    p3 = oa.phase3(c, gcfg=cfg, x_region=None if regions is None else regions.fd_role_region,
                    g_region=None if regions is None else regions.greek_region)
     rec["secs_phase3"] = time.time() - t0
     rec["tier2"] = golden.answer_json(p3.tier2)
@@ -85,14 +107,14 @@ def one(args) -> dict:
     rec["exact"] = {}
     if in_domain and c.days > 0:
         for k in GR.QUANTITIES:
-            if C.stencil_exempt(c, k):
+            if C.stencil_exempt(c, k, cfg):
                 rec["exact"][k] = C.exact(c, k)
         t0 = time.time()
-        rec["c1"] = C.c1(c)
+        rec["c1"] = C.c1(c, cfg)
         rec["secs_c1"] = time.time() - t0
     if with_refs and in_domain and c.days > 0:
         t0 = time.time()
-        refs = GR.references(c)
+        refs = GR.references(c, cfg)
         rec["secs_refs"] = time.time() - t0
         rec["refs_work"] = refs.pop("_work")
         rec["refs"] = {k: {kk: v.get(kk) for kk in ("status", "R", "u", "tol", "R_FD", "u_FD", "G_L", "u_L", "diff")}
@@ -105,7 +127,7 @@ def one(args) -> dict:
     if diagnostics and in_domain and c.days > 0:
         t0 = time.time()
         rec["diag_delta_difference_gamma"] = delta_difference_gamma(c)
-        rec["diag_quantlib"] = C.quantlib_greeks(c)
+        rec["diag_quantlib"] = C.quantlib_greeks(c, cfg)
         rec["secs_diagnostics"] = time.time() - t0
     return rec
 
@@ -124,7 +146,10 @@ def main(argv=None) -> int:
     ap.add_argument("--regions")
     ap.add_argument("--no-refs", action="store_true")
     ap.add_argument("--diagnostics", action="store_true")
+    ap.add_argument("--config")
     a = ap.parse_args(argv)
+    over = None if a.config is None else json.loads(Path(a.config).read_text())
+    gcfg = greek_config(over)
     if a.seed != DEV_SEED:
         raise SystemExit("run_p3 runs the development seed only; the held-out run is the frozen procedure")
     out = Path(a.out)
@@ -134,13 +159,13 @@ def main(argv=None) -> int:
     path = out / "records-p3.jsonl"
     t0 = time.time()
     with ProcessPoolExecutor(a.workers) as ex, path.open("w") as f:
-        for rec in ex.map(one, [(c.to_json(), regions, not a.no_refs, a.diagnostics) for c in todo]):
+        for rec in ex.map(one, [(c.to_json(), regions, not a.no_refs, a.diagnostics, over) for c in todo]):
             f.write(json.dumps(rec, allow_nan=True) + "\n")
             f.flush()
     (out / "manifest-p3.json").write_text(json.dumps({
         "seed": a.seed, "per_group": a.per_group, "named": a.named, "cases": len(todo), "secs": time.time() - t0,
         "versions": {"tier2": oa.VERSION, "greeks": G.VERSION}, "regions": regions,
-        "greek_config": asdict(G.GreekConfig()), "x_config": asdict(oa.XConfig()),
+        "greek_config": asdict(gcfg), "config_overrides": over, "x_config": asdict(oa.XConfig()),
         "ref_work_cap": GR.REF_WORK_CAP}, indent=1, default=str))
     print(f"{len(todo)} cases in {time.time() - t0:.0f} s -> {path}")
     return 0
