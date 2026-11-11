@@ -74,10 +74,12 @@ Nothing else on the site is fitted.
 ## What's live, and why the rest isn't yet
 
 Live on the published snapshot: Overview, Technicals (price, averages,
-crosses, S&P signals, sector leadership, the 14-day RSI, MACD and its last crossover, seasonality by calendar month), Event Study for the catalog of
-questions, Regime (label, history, recession score, next prints, what each
+crosses, S&P signals, sector leadership, the 14-day RSI, MACD and its last crossover, seasonality by calendar month), Event Study (the catalog of
+questions and any question built in its slots, saved in your browser if you
+want it, with an optional 80% or 95% range drawn beside the 90% every verdict
+is judged at), Regime (label, history, recession score, next prints, what each
 regime has meant since 1996, the last changes), Macro
-(curve, credit, the stock–bond correlation, what moves with the S&P, the 12-asset correlation matrix), Sectors (leadership and breadth), Signal Ledger (the two RSI signals included), Position Monitor (in
+(curve, credit, the stock–bond correlation, what moves with the S&P, the 12-asset correlation matrix, each over 20, 60 or 120 sessions, and each asset's correlation with the S&P within each regime), Sectors (leadership and breadth), Signal Ledger (the two RSI signals included), Position Monitor (in
 your browser), the Client view, Data Pipeline, and this page. The sector
 ETFs and the other Desk ETFs are stored by the same refresh step as the
 S&P's closes, with their volume, full history back to each fund's first
@@ -102,8 +104,12 @@ Designed and drawn, not yet served, each for a stated reason:
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
   store doesn't hold.
-- The confidence selector: verdicts are fixed at 90%, so the chips would
-  only move the whiskers, and that plumbing isn't built.
+- Verdicts at another confidence level: every verdict is judged at 90%.
+  The 80% and 95% ranges on Event Study are display only: the same
+  resampled medians drawn at another level, so they change no verdict.
+- Correlations by regime as they were known at the time: the Macro card
+  reads the revised regime history, and says so; the point-in-time history
+  it would need isn't built.
 - Position Monitor stores positions in your browser. There is no server
   store and no login, and I'm not putting a shared one on a public site.
   The discipline gate in the browser is a workflow check, not a server
