@@ -300,3 +300,76 @@ def test_a_bump_term_that_does_not_fall_stops_at_the_escalation_limit(monkeypatc
     from scripts.options_bench import reference as ref
     assert out["grid"]["escalations"] == {"time": ref.ESCALATE_MAX, "space": ref.ESCALATE_MAX}
     assert out["u_bump"] == pytest.approx(0.05 * tol)
+
+
+
+# ── P3-AM4 change 3: every bump state on the base context's FD grid ────────
+
+def _grids(r):
+    return {s: v["xs"] for (s, _k), v in r._fd.items()}
+
+
+@pytest.mark.parametrize("name", [G.DIVIDEND, G.RHO])
+def test_a_bump_that_moves_pv0_is_solved_on_the_base_grid(name):
+    c = ctx(divs=((20, 2.0), (50, 2.0)))
+    sp = GR.spec(c, name, G.GreekConfig())
+    r = GR.Runner(GR.RefBudget())
+    k = GR.Key(400, 4, 1.0, fd.PENALTY)
+    GR._fd_q(r, c, sp, k)
+    GR._fd_q(r, c, sp, k, half=True)
+    base = r.fd(c, k)["xs"]
+    shifted = [s for s in _grids(r) if s != c]
+    assert len(shifted) == 4                                   # the four stencil states, none at its own spot
+    for s in shifted:
+        assert s.spot != c.spot
+        np.testing.assert_allclose(_grids(r)[s], base, rtol=1e-13)
+    # each state is read at its own X_0 = S − PV_s, which is not a node of the shared grid
+    for st in sp.states:
+        x0 = np.log(st.spot - fd.pv_owed(st.divs, st.rho, 0.0))
+        assert np.min(np.abs(r.fd(c, k)["x"] - x0)) > 0
+
+
+def test_a_bump_that_leaves_pv0_alone_is_solved_at_its_own_spot():
+    c = ctx(divs=((20, 2.0),))
+    sp = GR.spec(c, G.VEGA, G.GreekConfig())
+    r = GR.Runner(GR.RefBudget())
+    k = GR.Key(400, 4, 1.0, fd.PENALTY)
+    got = GR._fd_q(r, c, sp, k)
+    assert set(_grids(r)) == {sp.states[0], sp.states[1]}
+    want = (r.fd(sp.states[0], k)["value"] - r.fd(sp.states[1], k)["value"]) / (2 * sp.h) * G.UNIT[G.VEGA]
+    assert got == want
+    no_div = ctx()
+    sp = GR.spec(no_div, G.RHO, G.GreekConfig())                # no dividends: PV_0 = 0 in every state
+    r = GR.Runner(GR.RefBudget())
+    GR._fd_q(r, no_div, sp, k)
+    assert set(_grids(r)) == {sp.states[0], sp.states[1]}
+
+
+def test_the_base_grid_read_out_agrees_with_the_closed_form():
+    # European, the dividend sensitivity on the shared grid against its closed form −e^{−ρ t_j}·Δ
+    c = ctx(divs=((20, 2.0),))
+    sp = GR.spec(c, G.DIVIDEND, G.GreekConfig())
+    r = GR.Runner(GR.RefBudget(), american=False)
+    got = GR._fd_q(r, c, sp, GR.Key(1600, 16, 1.0, fd.PENALTY))
+    ex = G.closed_forms(c)[G.DIVIDEND]
+    assert abs(got - ex) <= 0.02 * G.tolerance(G.DIVIDEND, ex, c.spot)
+
+
+@pytest.mark.parametrize("spot", [104.30, 104.50])
+def test_the_base_grid_read_applies_the_exercise_value_exactly_at_a_day0_close(spot):
+    # DR-AM4-2: an American call with a dividend at today's close; continuation and immediate exercise tie near
+    # S ≈ 104.44, where V has a derivative jump. A cubic through V's nodes misreads it; the read of the continuation
+    # with the exact exercise value applied agrees with the state's own centred solve
+    import math
+    from dataclasses import replace
+    c = ctx(is_call=True, spot=spot, strike=100.0, days=30, rho=0.0, q=0.0, sigma=0.2, divs=((0, 1.0),))
+    k = GR.Key(800, 8, 1.0, fd.PENALTY)
+    r = GR.Runner(GR.RefBudget())
+    s = G.bumped(c, G.DIVIDEND, 0.05)
+    got = GR._value_on_base_grid(r, c, s, k)
+    own = r.fd(s, k)["value"]
+    pv_s, pv_c = fd.pv_owed(s.divs, s.rho, 0.0), fd.pv_owed(c.divs, c.rho, 0.0)
+    shared = r.fd(replace(s, spot=c.spot - pv_c + pv_s), k)
+    naive = G.cubic_at(shared["x"], shared["v0"], math.log(s.spot - pv_s))
+    assert abs(got - own) < 1e-5
+    assert abs(naive - own) > 1e-3

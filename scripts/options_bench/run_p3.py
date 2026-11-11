@@ -126,7 +126,7 @@ def one(args) -> dict:
         rec["refs_work"] = refs.pop("_work")
         rec["refs"] = {k: {**{kk: v.get(kk) for kk in ("status", "R", "u", "tol", "R_FD", "u_FD", "G_L", "u_L", "diff",
                                                       "G_Q", "u_Q", "diff_Q", "corroborated_by", "corroborators")},
-                           "q": {kk: (v.get("q") or {}).get(kk) for kk in ("levels", "values", "u_ref", "u_bump", "flags")}
+                           "q": {kk: (v.get("q") or {}).get(kk) for kk in ("levels", "values", "u_ref", "u_bump", "flags", "branch")}
                            if v.get("q") is not None else None}
                        for k, v in refs.items()}
         t0 = time.time()

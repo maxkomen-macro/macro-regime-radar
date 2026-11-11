@@ -26,8 +26,9 @@ the dev pilot and the calibration, then frozen.
 
 from __future__ import annotations
 
+import math
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import numpy as np
 
@@ -110,7 +111,8 @@ class Runner:
             v, d = fd.solve(s.is_call, s.spot, s.strike, s.days, s.rho, s.q, s.sigma, s.divs, k.m, k.p, k.w,
                             american=self.american, penalty=k.pen, diag=dg, grids=gr)
             self.penalty_misses += dg.get("penalty_unconverged", 0)
-            self._fd[key] = {"value": float(v), "delta": float(d), "xs": gr["xs"], "v0": gr["v0"]}
+            self._fd[key] = {"value": float(v), "delta": float(d), "x": gr["x"], "xs": gr["xs"], "v0": gr["v0"],
+                           "free0": gr["free0"]}
         return self._fd[key]
 
     def lattice(self, s: om.Context, mult: int, nodes: bool = False) -> dict:
@@ -137,6 +139,31 @@ def _value(r: Runner, s: om.Context, k: Key) -> float:
     if s.days == 0:
         return G.intrinsic(s)
     return r.fd(s, k)["value"]
+
+
+def _value_on_base_grid(r: Runner, c: om.Context, s: om.Context, k: Key) -> float:
+    """P3-AM4 change 3: a bump state's FD value on the base context's grid. The kernel centres its ln X grid at
+    x* = S − PV_0 of the state it solves, so a bump that moves PV_0 (the dividend amount; the rate, when dividends
+    are owed) shifts the state's whole grid against the strike and the exercise boundary by a fraction of a cell
+    that changes with every space level: the difference quotient then carries that shift's grid noise over 2h.
+    Here the unchanged kernel solves s at S' = S + PV_s − PV_c, whose x* is the base's, so every state of the
+    stencil shares the base grid's nodes (as Q's mesh is held fixed across the stencil, P3-AM2 B), and the value
+    at s's own X_0 = S − PV_s is read by the cubic through the four nodes around it. A state whose PV_0 equals the
+    base's (the volatility bump) is solved as before, at its own centre node."""
+    if s.days == 0:
+        return G.intrinsic(s)
+    pv_s, pv_c = fd.pv_owed(s.divs, s.rho, 0.0), fd.pv_owed(c.divs, c.rho, 0.0)
+    if pv_s == pv_c:
+        return r.fd(s, k)["value"]
+    got = r.fd(replace(s, spot=c.spot - pv_c + pv_s), k)
+    x1 = math.log(s.spot - pv_s)
+    if not r.american:
+        return G.cubic_at(got["x"], got["v0"], x1)
+    # American (design review DR-AM4-2): v0 = max(free0, exercise value) is only C⁰ where the projection binds at
+    # t = 0 (at a day-0 dividend close the cum obstacle lies above the ex-dividend one held inside the solve), so
+    # the cubic reads the continuation free0 (C¹ at its own boundary) and the exact exercise value is applied at
+    # the read point: the kernel's own projection, max(V, sgn·(X + PV_0 − K)⁺) = max(V, intrinsic at S)
+    return max(G.cubic_at(got["x"], got["free0"], x1), G.intrinsic(s))
 
 
 def node_gamma(nodes: dict, c: om.Context, price: float, zone: float = NODE_ZONE) -> float | str:
@@ -195,7 +222,7 @@ def _fd_q(r: Runner, c: om.Context, sp: Spec, k: Key, half: bool = False) -> flo
         return _value(r, sp.states[1], k) - _value(r, c, k)
     up, dn = (sp.states[2], sp.states[3]) if half else (sp.states[0], sp.states[1])
     h = sp.h / 2.0 if half else sp.h
-    return (_value(r, up, k) - _value(r, dn, k)) / (2.0 * h) * G.UNIT[sp.name]
+    return (_value_on_base_grid(r, c, up, k) - _value_on_base_grid(r, c, dn, k)) / (2.0 * h) * G.UNIT[sp.name]
 
 
 def _lat_value(r: Runner, s: om.Context, mult: int) -> float:

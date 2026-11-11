@@ -42,7 +42,8 @@ FLOOR = 0.02                 # reference floor, of tol (= greek_reference.REF_FL
 RHO_MAX = 0.75               # slower than this is "not converging"
 RHO_MIN = 0.5                # never assume convergence faster than first order
 F_Q = 1.0                    # calibrated on dev (C2-Q, European, zero misses in every group); never below 1
-DENSITY = 0.1                # mesher concentration density at K_X
+DENSITY = 0.1                # mesher concentration density at the expiry kink
+MESH_EPS = 1e-6              # the mesher's tail cut (P3-AM4 change 1; P3-AM2/AM3: 1e-4 biased extreme-vol vega)
 TODAY = None                 # QuantLib evaluation date, set on first use
 
 R_NOT_CONVERGING = "Q sequence not converging"
@@ -97,7 +98,7 @@ def mesh(c: om.Context, n: int):
     kx = max(c.strike - pv(0.0), 1e-3 * c.strike)
     kink = max(c.strike - pv(max(c.days, 1) / YEAR_DAYS), 1e-3 * c.strike)
     m1 = ql.FdmBlackScholesMesher(n, _process(c, x0), max(c.days, 1) / YEAR_DAYS, kx, ql.nullDouble(),
-                                  ql.nullDouble(), 1e-4, 1.5, (kink, DENSITY))
+                                  ql.nullDouble(), MESH_EPS, 1.5, (kink, DENSITY))
     return m1, kx
 
 
@@ -213,6 +214,22 @@ def estimate(g: list[float], tol: float, f_q: float = F_Q) -> float | None:
     return max(f_q * d23 * rs / (1.0 - rs), FLOOR) * tol
 
 
+def estimate4(g: list[float], tol: float, f_q: float = F_Q) -> tuple[str, float, float] | None:
+    """P3-AM4 change 2: (branch, R_Q, u_Q,ref) for a four-level sequence (after the escalation) that rule C leaves
+    unqualified, or None. Steps s_1..s_3, d_i = |s_i|/tol. "alternating": the three steps alternate in sign and
+    shrink strictly (d_1 > d_2 > d_3): R_Q = g_4 and u = max(F_Q·d_3, floor), the last step. No extrapolation:
+    a first-order rescue (R = 2g_4 − g_3 when both ratios lie near 1/2) was dropped (design review DR-AM4-1: two
+    observed ratios do not establish the order, and a ratio of 0.59 leaves an error the change between
+    extrapolants does not cover)."""
+    if len(g) != 4:
+        return None
+    s = [g[1] - g[0], g[2] - g[1], g[3] - g[2]]
+    d = [abs(x) / tol for x in s]
+    if s[0] * s[1] < 0.0 and s[1] * s[2] < 0.0 and d[0] > d[1] > d[2]:
+        return "alternating", g[3], max(f_q * d[2], FLOOR) * tol
+    return None
+
+
 def study(c: om.Context, sp, tol: float, american: bool = True, take=None, cache: dict | None = None,
           u_ref_max: float = 0.07, u_bump_max: float = 0.03) -> dict:
     """Q on one quantity (section C): levels LEVELS, then the one escalation to ESCALATE when unqualified.
@@ -250,5 +267,12 @@ def study(c: om.Context, sp, tol: float, american: bool = True, take=None, cache
             u, ub, flags = assess(seq[-3:], ESCALATE)
     except (RuntimeError, ValueError, TypeError) as e:
         return {"G": None, "u_ref": None, "u_bump": None, "flags": [f"{R_REFUSED}: {str(e)[:120]}"],
-                "levels": ns, "values": seq}
-    return {"G": seq[-1], "u_ref": u, "u_bump": ub, "flags": flags, "levels": ns, "values": seq}
+                "levels": ns, "values": seq, "branch": None}
+    g, branch = seq[-1], None
+    bump_flags = [f for f in flags if f.startswith("Q bump")]
+    if len(flags) > len(bump_flags):       # rule C left the refinement unqualified: P3-AM4's two branches
+        got = estimate4(seq, tol)
+        if got is not None and got[2] <= u_ref_max * tol:
+            branch, g, u = got
+            flags = bump_flags
+    return {"G": g, "u_ref": u, "u_bump": ub, "flags": flags, "levels": ns, "values": seq, "branch": branch}

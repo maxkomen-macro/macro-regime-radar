@@ -251,7 +251,7 @@ def test_every_level_halves_the_time_step_with_the_space_step():
 
 
 def test_the_mesh_concentrates_at_the_expiry_kink_not_at_k_minus_pv0():
-    c = om.Context(False, 100.0, 104.0, 120, 0.03, 0.015, 0.25, ((30, 10.0), (95, 10.0)))   # K − PV_0 ≈ 84
+    c = om.Context(False, 100.0, 104.0, 120, 0.03, 0.015, 0.25, ((30, 15.0), (95, 15.0)))   # K − PV_0 ≈ 74
     kink = c.strike                            # no dividend at expiry: PV_τ = 0, the payoff kinks at X = K
     for n in (400, 1600):
         m1, kx = qe.mesh(c, n)
@@ -262,3 +262,52 @@ def test_the_mesh_concentrates_at_the_expiry_kink_not_at_k_minus_pv0():
         assert at(kink) == pytest.approx(step.min(), rel=1e-3)          # the finest cells sit at the kink
         assert at(kink) < 0.65 * np.median(step)
         assert at(kx) > 1.5 * at(kink)                                   # and not at K − PV_0
+
+
+
+# ── P3-AM4: the wider mesh span and Q's two four-level estimates ──────────
+
+def test_the_mesh_span_cuts_the_tail_at_one_in_a_million():
+    assert qe.MESH_EPS == 1e-6
+    c = om.Context(True, 100.0, 90.0, 300, 0.02, 0.0, 3.5, ())          # extreme volatility
+    lo4 = ql.FdmBlackScholesMesher(400, qe._process(c, 100.0), 300 / 365, 90.0, ql.nullDouble(), ql.nullDouble(),
+                                   1e-4, 1.5, (90.0, qe.DENSITY)).locations()
+    lx = np.array(qe.mesh(c, 400)[0].locations())
+    assert lx[0] < lo4[0] and lx[-1] > lo4[len(lo4) - 1]                # wider than P3-AM3's span on both sides
+
+
+@pytest.mark.parametrize("g", [[5.021, 2.634, 1.305, 0.648],            # dev T1-near-boundary/30 gamma: ratios 0.5
+                               [0.0, 0.3, 0.477, 0.58143]])              # DR-AM4-1: ratio 0.59, limit 0.7317
+def test_a_monotone_sequence_is_never_extrapolated(g):
+    assert qe.estimate4(g, 1.0) is None                                  # no first-order rescue (DR-AM4-1)
+
+
+def test_a_shrinking_alternation_is_bounded_by_its_last_step():
+    assert qe.estimate4([0.0, 1.0, 0.5, 1.0], 1.0) is None                # d_2 = d_3: does not shrink strictly
+    assert qe.estimate4([0.0, 1.0, 0.5, 0.5 + 0.6], 1.0) is None          # d_3 > d_2: growing alternation
+    g = [0.037, -0.020, 0.011, -0.005]                                    # dev G2-dividends/85 rho shape, in tol
+    kind, R, u = qe.estimate4(g, 1.0)
+    assert kind == "alternating" and R == -0.005
+    assert u == pytest.approx(qe.FLOOR)                                   # d_3 = 0.016 < floor
+    kind, R, u = qe.estimate4([0.0, 0.4, 0.1, 0.3], 2.0)                  # d = 0.2, 0.15, 0.1 of tol 2
+    assert kind == "alternating" and R == 0.3 and u == pytest.approx(0.2)  # F_Q·d_3·tol = 0.1·2
+    assert qe.estimate(g[1:], 1.0) is None                               # rule C: alternating, not converging
+
+
+def test_three_levels_never_take_a_branch():
+    assert qe.estimate4([1.0, 0.5, 0.25], 1.0) is None
+
+
+def test_study_uses_a_branch_only_when_rule_c_leaves_it_unqualified(monkeypatch):
+    seqs = {400: 0.037, 800: -0.020, 1600: 0.011, 3200: -0.005}         # a shrinking alternation, in tol
+    monkeypatch.setattr(qe, "quantity", lambda c, sp, n, american, half, cache, take: seqs[n])
+    sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
+    out = qe.study(DIV_PUT, sp, 1.0)
+    assert out["branch"] == "alternating" and out["flags"] == [] and out["levels"] == [400, 800, 1600, 3200]
+    assert out["G"] == -0.005 and out["u_ref"] == pytest.approx(qe.FLOOR)
+    seqs.update({400: 5.021, 800: 2.634, 1600: 1.305, 3200: 0.648})     # first order: rule C over budget, no branch
+    out = qe.study(DIV_PUT, sp, 1.0)
+    assert out["branch"] is None and out["flags"] and out["G"] == 0.648
+    seqs.update({400: 1.0, 800: 1.0 + 0.04, 1600: 1.0 + 0.05})          # rule C qualifies: no escalation, no branch
+    out = qe.study(DIV_PUT, sp, 1.0)
+    assert out["branch"] is None and out["levels"] == [400, 800, 1600] and out["G"] == 1.05
