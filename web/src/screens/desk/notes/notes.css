@@ -219,6 +219,17 @@
 .bn-scope li + li {
   margin-top: 6px;
 }
+/* A live item's page name links to its page (./scope-links.ts): the article's link style. */
+.dk .bn-scope .bn-scope-page {
+  color: var(--dk-t1);
+  font-weight: 600;
+  text-decoration: underline;
+  text-decoration-color: var(--dk-t3);
+  text-underline-offset: 2px;
+}
+.dk .bn-scope .bn-scope-page:hover {
+  text-decoration-color: var(--dk-t1);
+}
 @media (max-width: 900px) {
   .bn-grid {
     grid-template-columns: minmax(0, 1fr);

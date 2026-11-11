@@ -14,13 +14,15 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import Markdown from "../../shell/Markdown";
 import { PageTitle } from "../DeskTopBar";
 import type { DeskPage } from "../desk-sections";
 import { readNotes } from "./notes";
 import { BUILT_AFTER, BUILT_ID, BUILT_PARAGRAPHS, BUILT_TITLE } from "./built";
 import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
+import { scopeHref, scopeLink } from "./scope-links";
+import { useDeskView } from "../desk-view";
 import "./notes.css";
 
 /** The notes file, read at build time. A build context that holds only web/
@@ -163,6 +165,7 @@ export function BuildNotesView({ page, md }: { page: DeskPage; md: string }) {
     hash,
   );
   const missing = !md.trim();
+  const { pathTo } = useDeskView();
   return (
     <div className="bn">
       <PageTitle page={page} />
@@ -209,16 +212,31 @@ export function BuildNotesView({ page, md }: { page: DeskPage; md: string }) {
               </section>
             ),
           )}
-          {/* §1.0.1: the two lists as their own section, word for word (./scope.ts). */}
+          {/* §1.0.1: the two lists as their own section, word for word (./scope.ts). Each live item's page
+              name links to its page (./scope-links.ts), so the list is also where to find each one. */}
           <section id={SCOPE_ID} className="bn-section bn-scope" aria-labelledby={`${SCOPE_ID}--h`}>
             <h3 id={`${SCOPE_ID}--h`}>{SCOPE_TITLE}</h3>
             {SCOPE_LISTS.map((l) => (
               <div key={l.title} className="bn-scope-list">
                 <h4>{l.title}</h4>
                 <ul>
-                  {l.items.map((it) => (
-                    <li key={it}>{it}</li>
-                  ))}
+                  {l.items.map((it) => {
+                    const link = l.title === "Live" ? scopeLink(it) : null;
+                    return (
+                      <li key={it}>
+                        {link ? (
+                          <>
+                            <Link className="bn-scope-page" to={scopeHref(link, pathTo)}>
+                              {link.name}
+                            </Link>
+                            {link.rest}
+                          </>
+                        ) : (
+                          it
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             ))}

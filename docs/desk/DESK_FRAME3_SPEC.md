@@ -55,7 +55,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Technicals for any US stock or ETF (`?symbol=`) | LIVE (desk/usability, §14.2) | the same shared figures (averages, RSI, MACD, seasonality, the Risk card) on a stored ETF's closes or two years of EODHD daily candles, with its strength against the S&P |
 | Event Study: studies in the catalog (§4, §12.3) | LIVE when every input's coverage is stored in the current generation; otherwise that study is awaiting with the missing series named | v3 §2 |
 | Event Study: any other combination of slots | LIVE (desk/usability, §14.3): computed on request, the same verdict rules | — |
-| Event Study: confidence 80% / 95% | not shown (desk/usability, §14.3); intervals are the engine's 90%, said in words | interval projection at other quantiles is new plumbing (v3 §8, A-16) |
+| Event Study: 80% / 95% ranges | LIVE (Desk P1d, §12.2 `ci80_*`/`ci95_*`; method `docs/desk/INTERVALS_SPEC.md`): the "Range shown" switch draws the 80%, 90% (the default) or 95% range of the same resampled medians, `?ci=80` or `?ci=95` in the address | display only: every verdict, pill, `why` and `verdict_confidence` stays judged at the engine's 90%; a verdict at another level is not served |
 | Event Study: the line without the condition (`without_condition`) | UNAVAILABLE | conditional-versus-unconditional comparison is not defined (v4 B-11, C-01) |
 | Regime: current label, history strip, recession score, next prints | LIVE | — |
 | Regime: "What each regime has meant" table, and the S&P over the month each change took effect | LIVE (desk/fill-compute) | every stored row measured from when it was known (Codex R-01): each label with the S&P and the VIX of the month it governed, two months after its stamp, the return sample and VIX coverage served apart from the label count (§12.6 `stats`, `changes`) |
@@ -64,6 +64,8 @@ drawn finished with illustrative values and a footnote saying so.
 | Macro: stock–bond correlation (SPY against TLT, 60 daily log returns) | LIVE (desk/fill-etf, §12.8) | — |
 | Macro: "What moves with the S&P" (TLT, IEF, HYG, LQD, GLD, UUP, IWM, QQQ and VIX against SPY) | LIVE (desk/fill-etf, §12.8) | — |
 | Macro: the 12-asset correlation matrix (SPY, QQQ, IWM, SMH, XLE, TLT, IEF, HYG, LQD, GLD, UUP, ^VIX; every pair, 60 daily returns to the last session all hold a close) | LIVE (desk/matrix, §12.8 `matrix`) | — |
+| Macro: the correlation window, 20, 60 (the default) or 120 sessions, for the stock–bond card, what moves with the S&P and the matrix | LIVE (Desk P1b, §12.8 `by_horizon`; method `docs/desk/CORRELATION_VIEWS.md` §3) | the noise note is Fisher's approximate 90% band around a true zero, never an interval for the value |
+| Macro: "Correlation by regime" (each asset against SPY, daily returns pooled within each regime) | LIVE (Desk P1b, §12.8 `correlations.data[].by_regime`; CORRELATION_VIEWS.md §4) on revised regime history | as known at the time not served (needs the point-in-time regime history); no interval; a gap between two regimes is not a tested difference |
 | Sectors: leadership (LEADING, LAGGING, PATTERN, the eleven bars) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: breadth, of the 11 sector ETFs (above the 50- and 200-day, RSP against SPY, IWM against SPY) | LIVE (desk/fill-etf, §12.14) | — |
 | Sectors: constituent-level breadth (the stocks inside the index) | UNAVAILABLE | constituent data is not ingested |
@@ -87,9 +89,9 @@ Build Notes prints these two lists as their own section, word for word.
 **Live**
 - Overview: since the last close, the regime, the recession score, the S&P trend, the VIX level and its gap to the S&P's 21-day realized volatility, active signals, data status.
 - Technicals: the S&P price, the day's change, the 1-year return, the last 20 days in σ, its 50- and 200-day averages, trend, the latest cross, the chart, the scored signals, sector leadership, the 14-day RSI, MACD (12, 26, 9) and its last crossover, the average return and share of years up for each calendar month; the same figures for any US stock or ETF, with its drawdown from the one-year high, its 21-day realized volatility and its strength against the S&P.
-- Event Study: every catalog study whose inputs are stored, and any other question its six slots ask, computed on request, at 5, 10, 20 and 60 sessions, at the engine's 90% interval.
+- Event Study: every catalog study whose inputs are stored, and any other question its six slots ask, computed on request, at 5, 10, 20 and 60 sessions, every verdict judged at the engine's 90% interval; the range drawn can be switched to 80% or 95%, the same resampled medians at another level, which changes no verdict; questions saved in this browser.
 - Regime: the label, the five-year strip, the recession score, the next CPI and industrial-production prints, what each regime has meant since 1996, the last five regime changes and the S&P over the month each took effect.
-- Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix.
+- Macro & Correlations: the yield curve, the credit spreads, whether bonds still hedge stocks, what moves with the S&P, and the 12-asset correlation matrix, each correlation over 20, 60 or 120 sessions; each asset's correlation with the S&P within each regime, on revised regime history.
 - Sectors: the eleven sector ETFs against SPY over 60 sessions, ranked, and the pattern by its rule; breadth of the 11 sectors, equal weight against cap weight, small caps against large.
 - Signal Ledger: the twelve fixed signals, each scored when its study completes.
 - Position Monitor: positions kept in this browser, with room for the S&P and any stored ETF against its 50-day and for each Treasury tenor's yield and the spreads between them; for a yield or a spread, DV01 as the signed sensitivity of a hypothetical Treasury proxy.
@@ -100,7 +102,8 @@ Build Notes prints these two lists as their own section, word for word.
 **Designed, not yet served**
 - What protection costs: options skew, implied against realized volatility, the term structure.
 - Constituent-level breadth: the stocks inside the index, not the 11 sector ETFs.
-- Confidence levels other than 90%.
+- Verdicts judged at a confidence level other than 90%.
+- Correlations by regime as the regimes were known at the time (the point-in-time regime history).
 - The comparison with the study's condition dropped.
 - Positions kept on a server, and the DV01 of actual holdings and bond ETFs.
 - Option structures for a basket's hedge.
@@ -756,8 +759,9 @@ or "Awaiting refresh" when its reason begins so. Stamp: "60 daily returns to
 <the rows' common date>", then each row dated otherwise ("<symbol> to <date>"),
 then "each against SPY". No meaning word is served. The card has no
 `Advanced ▸` control: the full matrix is its own card (below), and rolling
-windows and the correlations by regime are not served (Build Notes lists
-them under what comes next); the control returns when one of them is.
+windows and the correlations by regime are served apart from it (Desk P1b,
+`docs/desk/CORRELATION_VIEWS.md` §7): the correlation window control above the
+correlation cards and the "Correlation by regime" card.
 
 **Correlation matrix** (`60-day correlation of daily returns · every pair of
 12 assets`, full width): LIVE (desk/matrix), from `/macro` `matrix` (§12.8).
@@ -2168,8 +2172,8 @@ desk/matrix (2026-09-28): the 12-asset correlation matrix and its lead rule
 
 **Not allowed for Monday** (the blocks are unavailable): RSI (added after
 Monday, below); confidence
-80% / 95%; the regime statistics table and change outcomes (added after
-Monday, below); the
+80% / 95% (served later as display-only ranges, Desk P1d, §1.0); the regime
+statistics table and change outcomes (added after Monday, below); the
 without-condition comparison; everything §1.0 lists as unavailable. No
 implementation may broaden scope to satisfy an illustrative shape.
 
@@ -2295,7 +2299,8 @@ amended in place where it is short, and the report
   target, or a condition while a cross is asked makes the move a 2σ rise. The
   change is said under the slots.
 - **Removed controls.** The 80% / 90% / 95% chips (the level is "90%
-  interval", in words), `Price it →`, a disabled chip (an unavailable study is
+  interval", in words; Desk P1d later served them as a display-only "Range
+  shown" switch, verdicts still judged at 90%, §1.0), `Price it →`, a disabled chip (an unavailable study is
   not shown; one line names each hidden chip and its reason), and Export JSON
   of the saved questions while none is saved.
 - **Fixtures.** `web/src/fixtures/desk/studies/` carries three such questions
