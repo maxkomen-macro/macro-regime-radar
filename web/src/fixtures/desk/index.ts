@@ -23,6 +23,7 @@ import study from "./study.json" with { type: "json" };
 import studyHorizons from "./study-horizons.json" with { type: "json" };
 import technicals from "./technicals.json" with { type: "json" };
 import basketPrice from "./basket-price.json" with { type: "json" };
+import basketPriceSynthetic from "./basket-price-synthetic.json" with { type: "json" };
 import basketHedge from "./basket-hedge.json" with { type: "json" };
 import basketShares from "./basket-shares.json" with { type: "json" };
 import basketStudy from "./basket-study.json" with { type: "json" };
@@ -133,7 +134,9 @@ const BASKET_REASON = "Baskets are kept in this browser; there is no server bask
  * `legs|method|notional`, and `|cap` after it for a cap-weighted basket (desk/cap-weight), whose legs are
  * tickers alone (scripts/desk_basket_fixture.py writes them from real closes and stored counts). */
 const BASKET_ANSWERS: Record<string, Record<string, unknown>> = {
-  "/basket/price": (basketPrice as { answers: Record<string, unknown> }).answers,
+  // The study fixture's ETF basket is priced from invented closes (basket-price-synthetic.json, not market data):
+  // the page asks its study only after its price has answered (the busy fix).
+  "/basket/price": { ...(basketPrice as { answers: Record<string, unknown> }).answers, ...(basketPriceSynthetic as { answers: Record<string, unknown> }).answers },
   "/basket/hedge": (basketHedge as { answers: Record<string, unknown> }).answers,
 };
 

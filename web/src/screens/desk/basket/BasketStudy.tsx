@@ -16,7 +16,7 @@ import { Bars, horizonPhrase, normalStretch } from "../event-study/AnswerCard";
 import { dayLong, numberWord, pctPlain, year } from "../kit/format";
 import { moveText, tipOf } from "../kit/units";
 import { AdvancedPanel, Awaiting, FailedLine, FailedScope, Signed, Stat, StatRow, UnservedLine, useAdvanced, VerdictPill } from "../kit/ui";
-import { indexLine, questionLine, selectedRow, studyParams } from "./study";
+import { indexLine, questionLine, selectedRow, studyParams, studyReleased } from "./study";
 
 const TITLE = "Event study on this basket";
 const UNIT = "log_return" as const;
@@ -244,16 +244,29 @@ function Answer({ basket, a }: { basket: SavedBasket; a: BasketStudyResponse }) 
   );
 }
 
-export function BasketStudyCard({ basket, params }: { basket: SavedBasket; params: BasketParams | null }) {
+/** `pricedFor` is the price parameters whose `/basket/price` answer the page holds (null while none has arrived or
+ * after it failed), `priceFailed` whether that request failed: the study is asked only once the price has answered
+ * for this same basket (`studyReleased`), and until then the card says it waits for the price, never "Computing". */
+export function BasketStudyCard({ basket, params, pricedFor, priceFailed }: { basket: SavedBasket; params: BasketParams | null; pricedFor: BasketParams | null; priceFailed: boolean }) {
   const hid = useId();
-  const q = useBasketStudy(studyParams(params));
+  const asked = studyParams(params);
+  const released = studyReleased(asked, pricedFor);
+  const q = useBasketStudy(asked, { enabled: released });
   const block = unavailableOf(q.error);
   const a = q.data;
+  const waiting = !!params && !a && !q.isError && !released;
   const sub = a ? `after a 2σ ${a.question.move === "up2s" ? "rise" : "fall"} over ${a.question.window ?? 5} days` : "after a 2σ fall over 5 days";
   let body;
   if (!params) body = <p className="bs-why">A saved basket at exactly 100% is studied here.</p>;
   else if (block) body = <UnservedLine block={block} />;
   else if (q.isError) body = <FailedLine />;
+  else if (waiting && priceFailed) body = <p className="bs-why">The study starts once the basket is priced; step 2 says why it is not.</p>;
+  else if (waiting)
+    body = (
+      <p className="dk-loading" role="status" aria-live="polite">
+        Waiting for the basket's prices; the study starts once they arrive…
+      </p>
+    );
   else if (!a)
     body = (
       <p className="dk-loading" role="status" aria-live="polite">
@@ -262,7 +275,7 @@ export function BasketStudyCard({ basket, params }: { basket: SavedBasket; param
     );
   else body = <Answer basket={basket} a={a} />;
   return (
-    <section className="dk-card bh-card bs-study" aria-labelledby={hid} aria-busy={!!params && !a && !q.isError} data-basket-study={a ? (a.study ? "ready" : "not-run") : undefined}>
+    <section className="dk-card bh-card bs-study" aria-labelledby={hid} aria-busy={!!params && !a && !q.isError && !(waiting && priceFailed)} data-basket-study={a ? (a.study ? "ready" : "not-run") : waiting ? (priceFailed ? "held" : "waiting") : undefined}>
       <div className="dk-card-head">
         <h2 className="dk-card-title" id={hid}>
           {TITLE}

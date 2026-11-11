@@ -17,6 +17,17 @@ export function studyParams(p: BasketParams | null): BasketStudyParams | null {
   return { legs: p.legs, method: p.method, ...(p.weighting === "cap" ? { weighting: "cap" as const } : {}) };
 }
 
+/** Basket & Hedge asks `/basket/study` only once `/basket/price` has answered for the same basket (option C of the
+ * Nov 10 busy diagnosis): the study's provider fetches then never race the price's and the hedge's for the API's
+ * provider slots on a cold cache. `asked` is the card's study, `priced` the price parameters whose answer arrived
+ * (null while none has, or after it failed); the study is released only when they name the same legs, method and
+ * weighting, so an answer for another basket, or for this one at other weights, never releases it. The notional is
+ * not part of the study, so a notional change re-asks the price without holding a study already asked. */
+export function studyReleased(asked: BasketStudyParams | null, priced: BasketParams | null): boolean {
+  const p = studyParams(priced);
+  return !!asked && !!p && asked.legs === p.legs && asked.method === p.method && asked.weighting === p.weighting;
+}
+
 const MOVE_WORD: Record<BasketStudyResponse["question"]["move"], string> = { down2s: "falls", up2s: "rises" };
 const HORIZON_WORDS: Record<number, string> = { 5: "a week later", 10: "two weeks later", 20: "a month later", 60: "three months later" };
 

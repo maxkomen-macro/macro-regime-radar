@@ -328,15 +328,17 @@ export function useBasketHedge(params: BasketParams | null) {
 
 /** §12.19 (desk P1a): the event-study engine on the saved basket's own index, computed on request (a `computing`
  * answer is asked again until it comes). `legs`, `method` and `weighting` are /basket/price's, without the notional;
- * the question is the route's default. Asked only for a basket /basket/price would price. */
-export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null) {
+ * the question is the route's default. Asked only for a basket /basket/price would price, and only once `enabled`
+ * (Basket & Hedge: once /basket/price has answered for this basket, so the study's provider fetches never race the
+ * price's and the hedge's on a cold cache; basket/study.ts `studyReleased`). Kept answers still show while it waits. */
+export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null, opts: { enabled?: boolean } = {}) {
   return current(
     useQuery<BasketStudyResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/study", params],
       queryFn: ({ signal: s }) => deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, { signal: s }),
       staleTime: 5 * 60_000,
       retry,
-      enabled: !!params,
+      enabled: !!params && (opts.enabled ?? true),
     }),
   );
 }
