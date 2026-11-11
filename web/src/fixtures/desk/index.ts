@@ -27,6 +27,7 @@ import basketHedge from "./basket-hedge.json" with { type: "json" };
 import basketShares from "./basket-shares.json" with { type: "json" };
 import basketStudy from "./basket-study.json" with { type: "json" };
 import optionsFinder from "./options-finder.json" with { type: "json" };
+import positioning from "./positioning.json" with { type: "json" };
 import technicalsGLD from "./technicals-GLD.json" with { type: "json" };
 import technicalsNVDA from "./technicals-NVDA.json" with { type: "json" };
 import studyGold60 from "./studies/gold-w60-z2.0-up-none-spx.json" with { type: "json" };
@@ -74,6 +75,8 @@ export const DESK_JSON_FIXTURES: Readonly<Record<string, unknown>> = {
   "/instruments": instruments,
   // desk/cap-weight §12.18: the stored share counts (Yahoo's, as the full refresh stores them; PROVENANCE.md)
   "/basket/shares": basketShares,
+  // Desk P4 §12.20: invented CFTC reports through the served parser, store and reader; the 13F block awaits (PROVENANCE.md)
+  "/positioning": positioning,
 };
 
 const CATALOG = (studyCatalog as { studies: CatalogStudy[] }).studies;

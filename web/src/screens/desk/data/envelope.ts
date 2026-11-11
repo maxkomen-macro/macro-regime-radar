@@ -42,6 +42,7 @@ export const NESTED_PATHS: Readonly<Record<string, readonly string[]>> = {
   "/technicals": ["vol", "sectors"],
   "/study": ["without_condition"],
   "/sectors": ["breadth"],
+  "/positioning": ["futures", "holdings"],
 };
 
 const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
@@ -152,7 +153,8 @@ export function errorEnvelope(code: string, message: string, meta: EnvelopeMeta,
 /** The routes that answer the envelope (§12.0): the live ones (the nine of §12.1–§12.9, /sectors of §12.14
  * since desk/fill-etf, then Basket & Hedge's two, desk/books, then
  * /instruments of §12.17, desk/usability, then /basket/shares of §12.18, desk/cap-weight, then the Options
- * Finder's /options/finder, then /basket/study of §12.19, desk/basket-study) and the deferred
+ * Finder's /options/finder, then /basket/study of §12.19, desk/basket-study, then /positioning of §12.20,
+ * Desk P4) and the deferred
  * stubs. The existing endpoints under /api/desk (the frame-2 engine's `/event-study`, `/pipeline/inventory`)
  * keep their own contracts. */
 export const ENVELOPED_ROUTES: readonly string[] = [
@@ -162,6 +164,7 @@ export const ENVELOPED_ROUTES: readonly string[] = [
   "/basket/shares",
   "/options/finder",
   "/basket/study",
+  "/positioning",
   "/vol", "/positions", "/basket", "/hedge",
 ];
 

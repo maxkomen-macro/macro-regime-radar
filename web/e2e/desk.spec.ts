@@ -799,12 +799,19 @@ test.describe("desk v2", () => {
     await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
-    // §1.0.3: Positioning is drawn for the AI Infrastructure 10 preset; this basket is another, so it keeps its labels
-    // and prints one line (step 3, below the options slot).
+    // §12.20 (Desk P4): Positioning is served for every basket: the five macro futures from the stored CFTC reports
+    // (the fixture's invented ones, which its credit line says), and the 13F holders of the basket's names (the
+    // fixture's invented filings, for the preset's names: a name the fixture does not hold says why).
     const positions = step3.getByRole("region", { name: /^Positioning/ });
-    await expect(positions).toHaveAttribute("data-prototype", "positioning");
-    await expect(positions).toContainText("Illustrative values are shown for the AI Infrastructure 10 preset.");
-    await expect(positions.getByRole("table")).toHaveCount(0);
+    await expect(positions).not.toHaveAttribute("data-prototype");
+    await expect(positions.getByRole("region", { name: "Futures positioning, CFTC" }).getByRole("row")).toHaveCount(6);
+    await expect(positions).toContainText("Lagged disclosure, not live positioning");
+    await expect(positions).toContainText("Invented positions, not CFTC data");
+    const holders = positions.getByRole("region", { name: "13F holders of the basket's names" });
+    await expect(holders.getByRole("row")).toHaveCount(8);
+    await expect(holders).toContainText("no 13F row stored");
+    await expect(positions).toContainText("Invented filings, not SEC data");
+    await expect(positions).toContainText("Holdings as of Jun 30, 2026 · filing deadline Aug 14, 2026");
     // §12.19 (desk P1a): the event study is served, not a PROTOTYPE. The fixtures carry no study for this basket (the
     // stored closes answer ETF baskets only), so the card says it couldn't load and prints no number.
     const study = step3.getByRole("region", { name: /^Event study on this basket/ });
@@ -862,7 +869,7 @@ test.describe("desk v2", () => {
   test("basket & hedge: a first visit starts with AI Infrastructure 10, cap-weighted and priced; ?add= from Technicals joins the basket at equal weight", async ({ page }) => {
     const asked: string[] = [];
     page.on("request", (r) => {
-      if (/\/api\/desk\/basket\/(price|hedge)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
+      if (/\/api\/desk\/(basket\/(price|hedge)|positioning)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
     });
     await open(page, "/desk/basket-hedge");
     const basket = page.getByRole("region", { name: "Basket", exact: true });
@@ -879,13 +886,15 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("region", { name: /^Basket index/ })).toContainText("Up 155.8% since Mar 28, 2025");
     await expect(page.getByRole("region", { name: /^Hedge with an ETF/ })).toContainText("SMH fits the basket best (R² 0.83 over a year): short $847,384 of it");
     expect(asked).toContain("GET /api/desk/basket/price?legs=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS&method=hold&notional=1000000&weighting=cap");
-    // §1.0.3: Positioning, a PROTOTYPE, is drawn for this basket and lists all ten names. The event study is served
+    // §12.20 (Desk P4): Positioning is served, the same five markets for any basket. The event study is served
     // (§12.19): it asks for this basket cap-weighted, and the fixtures carry no study for single names, so it says it
     // couldn't load rather than print a number.
     const positions = page.getByRole("region", { name: /^Positioning/ });
-    await expect(positions.getByRole("table").getByRole("row")).toHaveCount(11);
-    await expect(positions).not.toContainText("no data");
-    await expect(positions.getByRole("columnheader", { name: "Short int. (illustrative)" })).toHaveCount(1);
+    await expect(positions.getByRole("region", { name: "Futures positioning, CFTC" }).getByRole("row")).toHaveCount(6);
+    await expect(positions).not.toHaveAttribute("data-prototype");
+    // The preset's ten names, asked for by name: eight with invented 13F rows, CRWV and NBIS with why.
+    await expect(positions.getByRole("region", { name: "13F holders of the basket's names" }).getByRole("row")).toHaveCount(11);
+    expect(asked).toContain("GET /api/desk/positioning?names=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS");
     const presetStudy = page.getByRole("region", { name: /^Event study on this basket/ });
     await expect(presetStudy.getByTestId("dk-failed")).toContainText("Couldn't load");
     await expect(presetStudy).not.toContainText("64%");

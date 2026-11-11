@@ -31,7 +31,8 @@ LIVE = ("/overview", "/study", "/study/catalog", "/study/events", "/ledger", "/r
         "/instruments",  # desk/usability (§12.17)
         "/basket/shares",  # desk/cap-weight (§12.18)
         "/options/finder",  # the Options Finder (design F3)
-        "/basket/study")  # desk P1a (§12.19)
+        "/basket/study",  # desk P1a (§12.19)
+        "/positioning")  # Desk P4 (§12.20)
 
 
 def test_the_contract_covers_every_enveloped_route():
@@ -256,7 +257,8 @@ FIXTURE_FILES = {"/overview": "overview.json", "/study": "study.json", "/study/c
                  "/instruments": "instruments.json",  # desk/usability
                  "/basket/shares": "basket-shares.json",  # desk/cap-weight
                  "/options/finder": "options-finder.json",  # the Options Finder (synthetic chain)
-                 "/basket/study": "basket-study.json"}  # desk P1a: stored ETF closes run through the route's own functions
+                 "/basket/study": "basket-study.json",  # desk P1a: stored ETF closes run through the route's own functions
+                 "/positioning": "positioning.json"}  # Desk P4: invented positions run through the item's own functions
 
 
 def _wire(route: str, payload: dict) -> dict:

@@ -45,6 +45,18 @@ table being absent or empty, a partial or failed fetch (its watermark), a date
 that moved earlier, rows that fell, a row the API sets aside, or a query on the
 table that cannot run is a warning, never a failure.
 
+The CFTC futures positions (`cot_positions`, Desk P4, src/market_data/cot.py) are
+advisory the same way: a refresh whose stored reports changed (a new week, an
+amendment, a withdrawal) publishes, and the table being absent, a partial or
+failed read (watermark `cftc_cot`), a date that moved earlier, rows that fell, a
+report the API sets aside (api/desk_positioning.py: an uncommitted run, a missing
+category, open interest that disagrees or breaks the CFTC's identity, a report
+dated after the store first held it) or a check that cannot run is a warning: the
+reader never serves such a report, so none can reach the screen. The SEC 13F holdings
+(`holdings_13f`, src/market_data/sec_13f.py) are advisory too: the table being absent
+or a failed read (watermark `sec_13f`, which also says when the SEC contact is not
+set) is a warning, and a failed read replaces nothing.
+
 Price quality (Analyst Desk P0c, src/market_data/quality.py) is advisory: splits,
 implausible moves, repeated bars, stale runs, spikes, jumps, NYSE gaps,
 off-calendar rows and market_daily/asset_prices disagreements are reported, new
@@ -96,17 +108,29 @@ DATE_COLUMNS = {
     "desk_series": "date",
     # desk/cap-weight: the preset baskets' share counts (src/market_data/share_counts.py), advisory
     "share_counts": "as_of",
+    # Desk P4: the CFTC's weekly futures positions (src/market_data/cot.py), advisory
+    "cot_positions": "as_of",
+    # Desk P4: SEC 13F holder concentration per ticker and quarter (src/market_data/sec_13f.py), advisory
+    "holdings_13f": "period",
 }
 # desk/cap-weight: tables a refresh publishes when they change but whose state never fails a database.
 # Absent, partly fetched, regressed, emptied or holding a row the API sets aside: each is a warning, and a
 # query on them that cannot run is a warning too (never "not executed"). Basket & Hedge's cap weight is
 # the only reader, and it says it is unavailable, with the reason, when the counts are not there.
-ADVISORY_TABLES = {"share_counts"}
+ADVISORY_TABLES = {"share_counts", "cot_positions", "holdings_13f"}
 ADVISORY_FINGERPRINT_SQL = {
     "share_counts": "SELECT symbol, shares_outstanding, as_of, source FROM share_counts ORDER BY symbol",
     # Options Finder earnings cache (design EC 4.1): the encrypted vault's public digest of its observations,
     # so a run that read Finnhub publishes and a skip that only records bookkeeping does not
     "earnings_cache_vault": "SELECT key_id, content_digest FROM earnings_cache_vault ORDER BY id",
+    # Desk P4: every number, the run that wrote it and whether the CFTC still serves it, so an amendment, a
+    # withdrawal or a report first left out (whose mark the next run must read to confirm it) publishes, and a run
+    # that read the same reports (which rewrites nothing) does not
+    "cot_positions": ("SELECT report, contract_code, as_of, category, long, short, spread, open_interest, run_id, withdrawn_at, "
+                      "unserved_since FROM cot_positions ORDER BY report, contract_code, as_of, category"),
+    # Desk P4: every ticker's figures and the run that computed them, so a recomputed quarter publishes
+    "holdings_13f": ("SELECT symbol_key, period, holders, shares, top10_shares, large_filers_top10, run_id "
+                     "FROM holdings_13f ORDER BY symbol_key, period"),
 }
 # Rolling-window tables shrink by design (intraday trimmed to 30 days, news
 # aged out); their freshness is judged by max date, never by row count.
@@ -130,7 +154,7 @@ MODE_TABLES = {
     # desk/cap-weight: share_counts, so a refresh whose only news is a new share count publishes it;
     # earnings_cache_vault, so a run's observations, withdrawals and call accounting are never dropped (EC 4.1)
     "full": ["raw_series", "regimes", "signals", "market_daily", "news_feed", "source_watermarks", "ai_spend_ledger", "asset_prices", "desk_series",
-             "desk_series_runs", "share_counts", "earnings_cache_vault"],
+             "desk_series_runs", "share_counts", "earnings_cache_vault", "cot_positions", "holdings_13f"],
     "news-only": ["news_feed", "ai_spend_ledger"],
     "market-only": ["market_daily", "market_intraday", "source_watermarks"],
     # B6 (2026-09-18): intraday runs also store the provider's finished-session
@@ -302,6 +326,21 @@ def _advisory(out: dict, name: str, query):
 # run's New York date (the `?`), or no source; the rows the API reads are api/freshness's one predicate (Codex R-05).
 SHARE_COUNTS_UNREADABLE = f"SELECT COUNT(*) FROM share_counts WHERE NOT {freshness_mod.SHARE_COUNTS_READABLE_SQL}"
 SHARE_COUNTS_OLDEST_READ = f"SELECT MIN(as_of) FROM share_counts WHERE {freshness_mod.SHARE_COUNTS_READABLE_SQL}"
+# Desk P4: stored CFTC reports (one per contract and positions date) the API sets aside on read
+# (api/desk_positioning._report_problem), withdrawn ones apart: the CFTC no longer serving a report is not a fault.
+COT_REPORTS_UNREADABLE = """
+SELECT COUNT(*) FROM (
+  SELECT p.report, p.contract_code, p.as_of FROM cot_positions p LEFT JOIN positioning_runs r ON r.run_id = p.run_id
+  GROUP BY p.report, p.contract_code, p.as_of
+  HAVING SUM(p.withdrawn_at IS NOT NULL) = 0 AND (
+    SUM(COALESCE(r.status, '') != 'committed') > 0
+    OR COUNT(*) != 5
+    OR MIN(p.open_interest) != MAX(p.open_interest)
+    OR SUM(p.long) + SUM(COALESCE(p.spread, 0)) != MAX(p.open_interest)
+    OR SUM(p.short) + SUM(COALESCE(p.spread, 0)) != MAX(p.open_interest)
+    OR p.as_of > substr(MIN(p.first_stored_at), 1, 10)
+    OR date(p.as_of) IS NOT p.as_of))
+"""
 
 
 def inspect(path: Path, as_of: str | None = None) -> dict:
@@ -392,6 +431,9 @@ def inspect(path: Path, as_of: str | None = None) -> dict:
             out["fresh"]["share_counts_rows"] = out["tables"]["share_counts"]["rows"]
             out["share_counts_unreadable"] = _advisory(out, "share_counts unreadable rows", lambda: int(conn.execute(
                 SHARE_COUNTS_UNREADABLE, (cut_sc,)).fetchone()[0]))
+        if "cot_positions" in out["tables"]:  # Desk P4, advisory
+            out["cot_reports_unreadable"] = _advisory(out, "cot_positions unreadable reports", lambda: int(conn.execute(
+                COT_REPORTS_UNREADABLE).fetchone()[0]))
         if "asset_prices" in out["tables"]:
             out["fresh"]["asset_prices_date"] = _mandatory(out, "asset_prices newest daily closes", None, lambda: conn.execute(
                 "SELECT MIN(mx) FROM (SELECT MAX(date) AS mx FROM asset_prices WHERE interval = '1d' GROUP BY symbol)"
@@ -644,6 +686,19 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
         sc_mark = (cur.get("watermarks") or {}).get("share_counts") or {}
         if sc_mark.get("status") in ("partial", "error"):
             warnings.append(f"share_counts {sc_mark['status']}: {sc_mark.get('detail')} (advisory, never blocking)")
+        # Desk P4: the CFTC positions are advisory; Basket & Hedge's Positioning card awaits, with why, without them.
+        if "cot_positions" not in cur["tables"]:
+            warnings.append("cot_positions: not stored; the full refresh's CFTC positions step stores them, and the "
+                            "Positioning card's futures block awaits until then (advisory, never blocking)")
+        cot_mark = (cur.get("watermarks") or {}).get("cftc_cot") or {}
+        if cot_mark.get("status") in ("partial", "error"):
+            warnings.append(f"cftc_cot {cot_mark['status']}: {cot_mark.get('detail')} (advisory, never blocking)")
+        if "holdings_13f" not in cur["tables"]:
+            warnings.append("holdings_13f: not stored; the full refresh's positioning step stores the SEC 13F holdings, and "
+                            "the Positioning card's holdings block awaits until then (advisory, never blocking)")
+        sec_mark = (cur.get("watermarks") or {}).get("sec_13f") or {}
+        if sec_mark.get("status") in ("partial", "error"):
+            warnings.append(f"sec_13f {sec_mark['status']}: {sec_mark.get('detail')} (advisory, never blocking)")
 
     # Stamps ahead of the clock are a fault, never freshness (review P2-3).
     horizon = (now + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -711,6 +766,10 @@ def validate(current: Path, previous: Path | None, mode: str, *, allow_stale: st
     if cur.get("share_counts_unreadable"):
         warnings.append(f"share_counts: {cur['share_counts_unreadable']} row(s) the API sets aside (no symbol or source, a count "
                         "that is not a positive number, or a read date malformed or after today) (advisory, never blocking)")
+    if cur.get("cot_reports_unreadable"):
+        warnings.append(f"cot_positions: {cur['cot_reports_unreadable']} stored report(s) the API sets aside (an uncommitted run, "
+                        "a missing category, open interest that disagrees or breaks the CFTC identity, or dated after the store "
+                        "first held it) (advisory, never blocking)")
     for name in cur.get("advisory_not_executed") or []:
         warnings.append(f"advisory check not run: {name} (never blocking)")
     for name in ((prev or {}).get("advisory_not_executed") or []) if prev and not prev.get("error") else []:

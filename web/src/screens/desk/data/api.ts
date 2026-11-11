@@ -33,7 +33,7 @@ import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } 
 import { checkAnswer, schemaFor } from "./schema";
 import type { BasketParams } from "../basket/weights";
 import { finderRows } from "./finder-rows";
-import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, BasketStudyResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OptionsFinderParams, OptionsFinderResponse, OverviewResponse, PipelineResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
+import type { BasketHedgeResponse, BasketPriceResponse, BasketSharesResponse, BasketStudyResponse, DeskErrorBody, InstrumentsResponse, LedgerResponse, MacroResponse, OptionsFinderParams, OptionsFinderResponse, OverviewResponse, PipelineResponse, PositioningResponse, RegimeResponse, SectorsResponse, StudyCatalogResponse, StudyEventsResponse, StudyResponse, TechnicalsResponse } from "./types";
 
 // `import.meta.env` is Vite's; the e2e specs load this module in Node through the kit (kit/ui reads DeskApiError
 // here since desk/usability §14.12), where it is undefined, so the read is guarded.
@@ -267,6 +267,12 @@ export const useTechnicals = (opts: { enabled?: boolean; symbol?: string | null 
 export const useSectors = () => useDesk<SectorsResponse>("/sectors");
 export const useRegime = (opts: { enabled?: boolean } = {}) => useDesk<RegimeResponse>("/regime", undefined, opts);
 export const useMacro = (opts: { enabled?: boolean } = {}) => useDesk<MacroResponse>("/macro", undefined, opts);
+
+/** §12.20 (Desk P4): the CFTC's weekly futures positioning and SEC 13F holder concentration, as stored. */
+/** §12.20: the CFTC's futures positioning, and the SEC 13F holders of `names` (the saved basket's tickers; none asks
+ * for no holdings rows). */
+export const usePositioning = (names: readonly string[] = [], opts: { enabled?: boolean } = {}) =>
+  useDesk<PositioningResponse>("/positioning", names.length ? { names: names.join(",") } : undefined, opts);
 
 /** §12.2: one study; the previous answer stays on screen while the next is asked. */
 export function useStudy(params: Params, opts: { enabled?: boolean } = {}) {

@@ -362,6 +362,13 @@ def _desk_pipeline(ctx: dict) -> dict:
     return desk_pipeline(ctx)
 
 
+def _desk_positioning(ctx: dict) -> dict:
+    """Desk P4: the stored CFTC positions and SEC 13F holdings Basket & Hedge's Positioning card reads (api/desk_positioning.py)."""
+    from api.desk_positioning import desk_positioning
+
+    return desk_positioning(ctx)
+
+
 def _desk_options_inputs(ctx: dict) -> dict:
     """The Options Finder's stored inputs (api/desk_options.py, design F3 §4): the Treasury curve, the macro
     calendar and the stored earnings rows. It never raises and reads no other item."""
@@ -402,6 +409,8 @@ ITEMS = [
     ("desk_share_counts", _desk_share_counts),
     # the Options Finder (design F3 §4), appended last so no other item's order changes
     ("desk_options_inputs", _desk_options_inputs),
+    # Desk P4: the positioning disclosures, appended after it so no other item's order changes
+    ("desk_positioning", _desk_positioning),
 ]
 
 

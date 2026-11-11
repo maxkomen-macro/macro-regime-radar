@@ -127,6 +127,60 @@ def desk_basket_shares(request: Request) -> Response:
     return _response(env.answer("/basket/shares", lambda: desk_basket.shares(list(request.query_params.multi_items()))))
 
 
+@router.get("/positioning")
+def desk_positioning(request: Request) -> Response:
+    """§12.20 (Desk P4): the CFTC's weekly futures positioning and SEC 13F holder concentration, as stored."""
+    return _response(env.answer("/positioning", lambda: positioning_answer(list(request.query_params.multi_items()))))
+
+
+POSITIONING_PARAMS = ("names",)
+
+
+def positioning_names(params: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """`names=TICKER,TICKER,…`: the basket's names whose 13F holders the holdings block serves (none when absent),
+    each as (the spelling asked, trimmed and upper-cased; its canonical ticker)."""
+    from api.desk_basket import MAX_LEGS
+    from api.providers.symbols import SymbolError, parse
+
+    keys = [k for k, _ in params]
+    unknown = sorted({k for k in keys if k not in POSITIONING_PARAMS})
+    if unknown:
+        raise env.Unsupported(f"{unknown[0]} is not a parameter of /positioning.")
+    if len(keys) > 1:
+        raise env.Unsupported("The names parameter is given more than once.")
+    raw = (dict(params).get("names") or "").strip()
+    if not raw:
+        return []
+    out: list[tuple[str, str]] = []
+    for part in raw.split(","):
+        try:
+            inst = parse(part)
+        except SymbolError as exc:
+            raise env.Unsupported(str(exc)) from exc
+        if inst.exchange != "US" or inst.kind != "equity":
+            raise env.Unsupported(f"{part.strip().upper()} is not a US listing; a basket holds US-listed stocks and ETFs.")
+        if inst.canonical in (c for _, c in out):
+            raise env.Unsupported(f"{inst.canonical} is named twice.")
+        out.append((part.strip().upper(), inst.canonical))
+    if len(out) > MAX_LEGS:
+        raise env.Unsupported(f"A basket holds at most {MAX_LEGS} names; this asks for {len(out)}.")
+    return out
+
+
+def positioning_answer(params: list[tuple[str, str]]) -> dict:
+    """The desk_positioning item as stored, each part a block (api/desk_positioning.py); the holdings block serves
+    the names asked for."""
+    from api.desk_positioning import holdings_for
+    from api.desk_v2_macro import stored_block
+
+    names = positioning_names(params)
+    item = _result("desk_positioning")
+    h = item["holdings"]
+    holdings = (env.block_ready(holdings_for(h["data"], [c for _, c in names], [r for r, _ in names]))
+                if h.get("ok") else stored_block(h))
+    return {"futures": stored_block(item["futures"]), "holdings": holdings}
+
+
 @router.get("/basket/study")
 def desk_basket_study(request: Request) -> Response:
     """§12.19 (desk/basket-study, P1a): the event study on a basket kept in the browser, the engine run on its index."""
