@@ -28,6 +28,7 @@
  * Unreadable answers are not retried.
  */
 
+import { useRef } from "react";
 import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
@@ -336,22 +337,26 @@ export function useBasketHedge(params: BasketParams | null) {
 export const basketPriceKey = (params: BasketParams) => ["desk-v2", "/basket/price", params] as const;
 
 /**
- * Resolves once the price query for `params` holds a current answer: succeeded, not fetching, not stale and not
- * invalidated. A price that is due (stale, or invalidated by a new database generation) is asked first, or joined when
- * it is already in flight (`cancelRefetch: false`: never a second request beside it); a price that fails is waited on
- * until a later ask succeeds (the page's Try again). Rejects when `signal` aborts (the basket or its parameters changed).
+ * Resolves once the price query for the current price parameters (`price()`, read again on every cache change) holds a
+ * current answer: succeeded, not fetching, not stale and not invalidated. A price that is due (stale, or invalidated by
+ * a new database generation) is asked first, or joined when it is already in flight (`cancelRefetch: false`: never a
+ * second request beside it); a price that fails is waited on until a later ask succeeds (the page's Try again). The
+ * parameters are read, not captured: a change the study's own key does not carry (the notional) moves the wait to the
+ * new price, never leaving it on the old one (Codex S-3); a change it does carry changes the key, and React Query
+ * aborts `signal`, which rejects.
  * The study's own fetch runs only after this, so however the study is asked (first ask, a generation change, a
  * reconnect, a retry) its provider fetches never start beside the price's (the Nov 10 busy diagnosis, option C).
  */
-export async function afterBasketPrice(client: QueryClient, params: BasketParams, signal: AbortSignal): Promise<void> {
-  const key = basketPriceKey(params);
+export async function afterBasketPrice(client: QueryClient, price: () => BasketParams | null, signal: AbortSignal): Promise<void> {
   const cache = client.getQueryCache();
   const ready = () => {
-    const q = cache.find({ queryKey: key, exact: true });
+    const params = price();
+    const q = params ? cache.find({ queryKey: basketPriceKey(params), exact: true }) : undefined;
     return !!q && q.state.status === "success" && q.state.fetchStatus === "idle" && !q.isStale();
   };
   if (ready()) return;
-  await client.refetchQueries({ queryKey: key, exact: true }, { cancelRefetch: false });
+  const first = price();
+  if (first) await client.refetchQueries({ queryKey: basketPriceKey(first), exact: true }, { cancelRefetch: false });
   if (signal.aborted) throw signal.reason;
   if (ready()) return;
   await new Promise<void>((resolve, reject) => {
@@ -373,12 +378,14 @@ export async function afterBasketPrice(client: QueryClient, params: BasketParams
  * still show while it waits. */
 export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null, opts: { enabled?: boolean; afterPrice?: BasketParams | null } = {}) {
   const client = useQueryClient();
-  const after = opts.afterPrice ?? null;
+  // The newest price parameters, read by a fetch already waiting (Codex S-3: the study's key has no notional).
+  const after = useRef<BasketParams | null>(opts.afterPrice ?? null);
+  after.current = opts.afterPrice ?? null;
   return current(
     useQuery<BasketStudyResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/study", params],
       queryFn: async ({ signal: s }) => {
-        if (after) await afterBasketPrice(client, after, s);
+        if (after.current) await afterBasketPrice(client, () => after.current, s);
         return deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, { signal: s });
       },
       staleTime: 5 * 60_000,

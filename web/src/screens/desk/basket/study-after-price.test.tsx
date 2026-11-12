@@ -18,6 +18,7 @@ import { SAVED_BASKETS_KEY } from "./weights";
 const PRICES = (synthetic as { answers: Record<string, unknown> }).answers;
 const HOLD_KEY = "SMH:40,SOXX:30,XLK:30|hold|1000000";
 const MONTHLY_KEY = "SMH:40,SOXX:30,XLK:30|monthly|1000000";
+const HOLD_2M_KEY = "SMH:40,SOXX:30,XLK:30|hold|2000000";
 const legs = [
   { symbol: "SMH", name: null, weight: "40" },
   { symbol: "SOXX", name: null, weight: "30" },
@@ -226,6 +227,34 @@ describe("Event study on this basket waits for the basket's price (option C)", (
     await waitFor(() => expect(studies(log.calls.slice(before))).toEqual([STUDY_HOLD]));
     const after = log.calls.slice(before);
     expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_KEY}`));
+  });
+
+  it("a new notional saved while the study waits on a refused price releases it on the new price; the old one is not asked again (Codex S-3)", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
+    const log = { calls: [] as string[] };
+    const price = switchablePrice(log);
+    log.calls = stubDesk({ "/api/desk/basket/price": price.route }).calls;
+    const { client } = renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    price.st.mode = "refuse";
+    const before = log.calls.length;
+    void client.invalidateQueries({ predicate: (q) => String(q.queryKey[0]) !== "freshness" });
+    const step = screen.getByRole("region", { name: /^How the basket trades/ });
+    await waitFor(() => expect(step).toHaveTextContent("This basket could not be priced: SMH: The market-data layer is busy; retry in a moment."));
+    expect(studies(log.calls.slice(before))).toEqual([]);
+    // The notional is the price's, not the study's: saving another one keeps the same study waiting, now on the new
+    // price (invented closes, basket-price-synthetic.json), which answers.
+    price.st.mode = "now";
+    fireEvent.change(screen.getByRole("textbox", { name: "Notional, dollars" }), { target: { value: "2000000" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save basket/ }));
+    await waitFor(() => expect(log.calls).toContain(`ANSWERED ${HOLD_2M_KEY}`));
+    await waitFor(() => expect(studies(log.calls.slice(before))).toEqual([STUDY_HOLD]));
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    const after = log.calls.slice(before);
+    expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_2M_KEY}`));
+    // The refused price for the old notional was asked once (the generation's refetch) and never again.
+    expect(after.filter((x) => x.startsWith("GET /api/desk/basket/price") && x.includes("notional=1000000"))).toHaveLength(1);
   });
 
   it("a study refetched on its own while the price is due asks the price first, once, and waits for it", async () => {

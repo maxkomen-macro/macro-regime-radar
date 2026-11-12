@@ -34,8 +34,9 @@ SEED = 20261111
 PROVIDER = "Synthetic"
 SOURCE = "Invented daily closes (seeded random walks), not market data (fixture; the API prices from EODHD)"
 LEGS = (("SMH", "40"), ("SOXX", "30"), ("XLK", "30"))
-# The requests the fixtures answer: the study fixture's basket, held and rebalanced monthly.
-REQUESTS = [(LEGS, "hold", "1000000"), (LEGS, "monthly", "1000000")]
+# The requests the fixtures answer: the study fixture's basket, held and rebalanced monthly, and held at a second
+# notional (the notional is not part of the study's identity; Codex S-3's test saves it while the study waits).
+REQUESTS = [(LEGS, "hold", "1000000"), (LEGS, "monthly", "1000000"), (LEGS, "hold", "2000000")]
 # Each symbol's invented start, daily drift and daily volatility (no relation to the ETF's own history).
 WALKS = {"SMH": (100.0, 0.0006, 0.018), "SOXX": (80.0, 0.0005, 0.019), "XLK": (120.0, 0.0004, 0.012),
          "QQQ": (150.0, 0.0004, 0.011), "SPY": (200.0, 0.0003, 0.009)}
