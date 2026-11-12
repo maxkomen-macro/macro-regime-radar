@@ -9,7 +9,8 @@ PV_t = Σ_{d_i ≥ t} D_i·e^{−r(d_i − t)/365}, exercise value (sgn·(X_t + 
 - operator: FdmBlackScholesOp; time stepping: FdmBackwardSolver (Douglas, θ = 0.5) after DAMPING implicit
   steps, N_t = days·spd steps in all (QuantLib divides the horizon by steps + damping steps), spd whole steps
   per calendar day, so every close is a grid time and the theta pair shares its grid; spd doubles with n
-  (spd = ceil(400/days)·n/400, P3-AM3 change 2), so every level halves both the space and the time step;
+  (spd = ceil(LEVELS[0]/days)·n/LEVELS[0], P3-AM3 change 2), so every level halves both the space and the time
+  step; levels 512, 1024, 2048 and the one escalation 4096 (amendment P3-AM5);
 - early exercise: a step condition projecting onto the exercise value after every step, through a zero-copy
   view of the QuantLib Array (layout-checked on every call, element-wise fallback, bit-identical);
 - read-out: CubicNaturalSpline in ln X; gamma = (V_xx − V_x)/X_0².
@@ -35,8 +36,9 @@ except ImportError:          # pragma: no cover - the bench requires it; the res
     ql = None
 
 YEAR_DAYS = 365.0
-LEVELS = (400, 800, 1600)    # mesh sizes n; spd = ceil(400 / days)·n/400 (P3-AM3)
-ESCALATE = 3200              # the one extra level when LEVELS leave Q unqualified (section C)
+LEVELS = (512, 1024, 2048)   # mesh sizes n; spd = ceil(512 / days)·n/512 (P3-AM3 rule; P3-AM5: 512 restores
+                             # P3-AM3's cell at X_0 within 3% under MESH_EPS 1e-6, which widened it by ~28% at 400)
+ESCALATE = 4096              # the one extra level when LEVELS leave Q unqualified (section C)
 DAMPING = 2
 FLOOR = 0.02                 # reference floor, of tol (= greek_reference.REF_FLOOR)
 RHO_MAX = 0.75               # slower than this is "not converging"

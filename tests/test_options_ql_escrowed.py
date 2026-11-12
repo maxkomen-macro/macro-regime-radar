@@ -34,7 +34,7 @@ def test_days_zero_is_the_intrinsic_payoff_and_never_a_solve():
 
 
 def test_every_step_lies_on_the_whole_day_grid_and_the_theta_pair_shares_it():
-    n = 400
+    n = qe.LEVELS[0]
     m = qe.mesh(DIV_PUT, n)
     spd = qe.steps_per_day(DIV_PUT.days, n)
     later = G.one_day_later(DIV_PUT)
@@ -50,8 +50,8 @@ def test_every_step_lies_on_the_whole_day_grid_and_the_theta_pair_shares_it():
 
 
 def test_the_zero_copy_projection_is_bit_identical_to_element_wise_access():
-    m = qe.mesh(DIV_PUT, 400)
-    spd = qe.steps_per_day(DIV_PUT.days, 400)
+    m = qe.mesh(DIV_PUT, qe.LEVELS[0])
+    spd = qe.steps_per_day(DIV_PUT.days, qe.LEVELS[0])
     fast, slow = qe.solve(DIV_PUT, m, spd, fast=True), qe.solve(DIV_PUT, m, spd, fast=False)
     assert fast["value"] == slow["value"] and fast["gamma"] == slow["gamma"]
 
@@ -129,7 +129,8 @@ def test_the_factor_scales_the_tail_and_never_the_floor():
 
 
 def test_the_escalation_runs_once_and_uses_the_last_three_levels(monkeypatch):
-    seqs = {400: 0.0, 800: 0.04, 1600: 0.01, 3200: 0.005}   # alternating, then converging below the floor
+    n1, n2, n3, n4 = qe.LEVELS + (qe.ESCALATE,)
+    seqs = {n1: 0.0, n2: 0.04, n3: 0.01, n4: 0.005}         # alternating, then converging below the floor
     calls = []
 
     def fake(c, sp, n, american=True, half=False, cache=None, take=None):
@@ -138,9 +139,9 @@ def test_the_escalation_runs_once_and_uses_the_last_three_levels(monkeypatch):
     monkeypatch.setattr(qe, "quantity", fake)
     sp = GR.spec(NODIV_CALL, GR.PRICE, CFG)
     q = qe.study(NODIV_CALL, sp, TOL)
-    assert q["levels"] == [400, 800, 1600, 3200] and not q["flags"] and q["u_ref"] == pytest.approx(0.02)
-    assert [n for n, _ in calls] == [400, 800, 1600, 3200]
-    seqs[3200] = 0.06                                          # still alternating: final, no fifth level
+    assert q["levels"] == [n1, n2, n3, n4] and not q["flags"] and q["u_ref"] == pytest.approx(0.02)
+    assert [n for n, _ in calls] == [n1, n2, n3, n4]
+    seqs[n4] = 0.06                                            # still alternating: final, no fifth level
     calls.clear()
     q = qe.study(NODIV_CALL, sp, TOL)
     assert q["flags"] == [qe.R_NOT_CONVERGING] and len(calls) == 4
@@ -241,9 +242,9 @@ def test_the_run_config_carries_the_lattice_smoothing_apart_from_the_greek_confi
 # ── P3-AM3: the mesh at the payoff kink, the time step halving per level, the FD bump term on the finest grid ──
 
 def test_every_level_halves_the_time_step_with_the_space_step():
-    for days in (1, 9, 120, 399, 400, 401, 1278, om.DAYS_MAX):
+    for days in (1, 9, 120, 399, 400, 401, 511, 512, 513, 1278, om.DAYS_MAX):
         spd = [qe.steps_per_day(days, n) for n in qe.LEVELS + (qe.ESCALATE,)]
-        assert spd == [spd[0], 2 * spd[0], 4 * spd[0], 8 * spd[0]] and spd[0] == max(1, math.ceil(400 / days))
+        assert spd == [spd[0], 2 * spd[0], 4 * spd[0], 8 * spd[0]] and spd[0] == max(1, math.ceil(qe.LEVELS[0] / days))
     # under P3-AM2's ceil(n/days) a 1,278-day context stepped 1, 1, 2, 3 per day: the sequence did not refine time
     assert [max(1, -(-n // 1278)) for n in (400, 800, 1600, 3200)] == [1, 1, 2, 3]
     with pytest.raises(ValueError):
@@ -299,15 +300,40 @@ def test_three_levels_never_take_a_branch():
 
 
 def test_study_uses_a_branch_only_when_rule_c_leaves_it_unqualified(monkeypatch):
-    seqs = {400: 0.037, 800: -0.020, 1600: 0.011, 3200: -0.005}         # a shrinking alternation, in tol
+    n1, n2, n3, n4 = qe.LEVELS + (qe.ESCALATE,)
+    seqs = {n1: 0.037, n2: -0.020, n3: 0.011, n4: -0.005}               # a shrinking alternation, in tol
     monkeypatch.setattr(qe, "quantity", lambda c, sp, n, american, half, cache, take: seqs[n])
     sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
     out = qe.study(DIV_PUT, sp, 1.0)
-    assert out["branch"] == "alternating" and out["flags"] == [] and out["levels"] == [400, 800, 1600, 3200]
+    assert out["branch"] == "alternating" and out["flags"] == [] and out["levels"] == [n1, n2, n3, n4]
     assert out["G"] == -0.005 and out["u_ref"] == pytest.approx(qe.FLOOR)
-    seqs.update({400: 5.021, 800: 2.634, 1600: 1.305, 3200: 0.648})     # first order: rule C over budget, no branch
+    seqs.update({n1: 5.021, n2: 2.634, n3: 1.305, n4: 0.648})     # first order: rule C over budget, no branch
     out = qe.study(DIV_PUT, sp, 1.0)
     assert out["branch"] is None and out["flags"] and out["G"] == 0.648
-    seqs.update({400: 1.0, 800: 1.0 + 0.04, 1600: 1.0 + 0.05})          # rule C qualifies: no escalation, no branch
+    seqs.update({n1: 1.0, n2: 1.0 + 0.04, n3: 1.0 + 0.05})                # rule C qualifies: no escalation, no branch
     out = qe.study(DIV_PUT, sp, 1.0)
-    assert out["branch"] is None and out["levels"] == [400, 800, 1600] and out["G"] == 1.05
+    assert out["branch"] is None and out["levels"] == [n1, n2, n3] and out["G"] == 1.05
+
+
+# ── P3-AM5: Q's levels after the span change ──────────────────────────────────
+
+def _cell_at_x0(m1, x0):
+    lx = np.array(m1.locations())
+    j = int(np.searchsorted(lx, math.log(x0)))
+    return lx[j] - lx[j - 1]
+
+
+def test_the_levels_restore_the_cell_at_x0_that_the_wider_span_took():
+    assert qe.LEVELS == (512, 1024, 2048) and qe.ESCALATE == 4096
+    # P3-AM5's mesh check: at eps 1e-6 the first level's cell at X_0 is within 3% of P3-AM3's (eps 1e-4, n = 400),
+    # where 400 at eps 1e-6 (P3-AM4 as built) was about 28% wider
+    for c in (DIV_PUT, NODIV_CALL, om.Context(True, 100.0, 95.0, 400, 0.03, 0.0, 0.25, ((100, 1.0), (280, 1.0)))):
+        pv, _ = qe._pv(c)
+        x0 = c.spot - pv(0.0)
+        kx = max(c.strike - pv(0.0), 1e-3 * c.strike)
+        kink = max(c.strike - pv(max(c.days, 1) / qe.YEAR_DAYS), 1e-3 * c.strike)
+        old = ql.FdmBlackScholesMesher(400, qe._process(c, x0), max(c.days, 1) / qe.YEAR_DAYS, kx, ql.nullDouble(),
+                                       ql.nullDouble(), 1e-4, 1.5, (kink, qe.DENSITY))
+        was, now = _cell_at_x0(old, x0), _cell_at_x0(qe.mesh(c, qe.LEVELS[0])[0], x0)
+        wide = _cell_at_x0(qe.mesh(c, 400)[0], x0)
+        assert abs(now / was - 1.0) < 0.03 and wide / was > 1.15, (c, was, now, wide)
