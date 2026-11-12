@@ -493,3 +493,108 @@ def test_the_keep_warm_workflow_pings_the_api_every_ten_minutes_and_touches_noth
     assert "secrets." not in text and "git push" not in text and "gh release" not in text
     run = "\n".join(s.get("run", "") for s in job["steps"])
     assert "/health/live" in run and "macro-economic-radar-api.onrender.com" in "\n".join(str(s.get("env", "")) for s in job["steps"])
+
+
+# ── the memo jobs install what their steps import (2026-11-12) ────────────────
+# Daily memo run 43176419966 (the first queued memo, session 2026-11-11) failed at
+# "Pin the private copy to the session": scripts/memo_queue.py pin reads
+# close_sentinel.asset_symbols(), which imports src.market_data.asset_history,
+# which imports api.providers.eodhd, which needs httpx. The job installed only
+# requirements.txt. The checks below follow every first-party import (function-level
+# ones too) from every Python entry point the job runs, and require each third-party
+# module they reach to come from a file the job's install step names.
+
+FIRST_PARTY = {"api", "src", "scripts"}
+# Modules that arrive as a dependency of a listed distribution, or under another name.
+MODULE_PROVIDED_BY = {
+    "starlette": "fastapi", "scipy": "scikit-learn", "sklearn": "scikit-learn",
+    "riskfolio": "riskfolio-lib", "yaml": "pyyaml", "dotenv": "python-dotenv",
+    "jinja2": "jinja2", "exchange_calendars": "exchange_calendars",
+}
+
+
+def _first_party_file(mod: str) -> Path | None:
+    p = ROOT.joinpath(*mod.split("."))
+    if (p / "__init__.py").exists():
+        return p / "__init__.py"
+    if p.with_suffix(".py").exists():
+        return p.with_suffix(".py")
+    return None
+
+
+def _imports_of(path: Path) -> list[tuple[str, int]]:
+    pkg = path.relative_to(ROOT).with_suffix("").parts[:-1]
+    out: list[tuple[str, int]] = []
+    for node in ast.walk(ast.parse(path.read_text())):
+        if isinstance(node, ast.Import):
+            out += [(a.name, node.lineno) for a in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            base = ".".join(pkg[: len(pkg) - node.level + 1]) if node.level else ""
+            mod = ".".join(x for x in (base, node.module or "") if x)
+            out.append((mod, node.lineno))
+            out += [(f"{mod}.{a.name}", node.lineno) for a in node.names]
+    return out
+
+
+def _third_party_reached(entries: list[Path]) -> dict[str, str]:
+    """{third-party top-level module: first file:line that imports it}, over the
+    transitive first-party import closure of ``entries``."""
+    seen: set[Path] = set()
+    found: dict[str, str] = {}
+    todo = list(entries)
+    while todo:
+        f = todo.pop()
+        if f in seen:
+            continue
+        seen.add(f)
+        for mod, line in _imports_of(f):
+            top = mod.split(".")[0]
+            if top in FIRST_PARTY:
+                parts = mod.split(".")
+                todo += [r for i in range(1, len(parts) + 1) if (r := _first_party_file(".".join(parts[:i])))]
+            elif top and top not in STDLIB:
+                found.setdefault(top, f"{f.relative_to(ROOT)}:{line}")
+    return found
+
+
+def _job_entry_points(job: dict) -> list[Path]:
+    entries: list[Path] = []
+    for step in job["steps"]:
+        run = step.get("run") or ""
+        for script in re.findall(r"\bpython3?\s+((?:scripts|src)/[\w/]+\.py)", run):
+            entries.append(ROOT / script)
+        for mod in re.findall(r"\bpython3?\s+-m\s+((?:scripts|src|api)(?:\.\w+)+)", run):
+            entries.append(_first_party_file(mod))
+    assert entries and all(e is not None and e.exists() for e in entries), entries
+    return entries
+
+
+def _job_installed(job: dict) -> set[str]:
+    installs = [s for s in job["steps"] if (s.get("run") or "").lstrip().startswith("pip install")]
+    assert len(installs) == 1, [s["name"] for s in installs]
+    files = re.findall(r"-r\s+(\S+)", installs[0]["run"])
+    assert files, installs[0]["run"]
+    dists: set[str] = set()
+    for req in files:
+        for line in (ROOT / req).read_text().splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line:
+                dists.add(re.split(r"[<>=!\[;\s]", line, maxsplit=1)[0].strip().lower())
+    return dists
+
+
+@pytest.mark.parametrize("name", ["daily-memo.yml", "weekly-memo.yml"])
+def test_memo_job_installs_every_module_its_steps_import(name):
+    job = _load(name)["jobs"]["email-memo"]
+    dists = _job_installed(job)
+    reached = _third_party_reached(_job_entry_points(job))
+    missing = {m: where for m, where in reached.items()
+               if MODULE_PROVIDED_BY.get(m, m).lower() not in dists and m.replace("_", "-") not in dists}
+    assert not missing, missing
+
+
+def test_the_import_walk_reaches_httpx_through_the_pin_step():
+    # The walk itself: memo_queue.py reaches httpx only through a function-level import
+    # (close_sentinel.asset_symbols -> asset_history -> api.providers.eodhd).
+    reached = _third_party_reached([ROOT / "scripts/memo_queue.py"])
+    assert "httpx" in reached, reached
