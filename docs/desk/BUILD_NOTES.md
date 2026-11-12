@@ -86,7 +86,14 @@ S&P's closes, with their volume, full history back to each fund's first
 close. Live on request: Basket & Hedge, a basket you keep in your browser
 priced as one index from daily closes, read against the Nasdaq and the S&P,
 hedged with the ETF that fits it best, and studied: the event-study engine
-run on that same index.
+run on that same index. Below it, Positioning reads the CFTC's weekly
+Commitments of Traders for five macro futures from the store: speculators' net
+positions, where they sit in three years of reports, and each report's
+positions and release dates; and, for the basket's own names, how widely the
+SEC's quarterly 13F filings show them held: holders, the change on the quarter,
+the ten largest holders' share and how many of the 100 largest filers hold each
+among their ten largest positions. Both are lagged disclosures and say so; with
+nothing stored each says it is awaiting it.
 
 Designed and drawn, not yet served, each for a stated reason:
 
@@ -113,7 +120,7 @@ Designed and drawn, not yet served, each for a stated reason:
 
 ## Prototypes, and how I would build them
 
-Four cards are drawn as prototypes: finished, with illustrative values, each
+Three cards are drawn as prototypes: finished, with illustrative values, each
 ending in a small footnote that says so and names how it would be built. They
 are there so the Desk can be walked through end to end. They don't change the
 list above: nothing in them is served, and each stays designed, not yet
@@ -144,16 +151,6 @@ quotes with their timestamps, and each priced hedge saved with its basket and
 the surface's as-of date. Effort: two to three weeks once the options store
 exists, mostly the arithmetic's tests: spreads, dividends, and early exercise
 on American single-name options, which Black-Scholes leaves out.
-
-**Positioning (Basket & Hedge).** Source: the exchanges' twice-monthly
-short-interest files, OCC's daily open interest by series, and the SEC's
-quarterly 13F filings. Compute: short interest over float, days to cover
-against 20-day average volume, the put/call open-interest ratio, and a
-crowding flag whose thresholds are written down and tested. Storage: one
-table per source, each row dated by its settlement or filing date, because
-the three arrive on three calendars and the card has to say how old each
-figure is. Effort: about two weeks; the 13F parsing is the long pole, and its
-45-day lag has to be printed beside the number.
 
 **Sync to Snowflake (Data Pipeline).** Source: the validated SQLite snapshot
 the refresh already publishes. Compute: a job after each validated refresh

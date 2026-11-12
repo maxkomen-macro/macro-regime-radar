@@ -1472,3 +1472,126 @@ export interface BasketStudyResponse extends Envelope {
   caveats: string[];
   elapsed_ms: number | null;
 }
+
+// ── §12.20 /positioning (Desk P4; docs/desk/POSITIONING_SPEC.md) ────────────
+
+export type CotMarketKey = "spx" | "ust10y" | "usd" | "gold" | "wti";
+
+/** A stored CFTC report the reader set aside, and why (its date may be the fault). */
+export interface CotSetAside {
+  as_of: string;
+  reason: string;
+}
+
+/** §12.20: one category of traders in a market's newest readable report, in contracts. */
+export interface CotCategory {
+  category: string;
+  label: string;
+  long: number;
+  short: number;
+  spread: number | null;
+  net: number;
+  net_pct_oi: number | null;
+}
+
+/** §12.20: one market's newest readable CFTC report, its lead (speculative) category's figures and dates. */
+export interface CotMarket {
+  key: CotMarketKey;
+  label: string;
+  contract_code: string;
+  market_name: string;
+  report: "tff" | "disaggregated";
+  report_title: string;
+  category: "leveraged_funds" | "managed_money";
+  category_label: string;
+  /** The date the CFTC states the positions as of (usually a Tuesday). */
+  as_of: string;
+  /** The release from the CFTC's published schedule; null with why when the schedule does not date it. */
+  released: string | null;
+  release_delayed: boolean | null;
+  release_basis: "cftc_schedule" | null;
+  release_note: string;
+  first_stored_at: string;
+  stored_at: string;
+  long: number;
+  short: number;
+  spread: number | null;
+  net: number;
+  open_interest: number;
+  /** Net as percent of open interest (100 × net / open interest). */
+  net_pct_oi: number | null;
+  change_1w: { from: string; net: number; net_pct_oi: number | null } | null;
+  change_reason: string | null;
+  /** Where net_pct_oi sits among the market's reports in the three years to this one; null with why. */
+  range_3y: { percentile: number; n: number; from: string; to: string; min_pct_oi: number; min_on: string; max_pct_oi: number; max_on: string } | null;
+  range_reason: string | null;
+  categories: CotCategory[];
+  history_from: string;
+  reports: number;
+  excluded: CotSetAside[];
+  series: { as_of: string; net: number; net_pct_oi: number | null }[];
+}
+
+/** §12.20 `futures`: the CFTC's weekly Commitments of Traders, futures only, for five macro markets. */
+export interface PositioningFutures {
+  provider: "CFTC";
+  source: string;
+  credit: string;
+  lag_note: string;
+  range_years: number;
+  range_min_reports: number;
+  markets: CotMarket[];
+  missing: { key: CotMarketKey; label: string; excluded: CotSetAside[]; reason: string }[];
+  revisions_stored: number;
+}
+
+/** §12.20 `holdings`: SEC Form 13F holder concentration for basket names, one quarter. */
+export interface PositioningHoldings {
+  provider: "SEC";
+  source: string;
+  credit: string;
+  lag_note: string;
+  /** The quarter end the holdings are as of. */
+  period: string;
+  previous_period: string | null;
+  previous_reason: string | null;
+  /** 45 days after the period, or the next business day when that is a weekend or federal holiday. */
+  deadline: string;
+  /** The last filing date the data sets read cover. */
+  filings_through: string;
+  newest_filing: string | null;
+  data_sets: string[];
+  ftd_files: string[];
+  filers: number;
+  filings: number;
+  restatements: number;
+  new_holdings: number;
+  revised_names: number;
+  computed_at: string;
+  large_filers_n: number;
+  top_positions_n: number;
+  top_holders_n: number;
+  /** The names the request asked for (`names=`), in its order. */
+  names: {
+    /** The canonical ticker the server read (BRK.B). */
+    symbol: string;
+    /** The spelling the request asked by (BRK-B): the card finds its leg's row by it (null from a server without it). */
+    requested: string | null;
+    issuer: string;
+    holders: number;
+    holders_prev: number | null;
+    holders_change: number | null;
+    shares: number;
+    /** A fraction of the 13F-reported shares. */
+    top10_share: number;
+    large_filers_top10: number;
+  }[];
+  excluded: { symbol: string; requested: string | null; reason: string }[];
+}
+
+/** §12.20 GET /positioning: two lagged public disclosures, each a block (one can await while the other serves). */
+export interface PositioningResponse extends Envelope {
+  /** Absent when the block is served awaiting: its reason is under `_blocks.futures`. */
+  futures?: PositioningFutures;
+  holdings?: PositioningHoldings;
+}

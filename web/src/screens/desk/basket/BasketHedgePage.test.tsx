@@ -20,6 +20,7 @@ import { basketKey, deskFixture } from "../../../fixtures/desk";
 import basketPrice from "../../../fixtures/desk/basket-price.json";
 import basketHedge from "../../../fixtures/desk/basket-hedge.json";
 import basketStudy from "../../../fixtures/desk/basket-study.json";
+import positioningFixture from "../../../fixtures/desk/positioning.json";
 import { PRESET, SAVED_BASKETS_KEY, type SavedBasket } from "./weights";
 import { OPTIONS_UNAVAILABLE } from "./BasketHedgeStep";
 import { GLOSSARY } from "../kit/glossary";
@@ -727,41 +728,138 @@ describe("Hedge with options (PROTOTYPE, §1.0.3): step 3's options slot for the
   });
 });
 
-describe("Positioning (PROTOTYPE, §1.0.3): drawn for the AI Infrastructure 10 preset", () => {
-  it("a first visit: all ten names with short interest, days to cover, put/call and the crowding flag, the weighted figures; its footnote last", async () => {
+describe("Positioning (§10, §12.20; Desk P4): lagged public filings, served", () => {
+  const POS = positioningFixture as unknown as { futures: Record<string, any>; holdings: Record<string, unknown> };
+  const positioningCard = () => screen.findByRole("region", { name: /^Positioning/ });
+
+  it("a first visit: the five markets' CFTC rows with their dates, the lag note and credit; the preset's 13F holders", async () => {
+    const { calls } = stubDesk();
     renderTab();
     await loaded();
-    const c = await screen.findByRole("region", { name: /^Positioning/ });
-    expect(c).toHaveAttribute("data-prototype", "positioning");
-    // desk/cap-weight: the preset is cap-weighted, so the figures weight each name by what the basket holds at the
-    // last close (the served market-value weights).
-    await waitFor(() => expect(c).toHaveTextContent(/Short interest\s*1\.3%\s*of float, weighted over all 10 names/));
-    expect(c).toHaveTextContent(/Days to cover\s*0\.9\s*weighted over all 10 names/);
-    expect(c).toHaveTextContent(/Crowded\s*4 of 10\s*names with data/);
-    const rows = within(within(c).getByRole("table")).getAllByRole("row").slice(1);
-    expect(rows.map((r) => r.querySelector("th")?.firstChild?.textContent)).toEqual(["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]);
-    expect(rows[0]).toHaveTextContent(/NVDA\s*NVIDIA\s*44\.6%\s*1\.1%\s*0\.6\s*0\.78\s*Crowded long/);
-    expect(rows[8]).toHaveTextContent(/CRWV\s*CoreWeave\s*0\.3%\s*18\.3%\s*2\.4\s*1\.36\s*Crowded short/);
-    expect(rows[9]).toHaveTextContent(/NBIS\s*Nebius\s*0\.4%\s*15\.9%\s*2\.8\s*1\.24\s*Crowded short/);
-    expect(c).not.toHaveTextContent("no data");
-    expect(within(c).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "Weight", "Short int. (illustrative)", "Days to cover (illustrative)", "Put/call OI (illustrative)", "Crowding"]);
+    const c = await positioningCard();
+    // Served, not a PROTOTYPE: no data-prototype, no illustrative footnote.
+    expect(c).not.toHaveAttribute("data-prototype");
+    expect(c.querySelector("[data-prototype-foot]")).toBeNull();
+    await waitFor(() => expect(c).toHaveAttribute("data-positioning", "ready"));
+    expect(calls).toContain("GET /api/desk/positioning?names=NVDA%2CAVGO%2CAMD%2CTSM%2CMU%2CANET%2CVRT%2CCEG%2CCRWV%2CNBIS");
+    const table = within(c).getByRole("region", { name: "Futures positioning, CFTC" });
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Market", "Speculators", "Net, contracts", "Of open interest", "1-week change", "3-year percentile", "Report"]);
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map((r) => r.querySelector("th")?.textContent)).toEqual(["S&P 500 (E-mini)", "10-year Treasury note", "US dollar index", "Gold (COMEX)", "WTI crude oil (NYMEX)"]);
+    expect(rows[0]).toHaveTextContent(/S&P 500 \(E-mini\)\s*Leveraged funds\s*\+114,870\s*\+5\.8%\s*\+1\.4 pts\s*99th\s*Positions Sep 15 · released Sep 18/);
+    expect(rows[2]).toHaveTextContent(/US dollar index\s*Leveraged funds\s*−1,404\s*−5\.1%\s*\+0\.9 pts\s*71st/);
+    expect(rows[3]).toHaveTextContent(/Gold \(COMEX\)\s*Managed money\s*−11,313\s*−6\.0%\s*\+1\.1 pts\s*78th/);
+    // Lagged disclosure, said so; the credit line is the fixture's, which says its positions are invented.
+    expect(c).toHaveTextContent("Lagged disclosure, not live positioning: each report states positions as of a Tuesday and is released the following Friday, later in a holiday week.");
+    expect(c).toHaveTextContent(POS.futures.credit);
+    // The 13F block: the preset basket's names, asked for by name, in basket order; a name without a row says why.
+    const holders = within(c).getByRole("region", { name: "13F holders of the basket's names" });
+    expect(within(holders).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["Name", "13F holders", "Change on the quarter", "Top 10 holders' share", "In large filers' top 10"]);
+    const hrows = within(holders).getAllByRole("row").slice(1);
+    expect(hrows.map((r) => r.querySelector("th")?.textContent)).toEqual(["NVDA", "AVGO", "AMD", "TSM", "MU", "ANET", "VRT", "CEG", "CRWV", "NBIS"]);
+    const nv = (POS.holdings as any).names[0];
+    expect(hrows[0]).toHaveTextContent(new RegExp(`NVDA\\s*${nv.holders}\\s*\\+${nv.holders_change}\\s*${(nv.top10_share * 100).toFixed(1)}%\\s*${nv.large_filers_top10} of 100`));
+    expect(hrows[8]).toHaveTextContent("no 13F row stored: the SEC's fails-to-deliver files read pair no CUSIP with CRWV");
+    expect(hrows[9]).toHaveTextContent("so the pairing is not settled");
+    expect(c).toHaveTextContent("Holdings as of Jun 30, 2026 · filing deadline Aug 14, 2026 · filings read through Aug 31, 2026");
+    expect(c).toHaveTextContent("Lagged disclosure, not live positioning: holdings as of the quarter's end, filed up to 45 days after it");
+    expect(c).toHaveTextContent((POS.holdings as any).credit);
+    // No crowding word and no live badge: positions and where they sit in their own history.
+    expect(c.textContent).not.toMatch(/crowd|NaN/i);
     expect(within(c).queryByTestId("dk-live")).toBeNull();
-    expect(c.querySelector("[data-prototype-foot]")!.textContent).toBe("Illustrative values · In production: exchange short-interest files, OCC open interest, 13F holdings.");
+    // Advanced: how each figure is computed, each market's range with its dates, every category, what was read.
     fireEvent.click(within(c).getByTestId("dk-advanced"));
-    expect(c).toHaveTextContent("short interest at or above 10% of float");
-    expect(c).toHaveTextContent("13F top-ten share: NVDA 38%");
+    expect(c).toHaveTextContent("Net is the category's long minus its short contracts, futures only.");
+    expect(c).toHaveTextContent(/S&P 500 \(E-mini\): \+5\.8% of open interest is at the 99th percentile of 157 weekly reports from Sep \d+, 2023 to Sep 15, 2026/);
+    const cats = within(c).getByRole("region", { name: "S&P 500 (E-mini), every category" });
+    expect(within(cats).getAllByRole("row").slice(1).map((r) => r.querySelector("th")?.textContent)).toEqual(["Dealers", "Asset managers", "Leveraged funds", "Other reportables", "Non-reportable (small traders)"]);
+    expect(c).toHaveTextContent(/S&P 500 \(E-mini\): CFTC Traders in Financial Futures, contract 13874A \(INVENTED MARKET 13874A\); 210 weekly reports from Sep 13, 2022/);
+    expect(c).toHaveTextContent("No corrected report stored.");
+    expect(c).toHaveTextContent("13F holders are the filers reporting a long position in the name's shares at the quarter's end");
+    expect(c).toHaveTextContent("A ticker is paired with its CUSIP from its newest record in the SEC's fails-to-deliver files");
+    expect(c).toHaveTextContent(/holdings reports and amendments for Jun 30, 2026 from 240 filers, filed through Aug \d+, 2026: 6 restatements applied and 4 new-holdings amendments added/);
   });
 
-  it("another basket (the fixture tests' sample): its labels and one line, no table; its footnote last", async () => {
-    seed();
+  it("on a database without positions: the futures block's reason, no table and no Advanced", async () => {
+    const reason = "Awaiting refresh: CFTC positions are not stored in this database yet.";
+    stubDesk({
+      "/api/desk/positioning": () => ({
+        status: 200,
+        body: {
+          futures: { status: "awaiting", data: null, unavailable: { reason, until: null } },
+          holdings: { status: "awaiting", data: null, unavailable: { reason: "Awaiting refresh: SEC 13F holdings are not stored in this database yet.", until: null } },
+        },
+      }),
+    });
     renderTab();
     await loaded();
-    const c = await screen.findByRole("region", { name: /^Positioning/ });
-    expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
-    expect(c).toHaveTextContent(/Short interest\s*—\s*Days to cover\s*—\s*Crowded\s*—/);
+    const c = await positioningCard();
+    await waitFor(() => expect(c).toHaveTextContent(reason));
     expect(within(c).queryByRole("table")).toBeNull();
     expect(within(c).queryByTestId("dk-advanced")).toBeNull();
-    expect(c.querySelector("[data-prototype-foot]")).not.toBeNull();
+    expect(c).toHaveTextContent("Awaiting refresh: SEC 13F holdings are not stored in this database yet.");
+  });
+
+  it("a failed request says it couldn't load, with Retry, and prints no figure", async () => {
+    stubDesk({ "/api/desk/positioning": deskError(503, "provider") });
+    renderTab();
+    await loaded();
+    const c = await positioningCard();
+    await waitFor(() => expect(within(c).getByTestId("dk-failed")).toHaveTextContent("Couldn't load"));
+    expect(c.textContent).not.toMatch(/\d%/);
+  });
+
+  it("a market with no readable report reads its reason; a figure the server could not compute reads —, never NaN", async () => {
+    const f = structuredClone(POS.futures);
+    const [spx, ...rest] = f.markets;
+    f.markets = [{ ...spx, net_pct_oi: null, change_1w: null, change_reason: "no earlier report is stored", range_3y: null, range_reason: "needs 150 weekly reports" }, ...rest.slice(0, 3)];
+    f.missing = [{ key: "wti", label: "WTI crude oil (NYMEX)", excluded: [{ as_of: "2026-09-15", reason: "the CFTC no longer serves it (withdrawn)" }], reason: "no readable report is stored" }];
+    stubDesk({ "/api/desk/positioning": () => ({ status: 200, body: { futures: f, holdings: POS.holdings } }) });
+    renderTab();
+    await loaded();
+    const c = await positioningCard();
+    const table = await within(c).findByRole("region", { name: "Futures positioning, CFTC" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(5);
+    expect(rows[0]).toHaveTextContent(/S&P 500 \(E-mini\)\s*Leveraged funds\s*\+114,870\s*—\s*—\s*—/);
+    expect(rows[4]).toHaveTextContent(/WTI crude oil \(NYMEX\)\s*no readable report is stored/);
+    expect(c.textContent).not.toMatch(/NaN|undefined/);
+    fireEvent.click(within(c).getByTestId("dk-advanced"));
+    expect(c).toHaveTextContent("S&P 500 (E-mini): no three-year range: needs 150 weekly reports.");
+  });
+
+  it("served 13F holdings: the basket's names in its order, a name without a row says why", async () => {
+    // Invented holdings (test-data rule): no SEC filing is quoted.
+    const holdings = {
+      ...(POS.holdings as any),
+      credit: "Invented holdings, not SEC data.",
+      previous_period: "2026-03-31",
+      filings_through: "2026-08-20",
+      names: [
+        { symbol: "AVGO", issuer: "INVENTED A", holders: 2100, holders_prev: 2050, holders_change: 50, shares: 1e9, top10_share: 0.312, large_filers_top10: 41 },
+        { symbol: "NVDA", issuer: "INVENTED N", holders: 3500, holders_prev: 3520, holders_change: -20, shares: 2e9, top10_share: 0.284, large_filers_top10: 77 },
+      ],
+      excluded: [
+        { symbol: "CRWV", reason: "its CUSIP maps to two listings; not settled" },
+        { symbol: "VRT", reason: "no 13F row stored: invented reason" },
+      ],
+    };
+    seed();
+    stubDesk({ "/api/desk/positioning": () => ({ status: 200, body: { futures: POS.futures, holdings } }) });
+    renderTab();
+    await loaded();
+    const c = await positioningCard();
+    const t = await within(c).findByRole("region", { name: "13F holders of the basket's names" });
+    const rows = within(t).getAllByRole("row").slice(1);
+    // The sample basket's names: NVDA AVGO VRT CRWV ANET CEG SMCI; the two with rows first, in basket order.
+    expect(rows.map((r) => r.querySelector("th")?.textContent)).toEqual(["NVDA", "AVGO", "VRT", "CRWV", "ANET", "CEG", "SMCI"]);
+    expect(rows[0]).toHaveTextContent(/NVDA\s*3,500\s*−20\s*28\.4%\s*77 of 100/);
+    expect(rows[1]).toHaveTextContent(/AVGO\s*2,100\s*\+50\s*31\.2%\s*41 of 100/);
+    expect(rows[3]).toHaveTextContent("its CUSIP maps to two listings; not settled");
+    expect(rows[2]).toHaveTextContent("no 13F row stored: invented reason");
+    expect(rows[4]).toHaveTextContent("not served for this basket");
+    expect(c).toHaveTextContent("Holdings as of Jun 30, 2026 · filing deadline Aug 14, 2026 · filings read through Aug 20, 2026");
+    expect(c).toHaveTextContent("Invented holdings, not SEC data.");
   });
 });
 
@@ -910,47 +1008,6 @@ describe("Event study on this basket (§10, §12.19; desk P1a): the engine on th
     await waitFor(() => expect(c).toHaveTextContent(reason));
     expect(within(c).queryByRole("img")).toBeNull();
   });
-});
-
-describe("Codex R-04: a basket that repeats a symbol is not the preset", () => {
-  it("ten NVDA legs imported as \"NVDA only\": Positioning prints the one line and no figure", async () => {
-    renderTab();
-    await loaded();
-    const b = basketCard();
-    const nvdaOnly = { id: "local-1", name: "NVDA only", legs: Array.from({ length: 10 }, () => ({ symbol: "NVDA", name: "NVIDIA", weight: "10" })), saved_at: "2026-09-28T00:00:00Z" };
-    const json = JSON.stringify({ kind: "mrr.desk.baskets", version: 1, baskets: [nvdaOnly] });
-    const file = new File([json], "nvda-only.json", { type: "application/json" });
-    // jsdom's File has no text(); a browser's does.
-    Object.defineProperty(file, "text", { value: () => Promise.resolve(json) });
-    fireEvent.change(within(b).getByLabelText("Import saved baskets"), { target: { files: [file] } });
-    await waitFor(() => expect(stored().map((x) => x.name)).toEqual(["AI Infrastructure 10", "NVDA only"]));
-    fireEvent.change(within(b).getByLabelText("Basket"), { target: { value: stored()[1].id } });
-    await waitFor(() => expect(within(basketCard()).getByLabelText("Basket")).toHaveDisplayValue("NVDA only"));
-    for (const name of [/^Positioning/]) {
-      const c = await screen.findByRole("region", { name });
-      await waitFor(() => expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset."));
-      expect(within(c).queryByRole("table")).toBeNull();
-      expect(within(c).queryByRole("img")).toBeNull();
-      expect(c.textContent).not.toMatch(/\d%|of float|names with data|Crowded (long|short)|Suggestive|falls 2σ over 5 days, it was/);
-    }
-  });
-});
-
-describe("Codex R-01: Positioning never prints NaN or counts a name without data (the probes are other baskets now)", () => {
-  const basket = (legs: { symbol: string; name: string | null; weight: number }[]) => [{ id: "local-1", name: "Probe", legs, saved_at: "2026-09-22T20:00:00Z" }];
-
-  for (const [label, legs] of [
-    ["CRWV 50% / MSFT 50%", [{ symbol: "CRWV", name: "CoreWeave", weight: 50 }, { symbol: "MSFT", name: "Microsoft", weight: 50 }]],
-    ["MSFT 100%", [{ symbol: "MSFT", name: "Microsoft", weight: 100 }]],
-    ["CRWV 0% / MSFT 100%", [{ symbol: "CRWV", name: "CoreWeave", weight: 0 }, { symbol: "MSFT", name: "Microsoft", weight: 100 }]],
-  ] as const)
-    it(`${label}: the one line, no figure, no NaN (the coverage words are held in positioning.test.ts)`, async () => {
-      seed(basket([...legs]));
-      renderTab();
-      const c = await screen.findByRole("region", { name: /^Positioning/ });
-      expect(c).toHaveTextContent("Illustrative values are shown for the AI Infrastructure 10 preset.");
-      expect(c.textContent).not.toMatch(/NaN|\d%\s*of float|names with data/);
-    });
 });
 
 describe("Cap weight (desk/cap-weight)", () => {
