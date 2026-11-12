@@ -251,7 +251,7 @@ export function BasketStudyCard({ basket, params, pricedFor, priceFailed }: { ba
   const hid = useId();
   const asked = studyParams(params);
   const released = studyReleased(asked, pricedFor);
-  const q = useBasketStudy(asked, { enabled: released });
+  const q = useBasketStudy(asked, { enabled: released, afterPrice: params });
   const block = unavailableOf(q.error);
   const a = q.data;
   const waiting = !!params && !a && !q.isError && !released;

@@ -28,7 +28,7 @@
  * Unreadable answers are not retried.
  */
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
 import type { BasketParams } from "../basket/weights";
@@ -310,7 +310,7 @@ export const useBasketShares = () => useDesk<BasketSharesResponse>("/basket/shar
 export function useBasketPrice(params: BasketParams | null) {
   return current(
     useQuery<BasketPriceResponse, DeskApiError>({
-      queryKey: ["desk-v2", "/basket/price", params],
+      queryKey: params ? basketPriceKey(params) : ["desk-v2", "/basket/price", null],
       queryFn: ({ signal: s }) => deskGet<BasketPriceResponse>("/basket/price", params ?? undefined, { signal: s }),
       staleTime: 5 * 60_000,
       retry,
@@ -332,16 +332,55 @@ export function useBasketHedge(params: BasketParams | null) {
   );
 }
 
+/** The price query for these parameters, as `useBasketPrice` keys it. */
+export const basketPriceKey = (params: BasketParams) => ["desk-v2", "/basket/price", params] as const;
+
+/**
+ * Resolves once the price query for `params` holds a current answer: succeeded, not fetching, not stale and not
+ * invalidated. A price that is due (stale, or invalidated by a new database generation) is asked first, or joined when
+ * it is already in flight (`cancelRefetch: false`: never a second request beside it); a price that fails is waited on
+ * until a later ask succeeds (the page's Try again). Rejects when `signal` aborts (the basket or its parameters changed).
+ * The study's own fetch runs only after this, so however the study is asked (first ask, a generation change, a
+ * reconnect, a retry) its provider fetches never start beside the price's (the Nov 10 busy diagnosis, option C).
+ */
+export async function afterBasketPrice(client: QueryClient, params: BasketParams, signal: AbortSignal): Promise<void> {
+  const key = basketPriceKey(params);
+  const cache = client.getQueryCache();
+  const ready = () => {
+    const q = cache.find({ queryKey: key, exact: true });
+    return !!q && q.state.status === "success" && q.state.fetchStatus === "idle" && !q.isStale();
+  };
+  if (ready()) return;
+  await client.refetchQueries({ queryKey: key, exact: true }, { cancelRefetch: false });
+  if (signal.aborted) throw signal.reason;
+  if (ready()) return;
+  await new Promise<void>((resolve, reject) => {
+    const done = () => (unsubscribe(), signal.removeEventListener("abort", onAbort));
+    const onAbort = () => (done(), reject(signal.reason));
+    const unsubscribe = cache.subscribe(() => {
+      if (ready()) (done(), resolve());
+    });
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** §12.19 (desk P1a): the event-study engine on the saved basket's own index, computed on request (a `computing`
  * answer is asked again until it comes). `legs`, `method` and `weighting` are /basket/price's, without the notional;
  * the question is the route's default. Asked only for a basket /basket/price would price, and only once `enabled`
- * (Basket & Hedge: once /basket/price has answered for this basket, so the study's provider fetches never race the
- * price's and the hedge's on a cold cache; basket/study.ts `studyReleased`). Kept answers still show while it waits. */
-export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null, opts: { enabled?: boolean } = {}) {
+ * (Basket & Hedge: once /basket/price has answered for this basket; basket/study.ts `studyReleased`). With `afterPrice`
+ * (the price parameters it belongs to), every fetch of it first waits for that price to be current
+ * (`afterBasketPrice`), so its provider fetches never race the price's and the hedge's on a cold cache. Kept answers
+ * still show while it waits. */
+export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null, opts: { enabled?: boolean; afterPrice?: BasketParams | null } = {}) {
+  const client = useQueryClient();
+  const after = opts.afterPrice ?? null;
   return current(
     useQuery<BasketStudyResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/study", params],
-      queryFn: ({ signal: s }) => deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, { signal: s }),
+      queryFn: async ({ signal: s }) => {
+        if (after) await afterBasketPrice(client, after, s);
+        return deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, { signal: s });
+      },
       staleTime: 5 * 60_000,
       retry,
       enabled: !!params && (opts.enabled ?? true),

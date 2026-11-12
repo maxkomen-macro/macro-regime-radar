@@ -161,4 +161,93 @@ describe("Event study on this basket waits for the basket's price (option C)", (
     await waitFor(async () => expect(await studyCard()).toHaveAttribute("data-basket-study", "ready"));
     expect(studies(log.calls)).toEqual([STUDY_MONTHLY]);
   });
+
+  /** A price route switchable between answering at once, holding until `release()`, and refusing as busy. */
+  function switchablePrice(log: { calls: string[] }) {
+    const st = { mode: "now" as "now" | "hold" | "refuse", held: [] as (() => void)[] };
+    const route = (u: URL) => {
+      const key = keyOf(u);
+      const answer = (resolve: (v: unknown) => void) => {
+        log.calls.push(`ANSWERED ${key}`);
+        resolve(PRICES[key]);
+      };
+      if (st.mode === "refuse") return { status: 429, body: { error: "rate_limited", message: "SMH: The market-data layer is busy; retry in a moment." } };
+      return new Promise<unknown>((resolve) => (st.mode === "now" ? answer(resolve) : st.held.push(() => answer(resolve))));
+    };
+    const release = () => {
+      for (const f of st.held.splice(0)) f();
+    };
+    return { st, route, release };
+  }
+
+  it("a new database generation refetches the price first; the study is asked again only after the price answers (Codex S-2)", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
+    const log = { calls: [] as string[] };
+    const price = switchablePrice(log);
+    log.calls = stubDesk({ "/api/desk/basket/price": price.route }).calls;
+    const { client } = renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    expect(studies(log.calls)).toEqual([STUDY_HOLD]);
+    // The generation listener (api/queries.ts useFreshness) drops and refetches everything read from the database.
+    price.st.mode = "hold";
+    const before = log.calls.length;
+    void client.invalidateQueries({ predicate: (q) => String(q.queryKey[0]) !== "freshness" });
+    await waitFor(() => expect(log.calls.slice(before).some((x) => x.startsWith("GET /api/desk/basket/price"))).toBe(true));
+    await sleep(300);
+    // The hedge is asked beside the price, as before; the study waits.
+    expect(log.calls.slice(before).some((x) => x.startsWith("GET /api/desk/basket/hedge"))).toBe(true);
+    expect(studies(log.calls.slice(before))).toEqual([]);
+    price.release();
+    await waitFor(() => expect(studies(log.calls.slice(before))).toEqual([STUDY_HOLD]));
+    const after = log.calls.slice(before);
+    expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_KEY}`));
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+  });
+
+  it("a price refused on the new generation holds the study's refetch until a later price answers; nothing is retried by itself", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
+    const log = { calls: [] as string[] };
+    const price = switchablePrice(log);
+    log.calls = stubDesk({ "/api/desk/basket/price": price.route }).calls;
+    const { client } = renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    price.st.mode = "refuse";
+    const before = log.calls.length;
+    void client.invalidateQueries({ predicate: (q) => String(q.queryKey[0]) !== "freshness" });
+    const step = screen.getByRole("region", { name: /^How the basket trades/ });
+    await waitFor(() => expect(step).toHaveTextContent("This basket could not be priced: SMH: The market-data layer is busy; retry in a moment."));
+    await sleep(300);
+    expect(log.calls.slice(before).filter((x) => x.startsWith("GET /api/desk/basket/price"))).toHaveLength(1);
+    expect(studies(log.calls.slice(before))).toEqual([]);
+    price.st.mode = "now";
+    fireEvent.click(within(step).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(studies(log.calls.slice(before))).toEqual([STUDY_HOLD]));
+    const after = log.calls.slice(before);
+    expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_KEY}`));
+  });
+
+  it("a study refetched on its own while the price is due asks the price first, once, and waits for it", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
+    const log = { calls: [] as string[] };
+    const price = switchablePrice(log);
+    log.calls = stubDesk({ "/api/desk/basket/price": price.route }).calls;
+    const { client } = renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    price.st.mode = "hold";
+    const before = log.calls.length;
+    // The price is marked due without being asked; then only the study is refetched.
+    await client.invalidateQueries({ queryKey: ["desk-v2", "/basket/price"], refetchType: "none" });
+    void client.invalidateQueries({ queryKey: ["desk-v2", "/basket/study"] });
+    await waitFor(() => expect(log.calls.slice(before).filter((x) => x.startsWith("GET /api/desk/basket/price"))).toHaveLength(1));
+    await sleep(300);
+    expect(studies(log.calls.slice(before))).toEqual([]);
+    price.release();
+    await waitFor(() => expect(studies(log.calls.slice(before))).toEqual([STUDY_HOLD]));
+    const after = log.calls.slice(before);
+    expect(after.filter((x) => x.startsWith("GET /api/desk/basket/price"))).toHaveLength(1);
+    expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_KEY}`));
+  });
 });
