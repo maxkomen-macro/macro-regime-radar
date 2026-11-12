@@ -351,6 +351,11 @@ export const basketPriceKey = (params: BasketParams) => ["desk-v2", "/basket/pri
  * reconnect, a retry) its provider fetches never start beside the price's (the Nov 10 busy diagnosis, option C).
  */
 export async function afterBasketPrice(client: QueryClient, price: () => BasketParams | null, signal: AbortSignal): Promise<void> {
+  // One turn of the event loop first: a refetch of the page's queries (a generation change: DeskShell's refetch,
+  // useFreshness's invalidation) starts them in cache order, and the study can come before its price (a notional
+  // saved later makes a newer price query), so the price has to be seen in flight before it is judged current.
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  if (signal.aborted) throw signal.reason;
   const cache = client.getQueryCache();
   const ready = () => {
     const params = price();
@@ -358,8 +363,11 @@ export async function afterBasketPrice(client: QueryClient, price: () => BasketP
     return !!q && q.state.status === "success" && q.state.fetchStatus === "idle" && !q.isStale();
   };
   if (ready()) return;
+  // Only a kept answer that is due is asked here; a price that failed (a busy refusal) is never asked again by the
+  // study: it waits for the page's Try again.
   const first = price();
-  if (first) await client.refetchQueries({ queryKey: basketPriceKey(first), exact: true }, { cancelRefetch: false });
+  const due = first ? cache.find({ queryKey: basketPriceKey(first), exact: true }) : undefined;
+  if (first && due && due.state.status === "success") await client.refetchQueries({ queryKey: basketPriceKey(first), exact: true }, { cancelRefetch: false });
   if (signal.aborted) throw signal.reason;
   if (ready()) return;
   await new Promise<void>((resolve, reject) => {

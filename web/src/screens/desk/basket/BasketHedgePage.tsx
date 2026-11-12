@@ -823,7 +823,7 @@ function StepTwo({ local, params, q, state, range, setRange, names }: { local: S
 }
 
 /** Step 3 (§10): hedge it; the ETF hedge and the stress test for the saved basket, then the options slot. */
-function StepThree({ local, params, q, priceAsOf, optionsBasket, pricedFor, priceFailed }: { local: SavedBasket | null; params: BasketParams | null; q: ReturnType<typeof useBasketHedge>; priceAsOf: string | null | undefined; optionsBasket: SavedBasket | null; pricedFor: BasketParams | null; priceFailed: boolean }) {
+function StepThree({ local, params, q, priceAsOf, optionsBasket, pricedFor, priceFailed, pricePending }: { local: SavedBasket | null; params: BasketParams | null; q: ReturnType<typeof useBasketHedge>; priceAsOf: string | null | undefined; optionsBasket: SavedBasket | null; pricedFor: BasketParams | null; priceFailed: boolean; pricePending: boolean }) {
   const hid = useId();
   const priced = !!params;
   const state = q.data ? "ready" : q.isError || !priced ? "awaiting" : "loading";
@@ -859,7 +859,7 @@ function StepThree({ local, params, q, priceAsOf, optionsBasket, pricedFor, pric
           saved basket (none when none is open). */}
       {local?.legs.length ? (
         <div className="bh-below">
-          <BasketStudyCard basket={local} params={params} pricedFor={pricedFor} priceFailed={priceFailed} />
+          <BasketStudyCard basket={local} params={params} pricedFor={pricedFor} priceFailed={priceFailed} pricePending={pricePending} />
           <PositioningCard basket={local} />
         </div>
       ) : null}
@@ -1010,7 +1010,7 @@ export default function BasketHedgePage({ page }: { page: DeskPage }) {
         <BasketCard basketId={basketId} saved={saved} unreadable={unreadable} onSelect={select} onSaved={refresh} pendingAdd={pendingAdd} onAddDone={addDone} priced={pq.data} counts={counts} refused={refused} onRetryCap={retryCap} />
       </StepOne>
       <StepTwo local={local} params={params} q={pq} state={state} range={range} setRange={setRange} names={names} />
-      <StepThree local={local} params={params} q={hq} priceAsOf={pq.data?.prices_as_of} optionsBasket={optionsBasket} pricedFor={pricedFor} priceFailed={pq.isError} />
+      <StepThree local={local} params={params} q={hq} priceAsOf={pq.data?.prices_as_of} optionsBasket={optionsBasket} pricedFor={pricedFor} priceFailed={pq.isError} pricePending={pq.isFetching} />
     </div>
   );
 }

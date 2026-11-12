@@ -245,16 +245,17 @@ function Answer({ basket, a }: { basket: SavedBasket; a: BasketStudyResponse }) 
 }
 
 /** `pricedFor` is the price parameters whose `/basket/price` answer the page holds (null while none has arrived or
- * after it failed), `priceFailed` whether that request failed: the study is asked only once the price has answered
- * for this same basket (`studyReleased`), and until then the card says it waits for the price, never "Computing". */
-export function BasketStudyCard({ basket, params, pricedFor, priceFailed }: { basket: SavedBasket; params: BasketParams | null; pricedFor: BasketParams | null; priceFailed: boolean }) {
+ * after it failed), `priceFailed` whether that request failed, `pricePending` whether it is being asked: the study is
+ * asked only once the price has answered for this same basket (`studyReleased`) and is current (`afterBasketPrice`),
+ * and until then the card says it waits for the price, never "Computing" (a kept price being asked again included). */
+export function BasketStudyCard({ basket, params, pricedFor, priceFailed, pricePending = false }: { basket: SavedBasket; params: BasketParams | null; pricedFor: BasketParams | null; priceFailed: boolean; pricePending?: boolean }) {
   const hid = useId();
   const asked = studyParams(params);
   const released = studyReleased(asked, pricedFor);
   const q = useBasketStudy(asked, { enabled: released, afterPrice: params });
   const block = unavailableOf(q.error);
   const a = q.data;
-  const waiting = !!params && !a && !q.isError && !released;
+  const waiting = !!params && !a && !q.isError && (!released || pricePending);
   const sub = a ? `after a 2σ ${a.question.move === "up2s" ? "rise" : "fall"} over ${a.question.window ?? 5} days` : "after a 2σ fall over 5 days";
   let body;
   if (!params) body = <p className="bs-why">A saved basket at exactly 100% is studied here.</p>;

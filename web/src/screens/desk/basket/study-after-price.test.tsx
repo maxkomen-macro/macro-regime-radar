@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { Route, Routes } from "react-router-dom";
+import { QueryClient } from "@tanstack/react-query";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
@@ -56,14 +57,17 @@ function slowPrices(log: { calls: string[] }, after?: number) {
   return { route, release };
 }
 
-function renderTab() {
+function renderTab(client?: QueryClient) {
   return renderWithProviders(
     <Routes>
       <Route path="/desk/:page?" element={<DeskShell />} />
     </Routes>,
-    { route: "/desk/basket-hedge" },
+    { route: "/desk/basket-hedge", ...(client ? { client } : {}) },
   );
 }
+
+/** The site's own query options (src/main.tsx): answers kept after their page leaves (gcTime's default), one retry. */
+const productionClient = () => new QueryClient({ defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } } });
 
 const studyCard = () => screen.findByRole("region", { name: /^Event study on this basket/ });
 const realFetch = globalThis.fetch;
@@ -286,6 +290,66 @@ describe("Event study on this basket waits for the basket's price (option C)", (
     expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_KEY}`));
     await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
   }, 15_000);
+
+  it("the page's own generation refetch (no invalidation) after a saved notional asks the study only after the new price answers (verifier V-1)", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
+    const log = { calls: [] as string[] };
+    const price = switchablePrice(log);
+    log.calls = stubDesk({ "/api/desk/basket/price": price.route }).calls;
+    const { client } = renderTab(productionClient());
+    const c = await studyCard();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    // A saved notional makes a newer price query; the study's query (no notional in its key) now comes first in the cache.
+    fireEvent.change(screen.getByRole("textbox", { name: "Notional, dollars" }), { target: { value: "2000000" } });
+    fireEvent.click(screen.getByRole("button", { name: /Save basket/ }));
+    await waitFor(() => expect(log.calls).toContain(`ANSWERED ${HOLD_2M_KEY}`));
+    await sleep(100);
+    price.st.mode = "hold";
+    const before = log.calls.length;
+    // DeskShell's refetch when the page's answers disagree on the generation: every active Desk query, none invalidated.
+    void client.refetchQueries({ queryKey: ["desk-v2"], type: "active" });
+    await waitFor(() => expect(log.calls.slice(before).some((x) => x.startsWith("GET /api/desk/basket/price"))).toBe(true));
+    await sleep(300);
+    expect(studies(log.calls.slice(before))).toEqual([]);
+    price.release();
+    await waitFor(() => expect(studies(log.calls.slice(before))).toEqual([STUDY_HOLD]));
+    const after = log.calls.slice(before);
+    expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_2M_KEY}`));
+  });
+
+  it("back on a basket whose kept price is due and whose study never answered, the card says it waits for the price, not Computing (verifier V-3)", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD, MONTHLY]));
+    const log = { calls: [] as string[] };
+    const price = switchablePrice(log);
+    // The held basket's first study never answers (the visitor leaves first); later asks are served.
+    let heldAsked = 0;
+    const study = (u: URL) => {
+      if (u.searchParams.get("method") !== "monthly" && ++heldAsked === 1) return new Promise<unknown>(() => {});
+      return JSON.parse(deskFixture("GET", `${u.pathname}${u.search}`, undefined, "application/json")!.body) as unknown;
+    };
+    log.calls = stubDesk({ "/api/desk/basket/price": price.route, "/api/desk/basket/study": study }).calls;
+    const { client } = renderTab(productionClient());
+    await waitFor(() => expect(studies(log.calls)).toEqual([STUDY_HOLD]));
+    const pick = (id: string) => fireEvent.change(screen.getByRole("region", { name: "Basket" }).querySelector("select")!, { target: { value: id } });
+    pick("local-2");
+    await sleep(100);
+    // A new generation marks the kept prices due; back on the held basket, its price is asked again and held.
+    price.st.mode = "hold";
+    await client.invalidateQueries({ queryKey: ["desk-v2", "/basket/price"], refetchType: "none" });
+    const before = log.calls.length;
+    pick("local-1");
+    await waitFor(() => expect(log.calls.slice(before).some((x) => x.startsWith("GET /api/desk/basket/price") && x.includes("method=hold"))).toBe(true));
+    await sleep(300);
+    const c = await studyCard();
+    expect(c).toHaveTextContent("Waiting for the basket's prices; the study starts once they arrive");
+    expect(c).not.toHaveTextContent("Computing");
+    expect(c).toHaveAttribute("data-basket-study", "waiting");
+    expect(studies(log.calls.slice(before))).toEqual([]);
+    price.release();
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+    const after = log.calls.slice(before);
+    expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_KEY}`));
+  });
 
   it("a study refetched on its own while the price is due asks the price first, once, and waits for it", async () => {
     localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
