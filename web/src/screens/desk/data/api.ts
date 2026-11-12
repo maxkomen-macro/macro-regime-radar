@@ -214,8 +214,11 @@ function sleep(ms: number, outer?: AbortSignal): Promise<void> {
 /** How many times a `computing` answer is asked again before the page says it did not come. */
 export const MAX_POLLS = 60;
 
-export async function deskGet<T>(path: string, params?: Params, opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
+/** `before`, when given, is awaited before every request of the call, the first and each poll of a `computing`
+ * answer alike (Basket & Hedge's study waits there for a current price: Codex S-4). */
+export async function deskGet<T>(path: string, params?: Params, opts: { signal?: AbortSignal; timeoutMs?: number; before?: () => Promise<void> } = {}): Promise<T> {
   for (let polls = 0; ; polls++) {
+    if (opts.before) await opts.before();
     let res: Response;
     try {
       res = await fetch(deskUrl(path, params), { headers: { Accept: "application/json" }, signal: signal(opts.signal, opts.timeoutMs) });
@@ -373,8 +376,8 @@ export async function afterBasketPrice(client: QueryClient, price: () => BasketP
  * answer is asked again until it comes). `legs`, `method` and `weighting` are /basket/price's, without the notional;
  * the question is the route's default. Asked only for a basket /basket/price would price, and only once `enabled`
  * (Basket & Hedge: once /basket/price has answered for this basket; basket/study.ts `studyReleased`). With `afterPrice`
- * (the price parameters it belongs to), every fetch of it first waits for that price to be current
- * (`afterBasketPrice`), so its provider fetches never race the price's and the hedge's on a cold cache. Kept answers
+ * (the price parameters it belongs to), every request of it, each poll of a `computing` answer included, first waits
+ * for that price to be current (`afterBasketPrice`), so its provider fetches never race the price's and the hedge's. Kept answers
  * still show while it waits. */
 export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null, opts: { enabled?: boolean; afterPrice?: BasketParams | null } = {}) {
   const client = useQueryClient();
@@ -384,10 +387,15 @@ export function useBasketStudy(params: { legs: string; method: string; weighting
   return current(
     useQuery<BasketStudyResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/study", params],
-      queryFn: async ({ signal: s }) => {
-        if (after.current) await afterBasketPrice(client, () => after.current, s);
-        return deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, { signal: s });
-      },
+      // Before the first request and before every poll of a `computing` answer (Codex S-4: a generation can change
+      // while the study computes, and the poll would then start the new generation's job beside the new price).
+      queryFn: ({ signal: s }) =>
+        deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, {
+          signal: s,
+          before: async () => {
+            if (after.current) await afterBasketPrice(client, () => after.current, s);
+          },
+        }),
       staleTime: 5 * 60_000,
       retry,
       enabled: !!params && (opts.enabled ?? true),

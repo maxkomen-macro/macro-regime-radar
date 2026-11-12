@@ -12,6 +12,7 @@ import { Route, Routes } from "react-router-dom";
 import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
+import { deskFixture } from "../../../fixtures/desk";
 import synthetic from "../../../fixtures/desk/basket-price-synthetic.json";
 import { SAVED_BASKETS_KEY } from "./weights";
 
@@ -256,6 +257,35 @@ describe("Event study on this basket waits for the basket's price (option C)", (
     // The refused price for the old notional was asked once (the generation's refetch) and never again.
     expect(after.filter((x) => x.startsWith("GET /api/desk/basket/price") && x.includes("notional=1000000"))).toHaveLength(1);
   });
+
+  it("a study still computing when the generation changes polls again only after the new price answers (Codex S-4)", async () => {
+    localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
+    const log = { calls: [] as string[] };
+    const price = switchablePrice(log);
+    // The study's first ask answers 202 computing (polled again after the default 2 s wait); later asks are served.
+    let asked = 0;
+    const study = (u: URL) => {
+      asked += 1;
+      if (asked === 1) return { status: 202, body: { status: "computing" } };
+      return JSON.parse(deskFixture("GET", `${u.pathname}${u.search}`, undefined, "application/json")!.body) as unknown;
+    };
+    log.calls = stubDesk({ "/api/desk/basket/price": price.route, "/api/desk/basket/study": study }).calls;
+    const { client } = renderTab();
+    const c = await studyCard();
+    await waitFor(() => expect(studies(log.calls)).toEqual([STUDY_HOLD]));
+    // The generation changes while that study is computing: the price is asked again and held; the study's poll waits.
+    price.st.mode = "hold";
+    const before = log.calls.length;
+    void client.invalidateQueries({ predicate: (q) => String(q.queryKey[0]) !== "freshness" });
+    await waitFor(() => expect(log.calls.slice(before).some((x) => x.startsWith("GET /api/desk/basket/price"))).toBe(true));
+    await sleep(2600);
+    expect(studies(log.calls.slice(before))).toEqual([]);
+    price.release();
+    await waitFor(() => expect(studies(log.calls.slice(before))).toEqual([STUDY_HOLD]), { timeout: 4000 });
+    const after = log.calls.slice(before);
+    expect(after.indexOf(STUDY_HOLD)).toBeGreaterThan(after.indexOf(`ANSWERED ${HOLD_KEY}`));
+    await waitFor(() => expect(c).toHaveAttribute("data-basket-study", "ready"));
+  }, 15_000);
 
   it("a study refetched on its own while the price is due asks the price first, once, and waits for it", async () => {
     localStorage.setItem(SAVED_BASKETS_KEY, JSON.stringify([HOLD]));
