@@ -155,13 +155,22 @@ def test_delayed_by_a_newer_source_or_a_completed_newer_key():
 # ── records (DR-66) ───────────────────────────────────────────────────────────
 
 
-def test_the_committed_initial_records_parse_and_are_canonical():
+def test_the_initial_records_parse_and_are_canonical():
+    for kind in mq.KINDS:
+        assert mq.parse_ledger(kind, mq.dumps(mq.empty_ledger(kind))) == mq.empty_ledger(kind)
+    assert mq.parse_registry(mq.dumps(mq.empty_registry())) == mq.empty_registry()
+
+
+def test_the_committed_records_parse_and_are_canonical():
+    # Until the first queued memo these files held the initial (empty) records; since
+    # 2026-11-12 the workflows write them (a12237a2 claimed daily 2026-11-11), so the
+    # committed bytes are whatever the queue last wrote: they must still parse under the
+    # strict readers and be exactly the canonical serialization of what they hold.
     for kind in mq.KINDS:
         text = (ROOT / mq.LEDGER[kind]).read_text()
-        assert mq.parse_ledger(kind, text) == mq.empty_ledger(kind)
-        assert text == mq.dumps(mq.empty_ledger(kind))
+        assert text == mq.dumps(mq.parse_ledger(kind, text))
     text = (ROOT / mq.SOURCES).read_text()
-    assert mq.parse_registry(text) == mq.empty_registry() and text == mq.dumps(mq.empty_registry())
+    assert text == mq.dumps(mq.parse_registry(text))
 
 
 def _src(**kw) -> dict:

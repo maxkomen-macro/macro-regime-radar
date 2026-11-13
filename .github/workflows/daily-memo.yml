@@ -77,7 +77,9 @@ jobs:
           cache: "pip"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        # The queued steps import api/ code (pin -> asset_history -> api.providers.eodhd
+        # needs httpx), so the job installs what the full refresh installs.
+        run: pip install -r requirements.txt -r requirements-snapshot.txt
 
       - name: Configure the git identity for memo commits
         run: |
