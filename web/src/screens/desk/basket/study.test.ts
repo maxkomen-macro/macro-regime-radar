@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 import doc from "../../../fixtures/desk/basket-study.json";
 import type { BasketStudyResponse } from "../data/types";
 import { pctPlain } from "../kit/format";
-import { horizonWords, indexLine, membershipWords, moveWords, questionLine, selectedRow, startWords, studyParams } from "./study";
+import { horizonWords, indexLine, membershipWords, moveWords, questionLine, selectedRow, startWords, studyParams, studyReleased } from "./study";
 
 const answers = (doc as unknown as { answers: Record<string, BasketStudyResponse> }).answers;
 const hold = answers["legs=SMH:40,SOXX:30,XLK:30&method=hold"];
@@ -18,6 +18,23 @@ describe("what the card asks /basket/study", () => {
     expect(studyParams(null)).toBeNull();
     expect(studyParams({ legs: "SMH:40,SOXX:30,XLK:30", method: "hold", notional: "1000000" })).toEqual({ legs: "SMH:40,SOXX:30,XLK:30", method: "hold" });
     expect(studyParams({ legs: "NVDA,AVGO", method: "monthly", notional: "1000000", weighting: "cap" })).toEqual({ legs: "NVDA,AVGO", method: "monthly", weighting: "cap" });
+  });
+});
+
+describe("the study waits for this basket's price (the busy fix, option C)", () => {
+  const hold = { legs: "SMH:40,SOXX:30,XLK:30", method: "hold", notional: "1000000" };
+  it("released only by a price answered for the same legs, method and weighting; the notional does not matter", () => {
+    const asked = studyParams(hold);
+    expect(studyReleased(asked, null)).toBe(false);
+    expect(studyReleased(null, hold)).toBe(false);
+    expect(studyReleased(asked, hold)).toBe(true);
+    expect(studyReleased(asked, { ...hold, notional: "250000" })).toBe(true);
+    // Another basket's price, the same names at other weights, another method, or cap weight never release it.
+    expect(studyReleased(asked, { ...hold, legs: "NVDA:50,AVGO:50" })).toBe(false);
+    expect(studyReleased(asked, { ...hold, legs: "SMH:50,SOXX:25,XLK:25" })).toBe(false);
+    expect(studyReleased(asked, { ...hold, method: "monthly" })).toBe(false);
+    expect(studyReleased(studyParams({ ...hold, legs: "SMH,SOXX,XLK", weighting: "cap" }), { ...hold, legs: "SMH,SOXX,XLK" })).toBe(false);
+    expect(studyReleased(studyParams({ ...hold, legs: "SMH,SOXX,XLK" }), { ...hold, legs: "SMH,SOXX,XLK", weighting: "cap" })).toBe(false);
   });
 });
 

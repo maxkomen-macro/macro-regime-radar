@@ -28,7 +28,8 @@
  * Unreadable answers are not retried.
  */
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useRef } from "react";
+import { keepPreviousData, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { isEnvelope, readUnavailable, routeOf, unwrapBlocks, type Unavailable } from "./envelope";
 import { checkAnswer, schemaFor } from "./schema";
 import type { BasketParams } from "../basket/weights";
@@ -213,8 +214,11 @@ function sleep(ms: number, outer?: AbortSignal): Promise<void> {
 /** How many times a `computing` answer is asked again before the page says it did not come. */
 export const MAX_POLLS = 60;
 
-export async function deskGet<T>(path: string, params?: Params, opts: { signal?: AbortSignal; timeoutMs?: number } = {}): Promise<T> {
+/** `before`, when given, is awaited before every request of the call, the first and each poll of a `computing`
+ * answer alike (Basket & Hedge's study waits there for a current price: Codex S-4). */
+export async function deskGet<T>(path: string, params?: Params, opts: { signal?: AbortSignal; timeoutMs?: number; before?: () => Promise<void> } = {}): Promise<T> {
   for (let polls = 0; ; polls++) {
+    if (opts.before) await opts.before();
     let res: Response;
     try {
       res = await fetch(deskUrl(path, params), { headers: { Accept: "application/json" }, signal: signal(opts.signal, opts.timeoutMs) });
@@ -310,7 +314,7 @@ export const useBasketShares = () => useDesk<BasketSharesResponse>("/basket/shar
 export function useBasketPrice(params: BasketParams | null) {
   return current(
     useQuery<BasketPriceResponse, DeskApiError>({
-      queryKey: ["desk-v2", "/basket/price", params],
+      queryKey: params ? basketPriceKey(params) : ["desk-v2", "/basket/price", null],
       queryFn: ({ signal: s }) => deskGet<BasketPriceResponse>("/basket/price", params ?? undefined, { signal: s }),
       staleTime: 5 * 60_000,
       retry,
@@ -332,17 +336,77 @@ export function useBasketHedge(params: BasketParams | null) {
   );
 }
 
+/** The price query for these parameters, as `useBasketPrice` keys it. */
+export const basketPriceKey = (params: BasketParams) => ["desk-v2", "/basket/price", params] as const;
+
+/**
+ * Resolves once the price query for the current price parameters (`price()`, read again on every cache change) holds a
+ * current answer: succeeded, not fetching, not stale and not invalidated. A price that is due (stale, or invalidated by
+ * a new database generation) is asked first, or joined when it is already in flight (`cancelRefetch: false`: never a
+ * second request beside it); a price that fails is waited on until a later ask succeeds (the page's Try again). The
+ * parameters are read, not captured: a change the study's own key does not carry (the notional) moves the wait to the
+ * new price, never leaving it on the old one (Codex S-3); a change it does carry changes the key, and React Query
+ * aborts `signal`, which rejects.
+ * The study's own fetch runs only after this, so however the study is asked (first ask, a generation change, a
+ * reconnect, a retry) its provider fetches never start beside the price's (the Nov 10 busy diagnosis, option C).
+ */
+export async function afterBasketPrice(client: QueryClient, price: () => BasketParams | null, signal: AbortSignal): Promise<void> {
+  // One turn of the event loop first: a refetch of the page's queries (a generation change: DeskShell's refetch,
+  // useFreshness's invalidation) starts them in cache order, and the study can come before its price (a notional
+  // saved later makes a newer price query), so the price has to be seen in flight before it is judged current.
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  if (signal.aborted) throw signal.reason;
+  const cache = client.getQueryCache();
+  const ready = () => {
+    const params = price();
+    const q = params ? cache.find({ queryKey: basketPriceKey(params), exact: true }) : undefined;
+    return !!q && q.state.status === "success" && q.state.fetchStatus === "idle" && !q.isStale();
+  };
+  if (ready()) return;
+  // Only a kept answer that is due is asked here; a price that failed (a busy refusal) is never asked again by the
+  // study: it waits for the page's Try again.
+  const first = price();
+  const due = first ? cache.find({ queryKey: basketPriceKey(first), exact: true }) : undefined;
+  if (first && due && due.state.status === "success") await client.refetchQueries({ queryKey: basketPriceKey(first), exact: true }, { cancelRefetch: false });
+  if (signal.aborted) throw signal.reason;
+  if (ready()) return;
+  await new Promise<void>((resolve, reject) => {
+    const done = () => (unsubscribe(), signal.removeEventListener("abort", onAbort));
+    const onAbort = () => (done(), reject(signal.reason));
+    const unsubscribe = cache.subscribe(() => {
+      if (ready()) (done(), resolve());
+    });
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
 /** §12.19 (desk P1a): the event-study engine on the saved basket's own index, computed on request (a `computing`
  * answer is asked again until it comes). `legs`, `method` and `weighting` are /basket/price's, without the notional;
- * the question is the route's default. Asked only for a basket /basket/price would price. */
-export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null) {
+ * the question is the route's default. Asked only for a basket /basket/price would price, and only once `enabled`
+ * (Basket & Hedge: once /basket/price has answered for this basket; basket/study.ts `studyReleased`). With `afterPrice`
+ * (the price parameters it belongs to), every request of it, each poll of a `computing` answer included, first waits
+ * for that price to be current (`afterBasketPrice`), so its provider fetches never race the price's and the hedge's. Kept answers
+ * still show while it waits. */
+export function useBasketStudy(params: { legs: string; method: string; weighting?: "cap" } | null, opts: { enabled?: boolean; afterPrice?: BasketParams | null } = {}) {
+  const client = useQueryClient();
+  // The newest price parameters, read by a fetch already waiting (Codex S-3: the study's key has no notional).
+  const after = useRef<BasketParams | null>(opts.afterPrice ?? null);
+  after.current = opts.afterPrice ?? null;
   return current(
     useQuery<BasketStudyResponse, DeskApiError>({
       queryKey: ["desk-v2", "/basket/study", params],
-      queryFn: ({ signal: s }) => deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, { signal: s }),
+      // Before the first request and before every poll of a `computing` answer (Codex S-4: a generation can change
+      // while the study computes, and the poll would then start the new generation's job beside the new price).
+      queryFn: ({ signal: s }) =>
+        deskGet<BasketStudyResponse>("/basket/study", params ?? undefined, {
+          signal: s,
+          before: async () => {
+            if (after.current) await afterBasketPrice(client, () => after.current, s);
+          },
+        }),
       staleTime: 5 * 60_000,
       retry,
-      enabled: !!params,
+      enabled: !!params && (opts.enabled ?? true),
     }),
   );
 }
