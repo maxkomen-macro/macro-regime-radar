@@ -16,6 +16,8 @@ at the Phase 3 freeze; `region`), exempt (closed forms of section 7.3 when om.ex
 stencil needs), exercised now (design section 5, rule 1: the exact branch), else the production FD at two levels
 L1 and L2 (options_fd), served at L2 without extrapolation, with the estimate E_G = F_G·|G(L2) − G(L1)| floored at
 0.1·tol_G. E_G is an empirical estimate, never a bound. Pure functions of numbers: no I/O, no clock.
+A bump state whose PV_0 differs from the base's (the dividend sensitivity; rho when a later dividend is owed) is
+solved on the base context's grid and read at its own spot (design change P3-P1, `_bump_state`).
 """
 
 from __future__ import annotations
@@ -55,6 +57,7 @@ R_BUMP_DOMAIN = "bump leaves the validated domain"
 R_EXDIV = "ex-dividend inside the step"
 R_NO_DIVIDEND = "no dividend owed"
 R_FD = "FD refused"            # followed by the FD's own reason
+R_READ = "bump read outside the grid"   # design change P3-P1: a base-grid read never extrapolates
 
 ZONE = 5.0          # price tolerances: the exercise-decision zone of rules 1 and 2 (as Phase 2's DELTA_ZONE)
 FLOOR = 0.1         # production estimates are floored at 0.1·tol_G (design section 4.4)
@@ -378,6 +381,53 @@ def _spot_state(s: fd.Solved) -> tuple[bool, float]:
     return bool(s.grids["exercise0"][i]), float(s.grids["free0"][i])
 
 
+@dataclass(frozen=True)
+class _Read:
+    """A bump state's answer at its own spot: the value, its exercise status and its free (continuation) value."""
+    value: float
+    exercised: bool
+    free: float
+
+
+@dataclass(frozen=True)
+class _ReadRefused:
+    reason: str
+    detail: str = ""
+    shifted: bool = False
+
+
+def _bump_state(run: _Ctx, s: om.Context, k: int) -> _Read | fd.Refused | _ReadRefused:
+    """Design change P3-P1 (B): one bump state of a bumped Greek at level k. A state whose PV_0 equals the base
+    context's is solved as before, read at its centre node. Otherwise the kernel centres its ln X grid at
+    x* = S − PV_0 of the state it solves, so the bump would shift the whole grid against the strike and the exercise
+    boundary by a fraction of a cell that changes from level to level; here the unchanged kernel solves the state at
+    S' = S + PV_s − PV_c, whose x* is the base's (the level, width included, is the base's as for every state), and
+    reads it at its own ln X_0 = ln(S − PV_s): American max(cubic(free0), intrinsic) with the exercise status at
+    that point (design review DR-AM4-2's read), European the cubic on v0. The read must lie inside x[1]..x[m − 1]
+    (DR-01: the cubic would otherwise extrapolate); a refusal of the shifted state is marked `shifted`."""
+    c = run.c
+    pv_s, pv_c = fd.pv_owed(s.divs, s.rho, 0.0), fd.pv_owed(c.divs, c.rho, 0.0)
+    if pv_s == pv_c:
+        got = run.solve(s, k)
+        if isinstance(got, fd.Refused):
+            return got
+        e, f = _spot_state(got)
+        return _Read(got.value, e, f)
+    got = run.solve(replace(s, spot=c.spot - pv_c + pv_s), k)
+    if isinstance(got, fd.Refused):
+        return _ReadRefused(got.reason, got.detail, shifted=True)
+    x, x1 = got.grids["x"], math.log(s.spot - pv_s)
+    if not (x[1] <= x1 <= x[-2]):
+        return _ReadRefused(R_READ, f"ln X_0 {x1:.6g} outside [{x[1]:.6g}, {x[-2]:.6g}]")
+    if not run.american:
+        v = cubic_at(x, got.grids["v0"], x1)
+        return _Read(v, False, v)
+    free = cubic_at(x, got.grids["free0"], x1)
+    ex = intrinsic(s)
+    sgn = 1.0 if s.is_call else -1.0
+    return _Read(max(free, ex), bool(free < sgn * (s.spot - s.strike) and ex > 0.0), free)
+
+
 def _bumped(run: _Ctx, g: str, ex_now: float, ptol: float) -> GreekAnswer:
     c, cfg = run.c, run.cfg
     if _stencil_states(c, g, cfg) is None:
@@ -387,14 +437,19 @@ def _bumped(run: _Ctx, g: str, ex_now: float, ptol: float) -> GreekAnswer:
     for k, hh in ((0, h), (1, h), (1, h / 2.0)):
         pair = []
         for sgn_h in (1.0, -1.0):
-            s = run.solve(bumped(c, g, sgn_h * hh), k)
-            if isinstance(s, fd.Refused):
-                return _withheld(g, R_WORK if s.reason == fd.R_WORK else f"{R_FD}: {s.reason}", level=k + 1, h=hh)
+            s = _bump_state(run, bumped(c, g, sgn_h * hh), k)
+            if isinstance(s, _ReadRefused) and s.reason == R_READ:
+                return _withheld(g, R_READ, level=k + 1, h=hh, detail=s.detail)
+            if isinstance(s, (fd.Refused, _ReadRefused)):
+                audit = {"level": k + 1, "h": hh}
+                if isinstance(s, _ReadRefused):
+                    audit["shifted_state"] = True
+                return _withheld(g, R_WORK if s.reason == fd.R_WORK else f"{R_FD}: {s.reason}", **audit)
             pair.append(s)
         vals[(k, hh)] = pair
     up, dn = vals[(1, h)]
-    (eu, fu), (ed, fdn) = _spot_state(up), _spot_state(dn)
-    if eu != ed or _zone_hit(fu, ex_now, ptol, cfg.zone) or _zone_hit(fdn, ex_now, ptol, cfg.zone):
+    if (up.exercised != dn.exercised or _zone_hit(up.free, ex_now, ptol, cfg.zone)
+            or _zone_hit(dn.free, ex_now, ptol, cfg.zone)):
         return _withheld(g, R_NEAR, rule=2)
 
     def diff(k, hh):

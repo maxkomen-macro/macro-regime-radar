@@ -346,3 +346,153 @@ def test_gamma_and_theta_have_no_bump_term():
 def test_the_bump_factor_is_one_of_the_candidates_and_never_below_four_thirds(bf):
     with pytest.raises(ValueError):
         G.GreekConfig(bump_factors=bf)
+
+
+# ── design change P3-P1: bump states whose PV_0 moves are solved on the base context's grid ──────────────────────
+
+def _old_bumped(run, g, ex_now, ptol):
+    """`_bumped` as it was before P3-P1 (each state on its own centred grid), kept here as the pin for the states
+    that P3-P1 leaves alone."""
+    c, cfg = run.c, run.cfg
+    if G._stencil_states(c, g, cfg) is None:
+        return G._withheld(g, G.R_BUMP_DOMAIN)
+    h = G.bump_size(c, g, cfg)
+    vals = {}
+    for k, hh in ((0, h), (1, h), (1, h / 2.0)):
+        pair = []
+        for sgn_h in (1.0, -1.0):
+            s = run.solve(G.bumped(c, g, sgn_h * hh), k)
+            if isinstance(s, fd.Refused):
+                return G._withheld(g, G.R_WORK if s.reason == fd.R_WORK else f"{G.R_FD}: {s.reason}", level=k + 1, h=hh)
+            pair.append(s)
+        vals[(k, hh)] = pair
+    up, dn = vals[(1, h)]
+    (eu, fu), (ed, fdn) = G._spot_state(up), G._spot_state(dn)
+    if eu != ed or G._zone_hit(fu, ex_now, ptol, cfg.zone) or G._zone_hit(fdn, ex_now, ptol, cfg.zone):
+        return G._withheld(g, G.R_NEAR, rule=2)
+
+    def diff(k, hh):
+        p, m = vals[(k, hh)]
+        return G.UNIT[g] * (p.value - m.value) / (2.0 * hh)
+    g1, g2, g_half = diff(0, h), diff(1, h), diff(1, h / 2.0)
+    tol = G.tolerance(g, g2, c.spot)
+    if abs(g2 - g_half) > tol:
+        return G._withheld(g, G.R_UNSTABLE, rule=3, L2=g2, L2_half=g_half, tol=tol)
+    est, tol = G._estimate(g, g1, g2, c, cfg)
+    bump_term = cfg.bump_factor(g) * abs(g2 - g_half)
+    return G._answer(g, g1, g2, est + bump_term, tol, h=h, L2_half=g_half, bump_term=bump_term)
+
+
+def _run(c, american=True, cfg=G.GreekConfig()):
+    return G._Ctx(c, cfg, fd.Budget(cfg.fd.work_cap), fd.levels(c, cfg.fd), american=american)
+
+
+UNMOVED = [   # (context, Greeks whose every state has PV_0 equal to the base's)
+    (ctx(), (G.VEGA, G.RHO)),                                                         # no dividends
+    (ctx(is_call=True, strike=95.0, days=60, rho=0.03, divs=((20, 1.0),)), (G.VEGA,)),
+    (ctx(is_call=False, strike=110.0, days=90, rho=0.04, divs=((0, 1.5),)), (G.VEGA, G.RHO)),   # day-0 close only
+]
+
+
+@pytest.mark.parametrize("american", [True, False])
+@pytest.mark.parametrize("c,names", UNMOVED)
+def test_states_whose_pv0_does_not_move_are_solved_exactly_as_before(monkeypatch, c, names, american):
+    new = G.greeks(c, american=american)
+    monkeypatch.setattr(G, "_bumped", _old_bumped)
+    old = G.greeks(c, american=american)
+    for g in names:
+        assert new[g] == old[g], g
+    for g in (G.GAMMA, G.THETA):            # never through _bumped
+        assert new[g] == old[g], g
+    assert new["_units"] == old["_units"]
+
+
+@pytest.mark.parametrize("american", [True, False])
+def test_a_moved_state_is_read_on_the_base_grid_with_the_same_solves_and_units(monkeypatch, american):
+    c = ctx(is_call=False, strike=110.0, days=120, rho=0.04, divs=((30, 1.2), (100, 1.2)))
+    seen = []
+    real = fd.price
+
+    def spy(state, level, budget, **k):
+        seen.append((state.spot, level))
+        return real(state, level, budget, **k)
+    monkeypatch.setattr(fd, "price", spy)
+    new = G.greeks(c, american=american)
+    n_new, units_new = len(seen), new["_units"]
+    shifted = {sp for sp, _ in seen if sp != c.spot}
+    seen.clear()
+    monkeypatch.setattr(G, "_bumped", _old_bumped)
+    old = G.greeks(c, american=american)
+    assert shifted                                           # the dividend and rho states were moved
+    assert n_new == len(seen) and units_new == old["_units"]     # the same solves of the same size
+
+
+def test_the_base_grid_read_agrees_with_the_own_centred_solve_and_reads_free0_at_a_day0_close():
+    # DR-AM4-2's case in production: an American call with a dividend at today's close; the read of the continuation
+    # with the exercise value applied matches the state's own centred solve, a cubic through v0 does not
+    for spot in (104.30, 104.50):
+        c = ctx(is_call=True, spot=spot, strike=100.0, days=30, rho=0.0, q=0.0, sigma=0.2, divs=((0, 1.0),))
+        run = _run(c)
+        s = G.bumped(c, G.DIVIDEND, 0.05)
+        pv_s, pv_c = fd.pv_owed(s.divs, s.rho, 0.0), fd.pv_owed(c.divs, c.rho, 0.0)
+        for k in (0, 1):
+            got = G._bump_state(run, s, k)
+            own = run.solve(s, k).value
+            shared = run.solve(replace(s, spot=c.spot - pv_c + pv_s), k)
+            naive = G.cubic_at(shared.grids["x"], shared.grids["v0"], math.log(s.spot - pv_s))
+            assert abs(got.value - own) < 1e-5
+            assert abs(naive - own) > 1e-3
+
+
+def test_rule_2_reads_the_moved_states_at_their_own_spot(monkeypatch):
+    c = ctx(is_call=False, strike=110.0, days=120, rho=0.04, divs=((30, 1.2),))
+    assert G.greeks(c)[G.DIVIDEND].reason != G.R_NEAR
+    real = G._bump_state
+    flip = iter([False, True] * 10)
+
+    def split(run, s, k):
+        got = real(run, s, k)
+        return G._Read(got.value, next(flip), got.free) if k == 1 else got
+    monkeypatch.setattr(G, "_bump_state", split)
+    got = G.greeks(c)[G.DIVIDEND]
+    assert got.reason == G.R_NEAR and got.audit["rule"] == 2
+
+
+def test_a_refused_shifted_state_withholds_with_the_kernel_s_reason():
+    # design review DR-02: K/S = 20 at the edge of the domain; the shifted spot of the +rho state puts K/S' above 20
+    c = ctx(is_call=False, spot=100.0, strike=2000.0, days=60, rho=0.0, q=0.0, sigma=0.2, divs=((30, 1.0),))
+    assert G.state_failure(c) is None
+    got = G.greeks(c, american=False)           # C1 (in American mode this deep put is exempt: closed forms)
+    for g in (G.RHO, G.DIVIDEND):
+        a = got[g]
+        assert a.status == G.WITHHELD and a.reason.startswith(G.R_FD) and a.audit.get("shifted_state") is True
+
+
+def test_a_read_outside_the_grid_is_refused_never_extrapolated():
+    # design review DR-01: a valid context whose L1/L2 half-width (0.014) is smaller than the rho bump's read
+    # displacement; the full bumps are refused, the half bumps (displacement 0.007) are read
+    c = ctx(is_call=False, spot=100.0, strike=11.0, days=1464, rho=0.0, q=-0.0000005, sigma=0.001,
+            divs=tuple((1120 + 11 * i, 89 / 31) for i in range(31)))
+    assert G.state_failure(c) is None
+    for american in (True, False):
+        run = _run(c, american)
+        h = G.bump_size(c, G.RHO, G.GreekConfig())
+        for k in (0, 1):
+            for sgn in (1.0, -1.0):
+                full = G._bump_state(run, G.bumped(c, G.RHO, sgn * h), k)
+                half = G._bump_state(run, G.bumped(c, G.RHO, sgn * h / 2.0), k)
+                assert isinstance(full, G._ReadRefused) and full.reason == G.R_READ
+                assert isinstance(half, G._Read)
+        a = G.greeks(c, american=american)[G.RHO]
+        assert a.status == G.WITHHELD and a.reason == G.R_READ and a.audit["level"] == 1
+
+
+def test_the_t1_33_dividend_estimate_now_covers_its_reference_error():
+    # the dev generator's T1-near-boundary/33 inputs (invented): before P3-P1 the dividend sensitivity was returned
+    # 0.140 tol from its resolved reference with an estimate of 0.131 tol (a coverage miss)
+    c = ctx(is_call=False, spot=100.0, strike=112.879013, days=60, rho=0.09103545, q=-0.01480167, sigma=0.2813312,
+            divs=((0, 1.5703),))
+    ref, tol = 0.9560106221108564, 0.0025
+    a = G.greeks(c)[G.DIVIDEND]
+    assert a.status == G.RETURNED
+    assert abs(a.value - ref) <= a.estimate and abs(a.value - ref) < 0.05 * tol
