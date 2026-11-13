@@ -1,5 +1,27 @@
 {
-  "keys": {},
+  "keys": {
+    "2026-11-11": {
+      "memo_run_id": 43286312885,
+      "note": "",
+      "output_artifact": "memo-outcome-daily-2026-11-11-43286312885-1",
+      "overrides": [],
+      "paid_generation": null,
+      "run_attempt": 1,
+      "source": {
+        "db_sha256": "b3dd620dd2ff60e6fb6a8f71763d94c5c4eddccd9899ace66c02408ce138f466",
+        "origin_attempt": 1,
+        "origin_run_id": 43175135972,
+        "pin_session": "2026-11-11",
+        "reason": null,
+        "state": "source",
+        "validated_at": "2026-11-12T07:34:11Z",
+        "validation_sha256": "80908cdc7d2c0b7ece33620378412d394b9b0a4a076598bb9ea399ff3a4765a9"
+      },
+      "state": "attempt",
+      "tries": 2,
+      "updated_at": "2026-11-12T19:05:23Z"
+    }
+  },
   "kind": "daily",
   "published": null,
   "version": 1
