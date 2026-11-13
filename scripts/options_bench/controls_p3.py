@@ -208,7 +208,8 @@ def c2_lattice(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=G
 
 def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUANTITIES, cap=GR.REF_WORK_CAP) -> dict:
     """C2-Q (P3-AM2, section E): Q in European mode, with exactly the estimator of section C (the escalation
-    included), against the closed form: covered when |R_Q,E − exact| ≤ u_Q,E = u_Q,ref + u_Q,bump. A sequence
+    included, and since P3-AM6 the level 8192 (Q+) where `ql_escrowed.extra_eligible` admits it, under the same
+    budget; a cap hit there keeps the shallow study), against the closed form: covered when |R_Q,E − exact| ≤ u_Q,E = u_Q,ref + u_Q,bump. A sequence
     that does not converge is "unresolved: Q sequence not converging", reported and never a pass. The study runs
     with the reference budgets, so it escalates exactly as in American use; coverage is then checked on the
     stated estimate whatever its size ("within_budget" says whether it would have qualified)."""
@@ -227,14 +228,21 @@ def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUAN
         except GR.CapHit as e:
             out[k] = {"status": GR.R_CAP, "detail": str(e)}
             continue
+        deep = None
+        if qe.extra_eligible(q):                 # P3-AM6 B.2/B.3: Q+ by the same test as in the references
+            try:
+                q, deep = qe.study(c, sp, tol, False, budget.take, cache, extend=q), {"ran": True}
+            except GR.CapHit as e:               # the shallow study stands, as in references' pass 2
+                deep = {"status": GR.R_DEEP_CAP, "detail": str(e)}
         if q["G"] is None or q["u_ref"] is None:
-            out[k] = {"status": "unresolved: " + "; ".join(q["flags"]), "levels": q["levels"], "values": q["values"]}
+            out[k] = {"status": "unresolved: " + "; ".join(q["flags"]), "levels": q["levels"], "values": q["values"],
+                      "deep": deep}
             continue
         u = q["u_ref"] + q["u_bump"]
         err = abs(q["G"] - ex)
         out[k] = {"status": "scored", "G_Q": q["G"], "u_Q": u, "exact": ex, "err": err, "covered": err <= u,
                   "levels": q["levels"], "within_budget": q["u_ref"] <= GR.U_REF_MAX * tol
-                  and q["u_bump"] <= GR.U_BUMP_MAX * tol}
+                  and q["u_bump"] <= GR.U_BUMP_MAX * tol, "deep": deep}
     out["_work"] = {"used": budget.used}
     return out
 

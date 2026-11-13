@@ -423,3 +423,26 @@ def test_q_plus_is_charged_before_its_solve():
     with pytest.raises(GR.CapHit):
         qe.study(NODIV_CALL, sp, TOL, take=budget.take, extend=first)
     assert budget.used == 0.0
+
+
+@pytest.mark.parametrize("cap_on_plus", [False, True])
+def test_c2_q_extends_an_unqualified_study_with_q_plus_like_the_references(monkeypatch, cap_on_plus):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    tol = GR._tol(G.GAMMA, 0.645, DIV_PUT.spot)
+    seqs = {n: 0.645 + tol * (g - 0.645)                                 # in tolerances: unqualified at 4096,
+            for n, g in ((n1, 5.021), (n2, 2.634), (n3, 1.305), (n4, 0.648), (n5, 0.645))}   # 2048..8192 qualify
+    calls = []
+
+    def fake(c, sp, n, american=True, half=False, cache=None, take=None):
+        calls.append((n, american))
+        if cap_on_plus and n == n5:
+            raise GR.CapHit("Q+")
+        return seqs[n]
+    monkeypatch.setattr(qe, "quantity", fake)
+    monkeypatch.setattr(C, "exact", lambda c, k: 0.645)
+    got = C.c2_q(DIV_PUT, CFG, quantities=(G.GAMMA,))[G.GAMMA]
+    assert (n5, False) in calls                                         # European, as the control requires
+    if cap_on_plus:
+        assert got["deep"]["status"] == GR.R_DEEP_CAP and got["levels"] == [n1, n2, n3, n4]   # the shallow study stands
+    else:
+        assert got["status"] == "scored" and got["levels"][-1] == n5 and got["within_budget"] and got["covered"]
