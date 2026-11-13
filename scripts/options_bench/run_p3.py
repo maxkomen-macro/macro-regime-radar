@@ -127,7 +127,14 @@ def one(args) -> dict:
         rec["refs"] = {k: {**{kk: v.get(kk) for kk in ("status", "R", "u", "tol", "R_FD", "u_FD", "G_L", "u_L", "diff",
                                                       "G_Q", "u_Q", "diff_Q", "corroborated_by", "corroborators")},
                            "q": {kk: (v.get("q") or {}).get(kk) for kk in ("levels", "values", "u_ref", "u_bump", "flags", "branch")}
-                           if v.get("q") is not None else None}
+                           if v.get("q") is not None else None,
+                           # P3-AM6: the FD study's escalations, the shallow study it extended (if any), why an
+                           # extension stopped at the cap
+                           "fd_esc": ((v.get("fd") or {}).get("grid") or {}).get("escalations"),
+                           "shallow": {kk: ((v.get("fd") or {}).get("shallow") or {}).get(kk)
+                                       for kk in ("R", "u_ref", "u_bump", "flags")}
+                           if (v.get("fd") or {}).get("shallow") is not None else None,
+                           "deep": v.get("deep")}
                        for k, v in refs.items()}
         t0 = time.time()
         pr = reference.reference(case)

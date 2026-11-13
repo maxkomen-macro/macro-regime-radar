@@ -373,3 +373,261 @@ def test_the_base_grid_read_applies_the_exercise_value_exactly_at_a_day0_close(s
     naive = G.cubic_at(shared["x"], shared["v0"], math.log(s.spot - pv_s))
     assert abs(got - own) < 1e-5
     assert abs(naive - own) > 1e-3
+
+
+# ── P3-AM6 B.1, B.3, B.4: the space-only extension, two passes, the in-grid read ──
+
+def _space_fake(monkeypatch, c, a_tol, cap_n=None):
+    """FD quantity flat in time and penalty, and in the width study (every widened domain reads the m0/2 value);
+    in space a step of a_tol·tol at each doubling of the study's levels from m0/4 (n = log2(m/(m0/4))), so every
+    three levels read 'not-converging'. With cap_n the steps stop at that doubling, so a deeper study converges
+    and clears the shallow flag (design review DR-AM6-7)."""
+    tol = GR._tol(G.VEGA, 1.0, c.spot)
+    m0, _p0, w = fd.grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma, 0.0)
+    m0 -= m0 % 16
+
+    def fake(r, c_, sp_, k, half=False):
+        m = k.m if k.w == w else m0 // 2
+        n = int(round(np.log2(m / (m0 // 4))))
+        if cap_n is not None:
+            n = min(n, cap_n)
+        return 1.0 + a_tol * tol * n
+    monkeypatch.setattr(GR, "_fd_q", fake)
+    return tol, m0
+
+
+def test_a_shallow_flag_that_deeper_space_levels_clear_is_recomputed_not_kept(monkeypatch):
+    c = ctx()
+    sp = GR.spec(c, G.VEGA, G.GreekConfig())
+    tol, m0 = _space_fake(monkeypatch, c, 0.03, cap_n=4)
+    r = GR.Runner(GR.RefBudget())
+    f = GR.fd_study(r, c, sp)
+    from scripts.options_bench import reference as ref
+    assert f["grid"]["escalations"] == {"time": ref.ESCALATE_MAX, "space": ref.ESCALATE_MAX}
+    assert any("not-converging in space" in x for x in f["flags"]) and GR.extension_eligible(f)
+    f2 = GR.fd_study(r, c, sp, extend=f)
+    assert f2["flags"] == [] and f2["u_ref"] <= GR.U_REF_MAX * f2["tol"]
+    assert f2["grid"]["escalations"] == {"time": ref.ESCALATE_MAX, "space": ref.ESCALATE_MAX + 1}
+    assert f2["grid"]["space_levels"][-1] == 8 * m0 and f2["grid"]["time_levels"] == f["grid"]["time_levels"]
+    assert f2["shallow"]["flags"] == f["flags"] and f2["shallow"]["R"] == f["R"]       # kept for the audit
+
+
+def test_the_extension_stops_at_its_own_space_limit(monkeypatch):
+    c = ctx()
+    sp = GR.spec(c, G.VEGA, G.GreekConfig())
+    tol, m0 = _space_fake(monkeypatch, c, 0.03)
+    r = GR.Runner(GR.RefBudget())
+    f = GR.fd_study(r, c, sp)
+    f2 = GR.fd_study(r, c, sp, extend=f)
+    assert f2["grid"]["escalations"]["space"] == GR.SPACE_ESCALATE_MAX and f2["flags"]
+    assert f2["grid"]["space_levels"][-1] == 2 ** GR.SPACE_ESCALATE_MAX * m0
+    assert f2["grid"]["time_levels"] == f["grid"]["time_levels"]                          # time is never extended
+
+
+def test_a_study_within_budget_is_never_extended(monkeypatch):
+    c = ctx()
+    sp = GR.spec(c, G.VEGA, G.GreekConfig())
+    _space_fake(monkeypatch, c, 0.0)
+    f = GR.fd_study(GR.Runner(GR.RefBudget()), c, sp)
+    assert f["grid"]["escalations"] == {"time": 0, "space": 0} and not GR.extension_eligible(f)
+
+
+def _f(flags=(), u_ref=0.01, esc=(2, 2), width=(0.0, 0.0), u_p=0.0, tol=1.0):
+    return {"R": 1.0, "u_ref": u_ref, "u_bump": 0.0, "tol": tol, "flags": list(flags), "width_steps": list(width),
+            "u_penalty": u_p, "grid": {"escalations": {"time": esc[0], "space": esc[1]}}}
+
+
+def test_extension_eligibility_is_the_designed_test():
+    assert GR.extension_eligible(_f(u_ref=0.08))
+    assert GR.extension_eligible(_f(flags=["vega not-converging in space"]))
+    assert not GR.extension_eligible(_f())                                       # within budget
+    assert not GR.extension_eligible(_f(u_ref=0.08, esc=(1, 2)))                 # counters not at the limit
+    assert not GR.extension_eligible(_f(u_ref=0.08, esc=(2, 1)))
+    assert not GR.extension_eligible(_f(u_ref=0.08, width=(0.05, 0.03)))         # stopped on width and penalty
+    assert not GR.extension_eligible(_f(u_ref=0.08, u_p=0.08))
+    assert not GR.extension_eligible(_f(flags=["penalty iteration cap hit on 3 steps"]))   # pass-1 penalty miss
+
+
+def _two_pass_fakes(monkeypatch, deep):
+    """Every FD study over budget and eligible in pass 1; `deep(name)` gives the extension's result or raises.
+    The lattice agrees and is qualified. Records the call order."""
+    calls = []
+
+    def fake_fd(r, c, sp, escalate=True, extend=None):
+        calls.append((sp.name, extend is not None))
+        if extend is None:
+            return _f(u_ref=0.08, tol=1.0)
+        return deep(sp.name, r)
+    lat = {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []}
+    monkeypatch.setattr(GR, "fd_study", fake_fd)
+    monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: dict(lat))
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    return calls
+
+
+def test_the_extensions_run_after_every_pass_1_study_and_a_cap_keeps_the_pass_1_result(monkeypatch):
+    qs = (GR.PRICE, G.VEGA)
+
+    def deep(name, r):
+        if name == GR.PRICE:
+            raise GR.CapHit("deep")
+        return {**_f(u_ref=0.01), "shallow": _f(u_ref=0.08)}
+    calls = _two_pass_fakes(monkeypatch, deep)
+    out = GR.references(ctx(), quantities=qs, corroborate_q=False)
+    assert calls == [(GR.PRICE, False), (G.VEGA, False), (GR.PRICE, True), (G.VEGA, True)]
+    assert out[GR.PRICE]["status"].startswith("unresolved") and "FD refinement" in out[GR.PRICE]["status"]
+    assert out[GR.PRICE]["deep"]["status"] == GR.R_DEEP_CAP and out[GR.PRICE]["fd"]["u_ref"] == 0.08
+    assert out[G.VEGA]["status"] == GR.RESOLVED and out[G.VEGA]["fd"]["shallow"]["u_ref"] == 0.08
+    calls.clear()
+    out0 = GR.references(ctx(), quantities=qs, corroborate_q=False, extend=False)
+    assert calls == [(GR.PRICE, False), (G.VEGA, False)]
+    assert all(out0[k]["status"] == out[GR.PRICE]["status"] for k in qs)
+
+
+def _read_solve(r, key, misses):
+    """A solve the study reads, as Runner.fd records it (DR-AM6-8)."""
+    r._fd.setdefault(key, {"penalty_unconverged": misses})
+    if r._track is not None:
+        r._track.add(key)
+
+
+def test_a_new_penalty_miss_in_the_deeper_study_stays_a_flag(monkeypatch):
+    def deep(name, r):
+        _read_solve(r, ("deep",), 2)
+        return _f(u_ref=0.01)
+    _two_pass_fakes(monkeypatch, deep)
+    out = GR.references(ctx(), quantities=(G.VEGA,), corroborate_q=False)
+    assert "penalty iteration cap hit on 2 steps (deeper study)" in out[G.VEGA]["status"]
+
+
+def test_the_european_control_extends_the_fd_side_alone(monkeypatch):
+    calls = _two_pass_fakes(monkeypatch, lambda name, r: _f(u_ref=0.01))
+    out = GR.references(ctx(), quantities=(G.VEGA,), american=False)
+    assert calls == [(G.VEGA, False), (G.VEGA, True)]
+    assert out[G.VEGA]["status"] == "FD only (European control)" and out[G.VEGA]["fd"]["u_ref"] == 0.01
+
+
+def test_a_base_grid_read_outside_the_grid_is_refused_never_extrapolated(monkeypatch):
+    c = ctx(divs=((20, 2.0),))
+    sp = GR.spec(c, G.DIVIDEND, G.GreekConfig())
+    s = sp.states[0]
+    pv_s = fd.pv_owed(s.divs, s.rho, 0.0)
+    x1 = np.log(s.spot - pv_s)
+    r = GR.Runner(GR.RefBudget())
+    k = GR.Key(400, 4, 1.0, fd.PENALTY)
+    grid = {"x": np.array([x1 - 0.2, x1 - 0.1, x1 + 0.1, x1 + 0.2]), "v0": np.zeros(4), "free0": np.zeros(4),
+            "value": 0.0}
+    monkeypatch.setattr(r, "fd", lambda st, kk: grid)
+    GR._value_on_base_grid(r, c, s, k)                                       # inside x[1]..x[-2]: read
+    grid["x"] = np.array([x1 - 0.3, x1 - 0.2, x1 - 0.1, x1 + 0.1])            # x1 beyond x[-2]: refused
+    with pytest.raises(GR.ReadOutside):
+        GR._value_on_base_grid(r, c, s, k)
+    grid["x"] = np.array([x1 - 0.1, x1 + 0.1, x1 + 0.2, x1 + 0.3])            # x1 below x[1]: refused
+    with pytest.raises(GR.ReadOutside):
+        GR._value_on_base_grid(r, c, s, k)
+
+
+@pytest.mark.parametrize("g_plus,want", [(1.05, "agree"), (1.2, "disagree")])
+def test_q_plus_runs_on_a_lattice_resolved_reference_and_a_disagreeing_q_plus_blocks(monkeypatch, g_plus, want):
+    from scripts.options_bench import ql_escrowed as qe
+    lat = {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []}
+    monkeypatch.setattr(GR, "fd_study", lambda r, c, sp, escalate=True, extend=None: _f(u_ref=0.01, esc=(0, 0)))
+    monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: dict(lat))
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    shallow = {"G": 1.3, "u_ref": None, "u_bump": 0.0, "flags": [qe.R_NOT_CONVERGING],
+               "levels": list(qe.LEVELS) + [qe.ESCALATE], "values": [1.0] * 4, "branch": None}
+    seen = []
+
+    def fake_study(c, sp, tol, american=True, take=None, cache=None, extend=None, **kw):
+        seen.append(extend is not None)
+        if extend is None:
+            return dict(shallow)
+        return {"G": g_plus, "u_ref": 0.02, "u_bump": 0.0, "flags": [], "levels": shallow["levels"] + [qe.EXTRA],
+                "values": [1.0] * 4 + [g_plus], "branch": None}
+    monkeypatch.setattr(qe, "study", fake_study)
+    base = GR.references(ctx(), quantities=(G.VEGA,), extend=False)[G.VEGA]
+    assert base["status"] == GR.RESOLVED and base["u"] == pytest.approx(0.01)        # the lattice resolves alone
+    seen.clear()
+    out = GR.references(ctx(), quantities=(G.VEGA,))[G.VEGA]
+    assert seen == [False, True] and out["q"]["levels"][-1] == qe.EXTRA
+    if want == "agree":
+        assert out["status"] == GR.RESOLVED and out["u"] == pytest.approx(0.05)     # u raised to the difference
+    else:
+        assert out["status"].startswith("unresolved") and "disagree" in out["status"]
+
+
+def test_the_forced_c2_fd_control_reads_every_depth_and_never_changes_the_reference_path(monkeypatch):
+    from scripts.options_bench import controls_p3 as C
+    c = ctx()
+    tol, m0 = _space_fake(monkeypatch, c, 0.0)                     # within budget: references never extend it
+    monkeypatch.setattr(C, "exact", lambda c_, k: 1.0)
+    out = C.c2_fd_forced(c, quantities=(G.VEGA,))[G.VEGA]
+    assert out["status"] == "scored" and sorted(out["depths"]) == [3, 4, 5]
+    assert [out["depths"][d]["depth"] for d in (3, 4, 5)] == [3, 4, 5]
+    assert all(row["covered"] and row["resolves"] for row in out["depths"].values())
+    f = GR.fd_study(GR.Runner(GR.RefBudget(), False), c, GR.spec(c, G.VEGA, G.GreekConfig()))
+    assert f["grid"]["escalations"] == {"time": 0, "space": 0} and not GR.extension_eligible(f)
+
+
+# ── design review DR-AM6-8: a cached unconverged solve flags every study that reads it ──
+
+def _fake_kernel(monkeypatch, bad_m):
+    """fd.solve returning finite values everywhere, reporting penalty-iteration misses on the m = bad_m grids."""
+    def solve(is_call, spot, strike, days, rho, q, sigma, divs, m, p, w, american=True, penalty=None, diag=None,
+              grids=None):
+        x = np.linspace(-1.0, 1.0, m + 1) + np.log(spot)
+        grids.update(x=x, xs=np.exp(x), v0=np.ones(m + 1), free0=np.ones(m + 1))
+        diag["penalty_unconverged"] = 3 if m == bad_m else 0
+        return 1.0, 0.5
+    monkeypatch.setattr(GR.fd, "solve", solve)
+    monkeypatch.setattr(GR.fd, "solve_units", lambda m, p, days: 1.0)
+
+
+def test_the_runner_counts_a_cached_solve_s_misses_for_every_reader(monkeypatch):
+    _fake_kernel(monkeypatch, 400)
+    r = GR.Runner(GR.RefBudget())
+    k = GR.Key(400, 4, 1.0, fd.PENALTY)
+    r.track()
+    r.fd(ctx(), k)
+    assert r.penalty_in_tracked() == 3 and r.budget.fd_solves == 1
+    r.track()
+    r.fd(ctx(), k)                                                 # a cache hit: no solve, the misses still count
+    assert r.penalty_in_tracked() == 3 and r.budget.fd_solves == 1
+    r.track()
+    r.fd(ctx(), GR.Key(800, 4, 1.0, fd.PENALTY))
+    assert r.penalty_in_tracked() == 0
+
+
+@pytest.mark.parametrize("order", [(GR.PRICE, G.GAMMA), (G.GAMMA, GR.PRICE)])
+def test_a_shared_unconverged_solve_flags_both_quantities_whatever_the_order(monkeypatch, order):
+    _fake_kernel(monkeypatch, 400)
+    shared = GR.Key(400, 4, 1.0, fd.PENALTY)
+
+    def fake_fd(r, c, sp, escalate=True, extend=None):
+        r.fd(c, shared)                                            # price and gamma read the same solve
+        return _f(u_ref=0.01, esc=(0, 0))
+    monkeypatch.setattr(GR, "fd_study", fake_fd)
+    monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []})
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    out = GR.references(ctx(), quantities=order, corroborate_q=False)
+    for k in order:
+        assert "penalty iteration cap hit on 3 steps" in out[k]["status"], (k, out[k]["status"])
+
+
+def test_a_solve_cached_by_an_extension_that_hit_the_cap_still_flags_its_next_reader(monkeypatch):
+    _fake_kernel(monkeypatch, 1600)
+    deep_key = GR.Key(1600, 4, 1.0, fd.PENALTY)
+
+    def fake_fd(r, c, sp, escalate=True, extend=None):
+        if extend is None:
+            return _f(u_ref=0.08, tol=1.0)                          # over budget, eligible
+        r.fd(c, deep_key)                                          # the deep level, unconverged
+        if sp.name == GR.PRICE:
+            raise GR.CapHit("after the deep solve")
+        return _f(u_ref=0.01)
+    monkeypatch.setattr(GR, "fd_study", fake_fd)
+    monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []})
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    out = GR.references(ctx(), quantities=(GR.PRICE, G.GAMMA), corroborate_q=False)
+    assert out[GR.PRICE]["deep"]["status"] == GR.R_DEEP_CAP
+    assert "penalty iteration cap hit on 3 steps (deeper study)" in out[G.GAMMA]["status"]

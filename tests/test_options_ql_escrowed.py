@@ -337,3 +337,89 @@ def test_the_levels_restore_the_cell_at_x0_that_the_wider_span_took():
         was, now = _cell_at_x0(old, x0), _cell_at_x0(qe.mesh(c, qe.LEVELS[0])[0], x0)
         wide = _cell_at_x0(qe.mesh(c, 400)[0], x0)
         assert abs(now / was - 1.0) < 0.03 and wide / was > 1.15, (c, was, now, wide)
+
+
+# ── P3-AM6 B.2: Q+, one more level after the escalation ──────────────────────
+
+def _q_fake(monkeypatch, seqs, calls=None, half_shift=0.0):
+    def fake(c, sp, n, american=True, half=False, cache=None, take=None):
+        if calls is not None:
+            calls.append((n, half))
+        return seqs[n] + (half_shift * n / qe.EXTRA if half else 0.0)     # a bump term that grows with n, so the
+                                                                             # level it is read at is visible
+    monkeypatch.setattr(qe, "quantity", fake)
+
+
+def test_steps_per_day_at_the_q_plus_level_keep_the_first_level_s_rule():
+    assert [qe.steps_per_day(d, qe.EXTRA) for d in (1, 511, 512, 513, 1464)] == [8192, 32, 16, 16, 16]
+    assert qe.EXTRA == 2 * qe.ESCALATE
+
+
+def test_pass_1_never_reaches_the_q_plus_level(monkeypatch):
+    n1, n2, n3, n4 = qe.LEVELS + (qe.ESCALATE,)
+    calls = []
+    _q_fake(monkeypatch, {n1: 0.0, n2: 0.04, n3: 0.01, n4: 0.06}, calls)     # unqualified after the escalation
+    out = qe.study(NODIV_CALL, GR.spec(NODIV_CALL, GR.PRICE, CFG), TOL)
+    assert out["flags"] and qe.EXTRA not in [n for n, _ in calls] and out["levels"] == [n1, n2, n3, n4]
+    assert qe.extra_eligible(out)
+
+
+def test_q_plus_runs_rule_c_on_the_last_three_levels_and_the_bump_term_at_8192(monkeypatch):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    seqs = {n1: 5.021, n2: 2.634, n3: 1.305, n4: 0.648}             # first order: unqualified after 4096
+    calls = []
+    _q_fake(monkeypatch, seqs, calls, half_shift=0.01)
+    sp = GR.spec(DIV_PUT, G.VEGA, CFG)
+    assert sp.h is not None
+    first = qe.study(DIV_PUT, sp, 1.0)
+    assert first["flags"] and qe.extra_eligible(first) and first["u_bump"] == pytest.approx(0.005)
+    seqs[n5] = 0.648 - 0.003                                       # 2048..8192 settle: rule C qualifies
+    calls.clear()
+    out = qe.study(DIV_PUT, sp, 1.0, extend=first)
+    assert [n for n, h in calls if not h] == [n5]                               # only the new level is solved
+    assert out["levels"] == [n1, n2, n3, n4, n5] and out["values"][:4] == first["values"]
+    assert out["u_ref"] == qe.estimate([seqs[n3], seqs[n4], seqs[n5]], 1.0)
+    assert out["flags"] == [] and out["G"] == seqs[n5] and out["branch"] is None
+    assert (n5, True) in calls and out["u_bump"] == pytest.approx(0.01)       # the bump term at 8192
+
+
+def test_q_plus_takes_the_alternating_estimate_on_1024_to_8192_only(monkeypatch):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    seqs = {n1: 0.097, n2: 0.037, n3: -0.020, n4: 0.011, n5: -0.005}  # 512 breaks the alternation; 1024..8192 hold it
+    _q_fake(monkeypatch, seqs)
+    sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
+    first = qe.study(DIV_PUT, sp, 1.0)
+    assert first["flags"] and first["branch"] is None
+    out = qe.study(DIV_PUT, sp, 1.0, extend=first)
+    assert out["branch"] == "alternating" and out["flags"] == [] and out["G"] == -0.005
+    assert out["u_ref"] == pytest.approx(qe.FLOOR)
+
+
+def test_q_plus_left_unqualified_is_still_q_s_result(monkeypatch):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    _q_fake(monkeypatch, {n1: 0.0, n2: 0.04, n3: 0.01, n4: 0.06, n5: 0.2})
+    sp = GR.spec(NODIV_CALL, GR.PRICE, CFG)
+    first = qe.study(NODIV_CALL, sp, TOL)
+    out = qe.study(NODIV_CALL, sp, TOL, extend=first)
+    assert out["flags"] and out["levels"][-1] == n5 and out["G"] == 0.2
+
+
+def test_q_plus_is_eligible_only_after_an_unqualified_escalation():
+    n = list(qe.LEVELS)
+    assert not qe.extra_eligible({"flags": [], "levels": n + [qe.ESCALATE]})
+    assert not qe.extra_eligible({"flags": [qe.R_NOT_CONVERGING], "levels": n})
+    assert not qe.extra_eligible({"flags": [f"{qe.R_REFUSED}: boom"], "levels": n + [qe.ESCALATE]})
+    assert not qe.extra_eligible({"flags": [qe.R_NOT_CONVERGING], "levels": n + [qe.ESCALATE, qe.EXTRA]})
+    assert qe.extra_eligible({"flags": ["Q bump term above 0.03 tolerances"], "levels": n + [qe.ESCALATE]})
+    with pytest.raises(ValueError):
+        qe.study(NODIV_CALL, GR.spec(NODIV_CALL, GR.PRICE, CFG), TOL, extend={"flags": [], "levels": n})
+
+
+def test_q_plus_is_charged_before_its_solve():
+    budget = GR.RefBudget(1e5)
+    sp = GR.spec(NODIV_CALL, GR.PRICE, CFG)
+    first = {"G": 1.0, "u_ref": None, "u_bump": 0.0, "flags": [qe.R_NOT_CONVERGING],
+             "levels": list(qe.LEVELS) + [qe.ESCALATE], "values": [1.0, 1.1, 1.0, 1.1]}
+    with pytest.raises(GR.CapHit):
+        qe.study(NODIV_CALL, sp, TOL, take=budget.take, extend=first)
+    assert budget.used == 0.0

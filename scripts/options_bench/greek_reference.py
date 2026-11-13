@@ -52,9 +52,13 @@ LATTICE_F = 3.0       # the Phase 2 envelope estimator's factor (phase2-freeze-2
 LATTICE_SCHEDULE = "multiples"   # the Phase 2 schedule (phase2-freeze-2.json): N_k = steps_for(days)·k, k ≤ 6
 MIN_LEVELS = oa.MIN_LEVELS
 REF_WORK_CAP = 2e10   # placeholder: FD cells plus lattice units per context, set from the dev pilot's costs
+SPACE_ESCALATE_MAX = 5   # P3-AM6 B.1: total space escalations of an extended FD study (the shallow study's limit
+                         # stays reference.ESCALATE_MAX = 2 per dimension; time is never extended)
 
 RESOLVED = "resolved"
 R_CAP = "reference work cap"
+R_DEEP_CAP = "deeper study stopped at the reference work cap"   # P3-AM6 B.3: the pass-1 result stands
+R_READ = "FD bump read outside the grid"                        # P3-AM6 B.4
 R_NOT_CORROBORATED = "not independently corroborated"
 R_NODE_NEAR = "lattice node gamma near an exercise decision"
 R_LATTICE_SHORT = "the lattice schedule cannot reach four levels"
@@ -65,6 +69,10 @@ CORROBORATE_Q = True   # P3-AM2: Q (QuantLib-kernel solve of the same model) run
 
 class CapHit(Exception):
     pass
+
+
+class ReadOutside(Exception):
+    """P3-AM6 B.4: a moved bump state's read point lies outside its solved grid's interior."""
 
 
 class RefBudget:
@@ -101,6 +109,17 @@ class Runner:
         self._fd: dict = {}
         self._lat: dict = {}
         self.penalty_misses = 0
+        self._track: set | None = None   # P3-AM6 (design review DR-AM6-8): the FD solves a study consumes
+
+    def track(self) -> None:
+        """Start recording every FD solve read, cache hits included, for `penalty_in_tracked`."""
+        self._track = set()
+
+    def penalty_in_tracked(self) -> int:
+        """Stop recording; the penalty-iteration misses of every solve read since `track`, cache hits included, so
+        a study that reuses another quantity's unconverged solve is flagged whatever the order (DR-AM6-8)."""
+        keys, self._track = self._track or set(), None
+        return sum(self._fd[k]["penalty_unconverged"] for k in keys if k in self._fd)
 
     def fd(self, s: om.Context, k: Key) -> dict:
         key = (s, k)
@@ -112,7 +131,9 @@ class Runner:
                             american=self.american, penalty=k.pen, diag=dg, grids=gr)
             self.penalty_misses += dg.get("penalty_unconverged", 0)
             self._fd[key] = {"value": float(v), "delta": float(d), "x": gr["x"], "xs": gr["xs"], "v0": gr["v0"],
-                           "free0": gr["free0"]}
+                           "free0": gr["free0"], "penalty_unconverged": int(dg.get("penalty_unconverged", 0))}
+        if self._track is not None:
+            self._track.add(key)
         return self._fd[key]
 
     def lattice(self, s: om.Context, mult: int, nodes: bool = False) -> dict:
@@ -157,6 +178,8 @@ def _value_on_base_grid(r: Runner, c: om.Context, s: om.Context, k: Key) -> floa
         return r.fd(s, k)["value"]
     got = r.fd(replace(s, spot=c.spot - pv_c + pv_s), k)
     x1 = math.log(s.spot - pv_s)
+    if not (got["x"][1] <= x1 <= got["x"][-2]):      # P3-AM6 B.4: an interpolation, never an extrapolation
+        raise ReadOutside(f"ln X_0 {x1:.6g} outside [{got['x'][1]:.6g}, {got['x'][-2]:.6g}]")
     if not r.american:
         return G.cubic_at(got["x"], got["v0"], x1)
     # American (design review DR-AM4-2): v0 = max(free0, exercise value) is only C⁰ where the projection binds at
@@ -248,13 +271,26 @@ def _tol(name: str, value: float, spot: float) -> float:
 
 # ── the FD side: reference.py's study, run on the quantity itself ──────────
 
-def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True) -> dict:
+def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True, extend: dict | None = None,
+             space_max: int = SPACE_ESCALATE_MAX, force: bool = False) -> dict:
     """R_FD, u_FD,ref (time, space, width, penalty; GCI, the time order capped at 1 for American values),
-    u_FD,bump and the flags. Raises CapHit when the budget runs out."""
+    u_FD,bump and the flags. Raises CapHit when the budget runs out.
+
+    `extend` (P3-AM6 B.1): a shallow study's result that `extension_eligible` admits. The study then resumes from
+    its final levels and adds space levels only, one doubling at a time, while the same trigger holds, the
+    width-and-penalty stop does not fire and fewer than SPACE_ESCALATE_MAX space escalations have run; the flags are
+    the final assessment's (the caller adds penalty misses), and the shallow result is kept under "shallow".
+    `space_max` and `force` serve the forced C2-FD control only (controls_p3.c2_fd_forced): the extension runs to
+    `space_max` space escalations in total whatever the trigger says (the width-and-penalty stop still applies).
+    References always use the defaults."""
     m0, p0, w = fd.grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma, fd.pv_owed(c.divs, c.rho, 0.0))
     m0 -= m0 % 16
-    t_levels, s_levels = [p0 // 2, p0, 2 * p0], [m0 // 4, m0 // 2, m0]
-    steps = {"time": 0, "space": 0}
+    if extend is None:
+        t_levels, s_levels = [p0 // 2, p0, 2 * p0], [m0 // 4, m0 // 2, m0]
+        steps = {"time": 0, "space": 0}
+    else:
+        g = extend["grid"]
+        t_levels, s_levels, steps = list(g["time_levels"]), list(g["space_levels"]), dict(g["escalations"])
 
     def q(m, p, ww=w, pen=fd.PENALTY):
         return _fd_q(r, c, sp, Key(m, p, ww, pen))
@@ -294,6 +330,16 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True) -> dict:
                 "width_steps": [w1, w2], "u_penalty": u_p, "raw_finest": base, "flags": flags}
 
     out = assess()
+    if extend is not None:
+        while ((force or _over(out)) and steps["space"] < space_max
+               and sum(out["width_steps"]) + out["u_penalty"] <= U_REF_MAX * out["tol"]):
+            s_levels.append(2 * s_levels[-1])
+            steps["space"] += 1
+            out = assess()
+        out["grid"] = {"m": m0, "p": p0, "width": w, "time_levels": list(t_levels), "space_levels": list(s_levels),
+                       "escalations": steps}
+        out["shallow"] = {k: v for k, v in extend.items() if k != "shallow"}
+        return out
     while escalate and (out["flags"] or out["u_ref"] > U_REF_MAX * out["tol"]
                         or out["u_bump"] > U_BUMP_MAX * out["tol"]):
         # space first when the flow is convective, and (P3-AM3 change 3) when the bump term is over its budget
@@ -313,6 +359,21 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True) -> dict:
     out["grid"] = {"m": m0, "p": p0, "width": w, "time_levels": list(t_levels), "space_levels": list(s_levels),
                    "escalations": steps}
     return out
+
+
+def _over(out: dict) -> bool:
+    """The FD side over budget or flagged: the shallow loop's own trigger."""
+    return bool(out["flags"] or out["u_ref"] > U_REF_MAX * out["tol"] or out["u_bump"] > U_BUMP_MAX * out["tol"])
+
+
+def extension_eligible(f: dict) -> bool:
+    """P3-AM6 B.3 pass 2, the FD test: a completed shallow study over budget or flagged, both counters at the
+    shallow limit, not stopped on the width-and-penalty test, and no pass-1 penalty flag (which no deeper level can
+    clear). Whether the reference resolved plays no part."""
+    g = f.get("grid", {}).get("escalations", {})
+    return (_over(f) and g.get("time") == ref.ESCALATE_MAX and g.get("space") == ref.ESCALATE_MAX
+            and sum(f["width_steps"]) + f["u_penalty"] <= U_REF_MAX * f["tol"]
+            and not any(x.startswith("penalty iteration cap hit") for x in f["flags"]))
 
 
 # ── the lattice side: the Phase 2 schedule and envelope estimator on the quantity ──
@@ -443,8 +504,14 @@ def score(g: float, R: float, u: float, tol: float) -> str:
 
 # ── one context ────────────────────────────────────────────────────────────
 
+def _fd_only(f: dict) -> dict:
+    return {"status": "FD only (European control)", "fd": f, "R_FD": f["R"], "u_FD": f["u_ref"] + f["u_bump"],
+            "tol": f["tol"]}
+
+
 def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=QUANTITIES, american: bool = True,
-               cap: float = REF_WORK_CAP, smooth_divs: bool = False, corroborate_q: bool | None = None) -> dict:
+               cap: float = REF_WORK_CAP, smooth_divs: bool = False, corroborate_q: bool | None = None,
+               extend: bool = True) -> dict:
     """Every requested quantity's reference for context c, under one aggregate budget. `american=False` is the
     C2 FD adequacy control: the FD study in European mode, no lattice side, scored against closed forms.
     `corroborate_q` (default CORROBORATE_Q): Q runs for every quantity and section D of P3-AM2 resolves."""
@@ -459,6 +526,7 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
         budget.take(units)
         q_cells[0] += units
     out: dict = {}
+    passes: dict = {}
     bad = G.state_failure(c)
     for name in quantities:
         if bad is not None or c.days == 0:
@@ -468,24 +536,61 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
         if isinstance(sp, str):
             out[name] = {"status": f"unresolved: {sp}"}
             continue
-        misses = r.penalty_misses
+        r.track()
         try:
-            f = fd_study(r, c, sp)
-            if r.penalty_misses > misses:
-                f["flags"].append(f"penalty iteration cap hit on {r.penalty_misses - misses} steps")
+            try:
+                f = fd_study(r, c, sp)
+            finally:
+                misses = r.penalty_in_tracked()
+            if misses:
+                f["flags"].append(f"penalty iteration cap hit on {misses} steps")
             if not american:
-                out[name] = {"status": "FD only (European control)", "fd": f, "R_FD": f["R"],
-                             "u_FD": f["u_ref"] + f["u_bump"], "tol": f["tol"]}
+                out[name] = _fd_only(f)
+                passes[name] = (sp, f, None, None)
                 continue
             lat = lattice_seq(r, c, sp, f["tol"])
             qs = qe.study(c, sp, f["tol"], True, q_take, q_cache) if use_q else None
         except CapHit as e:
             out[name] = {"status": f"unresolved: {R_CAP}", "detail": str(e)}
             continue
+        except ReadOutside as e:            # P3-AM6 B.4: the FD side cannot read this quantity; never extrapolated
+            out[name] = {"status": f"unresolved: {R_READ}", "detail": str(e)}
+            continue
         res = resolve(f["tol"], f, lat, qs)
         out[name] = {**res, "fd": f, "lattice": lat}
         if qs is not None:
             out[name]["q"] = qs
+        passes[name] = (sp, f, lat, qs)
+    # P3-AM6 B.3 pass 2: the extensions, in quantity order, with whatever budget pass 1 left; a quantity whose
+    # extension hits the cap keeps its pass-1 result
+    for name, (sp, f, lat, qs) in passes.items():
+        do_fd = extend and extension_eligible(f)
+        do_q = extend and qs is not None and qe.extra_eligible(qs)
+        if not (do_fd or do_q):
+            continue
+        try:
+            if do_fd:
+                r.track()
+                try:
+                    f2 = fd_study(r, c, sp, extend=f)
+                finally:
+                    misses = r.penalty_in_tracked()
+                if misses:   # every solve the extended study read, the shallow levels' included (DR-AM6-8)
+                    f2["flags"].append(f"penalty iteration cap hit on {misses} steps (deeper study)")
+            else:
+                f2 = f
+            qs2 = qe.study(c, sp, f["tol"], True, q_take, q_cache, extend=qs) if do_q else qs
+        except (CapHit, ReadOutside) as e:  # the pass-1 result stands, with the reason the extension stopped
+            why = R_DEEP_CAP if isinstance(e, CapHit) else f"deeper study stopped: {R_READ}"
+            out[name] = {**out[name], "deep": {"status": why, "detail": str(e)}}
+            continue
+        if not american:
+            out[name] = _fd_only(f2)
+            continue
+        res = resolve(f2["tol"], f2, lat, qs2)
+        out[name] = {**res, "fd": f2, "lattice": lat}
+        if qs2 is not None:
+            out[name]["q"] = qs2
     out["_work"] = {"used": budget.used, "cap": budget.cap, "fd_solves": budget.fd_solves,
                     "lattice_calls": budget.lattice_calls, "q_cells": q_cells[0], "secs": time.time() - t0}
     return out

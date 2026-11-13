@@ -10,7 +10,8 @@ PV_t = Σ_{d_i ≥ t} D_i·e^{−r(d_i − t)/365}, exercise value (sgn·(X_t + 
   steps, N_t = days·spd steps in all (QuantLib divides the horizon by steps + damping steps), spd whole steps
   per calendar day, so every close is a grid time and the theta pair shares its grid; spd doubles with n
   (spd = ceil(LEVELS[0]/days)·n/LEVELS[0], P3-AM3 change 2), so every level halves both the space and the time
-  step; levels 512, 1024, 2048 and the one escalation 4096 (amendment P3-AM5);
+  step; levels 512, 1024, 2048 and the one escalation 4096 (amendment P3-AM5), then (P3-AM6 B.2, Q+) the level
+  8192 when 4096 and the alternating estimate still leave Q unqualified;
 - early exercise: a step condition projecting onto the exercise value after every step, through a zero-copy
   view of the QuantLib Array (layout-checked on every call, element-wise fallback, bit-identical);
 - read-out: CubicNaturalSpline in ln X; gamma = (V_xx − V_x)/X_0².
@@ -39,6 +40,8 @@ YEAR_DAYS = 365.0
 LEVELS = (512, 1024, 2048)   # mesh sizes n; spd = ceil(512 / days)·n/512 (P3-AM3 rule; P3-AM5: 512 restores
                              # P3-AM3's cell at X_0 within 3% under MESH_EPS 1e-6, which widened it by ~28% at 400)
 ESCALATE = 4096              # the one extra level when LEVELS leave Q unqualified (section C)
+EXTRA = 8192                 # P3-AM6 B.2 (Q+): one more level when the escalation and the alternating estimate
+                             # still leave Q unqualified; run as pass 2 of greek_reference.references (B.3)
 DAMPING = 2
 FLOOR = 0.02                 # reference floor, of tol (= greek_reference.REF_FLOOR)
 RHO_MAX = 0.75               # slower than this is "not converging"
@@ -232,14 +235,27 @@ def estimate4(g: list[float], tol: float, f_q: float = F_Q) -> tuple[str, float,
     return None
 
 
+def extra_eligible(qs: dict) -> bool:
+    """P3-AM6 B.3 pass 2, the Q+ test: a completed study (not refused) that went through the escalation to
+    ESCALATE and still left Q unqualified after the alternating estimate."""
+    return (bool(qs.get("flags")) and not any(f.startswith(R_REFUSED) for f in qs["flags"])
+            and tuple(qs.get("levels") or ()) == LEVELS + (ESCALATE,))
+
+
 def study(c: om.Context, sp, tol: float, american: bool = True, take=None, cache: dict | None = None,
-          u_ref_max: float = 0.07, u_bump_max: float = 0.03) -> dict:
+          u_ref_max: float = 0.07, u_bump_max: float = 0.03, extend: dict | None = None) -> dict:
     """Q on one quantity (section C): levels LEVELS, then the one escalation to ESCALATE when unqualified.
     Returns G, u_ref, u_bump, flags (non-empty: Q is not qualified), the levels and values. A QuantLib error or a
-    non-finite value is "Q refused"; the budget's CapHit propagates to the caller, as for the FD and lattice."""
+    non-finite value is "Q refused"; the budget's CapHit propagates to the caller, as for the FD and lattice.
+
+    `extend` (P3-AM6 B.2 step 3, Q+): a study of the same quantity that `extra_eligible` admits. Its levels and
+    values are kept, the level EXTRA is added, rule C runs on 2048, 4096, 8192 with the bump term at 8192, then the
+    alternating estimate on the last four levels when rule C leaves Q unqualified. The result is Q's either way."""
     if ql is None:
         return {"G": None, "u_ref": None, "u_bump": None, "flags": [f"{R_REFUSED}: QuantLib not installed"],
                 "levels": [], "values": []}
+    if extend is not None and not extra_eligible(extend):     # a caller's error, never reported as "Q refused"
+        raise ValueError("Q+ needs a completed study that escalated to 4096 and stayed unqualified")
     cache = {} if cache is None else cache
     ns, seq = [], []
 
@@ -259,21 +275,27 @@ def study(c: om.Context, sp, tol: float, american: bool = True, take=None, cache
         return u, ub, flags
 
     try:
-        for n in LEVELS:
-            seq.append(level(n))
-            ns.append(n)
-        u, ub, flags = assess(seq, ns[-1])
-        if flags:
-            seq.append(level(ESCALATE))
-            ns.append(ESCALATE)
-            u, ub, flags = assess(seq[-3:], ESCALATE)
+        if extend is None:
+            for n in LEVELS:
+                seq.append(level(n))
+                ns.append(n)
+            u, ub, flags = assess(seq, ns[-1])
+            if flags:
+                seq.append(level(ESCALATE))
+                ns.append(ESCALATE)
+                u, ub, flags = assess(seq[-3:], ESCALATE)
+        else:
+            ns, seq = list(extend["levels"]), list(extend["values"])
+            seq.append(level(EXTRA))
+            ns.append(EXTRA)
+            u, ub, flags = assess(seq[-3:], EXTRA)
     except (RuntimeError, ValueError, TypeError) as e:
         return {"G": None, "u_ref": None, "u_bump": None, "flags": [f"{R_REFUSED}: {str(e)[:120]}"],
                 "levels": ns, "values": seq, "branch": None}
     g, branch = seq[-1], None
     bump_flags = [f for f in flags if f.startswith("Q bump")]
     if len(flags) > len(bump_flags):       # rule C left the refinement unqualified: P3-AM4's two branches
-        got = estimate4(seq, tol)
+        got = estimate4(seq[-4:], tol)
         if got is not None and got[2] <= u_ref_max * tol:
             branch, g, u = got
             flags = bump_flags

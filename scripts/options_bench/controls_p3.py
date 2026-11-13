@@ -139,6 +139,40 @@ def c2_fd(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUA
     return out
 
 
+def c2_fd_forced(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUANTITIES,
+                 depths=(3, 4, 5), cap=GR.REF_WORK_CAP) -> dict:
+    """P3-AM6 C.3, the forced C2-FD control: the European FD study of each quantity, then its space study forced
+    (from the shallow study's grid, space only) to each total space depth in `depths`, scored against the closed
+    form at each depth: err, u = u_ref + u_bump, covered, the space GCI's kind and order, and whether the study
+    would resolve there (within budgets and unflagged). The work budget is per quantity (the cap each time), as the
+    control measures the estimator, not the reference budget; solves are shared across depths."""
+    out = {}
+    for k in quantities:
+        sp = GR.spec(c, k, cfg)
+        if isinstance(sp, str) or c.days == 0:
+            out[k] = {"status": sp if isinstance(sp, str) else G.R_EXPIRY}
+            continue
+        ex = exact(c, k)
+        r = GR.Runner(GR.RefBudget(cap), False)
+        rows = {}
+        try:
+            f0 = GR.fd_study(r, c, sp)
+            for d in depths:
+                f = GR.fd_study(r, c, sp, extend=f0, space_max=d, force=True)
+                tol, u = f["tol"], f["u_ref"] + f["u_bump"]
+                rows[d] = {"R": f["R"], "u": u, "tol": tol, "err": abs(f["R"] - ex), "covered": abs(f["R"] - ex) <= u,
+                           "depth": f["grid"]["escalations"]["space"], "kind": f["space"]["kind"],
+                           "order": f["space"]["order"], "flags": f["flags"],
+                           "resolves": not f["flags"] and f["u_ref"] <= GR.U_REF_MAX * tol
+                           and f["u_bump"] <= GR.U_BUMP_MAX * tol}
+        except (GR.CapHit, GR.ReadOutside) as e:
+            out[k] = {"status": "stopped", "detail": str(e), "exact": ex, "depths": rows,
+                      "used": r.budget.used}
+            continue
+        out[k] = {"status": "scored", "exact": ex, "depths": rows, "used": r.budget.used}
+    return out
+
+
 def c2_lattice(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUANTITIES,
                cap=GR.REF_WORK_CAP) -> dict:
     """The lattice side alone on an exempt context against the closed form: covered when |G_L − exact| ≤ u_L.
