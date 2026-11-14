@@ -1,18 +1,19 @@
 {
-  "generated_at": "2026-11-13T18:35:41.473011",
+  "generated_at": "2026-11-14T06:46:50.026955",
   "as_of": "2026-09-01",
   "regime": "Overheating",
   "confidence": 0.5456,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
-    "Because VIX volatility is below trend in the latest reading (week of 2026-11-13, z=-1.81).",
-    "Because yield spread curve steepening is below trend in the latest reading (week of 2026-11-13, z=-1.74).",
+    "Because VIX volatility is below trend in the latest reading (week of 2026-11-13, z=-1.66).",
+    "Because 10Y Treasury rate momentum is above trend in the latest reading (week of 2026-11-13, z=+2.18).",
+    "Because yield spread curve steepening is below trend in the latest reading (week of 2026-11-13, z=-1.90).",
     "Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99).",
-    "Because TLT long-bond demand is below trend in the latest reading (week of 2026-11-13, z=-1.64).",
-    "Because today 10Y real yield is positive at 2.78%, real rates are restrictive — a headwind for equities and gold.",
+    "Because TLT long-bond demand is below trend in the latest reading (week of 2026-11-13, z=-1.89).",
+    "Because today 10Y real yield is positive at 2.86%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.88%."
   ],
-  "summary": "Regime: Overheating (confidence 55%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because VIX volatility is below trend in the latest reading (week of 2026-11-13, z=-1.81). Because yield spread curve steepening is below trend in the latest reading (week of 2026-11-13, z=-1.74). Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99).",
+  "summary": "Regime: Overheating (confidence 55%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because VIX volatility is below trend in the latest reading (week of 2026-11-13, z=-1.66). Because 10Y Treasury rate momentum is above trend in the latest reading (week of 2026-11-13, z=+2.18). Because yield spread curve steepening is below trend in the latest reading (week of 2026-11-13, z=-1.90).",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
