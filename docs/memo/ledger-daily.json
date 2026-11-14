@@ -51,7 +51,11 @@
       "note": "",
       "output_artifact": "memo-outcome-daily-2026-11-13-43568384571-1",
       "overrides": [],
-      "paid_generation": null,
+      "paid_generation": {
+        "at": "2026-11-14T06:53:34Z",
+        "run": 43568384571,
+        "run_attempt": 1
+      },
       "run_attempt": 1,
       "source": {
         "db_sha256": "16e6e4b5987b0caa807dd1e716893276ad9ee44c5968eac64688ad5317a46813",
