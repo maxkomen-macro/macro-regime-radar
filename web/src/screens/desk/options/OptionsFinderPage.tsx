@@ -17,6 +17,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useDeskView } from "../desk-view";
 import { optionHref, optionSubject } from "../positions/option";
 import { useOptionsFinder, type DeskApiError } from "../data/api";
+import SymbolSearch from "../../markets/SymbolSearch";
 import { droppedOf } from "../data/schema";
 import type { OptionRow, OptionsFinderParams, OptionsFinderResponse, ScenarioPnl } from "../data/types";
 import type { DeskPage } from "../desk-sections";
@@ -156,6 +157,10 @@ export function failureOf(err: DeskApiError): {
 
 // ── The form ──────────────────────────────────────────────────────────────
 
+/** Under the form's first row: how the symbol field works, and that a search match is a listing, not a promise that
+ * its options can be priced. */
+export const SYMBOL_HINT = "Type a ticker or a company name and pick a listing, or type the exact ticker. A listing does not mean options are listed for it.";
+
 function Field({ label, hint, children }: { label: string; hint?: string; children: (id: string) => ReactNode }) {
   const id = useId();
   return (
@@ -191,11 +196,22 @@ function ThesisForm({ search, onRun, prefill }: { search: URLSearchParams; onRun
       <form className="of-form" onSubmit={submit} aria-label="Your view">
         <div className="of-row">
           <Field label="Stock or ETF">
-            {input("symbol", {
-              autoComplete: "off",
-              spellCheck: false,
-              placeholder: "SPY",
-            })}
+            {(id) => (
+              // The site's symbol search under the field (US stocks and ETFs, like the Desk's): a pick fills the box
+              // and nothing else; the chain is priced only by Price the chain. No stored-series fallback here: when
+              // the search does not answer, it says so and an exact ticker can still be typed.
+              <SymbolSearch
+                inputId={id}
+                className="dk-isearch of-isearch"
+                scope="us"
+                value={draft.symbol}
+                onTextChange={(t) => setDraft((d) => ({ ...d, symbol: t }))}
+                onSelect={(hit) => setDraft((d) => ({ ...d, symbol: hit.symbol }))}
+                placeholder="SPY or a name"
+                dense
+                maxWidth="none"
+              />
+            )}
           </Field>
           <Field label="Direction">
             {(id) => (
@@ -216,6 +232,7 @@ function ThesisForm({ search, onRun, prefill }: { search: URLSearchParams; onRun
             </button>
           </div>
         </div>
+        <p className="of-hint of-symbol-note">{SYMBOL_HINT}</p>
         <button type="button" className="dk-link of-adv-toggle" aria-expanded={advanced} onClick={() => setAdvanced((a) => !a)}>
           Screens and costs {advanced ? "▾" : "▸"}
         </button>

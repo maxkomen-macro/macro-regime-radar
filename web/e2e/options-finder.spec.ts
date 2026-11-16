@@ -13,6 +13,19 @@ import { settle } from "./lib/drive";
 import { auditPalette, bannedWordsOnPage, routeDesk } from "./lib/desk-fixtures";
 
 const ANSWERED = "/desk/options-finder?symbol=SYN&direction=up&target=120&by=2026-12-18&budget=5000&commission=0.65";
+const NO_SYMBOL = "/desk/options-finder?direction=up&target=120&by=2026-12-18&budget=5000&commission=0.65";
+/** The symbol search's answer: invented listings (the Finder's fixture answers SYN). */
+const SEARCH_ANSWER = {
+  provider: "eodhd",
+  fallback_used: false,
+  fallback_reason: null,
+  fetched_at: "2026-11-16T12:00:00Z",
+  hits: [
+    { symbol: "SYN", name: "Synthetic Example Corp", exchange: "US", type: "Equity", sector: null, primary: true },
+    { symbol: "SYNX", name: "Synthex Holdings", exchange: "US", type: "Equity", sector: null, primary: true },
+    { symbol: "SYNF", name: "Synthetic Broad Market Fund", exchange: "US", type: "ETF", sector: null, primary: true },
+  ],
+};
 
 async function open(page: Page, route: string): Promise<void> {
   await routeDesk(page);
@@ -68,5 +81,62 @@ test.describe("options finder", () => {
     await expect(page).toHaveURL(/\/desk\/position-monitor\?new=1&option=/);
     await expect(page.getByRole("form", { name: "Promote to position" }).getByLabel("Instrument", { exact: true })).toHaveValue("SYN Dec 18, 2026 $112.50 call");
     await expect(page.getByText(/^Saved from the Options Finder · /)).toBeVisible();
+  });
+
+  test("the symbol field suggests listings under it: keyboard and pointer picks fill the box only, the palette holds, then a normal run", async ({ page }) => {
+    const calls = await routeDesk(page, { "/api/market/search": { status: 200, body: SEARCH_ANSWER } });
+    await page.goto(NO_SYMBOL, { waitUntil: "domcontentloaded" });
+    await settle(page, 500);
+    const form = page.getByRole("form", { name: "Your view" });
+    const box = form.getByRole("combobox", { name: "Stock or ETF" });
+    await box.fill("syn");
+    const list = form.getByRole("listbox");
+    await expect(list.getByRole("option")).toHaveCount(3);
+    await expect(list.getByRole("option").first()).toContainText("Synthetic Example Corp");
+    await expect(list.getByRole("option").first()).toContainText("US · Equity");
+    // Directly beneath the field, starting at its left edge.
+    const [b, l] = [await box.boundingBox(), await list.boundingBox()];
+    expect(l!.y).toBeGreaterThanOrEqual(b!.y + b!.height - 1);
+    expect(l!.y).toBeLessThanOrEqual(b!.y + b!.height + 8);
+    expect(Math.abs(l!.x - b!.x)).toBeLessThanOrEqual(2);
+    expect(await auditPalette(page)).toEqual([]);
+    expect(await overflow(page)).toBeLessThanOrEqual(1);
+    await box.press("ArrowDown");
+    await box.press("Enter");
+    await expect(box).toHaveValue("SYNX");
+    await expect(list).toHaveCount(0);
+    await box.fill("syn");
+    await list.getByRole("option", { name: /Synthetic Example Corp/ }).click();
+    await expect(box).toHaveValue("SYN");
+    expect(calls.filter((c) => c.includes("/api/desk/options/finder"))).toEqual([]);
+    await expect(page.getByTestId("of-page")).toHaveAttribute("data-state", "idle");
+    await form.getByTestId("of-run").click();
+    await expect.poll(() => { const u = new URL(page.url()); return `${u.pathname}${u.search}`; }).toBe(ANSWERED);
+    await expect(page.getByTestId("of-page")).toHaveAttribute("data-state", "answered");
+  });
+});
+
+test.describe("options finder on a phone", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+
+  test("the symbol suggestions fit the screen and a tap picks one", async ({ page }) => {
+    await routeDesk(page, { "/api/market/search": { status: 200, body: SEARCH_ANSWER } });
+    await page.goto(NO_SYMBOL, { waitUntil: "domcontentloaded" });
+    await settle(page, 500);
+    const form = page.getByRole("form", { name: "Your view" });
+    const box = form.getByRole("combobox", { name: "Stock or ETF" });
+    await box.tap();
+    await box.fill("syn");
+    const list = form.getByRole("listbox");
+    await expect(list.getByRole("option")).toHaveCount(3);
+    const l = await list.boundingBox();
+    expect(l!.x).toBeGreaterThanOrEqual(0);
+    expect(l!.x + l!.width).toBeLessThanOrEqual(390);
+    expect(await overflow(page)).toBeLessThanOrEqual(1);
+    const row = list.getByRole("option", { name: /Synthex Holdings/ });
+    expect((await row.boundingBox())!.height).toBeGreaterThanOrEqual(36);
+    await row.tap();
+    await expect(box).toHaveValue("SYNX");
+    await expect(list).toHaveCount(0);
   });
 });
