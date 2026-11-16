@@ -454,3 +454,17 @@ def test_a_crossing_hidden_by_rounding_to_cents_is_the_filter_and_the_recorded_f
         assert set(got["classes"]["B:time"]) == {"pick: time lens filter",
                                                  "left: time lens filter" if reverse else "entered: time lens filter"}
         assert got["unexplained"] == []
+
+
+def test_rows_the_time_lens_ranks_in_both_passed_its_filter_so_their_swap_is_not_the_filter():
+    # B-11: target P&L rounds to the cost, but both rows sit in both time rankings, so neither crossed the filter
+    def rec(cfg, flat1, flat2, top):
+        r = _rec(cfg, {C1: 0.0, C2: 0.0}, top)
+        r["lens_order"], r["picks"] = {"time": top}, {"time": top[0]}
+        r["rows"][C1]["pnl"] = {"target": 100.0, "half": 0.0, "flat": flat1}
+        r["rows"][C2]["pnl"] = {"target": 100.0, "half": 0.0, "flat": flat2}
+        return r
+    a, b = rec("A", 10.0, 0.0, [C1, C2]), rec("B", 0.0, 90.0, [C2, C1])
+    got = tr.trace([a, b], "offline")
+    assert not any("time lens filter" in k for k in got["classes"]["B:time"])
+    assert got["classes"]["B:time"] == {"pick: unexplained": 1, "order: unexplained": 1}

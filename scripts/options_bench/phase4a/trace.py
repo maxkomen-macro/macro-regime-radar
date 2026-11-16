@@ -75,10 +75,13 @@ class Run:
 
     def time_ok(self, c: str) -> bool | None:
         """Whether the time lens's cost filter keeps the row: the recorded flag (the unrounded P&L), else from the
-        P&L rounded to cents, None when that rounding hides the answer (the target rounds to the cost) (B-10)."""
+        P&L rounded to cents, None when that rounding hides the answer (the target rounds to the cost) (B-10). A row
+        the time lens ranks passed the filter, whatever the rounding shows (B-11)."""
         r = self.rows[c]
         if r.get("time_ok") is not None:
             return bool(r["time_ok"])
+        if c in (self.top.get("time") or []):
+            return True
         t, cost = float(r["pnl"]["target"]), float(r["cost"])
         return None if math.isclose(t, cost, rel_tol=0.0, abs_tol=1e-9) else t > cost
 
