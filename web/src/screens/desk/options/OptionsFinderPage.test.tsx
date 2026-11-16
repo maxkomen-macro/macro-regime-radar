@@ -623,10 +623,10 @@ describe("Options Finder: the Tier 2 accuracy check", () => {
     renderTab(UP_URL);
     await stateOf("answered");
     expect(screen.getByTestId("of-check-payoff")).toHaveTextContent(
-      "Accuracy check: Tier 2 $0.8751 ± $0.0014 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound. Agrees with Tier 1's $0.875 within their stated accuracies ($0.0114).",
+      "Accuracy check: Tier 2 $0.8751 ± $0.0014 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error for this contract, from how its lattice converged; that estimate was checked only on synthetic tests and is not a proved bound. Agrees with Tier 1's calculated value of $0.875 within their stated accuracies ($0.0114).",
     );
     expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent(
-      "Accuracy check: Tier 2 $4.70 ± $0.0035 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound. Differs from Tier 1's $4.675 by more than their stated accuracies ($0.0135); the Finder's prices and ranking stay Tier 1's.",
+      "Accuracy check: Tier 2 $4.70 ± $0.0035 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error for this contract, from how its lattice converged; that estimate was checked only on synthetic tests and is not a proved bound. Differs from Tier 1's calculated value of $4.675 by more than their stated accuracies ($0.0135); the Finder's prices and ranking stay Tier 1's.",
     );
     expect(screen.getByTestId("of-check-time")).toHaveTextContent("Accuracy check not run: work limit.");
     const note = screen.getByTestId("of-check-note");
@@ -673,10 +673,26 @@ describe("Options Finder: the Tier 2 accuracy check", () => {
     stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: { ...block, picks: [noVerdict, nullVerdict, noTier1] } }) });
     renderTab(UP_URL);
     await stateOf("answered");
-    expect(screen.getByTestId("of-check-payoff")).toHaveTextContent("No comparison with Tier 1's $0.875 was given.");
-    expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent("No comparison with Tier 1's $4.675 was given.");
+    expect(screen.getByTestId("of-check-payoff")).toHaveTextContent("No comparison with Tier 1's calculated value of $0.875 was given.");
+    expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent("No comparison with Tier 1's calculated value of $4.675 was given.");
     expect(screen.getByTestId("of-check-time")).toHaveTextContent("Tier 1's value of this contract was not available, so the two are not compared.");
     for (const l of ["payoff", "forgiving", "time"]) expect(screen.getByTestId(`of-check-${l}`).textContent ?? "").not.toMatch(/Differs|Agrees/);
+  });
+
+  it("a tiny error never prints as $0.0000, and a checked pick whose Tier 2 answer was unreadable is not called not run", async () => {
+    const tiny = { ...block.picks[0], tier2: tier2(0.875, 0.00004), allowed: 0.00003 };
+    const unreadable = { ...block.picks[1], tier2: null };
+    stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: { ...block, picks: [tiny, unreadable, block.picks[2]] } }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const payoff = screen.getByTestId("of-check-payoff").textContent ?? "";
+    expect(payoff).toContain("Tier 2 $0.875 ± < $0.0001 (estimated, cross-check pending).");
+    expect(payoff).toContain("within their stated accuracies (< $0.0001).");
+    expect(payoff).not.toContain("$0.0000");
+    expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent(
+      "Accuracy check: Tier 2's answer for this contract could not be read, so the two are not compared.",
+    );
+    expect(screen.getByTestId("of-check-forgiving").textContent ?? "").not.toContain("not run");
   });
 
   it("each route says what kind of error Tier 2 stated: exact, a proved interval, or an estimate (Codex S-6)", async () => {
@@ -699,7 +715,7 @@ describe("Options Finder: the Tier 2 accuracy check", () => {
     expect(intrinsic).toContain("Accuracy check: Tier 2 $18.165 (exact). Tier 2's value is exact here: at expiry it is the payoff. Agrees");
     expect(intrinsic).not.toMatch(/±|synthetic tests/);
     expect(screen.getByTestId("of-check-note")).toHaveTextContent(
-      "Each pick says what kind of error Tier 2 stated: none where its value is exact, a proved interval, or an estimate from synthetic tests that is not a proved bound.",
+      "Each pick says what kind of error Tier 2 stated: none where its value is exact, a proved interval, or Tier 2's own estimate for that contract, checked only on synthetic tests and not a proved bound.",
     );
   });
 });

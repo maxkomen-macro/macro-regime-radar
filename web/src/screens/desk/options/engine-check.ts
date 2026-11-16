@@ -13,7 +13,7 @@ import { premium } from "./premium";
 export const CHECK_NOTE =
   "Accuracy check: a second, research pricing engine (Tier 2) reprices each pick at the inputs the Finder used and states its own error. " +
   "Agreement means the two calculations match within their stated accuracies. It is not a check of the market price, the implied volatility or the ranking. " +
-  "Each pick says what kind of error Tier 2 stated: none where its value is exact, a proved interval, or an estimate from synthetic tests that is not a proved bound. " +
+  "Each pick says what kind of error Tier 2 stated: none where its value is exact, a proved interval, or Tier 2's own estimate for that contract, checked only on synthetic tests and not a proved bound. " +
   "An independent cross-check of Tier 2 is not yet in place. Outside these check lines, every number on this page (prices, deltas, ranking, P&L and breakevens) is Tier 1's.";
 
 /** What Tier 2's stated error is, by its route (src/desk/options_engine.py's statuses); empty where none applies. */
@@ -23,11 +23,14 @@ function errorKind(route: string, status: string): string {
       ? " Tier 2's value is exact here: at expiry it is the payoff."
       : " Tier 2's value is exact here: early exercise adds nothing to this contract, so its European value is its price.";
   if (status === "analytic bound") return " Its ± is the half-width of a proved interval that holds the price, plus a small margin.";
-  if (status.startsWith("estimated")) return " Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound.";
+  if (status.startsWith("estimated"))
+    return " Its ± is Tier 2's own estimate of its error for this contract, from how its lattice converged; that estimate was checked only on synthetic tests and is not a proved bound.";
   return "";
 }
 
 const dollars = (x: number) => `$${premium(x)}`;
+/** An error or allowance: never printed as "$0.0000", which would read as no error (verifier finding 2). */
+const errorDollars = (x: number) => (x > 0 && x < 0.00005 ? "< $0.0001" : dollars(x));
 
 /** The block's pick for this contract, or undefined. */
 export function checkFor(block: EngineCheck | undefined, contract: string): EngineCheckPick | undefined {
@@ -40,19 +43,21 @@ export function checkWords(block: EngineCheck | undefined, contract: string): st
   if (block.error) return `Accuracy check not run: ${block.error.replace(/^not checked:\s*/, "")}.`;
   const p = checkFor(block, contract);
   if (!p) return "Accuracy check not run for this contract.";
-  if (p.status !== "checked" || !p.tier2) return `Accuracy check not run: ${p.reason ?? "no reason was given"}.`;
+  if (p.status !== "checked") return `Accuracy check not run: ${p.reason ?? "no reason was given"}.`;
+  // a checked pick whose Tier 2 answer the boundary could not read: Tier 2 ran, so never "not run" (verifier finding 3)
+  if (!p.tier2) return "Accuracy check: Tier 2's answer for this contract could not be read, so the two are not compared.";
   const t = p.tier2;
   if (!isFiniteNumber(t.value)) return `Accuracy check: Tier 2 gave no value (${t.price_status}${t.reason ? `: ${t.reason}` : ""}).`;
-  const err = isFiniteNumber(t.estimate) ? ` ± ${dollars(t.estimate)}` : "";
+  const err = isFiniteNumber(t.estimate) ? ` ± ${errorDollars(t.estimate)}` : "";
   const head = `Accuracy check: Tier 2 ${dollars(t.value)}${err} (${t.price_status}).${errorKind(t.route, t.price_status)}`;
   if (!isFiniteNumber(p.tier1.value)) return `${head} Tier 1's value of this contract was not available, so the two are not compared.`;
   // only an explicit verdict is read as one: an absent or null `agree` is no comparison, never a disagreement (Codex S-9)
-  if (typeof p.agree !== "boolean") return `${head} No comparison with Tier 1's ${dollars(p.tier1.value)} was given.`;
-  const allowed = isFiniteNumber(p.allowed) ? ` (${dollars(p.allowed)})` : "";
+  if (typeof p.agree !== "boolean") return `${head} No comparison with Tier 1's calculated value of ${dollars(p.tier1.value)} was given.`;
+  const allowed = isFiniteNumber(p.allowed) ? ` (${errorDollars(p.allowed)})` : "";
   const value =
     p.agree === true
-      ? `Agrees with Tier 1's ${dollars(p.tier1.value)} within their stated accuracies${allowed}.`
-      : `Differs from Tier 1's ${dollars(p.tier1.value)} by more than their stated accuracies${allowed}; the Finder's prices and ranking stay Tier 1's.`;
+      ? `Agrees with Tier 1's calculated value of ${dollars(p.tier1.value)} within their stated accuracies${allowed}.`
+      : `Differs from Tier 1's calculated value of ${dollars(p.tier1.value)} by more than their stated accuracies${allowed}; the Finder's prices and ranking stay Tier 1's.`;
   const delta = p.delta_agree === false ? " The deltas differ by more than their stated accuracies." : "";
   return `${head} ${value}${delta}`;
 }
