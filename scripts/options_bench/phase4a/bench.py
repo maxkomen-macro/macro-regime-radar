@@ -62,7 +62,8 @@ class SitePricer(of.Pricer):
         self.site = "value"
         self.t2_memo: dict[om.Context, of.Valued | str] = {}
         self.t2_answer: dict[om.Context, Any] = {}   # the Tier 2 Answer behind each value (its stated error)
-        self.rf: list[dict] = []                     # root-finding exits (rootfinding.py), Tier 2 sites only
+        self.rf: list[dict] = []                     # root-finding rule exits (rootfinding.py), Tier 2 sites only
+        self.solves: list[dict] = []                 # every solve, either engine: rounds, contexts, exit (B-4)
 
     def engine(self) -> int:
         return 2 if self.site in self.tier2_sites else 1
@@ -158,6 +159,67 @@ def _wrap(fn: Callable, site: str) -> Callable:
 _ORIG: dict[str, Callable] = {}
 
 
+def delegate(gen, on_exit: Callable[[str, Any, int, int, str | None], None]):
+    """Run a solver generator unchanged (every yield, send and throw passed through) and report how it ended:
+    on_exit(exit, result, rounds, contexts, reason). exit is "returned" or "refused" (an OutOfDomain thrown in by
+    the driver, re-raised after the report)."""
+    rounds = contexts = 0
+    try:
+        req = next(gen)
+        while True:
+            rounds += 1
+            contexts += len(req)
+            try:
+                got = yield req
+            except GeneratorExit:
+                gen.close()
+                raise
+            except BaseException as exc:   # the driver's OutOfDomain, passed to the solver as today
+                req = gen.throw(exc)
+            else:
+                req = gen.send(got)
+    except StopIteration as stop:
+        on_exit("returned", stop.value, rounds, contexts, None)
+        return stop.value
+    except om.OutOfDomain as exc:
+        on_exit("refused", None, rounds, contexts, str(exc))
+        raise
+
+
+def _solve_counter(name: str, fn: Callable) -> Callable:
+    """Wrap one solver so every solve, under either engine, is recorded on the run's pricer (B-4)."""
+    def ident(a):
+        if name == "iv_american_gen":
+            c = a[0]
+            return {"site": "iv", "call": c.is_call, "strike": c.strike, "days": c.days}
+        if name == "pair_forward_gen":
+            return {"site": "carry", "strike": a[1], "days": a[4]}
+        return {"site": "breakeven", "contract": a[1].contract}
+
+    @functools.wraps(fn)
+    def inner(*a, **kw):
+        p = _CURRENT[-1] if _CURRENT else None
+        rec = ident(a)
+
+        def on_exit(exit_, result, rounds, contexts, reason):
+            if p is None:
+                return
+            if exit_ == "returned":
+                ok = (result is not None if name == "pair_forward_gen" else
+                      result[0] is not None if isinstance(result, tuple) else result is not None)
+                exit_ = "solved" if ok else "no solution"
+                if name == "_breakeven_gen" and isinstance(result, tuple):
+                    reason = result[1]
+            p.solves.append({**rec, "engine": p.engine(), "exit": exit_, "reason": reason, "rounds": rounds,
+                             "contexts": contexts})
+        return delegate(fn(*a, **kw), on_exit)
+    inner.__solve_counter__ = True
+    return inner
+
+
+SOLVERS = (("iv_american_gen", "om"), ("pair_forward_gen", "of"), ("_breakeven_gen", "of"))
+
+
 def _drive_tagged(gens, value_many):
     """om.drive inside value_rows is the breakeven solve; elsewhere it keeps the caller's site."""
     p = _CURRENT[-1] if _CURRENT else None
@@ -188,6 +250,10 @@ def patched(pricer: SitePricer, overrides: dict[str, Callable] | None = None,
             mod = of if hasattr(of, name) else om
             saved_over.setdefault((mod, name), getattr(mod, name))
             setattr(mod, name, wrap(getattr(mod, name)))
+        for name, where in SOLVERS:   # counting only; the solver underneath is unchanged
+            mod = of if where == "of" else om
+            saved_over.setdefault((mod, name), getattr(mod, name))
+            setattr(mod, name, _solve_counter(name, getattr(mod, name)))
         for name, site in targets.items():
             setattr(of, name, _wrap(getattr(of, name), site))
         om.drive = _drive_tagged

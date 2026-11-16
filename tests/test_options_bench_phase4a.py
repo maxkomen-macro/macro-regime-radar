@@ -74,6 +74,23 @@ def test_configuration_a_answers_exactly_as_the_unpatched_finder():
     assert got["outcome"] == "answered"
     assert _plain(got["answer"]) == _plain(plain)
     assert got["pricer"].t2_answer == {} and got["pricer"].rf == []
+    solves = got["pricer"].solves    # B-4: Tier 1's solves are counted too, under every configuration
+    assert {s["site"] for s in solves} >= {"iv", "carry", "breakeven"} and {s["engine"] for s in solves} == {1}
+    assert all(s["rounds"] >= 0 and s["exit"] in ("solved", "no solution", "refused") for s in solves)
+
+
+def test_a_tier2_valuation_refusal_inside_a_solve_is_recorded_then_raised():
+    # B-5: an OutOfDomain thrown into a Tier 2 IV solve is logged with its reason and re-raised as today
+    p = bench.SitePricer(of.Work(of.WORK_LIMIT), bench.CONFIGS["C"], bench.SiteStats())
+    p.site = "iv"
+    c = om.Context(True, 100.0, 100.0, 60, 0.04, 0.0, 0.3, ((10, 1.0),))
+    bench._CURRENT.append(p)
+    try:
+        got = om.drive({0: rf.iv_american_gen(c, 5.0)}, lambda cs: ["outside: a stand-in reason"] * len(cs))[0]
+    finally:
+        bench._CURRENT.pop()
+    assert isinstance(got, om.OutOfDomain)
+    assert p.rf[-1]["exit"] == "refused" and "a stand-in reason" in p.rf[-1]["reason"]
 
 
 @pytest.mark.parametrize("config", ["A", "C", "D"])

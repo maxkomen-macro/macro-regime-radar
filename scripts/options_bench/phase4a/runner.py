@@ -61,6 +61,7 @@ def _compact(res: dict, captured: dict, trace: eligibility.Trace, req) -> dict:
     out["lens_order"] = captured.get("lens_order")
     p = res["pricer"]
     out["rf"] = p.rf
+    out["solves"] = p.solves
     out["t2_answers"] = len(p.t2_answer)
     if a is None:
         return out

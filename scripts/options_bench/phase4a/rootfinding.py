@@ -190,8 +190,32 @@ def _vega_eu(c: om.Context) -> float:
     return s_star * math.exp(-c.q * tau) * math.sqrt(tau) * math.exp(-0.5 * d1 * d1) / math.sqrt(2 * math.pi)
 
 
+def _logs_refusal(fn):
+    """Record a Tier 2 valuation refusal thrown into a Tier 2 solve (B-5), then re-raise it as today."""
+    def inner(*a, **kw):
+        tier2 = bool(bench._CURRENT) and _tier2_here()
+
+        def on_exit(exit_, result, rounds, contexts, reason):
+            if tier2 and exit_ == "refused":
+                p = _pricer()
+                p.rf.append({"site": p.site, "exit": "refused", "reason": f"Tier 2 refused a valuation: {reason}",
+                             "rounds": rounds, "args": _ident(fn.__name__, a)})
+        return bench.delegate(fn(*a, **kw), on_exit)
+    inner.__name__ = fn.__name__
+    return inner
+
+
+def _ident(name, a):
+    if name == "iv_american_gen":
+        return {"call": a[0].is_call, "strike": a[0].strike, "days": a[0].days}
+    if name == "pair_forward_gen":
+        return {"strike": a[1], "days": a[4]}
+    return {"contract": a[1].contract}
+
+
 # ── 3.1 implied volatility ──
 
+@_logs_refusal
 def iv_american_gen(c: om.Context, price: float, max_eval: int = 40, evals: list[int] | None = None):
     if not _tier2_here():
         return (yield from ORIGINAL["iv_american_gen"](c, price, max_eval, evals))
@@ -352,6 +376,7 @@ implied_vols = _implied_vols_copy()
 
 # ── 3.2 carry (conditioning unresolved: DR-03, returned to the owner) ──
 
+@_logs_refusal
 def pair_forward_gen(s0, k, call, put, days, rho, divs, evals=None, accelerate=True):
     if not _tier2_here():
         return (yield from ORIGINAL["pair_forward_gen"](s0, k, call, put, days, rho, divs, evals, accelerate))
