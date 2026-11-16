@@ -32,5 +32,16 @@
     }
   },
   "version": 1,
-  "weekly": {}
+  "weekly": {
+    "2026-W47": {
+      "db_sha256": "4245ac3447aafc92f5bb2632e1854186dc2d0085f0825b15728f65bab4f51896",
+      "origin_attempt": 1,
+      "origin_run_id": 43956170974,
+      "pin_session": "2026-11-13",
+      "reason": null,
+      "state": "source",
+      "validated_at": "2026-11-16T21:07:08Z",
+      "validation_sha256": "c6eb5dbe5444a3fd2e6e89ff07fbe9cafbf48f5b9b9fdb16658ea590d80a62d6"
+    }
+  }
 }
