@@ -2186,7 +2186,332 @@
    "kind": "external",
    "cpu_s": 520.0,
    "note": "review evidence for the trace fixes B-8 to B-12: five runs of the options and bench test files (about 93 s each, measured) plus trace and summary re-runs over the main run records"
+  },
+  {
+   "kind": "request",
+   "index": 5,
+   "cpu_s": 43.235,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:03:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 11,
+   "cpu_s": 49.519,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:04:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 20,
+   "cpu_s": 26.47,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:04:40Z"
+  },
+  {
+   "kind": "request",
+   "index": 21,
+   "cpu_s": 32.664,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:05:13Z"
+  },
+  {
+   "kind": "request",
+   "index": 28,
+   "cpu_s": 42.909,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:05:55Z"
+  },
+  {
+   "kind": "request",
+   "index": 30,
+   "cpu_s": 137.091,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:08:12Z"
+  },
+  {
+   "kind": "request",
+   "index": 45,
+   "cpu_s": 47.37,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:09:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 48,
+   "cpu_s": 32.963,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:09:32Z"
+  },
+  {
+   "kind": "request",
+   "index": 50,
+   "cpu_s": 155.147,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:12:08Z"
+  },
+  {
+   "kind": "request",
+   "index": 53,
+   "cpu_s": 81.59,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:13:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 64,
+   "cpu_s": 56.482,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:14:26Z"
+  },
+  {
+   "kind": "request",
+   "index": 68,
+   "cpu_s": 75.725,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:15:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 72,
+   "cpu_s": 76.682,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:16:58Z"
+  },
+  {
+   "kind": "request",
+   "index": 76,
+   "cpu_s": 32.527,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:17:30Z"
+  },
+  {
+   "kind": "request",
+   "index": 83,
+   "cpu_s": 105.098,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:19:15Z"
+  },
+  {
+   "kind": "request",
+   "index": 91,
+   "cpu_s": 51.351,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:20:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 95,
+   "cpu_s": 27.934,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:20:34Z"
+  },
+  {
+   "kind": "request",
+   "index": 96,
+   "cpu_s": 32.732,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:21:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 98,
+   "cpu_s": 32.545,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:21:38Z"
+  },
+  {
+   "kind": "request",
+   "index": 101,
+   "cpu_s": 26.069,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:22:04Z"
+  },
+  {
+   "kind": "request",
+   "index": 105,
+   "cpu_s": 36.14,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:22:40Z"
+  },
+  {
+   "kind": "request",
+   "index": 106,
+   "cpu_s": 32.05,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:23:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 107,
+   "cpu_s": 132.873,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:25:24Z"
+  },
+  {
+   "kind": "request",
+   "index": 115,
+   "cpu_s": 36.519,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:26:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 118,
+   "cpu_s": 69.236,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:27:09Z"
+  },
+  {
+   "kind": "request",
+   "index": 130,
+   "cpu_s": 611.186,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:37:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 139,
+   "cpu_s": 104.508,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:39:07Z"
+  },
+  {
+   "kind": "request",
+   "index": 142,
+   "cpu_s": 52.777,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:39:59Z"
+  },
+  {
+   "kind": "request",
+   "index": 143,
+   "cpu_s": 53.661,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:40:53Z"
+  },
+  {
+   "kind": "request",
+   "index": 151,
+   "cpu_s": 21.88,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:41:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 161,
+   "cpu_s": 74.047,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:42:28Z"
+  },
+  {
+   "kind": "request",
+   "index": 162,
+   "cpu_s": 148.0,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:44:56Z"
+  },
+  {
+   "kind": "request",
+   "index": 167,
+   "cpu_s": 125.433,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:47:02Z"
+  },
+  {
+   "kind": "request",
+   "index": 185,
+   "cpu_s": 215.845,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:50:38Z"
+  },
+  {
+   "kind": "request",
+   "index": 191,
+   "cpu_s": 36.412,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:51:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 202,
+   "cpu_s": 40.569,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:51:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 216,
+   "cpu_s": 97.716,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:53:32Z"
+  },
+  {
+   "kind": "request",
+   "index": 218,
+   "cpu_s": 22.877,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:53:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 220,
+   "cpu_s": 107.139,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:55:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 231,
+   "cpu_s": 35.073,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T21:56:16Z"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 10.0,
+   "note": "post-fix reanalysis: summary and both traces over the combined records (8.2 s user+sys measured)"
   }
  ],
- "total_s": 13944.547
+ "total_s": 17174.591
 }
