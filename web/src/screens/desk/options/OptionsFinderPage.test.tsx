@@ -626,12 +626,13 @@ describe("Options Finder: the Tier 2 accuracy check", () => {
       "Accuracy check: Tier 2 $0.8751 ± $0.0014 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound. Agrees with Tier 1's $0.875 within their stated accuracies ($0.0114).",
     );
     expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent(
-      "Accuracy check: Tier 2 $4.70 ± $0.0035 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound. Differs from Tier 1's $4.675 by more than their stated accuracies ($0.0135); the page shows Tier 1's numbers.",
+      "Accuracy check: Tier 2 $4.70 ± $0.0035 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound. Differs from Tier 1's $4.675 by more than their stated accuracies ($0.0135); the Finder's prices and ranking stay Tier 1's.",
     );
     expect(screen.getByTestId("of-check-time")).toHaveTextContent("Accuracy check not run: work limit.");
     const note = screen.getByTestId("of-check-note");
     expect(note).toHaveTextContent("It is not a check of the market price, the implied volatility or the ranking.");
-    expect(note).toHaveTextContent("Every number on this page is Tier 1's.");
+    expect(note).toHaveTextContent("Outside these check lines, every number on this page (prices, deltas, ranking, P&L and breakevens) is Tier 1's.");
+    expect(note.textContent ?? "").not.toContain("Every number on this page is Tier 1's");
     expect(page().textContent ?? "").not.toMatch(/independently cross-checked|\bvalidated\b/i);
   });
 

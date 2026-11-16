@@ -1,6 +1,6 @@
 /**
  * The Tier 2 accuracy check's words on a pick (docs/desk/OPTIONS_TIER2_CHECK.md). The API serves `engine_check` only
- * with OPTIONS_TIER2_CHECK on; without it the page says nothing. Every number the Finder shows is Tier 1's: this
+ * with OPTIONS_TIER2_CHECK on; without it the page says nothing. Outside this line every number is Tier 1's: this
  * line reports a second engine's value of the same contract at the same inputs, its stated error, its status and
  * whether the two agree within their stated accuracies. Agreement is a consistency check of the calculation, not a
  * check of the market price, the implied volatility or the ranking, and the line never calls a value cross-checked.
@@ -14,7 +14,7 @@ export const CHECK_NOTE =
   "Accuracy check: a second, research pricing engine (Tier 2) reprices each pick at the inputs the Finder used and states its own error. " +
   "Agreement means the two calculations match within their stated accuracies. It is not a check of the market price, the implied volatility or the ranking. " +
   "Each pick says what kind of error Tier 2 stated: none where its value is exact, a proved interval, or an estimate from synthetic tests that is not a proved bound. " +
-  "An independent cross-check of Tier 2 is not yet in place. Every number on this page is Tier 1's.";
+  "An independent cross-check of Tier 2 is not yet in place. Outside these check lines, every number on this page (prices, deltas, ranking, P&L and breakevens) is Tier 1's.";
 
 /** What Tier 2's stated error is, by its route (src/desk/options_engine.py's statuses); empty where none applies. */
 function errorKind(route: string, status: string): string {
@@ -50,7 +50,7 @@ export function checkWords(block: EngineCheck | undefined, contract: string): st
   const value =
     p.agree === true
       ? `Agrees with Tier 1's ${dollars(p.tier1.value)} within their stated accuracies${allowed}.`
-      : `Differs from Tier 1's ${dollars(p.tier1.value)} by more than their stated accuracies${allowed}; the page shows Tier 1's numbers.`;
+      : `Differs from Tier 1's ${dollars(p.tier1.value)} by more than their stated accuracies${allowed}; the Finder's prices and ranking stay Tier 1's.`;
   const delta = p.delta_agree === false ? " The deltas differ by more than their stated accuracies." : "";
   return `${head} ${value}${delta}`;
 }
