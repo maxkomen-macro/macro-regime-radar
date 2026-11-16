@@ -13,7 +13,7 @@
 import { Link } from "react-router-dom";
 import { useTechnicals } from "../data/api";
 import type { StudyResponse } from "../data/types";
-import { dayLong, isFiniteNumber, pct, priceText } from "../kit/format";
+import { dayLong, grouped, isFiniteNumber, pct, pctPlain, priceText } from "../kit/format";
 import { OPTIONS_FINDER_LISTED } from "./flag";
 import { STUDY_ETF, finderHref } from "./lens-link";
 
@@ -55,6 +55,50 @@ function StudyFinderLinkFor({ study, etf }: { study: StudyResponse; etf: string 
         Express this view with options →
       </Link>{" "}
       {etf} at ${carry.target}: its {dayLong(date)} close ${priceText(close)} moved by the study's median ({pct(Number(carry.es_move))}, a log return).
+    </p>
+  );
+}
+
+/** The worked example the Finder offers before a view is entered: SPY 5% above its last served close, by 35
+ * calendar days after that close, $1,500 to spend, expiries up to one month past the date. A one-month window keeps
+ * a SPY chain inside the engine's work limit (the default six months does not); every value comes from the served
+ * close, and the visitor can change any of them. Null without a usable close. */
+export const EXAMPLE_SYMBOL = "SPY";
+export const EXAMPLE_MOVE = 0.05;
+export const EXAMPLE_DAYS = 35;
+export const EXAMPLE_BUDGET = "1500";
+export const EXAMPLE_SCAN_MONTHS = "1";
+
+export function exampleThesis(close: number, closeDate: string): Record<string, string> | null {
+  if (!isFiniteNumber(close) || close <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(closeDate)) return null;
+  const day = new Date(`${closeDate}T00:00:00Z`);
+  if (Number.isNaN(day.getTime())) return null;
+  day.setUTCDate(day.getUTCDate() + EXAMPLE_DAYS);
+  return {
+    symbol: EXAMPLE_SYMBOL,
+    direction: "up",
+    target: (close * (1 + EXAMPLE_MOVE)).toFixed(2),
+    by: day.toISOString().slice(0, 10),
+    budget: EXAMPLE_BUDGET,
+    scan_months: EXAMPLE_SCAN_MONTHS,
+  };
+}
+
+/** The idle page's example link, drawn once SPY's close is served. */
+export function ExampleLink() {
+  const t = useTechnicals({ symbol: EXAMPLE_SYMBOL });
+  const close = t.data?.price;
+  const date = t.data?.date;
+  if (!isFiniteNumber(close) || !date) return null;
+  const ex = exampleThesis(close, date);
+  if (!ex) return null;
+  return (
+    <p className="of-note" data-testid="of-example">
+      <Link className="dk-link" to={finderHref(ex)}>
+        Try an example →
+      </Link>{" "}
+      {EXAMPLE_SYMBOL} rising {pctPlain(EXAMPLE_MOVE)} from its {dayLong(date)} close of ${priceText(close)} to ${ex.target} by {dayLong(ex.by)}, ${grouped(Number(EXAMPLE_BUDGET))} to
+      spend, comparing expiries up to a month past that date. Change any value before you price it.
     </p>
   );
 }

@@ -1,6 +1,6 @@
 /**
  * The Desk v2 shell against DESK_FRAME3_SPEC §1: the sidebar is the only
- * navigation (three groups, eleven tabs, the TODAY and HOUSE DISCIPLINE
+ * navigation (three groups, twelve tabs, the TODAY and HOUSE DISCIPLINE
  * cards), the header carries the breadcrumb, the Desk / Client toggle in the
  * URL and the tab's one action, old slugs land on the tab that replaced them,
  * and the TODAY card reads /overview and /technicals. Every request is
@@ -51,17 +51,17 @@ describe("Desk v2 shell", () => {
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
   });
 
-  it("the sidebar is the only navigation: Market, Research, Trade, then the small About this build line, eleven tabs (§14.5)", async () => {
+  it("the sidebar is the only navigation: Market, Research, Trade, then the small About this build line, twelve tabs (§14.5; the Options Finder listed under Trade)", async () => {
     renderDesk("/desk/overview");
     const side = await screen.findByRole("complementary", { name: "Sidebar" });
     const groups = within(side).getAllByRole("group");
     expect(groups.map((g) => within(g).getByText(/^(Market|Research|Trade|About this build)$/).textContent)).toEqual(["Market", "Research", "Trade", "About this build"]);
     expect(within(groups[0]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Overview", "Technicals", "Sectors", "Macro", "Regime"]);
     expect(within(groups[1]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Event Study", "Signal Ledger"]);
-    expect(within(groups[2]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Basket & Hedge", "Position Monitor"]);
+    expect(within(groups[2]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Basket & Hedge", "Options Finder", "Position Monitor"]);
     expect(within(groups[3]).getAllByRole("link").map((a) => a.textContent)).toEqual(["Data Pipeline", "Build Notes"]);
     expect(groups[3]).toHaveTextContent("Data Pipeline · Build Notes");
-    expect(DESK_GROUPS.flatMap((g) => g.pages)).toHaveLength(11);
+    expect(DESK_GROUPS.flatMap((g) => g.pages)).toHaveLength(12);
     expect(within(side).getByRole("link", { name: "Overview" })).toHaveAttribute("aria-current", "page");
     expect(within(side).getByRole("link", { name: /Macro Regime Radar/ })).toHaveAttribute("href", "/app/dashboard");
     // No tab strip anywhere: the only "Primary" navigation is the sidebar's.

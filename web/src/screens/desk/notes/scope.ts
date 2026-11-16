@@ -20,6 +20,7 @@ export const SCOPE_LISTS: readonly { title: string; items: readonly string[] }[]
       "Signal Ledger: the twelve fixed signals, each scored when its study completes.",
       "Position Monitor: positions kept in this browser, with room for the S&P and any stored ETF against its 50-day and for each Treasury tenor's yield and the spreads between them; for a yield or a spread, DV01 as the signed sensitivity of a hypothetical Treasury proxy.",
       "Basket & Hedge: a basket kept in this browser, priced as one index from daily closes: its technicals against the Nasdaq and the S&P, contribution, concentration and liquidity; the ETF that hedges it best, and a 10% fall in QQQ or SPY, unhedged and hedged; an event study on the basket's own index; speculators' positions in five macro futures from the CFTC's weekly reports, and how widely the basket's names are held from the SEC's quarterly 13F filings, both lagged disclosures.",
+      "Options Finder: a view on one US stock or ETF, up or down to a target price by a date with a budget, against its last end-of-day options chain, priced on request: each listed call or put that passes the screens, what the budget buys and its modelled value at the target, halfway and unchanged, three sorts, the payoff chart, the events before the date, and a contract carried to Position Monitor.",
       "Data Pipeline: the series inventory, generated from the registry.",
       "Client view: the current study in plain words, a month out.",
     ],

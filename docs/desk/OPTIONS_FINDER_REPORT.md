@@ -4,9 +4,20 @@ Branch `claude/project-thread-gl7ggl`, built to the Options Finder Build Plan (s
 the pricing method in `docs/desk/OPTIONS_FINDER_MODEL.md` (method `finder-2`). This report covers what was built,
 what stays hidden, what the owner has to do before anyone can use it, and where the build departs from the plan.
 
-## What a visitor can see after the merge
+## Listing (2026-11-16)
 
-Nothing new is listed. The Desk sidebar, the command palette, the Options lens and Event Study show nothing new while
+The owner approved listing the Finder on the Tier 1 engine on 2026-11-16. `OPTIONS_FINDER_LISTED` is now `true`:
+the Desk sidebar shows it under Trade between Basket & Hedge and Position Monitor, the command palette, the Options
+lens ("Find a contract for a view →") and an S&P 500 Event Study ("Express this view with options →") link to it,
+and the page drops its Preview badge and `noindex` tag. The idle page offers an example built from SPY's served
+close (5% above it, 35 days on, $1,500, a one-month scan window, which keeps a SPY chain inside the 300 M work
+limit; the default six months is refused for SPY), and its framing links to Build Notes' section "How the Options
+Finder prices a view". Licensing review is deferred by the owner's decision, not resolved. Tier 2 and Phase 3 are
+not served. The section below records how the page shipped unlisted.
+
+## What a visitor could see after the build's merge
+
+Nothing new was listed. The Desk sidebar, the command palette, the Options lens and Event Study show nothing new while
 `OPTIONS_FINDER_LISTED` (`web/src/screens/desk/options/flag.ts`) is `false`, which is how it ships.
 
 **Unlisted is not private.** `/desk/options-finder` answers anyone who has the link. It carries a Preview badge and

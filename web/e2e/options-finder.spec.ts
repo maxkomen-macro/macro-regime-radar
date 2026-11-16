@@ -1,7 +1,7 @@
 /**
  * The Options Finder in a real browser (Options Finder Build Plan step 8), every request answered from the
  * synthetic fixtures (e2e/lib/desk-fixtures.ts → src/fixtures/desk/options-finder.json), so the spec needs only a dev
- * server. Unlisted: no sidebar link, a Preview badge and a noindex tag. Answered: every color is a §1.3 color, no
+ * server. Listed: a sidebar link, no Preview badge or noindex tag, the method one link away. Answered: every color is a §1.3 color, no
  * banned word renders, nothing scrolls sideways on a desktop or a phone, and the badge names the session's close,
  * never Live. An API without the route says the Finder is not deployed yet. Save as position opens the Position
  * Monitor's form with the contract carried in.
@@ -25,13 +25,16 @@ const overflow = (page: Page) => page.evaluate(() => document.documentElement.sc
 test.describe("options finder", () => {
   test.use({ viewport: { width: 1440, height: 960 } });
 
-  test("unlisted: reachable by its address, Preview and noindex, no sidebar link", async ({ page }) => {
+  test("listed: in the sidebar under Trade, no Preview or noindex, the method one link away", async ({ page }) => {
     await open(page, "/desk/options-finder");
     await expect(page.getByRole("heading", { level: 1, name: "Options Finder" })).toBeVisible();
-    await expect(page.getByTestId("of-preview")).toHaveText("Preview");
-    await expect(page.locator('meta[name="robots"]')).toHaveAttribute("content", "noindex, nofollow");
-    await expect(page.getByRole("complementary", { name: "Sidebar" }).getByRole("link", { name: "Options Finder" })).toHaveCount(0);
+    await expect(page.getByTestId("of-preview")).toHaveCount(0);
+    await expect(page.locator('meta[name="robots"][data-options-finder]')).toHaveCount(0);
+    await expect(page.getByRole("complementary", { name: "Sidebar" }).getByRole("link", { name: /Options Finder/ })).toHaveCount(1);
     await expect(page.getByTestId("of-page")).toHaveAttribute("data-state", "idle");
+    await page.getByTestId("of-method-link").click();
+    await expect(page).toHaveURL(/\/desk\/build-notes#bn-how-the-options-finder-prices-a-view$/);
+    await expect(page.getByRole("heading", { level: 2, name: "How the Options Finder prices a view" })).toBeVisible();
   });
 
   test("answered: the palette, the language, the session's close, and no sideways scroll on a desktop or a phone", async ({ page }) => {
