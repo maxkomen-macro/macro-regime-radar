@@ -824,3 +824,35 @@ def test_on_an_aapl_like_weekly_chain_every_bound_path_delta_is_american_s(monke
         key = (True, r["strike"], (date.fromisoformat(r["exp"]) - syn.SESSION).days)
         assert (r["delta"], r["delta_note"]) == seen[key], r["contract"]
     assert a["work"]["used"] <= of.WORK_LIMIT
+
+
+def test_a_refused_next_day_value_alone_keeps_the_row_its_breakeven_and_every_value_and_withholds_only_theta(monkeypatch):
+    # Phase 4a finding: the breakeven solve was skipped when any value was refused, but the row is dropped only when its
+    # session or on-date values are; a row whose next-day value alone was refused reached _row without a breakeven
+    # and raised TypeError. The next-day value feeds theta only, so theta is withheld and nothing else changes.
+    base = syn.scan("up", 120.0, BY, months=2)
+    nextday = set()
+    orig_on, orig_many = of._context_on, of.Pricer.many
+
+    def on(rc, q, sigma, day, spot):
+        c = orig_on(rc, q, sigma, day, spot)
+        if day == rc.m.session + timedelta(days=1):
+            nextday.add(c)
+        return c
+
+    def many(self, cs):
+        got = orig_many(self, cs)
+        return [om.Q_DOMAIN_REASON if c in nextday else v for c, v in zip(cs, got)]
+
+    monkeypatch.setattr(of, "_context_on", on)
+    monkeypatch.setattr(of.Pricer, "many", many)
+    a = syn.scan("up", 120.0, BY, months=2)
+    assert nextday and a["rows"]
+    assert a["universe"]["passed"] == base["universe"]["passed"]
+    assert a["universe"]["dropped"] == base["universe"]["dropped"]
+    before = {r["contract"]: r for r in base["rows"]}
+    for r in a["rows"]:
+        b = before[r["contract"]]
+        assert r["theta_dollars_day"] is None
+        assert {k: v for k, v in r.items() if k != "theta_dollars_day"} == {k: v for k, v in b.items() if k != "theta_dollars_day"}
+    assert [r["contract"] for r in a["rows"]] == [r["contract"] for r in base["rows"]]
