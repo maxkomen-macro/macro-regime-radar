@@ -336,6 +336,7 @@ def iv_exempt(c0: om.Context, price: float, evals: list[int] | None = None):
         return None
     cs = c0.with_sigma(sg)
     p = _pricer()
+    p.exempt_evals[c0] = 1
     got = p.many([cs])[0]
     a = p.t2_answer.get(cs)
     eu = om.european(cs)

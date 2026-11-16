@@ -64,6 +64,7 @@ class SitePricer(of.Pricer):
         self.t2_answer: dict[om.Context, Any] = {}   # the Tier 2 Answer behind each value (its stated error)
         self.rf: list[dict] = []                     # root-finding rule exits (rootfinding.py), Tier 2 sites only
         self.solves: list[dict] = []                 # every solve, either engine: rounds, contexts, exit (B-4)
+        self.exempt_evals: dict[om.Context, int] = {}   # Tier 2 valuations an exempt IV solve made (rootfinding)
 
     def engine(self) -> int:
         return 2 if self.site in self.tier2_sites else 1
@@ -220,6 +221,30 @@ def _solve_counter(name: str, fn: Callable) -> Callable:
 SOLVERS = (("iv_american_gen", "om"), ("pair_forward_gen", "of"), ("_breakeven_gen", "of"))
 
 
+def _exempt_iv_counter(fn: Callable) -> Callable:
+    """Record implied_vols' exempt quotes as solves too (B-6): they skip the generator (a closed-form inversion
+    under Tier 1, rootfinding.iv_exempt under Tier 2). The context is rebuilt with the Finder's own _context_on,
+    exactly as implied_vols builds it; nothing is changed."""
+    @functools.wraps(fn)
+    def inner(rc, quotes):
+        got = fn(rc, quotes)
+        p = _CURRENT[-1] if _CURRENT else None
+        if p is not None:
+            for q in quotes:
+                c0 = of._context_on(rc, q, 0.3, rc.m.session, rc.m.spot)
+                if not om.exempt(c0):
+                    continue
+                r = got.get(q.contract)
+                n = p.exempt_evals.get(c0, 0) if p.engine() == 2 else 0
+                p.solves.append({"site": "iv", "call": c0.is_call, "strike": c0.strike, "days": c0.days,
+                                 "exempt": True, "engine": p.engine(),
+                                 "exit": "solved" if isinstance(r, float) else "no solution",
+                                 "reason": r if isinstance(r, str) else None, "rounds": n, "contexts": n})
+        return got
+    inner.__solve_counter__ = True
+    return inner
+
+
 def _drive_tagged(gens, value_many):
     """om.drive inside value_rows is the breakeven solve; elsewhere it keeps the caller's site."""
     p = _CURRENT[-1] if _CURRENT else None
@@ -254,6 +279,8 @@ def patched(pricer: SitePricer, overrides: dict[str, Callable] | None = None,
             mod = of if where == "of" else om
             saved_over.setdefault((mod, name), getattr(mod, name))
             setattr(mod, name, _solve_counter(name, getattr(mod, name)))
+        saved_over.setdefault((of, "implied_vols"), of.implied_vols)
+        of.implied_vols = _exempt_iv_counter(of.implied_vols)
         for name, site in targets.items():
             setattr(of, name, _wrap(getattr(of, name), site))
         om.drive = _drive_tagged

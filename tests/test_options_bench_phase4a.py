@@ -260,3 +260,42 @@ def test_the_guard_keeps_completed_lines_of_a_killed_child_and_names_the_interru
         ("B", "budget", "not run: earlier configuration interrupted"),
         ("B", "offline", "not run: earlier configuration interrupted")]
     assert recs[1]["cpu_s"] is None and "request_cpu_s" in recs[1]
+
+
+@pytest.mark.parametrize("config", ["A", "C"])
+def test_every_quote_sent_to_implied_vols_has_one_solve_record(config):
+    # B-6: exempt quotes skip the generator; they are counted too
+    from scripts.options_bench.phase4a import eligibility
+    tr = eligibility.Trace()
+    got = bench.run_one(pop.request(pop.DEV_SEED, 0), config, of.WORK_LIMIT, wrappers=tr.wrappers())
+    iv = [s for s in got["pricer"].solves if s["site"] == "iv"]
+    assert len(iv) == len(tr.sent_to_iv) > 0
+    assert {s["engine"] for s in iv} == {1 if config == "A" else 2}
+
+
+def test_an_exempt_quote_is_counted_as_a_solve_under_either_engine():
+    c0 = om.Context(True, 100.0, 100.0, 60, 0.04, 0.0, 0.3)
+    assert om.exempt(c0)
+    price = om.european(c0.with_sigma(0.25))
+
+    class Q:
+        contract, mid = "X", price
+
+    class RC:
+        class m:
+            session, spot = None, 100.0
+
+    for tier2, engine in ((frozenset(), 1), (bench.CONFIGS["D"], 2)):
+        p = bench.SitePricer(of.Work(of.WORK_LIMIT), tier2, bench.SiteStats())
+        p.site = "iv"
+        fake = lambda rc, quotes: {"X": 0.25}
+        orig = of._context_on
+        of._context_on = lambda rc, q, sg, start, spot: c0
+        bench._CURRENT.append(p)
+        try:
+            bench._exempt_iv_counter(fake)(RC, [Q])
+        finally:
+            bench._CURRENT.pop()
+            of._context_on = orig
+        (rec,) = p.solves
+        assert rec["exempt"] and rec["engine"] == engine and rec["exit"] == "solved"
