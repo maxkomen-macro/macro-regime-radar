@@ -332,7 +332,7 @@
      "last": null,
      "feeds": [],
      "status": "missing",
-     "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge is not served."
+     "note": "Nasdaq 100 (^NDX) is awaiting the next full refresh: this database has no ^NDX rows in desk_series yet. No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge compares a basket with QQQ's daily bars from EODHD, requested when the basket is priced."
     },
     {
      "label": "Russell 2000",
@@ -1129,7 +1129,7 @@
      "last": "2026-09-23",
      "feeds": [],
      "status": "current",
-     "note": "Stored from 2001-07-13 (asset_prices), with each session's volume. No Desk tab reads it yet: Basket & Hedge is not served."
+     "note": "Stored from 2001-07-13 (asset_prices), with each session's volume. No Desk tab reads the stored rows: Basket & Hedge ranks it as a hedge ETF from EODHD's daily bars, requested when a basket is priced."
     },
     {
      "label": "Software ETF (IGV)",
@@ -1156,7 +1156,7 @@
      "last": "2026-09-23",
      "feeds": [],
      "status": "current",
-     "note": "Stored from 2001-07-17 (asset_prices), with each session's volume. No Desk tab reads it yet: Basket & Hedge is not served."
+     "note": "Stored from 2001-07-17 (asset_prices), with each session's volume. No Desk tab reads the stored rows: Basket & Hedge ranks it as a hedge ETF from EODHD's daily bars, requested when a basket is priced."
     }
    ]
   },
