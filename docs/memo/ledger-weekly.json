@@ -2,7 +2,7 @@
   "keys": {
     "2026-W47": {
       "memo_run_id": 43956971699,
-      "note": "",
+      "note": "2.0.0 OK  1794863430 5614622812f47-57571bd20b3sm1416192b6e.8 - gsmtp",
       "output_artifact": "memo-outcome-weekly-2026-W47-43956971699-1",
       "overrides": [],
       "paid_generation": null,
@@ -17,9 +17,9 @@
         "validated_at": "2026-11-16T21:07:08Z",
         "validation_sha256": "c6eb5dbe5444a3fd2e6e89ff07fbe9cafbf48f5b9b9fdb16658ea590d80a62d6"
       },
-      "state": "sending",
+      "state": "sent",
       "tries": 1,
-      "updated_at": "2026-11-16T21:10:26Z"
+      "updated_at": "2026-11-16T21:10:32Z"
     }
   },
   "kind": "weekly",
