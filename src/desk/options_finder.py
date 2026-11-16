@@ -1283,14 +1283,15 @@ def value_rows(rc: RowCtx, sized: Sequence[Sized]) -> dict[str, tuple[str | None
     fill_target = {z.q.contract: (Decimal(z.price_c) / 10_000) + Decimal(2 * rc.comm_c) / 10_000 for z in sized}
     be_gens = {}
     for z in sized:
-        vs = valued[z.q.contract]
-        if z.q.exp != t.by and not any(isinstance(v, str) for v in vs):
+        # the same test the row is kept by: a refused next-day value alone leaves the row (with no theta), so its
+        # breakeven is still solved; testing every value here once left such a row without one (Phase 4a finding)
+        if z.q.exp != t.by and not _unpriceable(t, z, valued[z.q.contract]):
             be_gens[z.q.contract] = _breakeven_gen(rc, z.q, z.sigma, float(fill_target[z.q.contract]))
     be = om.drive(be_gens, rc.pricer.values)
     out = {}
     for z in sized:
         vs = valued[z.q.contract]
-        if isinstance(vs[0], str) or (z.q.exp != t.by and any(isinstance(v, str) for v in vs[2 if z.c0.days > 1 else 1:])):
+        if _unpriceable(t, z, vs):
             out[z.q.contract] = ("unpriceable", None)
             continue
         got = be.get(z.q.contract)
@@ -1298,6 +1299,13 @@ def value_rows(rc: RowCtx, sized: Sequence[Sized]) -> dict[str, tuple[str | None
             got = (None, "unresolved")
         out[z.q.contract] = (None, _row(rc, z, vs, fill_target[z.q.contract], got))
     return out
+
+
+def _unpriceable(t: Thesis, z: Sized, vs: list) -> bool:
+    """A row is unpriceable when its session value or, for an expiry after the date, any value on the date was
+    refused. The next-day value (vs[1], when the contract has more than a day left) only feeds theta, which _row
+    leaves unavailable when it was refused."""
+    return isinstance(vs[0], str) or (z.q.exp != t.by and any(isinstance(v, str) for v in vs[2 if z.c0.days > 1 else 1:]))
 
 
 def _row(rc: RowCtx, z: Sized, vs: list, target_d: Decimal, be: tuple | None) -> dict:

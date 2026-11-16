@@ -12,7 +12,11 @@
  *      from the 5D candles `useSymbolCandles` serves (the watchlist's own
  *      source and reader, `readCandles`), stamped `Close · <Mon DD>`. Bars of
  *      a session still trading are left out, so the figure is always a close.
- * A name with neither is listed plainly as having no day change on file.
+ * A name with neither is listed plainly as having no day change on file, and
+ * a name whose candles are still in flight is listed as still loading.
+ * An empty slot speaks for the coverage it has: "None of the 12 up" only when
+ * every name has a day change, else it counts the names priced ("None up ·
+ * 9 of 12 priced"), so a missing or pending name never reads as down.
  * Candles are requested only for names the stream gives no day change, so a
  * relay that carries `dc` costs no candle requests.
  */
@@ -54,6 +58,8 @@ export interface MoversRead {
   losers: MoverRead[];
   /** Names with neither a stream change nor two stored closes. */
   missing: TapeDef[];
+  /** Names whose candle request is still in flight (no change yet). */
+  pending: TapeDef[];
   /** A candle request for a missing name failed (CP4: the empty state then
    * says the prices did not load, never that none exist). */
   error?: boolean;
@@ -89,6 +95,7 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
   const bySymbol = new Map(need.map((s, i) => [s, results[i]]));
   const reads: MoverRead[] = [];
   const missing: TapeDef[] = [];
+  const pending: TapeDef[] = [];
   let loading = false;
   let error = false;
   let newestTick: number | null = null;
@@ -108,6 +115,7 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
       reads.push({ def, change: read.changePct, source: "close", stamp: `Close · ${monDD(last.ts) ?? "date unknown"}`, live: false });
     } else if (res?.isPending) {
       loading = true;
+      pending.push(def);
     } else {
       if (res?.isError) error = true;
       missing.push(def);
@@ -120,6 +128,7 @@ export function useMoversRead(quotes: ReadonlyMap<string, LiveQuote>, sessionOpe
     gainers: ranked.filter((m) => m.change > 0).slice(0, SLOTS),
     losers: [...ranked].reverse().filter((m) => m.change < 0).slice(0, SLOTS),
     missing,
+    pending,
     error,
     quoteAt: tickStamp(newestTick),
   };
@@ -160,6 +169,19 @@ function MoverTile({ m, onOpen }: { m: MoverRead; onOpen: (symbol: string) => vo
   );
 }
 
+/**
+ * The word an empty slot prints. With every name priced it states the fact
+ * for the whole list ("None of the 12 up"; "No other name up" once a name is
+ * shown); with a name missing or still loading it says how many were priced,
+ * so the slot never claims more than the data covers.
+ */
+export function emptyMoverWord(read: Pick<MoversRead, "ranked">, dir: "up" | "down", shown: number): string {
+  const total = SINGLE_NAMES.length;
+  const priced = read.ranked.length;
+  if (priced >= total) return shown ? `No other name ${dir}` : `None of the ${total} ${dir}`;
+  return `${shown ? "No other" : "None"} ${dir} · ${priced} of ${total} priced`;
+}
+
 /** The marked slot a missing mover leaves (G3: never a gap). */
 function EmptySlot({ word }: { word: string }) {
   return (
@@ -192,8 +214,8 @@ export default function Movers({ read, onOpen }: { read: MoversRead; onOpen: (sy
   if (hasAny) {
     body = (
       <div className="mrr-movers">
-        <Group label="Top gainers" items={read.gainers} emptyWord="No other name up" onOpen={onOpen} />
-        <Group label="Top losers" items={read.losers} emptyWord="No other name down" onOpen={onOpen} />
+        <Group label="Top gainers" items={read.gainers} emptyWord={emptyMoverWord(read, "up", read.gainers.length)} onOpen={onOpen} />
+        <Group label="Top losers" items={read.losers} emptyWord={emptyMoverWord(read, "down", read.losers.length)} onOpen={onOpen} />
       </div>
     );
   } else if (read.loading) {
@@ -234,6 +256,9 @@ export default function Movers({ read, onOpen }: { read: MoversRead; onOpen: (sy
           No day change on file for {read.missing.map((d) => d.symbol).join(", ")}: the stream sent none and the 5-day candles
           did not give two closes.
         </Caption>
+      ) : null}
+      {hasAny && read.pending.length ? (
+        <Caption>Still loading the day change for {read.pending.map((d) => d.symbol).join(", ")}.</Caption>
       ) : null}
     </Card>
   );
