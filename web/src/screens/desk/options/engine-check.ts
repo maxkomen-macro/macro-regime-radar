@@ -13,7 +13,19 @@ import { premium } from "./premium";
 export const CHECK_NOTE =
   "Accuracy check: a second, research pricing engine (Tier 2) reprices each pick at the inputs the Finder used and states its own error. " +
   "Agreement means the two calculations match within their stated accuracies. It is not a check of the market price, the implied volatility or the ranking. " +
-  "Tier 2's error is an estimate from synthetic tests, not a proved bound, and an independent cross-check is not yet in place. Every number on this page is Tier 1's.";
+  "Each pick says what kind of error Tier 2 stated: none where its value is exact, a proved interval, or an estimate from synthetic tests that is not a proved bound. " +
+  "An independent cross-check of Tier 2 is not yet in place. Every number on this page is Tier 1's.";
+
+/** What Tier 2's stated error is, by its route (src/desk/options_engine.py's statuses); empty where none applies. */
+function errorKind(route: string, status: string): string {
+  if (status === "exact")
+    return route === "intrinsic"
+      ? " Tier 2's value is exact here: at expiry it is the payoff."
+      : " Tier 2's value is exact here: early exercise adds nothing to this contract, so its European value is its price.";
+  if (status === "analytic bound") return " Its ± is the half-width of a proved interval that holds the price, plus a small margin.";
+  if (status.startsWith("estimated")) return " Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound.";
+  return "";
+}
 
 const dollars = (x: number) => `$${premium(x)}`;
 
@@ -32,7 +44,7 @@ export function checkWords(block: EngineCheck | undefined, contract: string): st
   const t = p.tier2;
   if (!isFiniteNumber(t.value)) return `Accuracy check: Tier 2 gave no value (${t.price_status}${t.reason ? `: ${t.reason}` : ""}).`;
   const err = isFiniteNumber(t.estimate) ? ` ± ${dollars(t.estimate)}` : "";
-  const head = `Accuracy check: Tier 2 ${dollars(t.value)}${err} (${t.price_status}).`;
+  const head = `Accuracy check: Tier 2 ${dollars(t.value)}${err} (${t.price_status}).${errorKind(t.route, t.price_status)}`;
   if (!isFiniteNumber(p.tier1.value) || p.agree === null) return `${head} Tier 1's value of this contract was not available, so the two are not compared.`;
   const allowed = isFiniteNumber(p.allowed) ? ` (${dollars(p.allowed)})` : "";
   const value =

@@ -586,8 +586,8 @@ describe("Options Finder: the response boundary and the page agree", () => {
 describe("Options Finder: the Tier 2 accuracy check", () => {
   const picks = UP.picks as Record<string, string>;
   // Invented figures in the shape the check serves (the chain is the fixture's synthetic SYN chain).
-  const tier2 = (value: number | null, estimate: number | null, status = "estimated, cross-check pending", reason: string | null = null) => ({
-    route: value === null ? "lattice" : "lattice",
+  const tier2 = (value: number | null, estimate: number | null, status = "estimated, cross-check pending", reason: string | null = null, route = value === null ? "none" : "lattice") => ({
+    route,
     price_status: status,
     value,
     estimate,
@@ -623,10 +623,10 @@ describe("Options Finder: the Tier 2 accuracy check", () => {
     renderTab(UP_URL);
     await stateOf("answered");
     expect(screen.getByTestId("of-check-payoff")).toHaveTextContent(
-      "Accuracy check: Tier 2 $0.8751 ± $0.0014 (estimated, cross-check pending). Agrees with Tier 1's $0.875 within their stated accuracies ($0.0114).",
+      "Accuracy check: Tier 2 $0.8751 ± $0.0014 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound. Agrees with Tier 1's $0.875 within their stated accuracies ($0.0114).",
     );
     expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent(
-      "Accuracy check: Tier 2 $4.70 ± $0.0035 (estimated, cross-check pending). Differs from Tier 1's $4.675 by more than their stated accuracies ($0.0135); the page shows Tier 1's numbers.",
+      "Accuracy check: Tier 2 $4.70 ± $0.0035 (estimated, cross-check pending). Its ± is Tier 2's own estimate of its error, from synthetic tests, not a proved bound. Differs from Tier 1's $4.675 by more than their stated accuracies ($0.0135); the page shows Tier 1's numbers.",
     );
     expect(screen.getByTestId("of-check-time")).toHaveTextContent("Accuracy check not run: work limit.");
     const note = screen.getByTestId("of-check-note");
@@ -663,5 +663,29 @@ describe("Options Finder: the Tier 2 accuracy check", () => {
     renderTab(UP_URL);
     await stateOf("answered");
     expect(screen.getByTestId("of-check-payoff")).toHaveTextContent("Accuracy check: Tier 2 gave no value (unresolved: estimate above target).");
+  });
+
+  it("each route says what kind of error Tier 2 stated: exact, a proved interval, or an estimate (Codex S-6)", async () => {
+    const at = (i: number, t: ReturnType<typeof tier2>) => ({ ...block.picks[i], status: "checked", reason: null, tier2: t, difference: 0, allowed: 0.01, agree: true });
+    const routed = [
+      at(0, tier2(0.875, 0.001, "analytic bound", null, "analytic-interval")),
+      at(1, tier2(4.675, null, "exact", null, "exempt")),
+      at(2, tier2(18.165, null, "exact", null, "intrinsic")),
+    ];
+    stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: { ...block, picks: routed } }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const payoff = screen.getByTestId("of-check-payoff").textContent ?? "";
+    expect(payoff).toContain("Accuracy check: Tier 2 $0.875 ± $0.001 (analytic bound). Its ± is the half-width of a proved interval that holds the price, plus a small margin. Agrees");
+    expect(payoff).not.toMatch(/synthetic tests|not a proved bound/);
+    const exempt = screen.getByTestId("of-check-forgiving").textContent ?? "";
+    expect(exempt).toContain("Accuracy check: Tier 2 $4.675 (exact). Tier 2's value is exact here: early exercise adds nothing to this contract, so its European value is its price. Agrees");
+    expect(exempt).not.toMatch(/±|synthetic tests|not a proved bound/);
+    const intrinsic = screen.getByTestId("of-check-time").textContent ?? "";
+    expect(intrinsic).toContain("Accuracy check: Tier 2 $18.165 (exact). Tier 2's value is exact here: at expiry it is the payoff. Agrees");
+    expect(intrinsic).not.toMatch(/±|synthetic tests/);
+    expect(screen.getByTestId("of-check-note")).toHaveTextContent(
+      "Each pick says what kind of error Tier 2 stated: none where its value is exact, a proved interval, or an estimate from synthetic tests that is not a proved bound.",
+    );
   });
 });
