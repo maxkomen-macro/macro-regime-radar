@@ -311,6 +311,10 @@ def test_each_passed_row_carries_its_on_date_contexts_at_its_own_sigma():
             assert all(math.isclose(c["sigma"], rec["rows"][contract]["iv"], rel_tol=1e-9) for c in ctxs.values())
     assert all(c["t2"] is None for ctxs in a["row_contexts"].values() for c in ctxs.values())
     assert all(c["t2"] is not None for ctxs in d["row_contexts"].values() for c in ctxs.values())
+    for rec in (a, d):   # B-10: the time lens's filter is recorded on the unrounded P&L for every passed row
+        assert all(isinstance(r["time_ok"], bool) for r in rec["rows"].values())
+        timed = set(rec["lens_order"]["time"])
+        assert timed <= {c for c, r in rec["rows"].items() if r["time_ok"]}
 
 
 # ── the ranking trace (section 4) on hand-built records ──────────────────────────────────────────────────────────
@@ -429,3 +433,24 @@ def test_a_time_lens_change_from_the_partner_crossing_the_cost_filter_is_the_fil
         a["config"], b["config"] = "A", "B"
     got = tr.trace([a, b], "offline")["classes"]["B:time"]
     assert set(got) == {"pick: time lens filter", "entered: time lens filter" if not reverse else "left: time lens filter"}
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_a_crossing_hidden_by_rounding_to_cents_is_the_filter_and_the_recorded_flag_decides(reverse):
+    # B-10: C2's target P&L moves from $99.999 to $100.001 against a $100 cost; both serialize as $100.00
+    def rec(cfg, c2_ok, top, flag):
+        r = _rec(cfg, {C1: 0.0, C2: 0.0}, top)
+        r["lens_order"], r["picks"] = {"time": top}, {"time": top[0]}
+        r["rows"][C1]["pnl"] = {"target": 200.0, "half": 0.0, "flat": 1000.0}
+        r["rows"][C2]["pnl"] = {"target": 100.0, "half": 0.0, "flat": 1100.0}
+        if flag:
+            r["rows"][C1]["time_ok"], r["rows"][C2]["time_ok"] = True, c2_ok
+        return r
+    for flag in (False, True):   # records without the flag (the main run's) and with it
+        a, b = rec("A", False, [C1], flag), rec("B", True, [C2, C1], flag)
+        if reverse:
+            a, b = rec("A", True, [C2, C1], flag), rec("B", False, [C1], flag)
+        got = tr.trace([a, b], "offline")
+        assert set(got["classes"]["B:time"]) == {"pick: time lens filter",
+                                                 "left: time lens filter" if reverse else "entered: time lens filter"}
+        assert got["unexplained"] == []

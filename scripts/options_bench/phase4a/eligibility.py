@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections import Counter
 from datetime import date
+from decimal import Decimal
 
 from src.desk import options_finder as of
 
@@ -28,6 +29,7 @@ class Trace:
         self.sent_to_iv: set[str] = set()
         self.valued: dict[str, str | None] = {}
         self.row_ctx: dict[str, dict] = {}   # contract -> {scenario: the on-date context at the row's sigma}
+        self.time_ok: dict[str, bool] = {}   # contract -> the time lens's cost filter on the unrounded P&L (B-10)
 
     def wrappers(self) -> dict:
         tr = self
@@ -82,6 +84,8 @@ class Trace:
                     if reason is None and not of._finite(row):
                         reason = "unpriceable"
                     tr.valued[key] = reason
+                    if reason is None:   # the rule of options_finder.lens_order, on the same unrounded numbers
+                        tr.time_ok[key] = bool(row["_pnl"]["target"] >= Decimal(row["_cost_c"]) / 100)
                 return got
             return inner
 

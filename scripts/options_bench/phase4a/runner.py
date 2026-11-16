@@ -71,7 +71,8 @@ def _compact(res: dict, captured: dict, trace: eligibility.Trace, req) -> dict:
     out["carry"] = [{k: c.get(k) for k in ("exp", "forward", "q", "pairs", "source")} for c in a["carry"]]
     out["rows"] = {r["contract"]: {"iv": r["iv"], "delta": r["delta"], "pnl": r["pnl"], "n": r["n"], "cost": r["cost"],
                                    "be": r["breakeven_on_date"], "be_note": r["breakeven_on_date_note"],
-                                   "model": r["model"], "european": r["european_value"]} for r in a["rows"]}
+                                   "model": r["model"], "european": r["european_value"],
+                                   "time_ok": trace.time_ok.get(r["contract"])} for r in a["rows"]}
     # each passed row's on-date contexts at its own sigma, with Tier 2's answer where Tier 2 valued them: the
     # ranking trace's allowances and any repricing (Tier 2 or the reference) read these
     t2 = p.t2_answer
