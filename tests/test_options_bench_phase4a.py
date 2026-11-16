@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -332,7 +333,8 @@ def _rec(cfg, pnl, top, *, iv=0.2, t2=None, ctx_for=(C1, C2), d_sigma=None, fate
             "row_contexts": {c: {m: dict(ctx) for m in ("target", "half", "flat")} for c in ctx_for if c in rows},
             "eligibility": {"fate": fate or {}}, "lens_order": {"payoff": top}, "picks": {"payoff": top[0]},
             "carry": [], "rf": ([] if d_sigma is None else
-                                [{"site": "iv", "call": False, "strike": 100.0, "sigma": iv, "d_sigma": d_sigma}])}
+                                [{"site": "iv", "call": False, "strike": 100.0, "sigma": iv, "d_sigma": d_sigma,
+                                  "days": (date(2026, 12, 18) - pop.SESSION).days}])}
 
 
 def _payoff(recs):
@@ -468,3 +470,17 @@ def test_rows_the_time_lens_ranks_in_both_passed_its_filter_so_their_swap_is_not
     got = tr.trace([a, b], "offline")
     assert not any("time lens filter" in k for k in got["classes"]["B:time"])
     assert got["classes"]["B:time"] == {"pick: unexplained": 1, "order: unexplained": 1}
+
+
+def test_the_input_error_is_the_solve_of_the_row_s_own_expiry():
+    # B-12: the same type, strike and sigma at another expiry with a tiny error must not lend its error to the row
+    a = _rec("A", {C1: 1000.0, C2: 995.0}, [C1], ctx_for=(C1,))
+    c = _rec("C", {C1: 990.0, C2: 995.0}, [C2], ctx_for=(C1,), d_sigma=0.01)
+    other = {"site": "iv", "call": False, "strike": 100.0, "sigma": 0.2, "d_sigma": 1e-6,
+             "days": (date(2026, 11, 20) - pop.SESSION).days}
+    for rf in ([other] + c["rf"], c["rf"] + [other]):
+        c["rf"] = rf
+        assert set(_payoff([a, c])["C:payoff"]) == {"pick: explained by inputs", "left: explained by inputs",
+                                                    "entered: explained by inputs"}
+    c["rf"] = [other]
+    assert set(_payoff([a, c])["C:payoff"]) == {"pick: unexplained", "left: unexplained", "entered: unexplained"}

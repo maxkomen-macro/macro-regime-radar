@@ -25,12 +25,14 @@ import math
 import re
 import sys
 from collections import Counter, defaultdict
+from datetime import date
 from pathlib import Path
 
 from src.desk import options_finder as of
 from src.desk import options_math as om
 
 from .analyze import load
+from .population import SESSION
 from .rootfinding import _vega_eu
 
 METRIC = of.METRICS
@@ -67,7 +69,7 @@ class Run:
         self.dsig = defaultdict(list)
         for x in rec.get("rf") or []:
             if x.get("site") == "iv" and x.get("d_sigma") is not None:
-                self.dsig[(x["call"], float(x["strike"]))].append((x["sigma"], x["d_sigma"]))
+                self.dsig[(x["call"], float(x["strike"]), int(x["days"]))].append((x["sigma"], x["d_sigma"]))
 
     def metric(self, c: str, lens: str) -> float | None:
         r = self.rows.get(c)
@@ -113,11 +115,15 @@ class Run:
         r, d = self.rows.get(c), self.ctx.get(c, {}).get(METRIC[lens])
         if r is None or d is None:
             return None
-        call = d["call"]
-        hits = [ds for sg, ds in self.dsig.get((call, float(d["strike"])), []) if math.isclose(sg, r["iv"], rel_tol=1e-9)]
-        if not hits:
+        exp = expiry_of(c)
+        if exp is None:
             return None
-        return self.scale(c) * hits[0] * _vega_eu(ctx_of(d))
+        days = (date.fromisoformat(exp) - SESSION).days   # the solve's own quote: type, strike and expiry (B-12)
+        hits = {ds for sg, ds in self.dsig.get((d["call"], float(d["strike"]), days), [])
+                if math.isclose(sg, r["iv"], rel_tol=1e-9)}
+        if len(hits) != 1:   # none stated, or ambiguous: no allowance
+            return None
+        return self.scale(c) * hits.pop() * _vega_eu(ctx_of(d))
 
     def allowance(self, c: str, lens: str) -> float | None:
         a = self.tol(c, lens)
