@@ -684,6 +684,25 @@ OPTION_ROW = obj(
     provider=obj(iv=null(NUM), delta=null(NUM), theta=null(NUM)),
 )
 CURVE_SERIES = E("DGS3MO", "DGS2", "DGS5")
+# The Tier 2 accuracy check on the picks (src/desk/options_check.py), present only while the route's
+# OPTIONS_TIER2_CHECK switch is on; every other field is unchanged by it. A failed check is {error, picks: []}.
+TIER2_ANSWER = obj(route=STR, price_status=STR, value=null(NUM), estimate=null(NUM), reason=null(STR),
+                   delta_status=E("served", "withheld"), delta=null(NUM), delta_estimate=null(NUM),
+                   delta_reason=null(STR), units=INT)
+ENGINE_CHECK_PICK = obj(
+    contract=STR, lenses=Arr(E("payoff", "forgiving", "time"), min=1, max=3), status=E("checked", "not checked"),
+    reason=null(STR), tier1=obj(value=null(NUM), delta=null(NUM)), tier2=null(TIER2_ANSWER),
+    difference=null(NUM), allowed=null(NUM), agree=null(BOOL),
+    delta_difference=null(NUM), delta_allowed=null(NUM), delta_agree=null(BOOL),
+)
+ENGINE_CHECK = OneOf((
+    obj(engine=Const("adaptive"), version=STR, role=STR,
+        evidence=obj(engine_version=STR, attempt=INT, freeze=STR, held_out_seed=INT, cases=INT, population=STR,
+                     estimate=STR),
+        config=obj(estimator=STR, schedule=STR, F=NUM, F_d=NUM, tau=NUM, force_lattice=BOOL),
+        work=obj(used=INT, limit=INT, elapsed_ms=F(NUM, opt=True)), picks=Arr(ENGINE_CHECK_PICK, max=3), error=null(STR)),
+    obj(error=STR, picks=Arr(ENGINE_CHECK_PICK, max=0)),
+))
 OPTIONS_FINDER = obj(
     symbol=STR,
     inputs=obj(view=E("up", "down"), type=OPTION_TYPE, target=NUM, by=DATE, budget=NUM, min_oi=INT, max_spread=NUM,
@@ -723,6 +742,7 @@ OPTIONS_FINDER = obj(
                      curve=Arr(obj(series=CURVE_SERIES, date=DATE, value=NUM), min=3, max=3)),
     provider=Const("EODHD"),
     sources=Arr(STR, min=2),
+    engine_check=F(ENGINE_CHECK, opt=True),
 )
 
 

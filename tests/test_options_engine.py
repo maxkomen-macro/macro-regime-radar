@@ -113,8 +113,9 @@ def test_work_cap_is_an_unresolved_answer_not_an_error():
 
 
 def test_nothing_served_imports_the_new_engine_modules():
-    """Phase 2 is unserved: no module under api/ (nor the Finder itself) imports the engine interface or the
-    controller, so nothing the site serves can reach them."""
+    """No module under api/ (nor the Finder itself) imports the engine interface or the controller directly. The
+    only served path to Tier 2 is src/desk/options_check.py, imported by api/desk_options.py only when its
+    OPTIONS_TIER2_CHECK switch is on (pinned in tests/test_options_check.py)."""
     pat = re.compile(r"\boptions_(engine|adaptive)\b")
     files = list((REPO / "api").rglob("*.py")) + [REPO / "src/desk/options_finder.py", REPO / "src/desk/options_math.py"]
     hits = [str(p.relative_to(REPO)) for p in files if pat.search(p.read_text())]

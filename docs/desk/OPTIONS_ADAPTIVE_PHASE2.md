@@ -1,8 +1,11 @@
 # Options engine, adaptive Phase 2: the Tier 2 convergence controller
 
-Status: built and scored, **unserved**. Nothing under `api/` or `web/` imports the new modules; the Finder keeps
-serving the baseline (Tier 1). The engine switch is Phase 7 and needs the owner's explicit approval. Tier 2
-values are "estimated, cross-check pending" until the Phase 3 cross-check exists.
+Status: built and scored. The Finder keeps serving the baseline (Tier 1) for every number. Since 2026-11-16 the
+only served use is the accuracy check on the Finder's picks (`docs/desk/OPTIONS_TIER2_CHECK.md`), off unless
+`OPTIONS_TIER2_CHECK` is set; nothing under `api/` imports these modules directly. The owner accepted attempt 2 as
+numerical evidence for that single-context comparison use only (2026-11-16). The engine switch is Phase 7 and
+needs the owner's explicit approval. Tier 2 values are "estimated, cross-check pending" until the Phase 3
+cross-check exists.
 
 - Plan: "Options engine Phase 2 plan: convergence controller", revision 2, approved 2026-10-29 05:39 UTC, with
   amendment A-1 (2026-10-29 18:11 UTC: interval refusals and the analytic-route estimate) and amendment A-2
@@ -363,8 +366,9 @@ and the skip count are environmental; no financial tolerance was changed for any
   is not a claim about real chains, whole requests, or any later attempt.
 - The references' uncertainty is a GCI estimate, not a proved bound. The interval check means a usable output
   outside a proved interval fails the gate; it does not mean every value is proved correct.
-- Tier 2 is not served. Phase 3 (cross-check, finite differences and Greeks), Phase 4 (materiality and request
-  budgets), the worker, the UI and the Phase 7 switch keep their own gates.
+- Tier 2 serves no number. Its one use is the accuracy check on the Finder's picks behind `OPTIONS_TIER2_CHECK`,
+  off by default (`docs/desk/OPTIONS_TIER2_CHECK.md`). Phase 3 (cross-check, finite differences and Greeks), Phase 4
+  (materiality and request budgets), the worker, the UI and the Phase 7 switch keep their own gates.
 
 ## Files
 
