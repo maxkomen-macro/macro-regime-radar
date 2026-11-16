@@ -13,7 +13,7 @@ import DeskShell from "../DeskShell";
 import { renderWithProviders } from "../../../test/utils";
 import { stubDesk } from "../../../test/desk";
 import { DESK_PAGES, deskPageBySlug } from "../desk-sections";
-import { OPTIONS_FINDER_SLUG } from "../options/flag";
+import { OPTIONS_FINDER_LISTED, OPTIONS_FINDER_SLUG } from "../options/flag";
 import { BYLINE, BuildNotesView, NOTES_MD, SCOPE_ID, figureUrl, leadWithoutByline, sectionOrder } from "./BuildNotesPage";
 import { BUILT_AFTER, BUILT_ID, BUILT_PARAGRAPHS, BUILT_TITLE } from "./built";
 import { HELD_HEADING, HELD_MARK, holdBanned, readNotes, sentences } from "./notes";
@@ -256,7 +256,8 @@ describe("Build Notes tab", () => {
       const link = scopeLink(it);
       expect(link, it).not.toBeNull();
       expect(link!.name + link!.rest).toBe(it);
-      expect(link!.slug === OPTIONS_FINDER_SLUG).toBe(false);
+      // The Finder is in the guide only while it is listed (options/flag.ts).
+      if (link!.slug === OPTIONS_FINDER_SLUG) expect(OPTIONS_FINDER_LISTED).toBe(true);
       expect(DESK_PAGES.some((p) => p.slug === link!.slug)).toBe(true);
     }
     // Every listed page but Build Notes itself is in the guide once.

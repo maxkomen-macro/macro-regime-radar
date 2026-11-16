@@ -22,7 +22,8 @@ describe("the Desk's pages (§14.6)", () => {
   });
 
   it("each declares its one header action, but for the two whose action is in the page", () => {
-    const inPage = new Set(["data-pipeline"]);
+    // The Options Finder's action, Price the chain, is its form's button (OPTIONS_FINDER_PAGE).
+    const inPage = new Set(["data-pipeline", "options-finder"]);
     for (const p of DESK_PAGES) if (!inPage.has(p.slug)) expect(p.action, p.slug).toBeTruthy();
   });
 

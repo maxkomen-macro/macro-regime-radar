@@ -3,7 +3,7 @@
  * §14.5 regroups it): the sidebar is the only navigation, in labelled groups
  * by what an analyst is doing: MARKET (Overview · Technicals · Sectors ·
  * Macro · Regime), RESEARCH (Event Study · Signal Ledger), TRADE (Basket &
- * Hedge · Position Monitor), then a small ABOUT THIS BUILD line (Data
+ * Hedge · Options Finder · Position Monitor), then a small ABOUT THIS BUILD line (Data
  * Pipeline · Build Notes). Each tab carries its one-line purpose, the one
  * action its header may show and whether the Desk / Client toggle appears
  * (every tab but Position Monitor, Basket & Hedge and Data Pipeline, whose
@@ -13,8 +13,8 @@
  * a saved link still lands on the page that replaced it.
  *
  * The Options Finder sits under Trade, between Basket & Hedge and Position
- * Monitor, once it is listed (options/flag.ts). Until then it is in no group:
- * the sidebar leaves it out, and its slug still resolves (deskPageBySlug).
+ * Monitor, while it is listed (options/flag.ts). With the flag off it is in no
+ * group: the sidebar leaves it out, and its slug still resolves (deskPageBySlug).
  */
 
 import { OPTIONS_FINDER_LISTED, OPTIONS_FINDER_SLUG } from "./options/flag";
@@ -94,7 +94,7 @@ export function deskGroups(listed: boolean): DeskGroup[] {
           slug: "data-pipeline",
           label: "Data Pipeline",
           title: "Where every number comes from",
-          blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote; prototype cards are marked. The browser computes only from served numbers: a position's room, a basket's weights, and the VIX tile's gap against that quote.",
+          blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote, and what Basket & Hedge and the Options Finder read on request; prototype cards are marked. The browser computes only from served numbers: a position's room, a basket's weights, and the VIX tile's gap against that quote.",
           toggle: false,
         },
         { slug: "build-notes", label: "Build Notes", blurb: "What this Desk is, how it was checked, and what comes next.", action: "link" },

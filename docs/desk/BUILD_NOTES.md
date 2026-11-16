@@ -94,6 +94,13 @@ SEC's quarterly 13F filings show them held: holders, the change on the quarter,
 the ten largest holders' share and how many of the 100 largest filers hold each
 among their ten largest positions. Both are lagged disclosures and say so; with
 nothing stored each says it is awaiting it.
+Also live on request: the Options Finder, under Trade. You enter a view on one
+US stock or ETF (it rises or falls to a target price by a date) and a budget,
+and it prices every listed call or put in the window from the last end-of-day
+options chain: what the position your budget buys would be worth on your date
+if the stock is at the target, halfway there or unchanged, sorted three plain
+ways, with the payoff chart, the events before your date, and a link that
+carries a contract to Position Monitor. How it prices is the next section.
 
 Designed and drawn, not yet served, each for a stated reason:
 
@@ -117,6 +124,75 @@ Designed and drawn, not yet served, each for a stated reason:
 - Hedging a basket with options: the arithmetic for a beta-adjusted put
   spread on a basket has to be exactly right or absent. Where a number
   isn't computed yet, the card says so or is a marked prototype.
+
+## How the Options Finder prices a view
+
+The Finder is a scenario calculator, not a recommendation. It reads one
+end-of-day options chain from EODHD for the session named on the page, not
+a live quote, and the page says which session and when the quote was taken.
+What it observes and what it computes are kept apart: the bid, the ask, the open
+interest and the close are observed; every value on your date is modelled.
+
+- **Screens.** Each contract in the window is dropped, and counted, under the
+  first screen it fails: a bad or non-standard row, no bid, no usable ask, a
+  quote from another session, a no-arbitrage violation, a spread too wide, too
+  little open interest, over your budget, or no volatility between 5% and 300%
+  that reprices its mid. The counts are on the page under "Why … were
+  dropped".
+- **Carry.** For each expiry the market's own forward comes from put-call
+  parity on the pairs nearest the money, with each leg's early-exercise
+  premium taken out. Rates are the stored Treasury yields (3-month, 2-year and
+  5-year); announced dividends are paid at their last cum-dividend close.
+- **Pricing.** Each contract gets one volatility, solved from its own mid. A
+  European value is a closed form; an American contract that theory shows is
+  not worth exercising early at any point is priced the same way; an early-exercise
+  premium bounded below a fifth of the tolerance lets the European value
+  stand; everything else goes to a binomial lattice with a step on every
+  calendar day, smoothed on the last step and on the step into each
+  cum-dividend close, valued at two resolutions and extrapolated. The
+  dividend-step smoothing is a repair: a held-out validation run found that
+  without it the extrapolation could miss the tolerance on contexts with a
+  dividend, and a fresh held-out run passed after it
+  (`docs/desk/OPTIONS_DIVIDEND_SMOOTHING.md`).
+- **Your date.** Contracts are sized whole from the budget at the ask (or the
+  mid) plus commission. A contract expiring on your date is worth its intrinsic
+  value; a later one is modelled at its own volatility held flat, with the
+  same value at 10 points lower and higher beside it. The most you can lose is
+  what you paid.
+- **What can rank.** Proved bounds on each contract's value show which
+  contracts cannot reach the top 20 of any sort; those are counted and not
+  priced. That pruning allows the lattice twice its tolerance for error, an
+  observed accuracy rather than a proved one, and the page says so.
+- **Events.** Macro releases from the stored calendar, dividends and earnings
+  dates are placed against the session, your date and each expiry. Where
+  earnings coverage is not reconciled through your date the page says earnings
+  dates are unknown, not that there are none. A delta the lattice cannot
+  state to its accuracy, near the exercise value or with a dividend in its
+  first days, is withheld with the reason in its cell.
+- **Limits of the work.** One scan runs at a time, and a scan that would pass
+  the engine's work limit is refused with nothing partial served, so a long
+  scan window on a busy chain asks you to shorten it. The page's example uses
+  a one-month window for that reason.
+
+What the model cannot know: the next trade can differ from a close; volatility
+held flat usually fails across an earnings report, which is flagged; events
+the data does not track (FDA decisions, product launches, lawsuits, mergers)
+are not in it; probabilities are the market's risk-neutral pricing, not what
+happens. It covers one long call or one long put on a US stock or ETF: no
+spreads, no selling, no index options, and no options on a basket. The method
+in full is `docs/desk/OPTIONS_FINDER_MODEL.md`.
+
+Every price the Finder shows comes from that pricer (Tier 1). Beside it is a
+research engine, Tier 2, not serving: it keeps refining the same lattice until
+its own error estimate meets the pricing tolerance and states that estimate for
+each contract; where a proved early-exercise interval is narrow enough it
+returns the interval's midpoint, and a candidate outside the interval is
+refused, not clipped. On a frozen held-out test of 17,207 synthetic contracts
+(attempt 2, seed 20261102) no stated price or delta estimate was exceeded and
+no returned value fell outside its proved interval; per group, the one-sided
+95% upper limit on the miss rate was 0.13% to 0.24%. Those are empirical
+estimates on a synthetic population, not proved bounds, and Tier 2 has not yet
+been cross-checked against the finite-difference solver Phase 3 is building.
 
 ## Prototypes, and how I would build them
 
@@ -204,7 +280,16 @@ a basket can go live; the correlation views not served yet, a 250-session
 window and the stock–bond history since 1990 (the 20-, 60- and 120-session
 windows and the correlation by regime of the revised regime history are
 served on Macro; "as known at the time" waits for the point-in-time regime
-history); then the per-study confidence selector. After that, a server-side position store with accounts, so the
+history); then the per-study confidence selector. On the Options Finder, Phase 3,
+in development and not served: gamma, vega, rho, theta and dividend
+sensitivities for American options, each with its own error estimate, returned
+only when the engine can bound its error and withheld otherwise, and each
+checked against two independent references, a finite-difference solver and a
+QuantLib study. Its latest development run covered 1,080 synthetic test
+contexts across 38 Greek-and-scenario pairs with no failures; one pair, gamma
+near the early-exercise boundary, is still above the 5% unscored limit (4 of
+72). The held-out acceptance run has not started, and nothing from Phase 3 is
+used on the site until it passes. After that, a server-side position store with accounts, so the
 discipline gate can be shared across a desk instead of living in one
 browser.
 
