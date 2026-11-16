@@ -4,7 +4,7 @@
 
 Reads the runner's JSON lines only; prices nothing. Per configuration and limit: outcomes, work units, CPU and wall
 (p50, p95, max), memo reuse by site and engine, Tier 2 refusals, root-finding rounds and exits by site, the stated
-input errors, coverage (each candidate's fate), and each lens's pick and top 20 against configuration A on the same
+input errors, coverage (each candidate's fate), and each lens's pick, top 20 and its order against configuration A on the same
 request and limit.
 """
 
@@ -94,6 +94,7 @@ def summarize(recs: list[dict]) -> dict:
         # lens effects against A, same request and limit, both answered
         same_pick = Counter()
         top_overlap = defaultdict(list)
+        top_order = defaultdict(list)   # share of pairs of members of both top 20s kept in A's order (B-8)
         for r in ans:
             a = base.get((r["index"], lim))
             if a is None or cfg == "A":
@@ -104,8 +105,15 @@ def summarize(recs: list[dict]) -> dict:
                 ta = set((a.get("lens_order") or {}).get(lens) or [])
                 if ta or top:
                     top_overlap[lens].append(len(ta & set(top)) / max(len(ta), len(top), 1))
+                pos = {c: i for i, c in enumerate(top)}
+                kept = [c for c in (a.get("lens_order") or {}).get(lens) or [] if c in pos]
+                pairs = [(c, b) for i, c in enumerate(kept) for b in kept[i + 1:]]
+                if pairs:
+                    top_order[lens].append(sum(pos[c] < pos[b] for c, b in pairs) / len(pairs))
         s["picks_vs_A"] = {f"{lens}:{'same' if same else 'changed'}": n for (lens, same), n in sorted(same_pick.items())}
         s["top20_overlap_vs_A"] = {lens: spread(v) for lens, v in top_overlap.items()}
+        s["top20_order_kept_vs_A"] = {lens: {**spread(v), "all_kept": sum(1 for x in v if x == 1.0)}
+                                      for lens, v in top_order.items()}
         out[f"{cfg}:{lim}"] = s
     return out
 

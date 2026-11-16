@@ -386,3 +386,28 @@ def test_an_input_effect_on_a_row_whose_carry_changed_is_never_explained_by_inpu
     assert set(got) == {"pick: involves carry (conditioning not established)",
                         "left: involves carry (conditioning not established)",
                         "entered: involves carry (conditioning not established)"}
+
+
+def test_a_swap_inside_the_top_20_with_the_same_pick_and_members_is_traced():
+    # B-8: same winner, same members, two members swapped; an entrant or leaver alone moves no pair's order
+    C3 = "T261218P00090000"
+    t2 = {"status": "unresolved: estimate above target", "estimate": 0.01, "value": None, "route": "x"}
+    a = _rec("A", {C1: 3000.0, C2: 2000.0, C3: 1000.0}, [C1, C2, C3])
+    b = _rec("B", {C1: 3000.0, C2: 100.0, C3: 2000.0}, [C1, C3, C2], t2=t2)
+    out = tr.trace([a, b], "offline")
+    assert out["classes"]["B:payoff"] == {"order: unexplained": 1}
+    assert [(u["contract"], u["partner"]) for u in out["unexplained"]] == [(C2, C3)]
+    shifted = _rec("B", {C1: 3000.0, C2: 2000.0, C3: 1000.0, "T261218P00085000": 2500.0},
+                   [C1, "T261218P00085000", C2, C3], t2=t2)
+    assert not any(k.startswith("order") for k in tr.trace([a, shifted], "offline")["classes"].get("B:payoff", {}))
+
+
+def test_the_summary_reports_how_much_of_a_s_order_each_top_20_keeps():
+    from scripts.options_bench.phase4a import analyze
+    C3 = "T261218P00090000"
+    a = _rec("A", {C1: 3.0, C2: 2.0, C3: 1.0}, [C1, C2, C3])
+    b = _rec("B", {C1: 3.0, C2: 1.0, C3: 2.0}, [C1, C3, C2])
+    for r in (a, b):
+        r["outcome"] = "answered"
+    got = analyze.summarize([a, b])["B:offline"]["top20_order_kept_vs_A"]["payoff"]
+    assert got["p50"] == pytest.approx(2 / 3) and got["all_kept"] == 0

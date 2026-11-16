@@ -192,7 +192,8 @@ DISPLACED = "displaced by a removed or added candidate"
 
 
 def changes(x: Run, a: Run, lens: str):
-    """(kind, contract, partner) for every pick change and every top-20 member that entered or left. A member's
+    """(kind, contract, partner) for every pick change, every top-20 member that entered or left, and every pair of
+    members of both whose order flipped ("order", the higher in A first). A member's
     partner is the row it swapped places with: for one that entered, the leaver still present in X that X ranks
     highest; for one that left, the entrant still present in A that X ranks highest. When every counterpart was
     itself removed or added, the partner is DISPLACED."""
@@ -213,6 +214,14 @@ def changes(x: Run, a: Run, lens: str):
         out.append(("left", c, partner(entrants, a)))
     for c in entrants:
         out.append(("entered", c, partner(leavers, x)))
+    # members of both top 20s whose order flipped (B-8): every discordant pair, the one A ranks higher first; an
+    # entrant or a leaver moves the others' positions but never their order, so only real swaps are counted
+    pos = {c: i for i, c in enumerate(tx)}
+    kept = [c for c in ta if c in pos]
+    for i, c in enumerate(kept):
+        for b in kept[i + 1:]:
+            if pos[c] > pos[b]:
+                out.append(("order", c, b))
     return out
 
 
