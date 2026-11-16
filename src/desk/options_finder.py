@@ -1578,7 +1578,10 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
         dividends: Mapping[str, Any] | None = None, events: Iterable[Mapping[str, Any]] = (),
         known_earnings: Iterable[Mapping[str, Any]] = (),
         coverage: Mapping[str, Any] | None = None, truncated: bool = False, notes: Iterable[str] = (),
-        work_limit: int = WORK_LIMIT) -> dict:
+        work_limit: int = WORK_LIMIT, check: Callable[[list[dict]], Any] | None = None) -> dict:
+    """The Finder's answer. `check` (None unless the route's OPTIONS_TIER2_CHECK switch is on) receives, after
+    ranking, each lens pick's session context with Tier 1's value of it and the row's delta, and its result rides
+    under "engine_check"; it reads the answer and changes nothing in it. With None the answer is as before."""
     t, m = thesis, market
     inputs = {"rows": list(rows), "other_rows": list(other_rows), "event_rows": list(event_rows),
               "dividends": list((dividends or {}).get("rows") or ()), "events": list(events)}
@@ -1735,6 +1738,7 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
     # reaches the LENS_TOP-th best priced value, until none does (rev 5)
     passed: list[dict] = []
     quote_of: dict[str, Quote] = {}
+    context_of: dict[str, om.Context] = {}   # each passed row's session context, as value_rows valued it
     done: set[str] = set()
     todo: set[str] = set()
     for lens, metric in METRICS.items():
@@ -1762,6 +1766,7 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
                 continue
             passed.append(row)
             quote_of[row["contract"]] = z.q
+            context_of[row["contract"]] = z.c0.with_sigma(z.sigma)
         bars = {lens: rank_bound(passed, lens) for lens in METRICS}
         todo = {c for c, rg in ranged.items() if c not in done and any(can_rank(rg, lens, bars[lens]) for lens in METRICS)}
     ranked_out = len(ranged) - len(done)
@@ -1848,4 +1853,24 @@ def run(rows: Iterable[Mapping[str, Any]], thesis: Thesis, market: Market, *,
             "notes": [*run_notes, *notes],
         },
     }
+    if check is not None:
+        answer["engine_check"] = _engine_check(check, picks, context_of, by_contract, pricer)
     return answer
+
+
+def _engine_check(check: Callable[[list[dict]], Any], picks: Mapping[str, str | None],
+                  context_of: Mapping[str, om.Context], by_contract: Mapping[str, dict], pricer: Pricer) -> Any:
+    """The optional check over the picks (see run). Tier 1's value is the one the Pricer kept for the row's
+    session context; a failure inside the check is its own answer, never the scan's."""
+    picked = []
+    for lens in LENSES:
+        c = picks.get(lens)
+        if not c:
+            continue
+        got = pricer.memo.get(context_of[c])
+        picked.append({"lens": lens, "contract": c, "context": context_of[c],
+                       "value": got.value if isinstance(got, Valued) else None, "delta": by_contract[c]["delta"]})
+    try:
+        return check(picked)
+    except Exception as err:   # never fail the scan for the check (the check catches its own; this is a backstop)
+        return {"error": f"not checked: error ({type(err).__name__})", "picks": []}

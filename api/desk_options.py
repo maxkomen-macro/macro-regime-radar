@@ -437,7 +437,7 @@ def finder(params: list[tuple[str, str]]) -> dict:
         known = [e for e in earn_rows if date.fromisoformat(e["date"]) >= session]
         ans = _run_engine(lambda: of.run(rows, t, m, other_rows=other_rows, event_rows=event_rows, dividends=dividends,
                                          events=events, known_earnings=known, coverage=coverage,
-                                         truncated=win["truncated"], notes=route_notes))
+                                         truncated=win["truncated"], notes=route_notes, check=engine_check()))
     finally:
         _lock.release()
 
@@ -529,6 +529,41 @@ def display_on() -> bool:
     import os
 
     return os.environ.get(DISPLAY_ENV, "").strip().lower() in ("1", "true", "on", "yes")
+
+
+CHECK_ENV = "OPTIONS_TIER2_CHECK"
+
+
+def engine_check():
+    """OPTIONS_TIER2_CHECK: the Tier 2 accuracy check on the picks (src/desk/options_check.py), off unless set to 1,
+    true, on or yes, read on every request. Off, the module is not imported and the answer is as before; on, the
+    answer gains "engine_check" and every other field is unchanged (every served number stays Tier 1's)."""
+    import os
+    import time
+
+    if os.environ.get(CHECK_ENV, "").strip().lower() not in ("1", "true", "on", "yes"):
+        return None
+    try:
+        from src.desk import options_check
+    except Exception as err:   # never a failed scan: the Finder's backstop answers "not checked: error (<type>)"
+        log.warning("Tier 2 check unavailable: %s", type(err).__name__, exc_info=True)
+
+        def unavailable(picks, _err=err):
+            raise _err
+
+        return unavailable
+
+    def timed(picks):
+        """The check, timed: work.elapsed_ms is its wall time in this process (the added latency the owner's
+        rollback rule measures), also logged with its picks and units."""
+        t0 = time.perf_counter()
+        out = options_check.check(picks)
+        ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        out["work"]["elapsed_ms"] = ms
+        log.info("Tier 2 check: %d picks, %d units, %.1f ms", len(out["picks"]), out["work"]["used"], ms)
+        return out
+
+    return timed
 
 
 def _now() -> datetime:
