@@ -1,8 +1,11 @@
 # Options engine, adaptive Phase 2: the Tier 2 convergence controller
 
-Status: built and scored, **unserved**. Nothing under `api/` or `web/` imports the new modules; the Finder keeps
-serving the baseline (Tier 1). The engine switch is Phase 7 and needs the owner's explicit approval. Tier 2
-values are "estimated, cross-check pending" until the Phase 3 cross-check exists.
+Status: built and scored. The Finder keeps serving the baseline (Tier 1) for every number. Since 2026-11-16 the
+only served use is the accuracy check on the Finder's picks (`docs/desk/OPTIONS_TIER2_CHECK.md`), off unless
+`OPTIONS_TIER2_CHECK` is set; nothing under `api/` imports these modules directly. The owner accepted attempt 2 as
+numerical evidence for that single-context comparison use only (2026-11-16). The engine switch is Phase 7 and
+needs the owner's explicit approval. Tier 2 values are "estimated, cross-check pending" until the Phase 3
+cross-check exists.
 
 - Plan: "Options engine Phase 2 plan: convergence controller", revision 2, approved 2026-10-29 05:39 UTC, with
   amendment A-1 (2026-10-29 18:11 UTC: interval refusals and the analytic-route estimate) and amendment A-2
