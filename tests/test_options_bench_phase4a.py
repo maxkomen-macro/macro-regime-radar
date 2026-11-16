@@ -411,3 +411,21 @@ def test_the_summary_reports_how_much_of_a_s_order_each_top_20_keeps():
         r["outcome"] = "answered"
     got = analyze.summarize([a, b])["B:offline"]["top20_order_kept_vs_A"]["payoff"]
     assert got["p50"] == pytest.approx(2 / 3) and got["all_kept"] == 0
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_a_time_lens_change_from_the_partner_crossing_the_cost_filter_is_the_filter(reverse):
+    # B-9: the flat P&Ls never change; only C2's target P&L crosses its $100 cost, in either direction
+    def rec(cfg, c2_target, top):
+        r = _rec(cfg, {C1: 0.0, C2: 0.0}, top)
+        r["lens_order"] = {"time": top}
+        r["picks"] = {"time": top[0]}
+        r["rows"][C1]["pnl"] = {"target": 200.0, "half": 0.0, "flat": 1000.0}
+        r["rows"][C2]["pnl"] = {"target": c2_target, "half": 0.0, "flat": 1100.0}
+        return r
+    a, b = rec("A", 99.0, [C1]), rec("B", 101.0, [C2, C1])
+    if reverse:
+        a, b = rec("A", 101.0, [C2, C1]), rec("B", 99.0, [C1])
+        a["config"], b["config"] = "A", "B"
+    got = tr.trace([a, b], "offline")["classes"]["B:time"]
+    assert set(got) == {"pick: time lens filter", "entered: time lens filter" if not reverse else "left: time lens filter"}

@@ -138,10 +138,11 @@ def classify(x: Run, a: Run, c_run: Run | None, lens: str, c: str, b: str | None
             if r is not None and r not in run.rows:
                 return "removed or added", {**info, "missing": r, "missing_in": run.cfg,
                                             "cause": run.fate.get(r, "not a candidate")}
-    if lens == "time":
-        for run in (x, a):
-            if float(run.rows[c]["pnl"]["target"]) < float(run.rows[c]["cost"]):
-                return "time lens filter", {**info, "below_cost_in": run.cfg}
+    if lens == "time":   # the lens keeps only rows whose target P&L covers their cost (options_finder.lens_order)
+        for r in (c, b) if b not in (None, DISPLACED) else (c,):   # either row crossing it changes the order (B-9)
+            below = [run.cfg for run in (x, a) if float(run.rows[r]["pnl"]["target"]) < float(run.rows[r]["cost"])]
+            if below:
+                return "time lens filter", {**info, "filtered": r, "below_cost_in": below}
     if b == DISPLACED:
         return DISPLACED, info
     if b is None or b not in x.rows or b not in a.rows:
