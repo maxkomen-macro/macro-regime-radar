@@ -117,7 +117,8 @@ def _studies_read(slugs) -> set[str]:
 
 def tab_readers() -> dict[str, set[str]]:
     """Each Desk tab and the series its served values are computed from.
-    Basket & Hedge serves nothing yet (§12.13), so it reads nothing."""
+    Basket & Hedge and the Options Finder are served, but they read EODHD on request (their prices, the hedge
+    ETFs, the option chain), not these stored rows, so they are not listed here."""
     ledger = _studies_read(LEDGER_STUDIES)
     return {
         # tiles (the K−2 regime, the recession score, the trend, VIX), the Ledger's signals
@@ -140,11 +141,12 @@ TAB_ORDER: tuple[str, ...] = ("Overview", "Technicals", "Event Study", "Regime",
 
 # A registered series no live tab reads yet says so, in its row's note.
 NO_LIVE_READER: dict[str, str] = {
-    "^NDX": "No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge is not served.",
+    "^NDX": "No Desk tab reads it: the Nasdaq row on Macro & Correlations reads QQQ, and Basket & Hedge compares a basket with QQQ's daily bars from EODHD, requested when the basket is priced.",
     "^RUT": "No Desk tab reads it: Sectors compares small caps with large through IWM against SPY.",
     "JPY=X": "No Desk tab reads it: the dollar row on Macro & Correlations reads UUP.",
-    # desk/fill-etf: stored; the tabs that read them are served by items 4 and 5 (desk/matrix: Macro reads SMH)
-    **{t: "No Desk tab reads it yet: Basket & Hedge is not served." for t in ("SOXX", "IGV")},
+    # desk/fill-etf: stored; the tabs that read them are served by items 4 and 5 (desk/matrix: Macro reads SMH).
+    # Basket & Hedge ranks SOXX and IGV as hedge ETFs from EODHD on request, not from these rows.
+    **{t: "No Desk tab reads the stored rows: Basket & Hedge ranks it as a hedge ETF from EODHD's daily bars, requested when a basket is priced." for t in ("SOXX", "IGV")},
 }
 
 

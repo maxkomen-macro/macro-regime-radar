@@ -106,7 +106,7 @@ Designed and drawn, not yet served, each for a stated reason:
 
 - Options and skew: needs a stored history of SPY option snapshots and a
   written method for picking strikes and expiries. Where a number isn't
-  computed yet, the card says so or is a marked prototype.
+  computed yet, the card says so.
 - Breadth from the stocks themselves: the Sectors card counts the 11
   sector ETFs above their 50- and 200-day averages and says so on every
   count. Counting the index's own stocks needs constituent data, which the
@@ -123,7 +123,7 @@ Designed and drawn, not yet served, each for a stated reason:
   rule.
 - Hedging a basket with options: the arithmetic for a beta-adjusted put
   spread on a basket has to be exactly right or absent. Where a number
-  isn't computed yet, the card says so or is a marked prototype.
+  isn't computed yet, the card says so.
 
 ## How the Options Finder prices a view
 
@@ -196,13 +196,14 @@ been cross-checked against the finite-difference solver Phase 3 is building.
 
 ## Prototypes, and how I would build them
 
-Three cards are drawn as prototypes: finished, with illustrative values, each
-ending in a small footnote that says so and names how it would be built. They
-are there so the Desk can be walked through end to end. They don't change the
-list above: nothing in them is served, and each stays designed, not yet
-served, until it is. A test holds every prototype value inside its own card,
-and no live card reads a prototype's data. Here is how I'd build each one for
-real.
+No cards are drawn as prototypes now. Three were, so the Desk could be
+walked through end to end: finished, with illustrative values, each ending in
+a small footnote that said so. For the public release I took them off their
+pages, because nothing behind them is built yet: each page now shows that
+block as not yet served, with its reason, and Data Pipeline ends with the
+real DDL and CSV export. The cards and their tests are kept, and a test still
+holds every prototype value inside its own card. Each stays designed, not yet
+served, until it is. Here is how I'd build each one for real.
 
 **What protection costs right now (Technicals).** Source: the EODHD options
 add-on, one snapshot of the SPY chain a day after the close, every strike and

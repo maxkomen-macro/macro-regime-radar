@@ -13,6 +13,12 @@ export interface PrototypeEntry {
   title: string;
   /** The footnote's line after "In production: ". */
   production: string;
+  /**
+   * Whether the page draws the card. The owner's release decision of 2026-11-16 took all three off their pages:
+   * no completed implementation answers their questions, so each page shows its unavailable state instead. The
+   * cards and their tests stay, so a card returns by setting this back once its source is built.
+   */
+  shown: boolean;
 }
 
 export const PROTOTYPES: readonly PrototypeEntry[] = [
@@ -21,18 +27,21 @@ export const PROTOTYPES: readonly PrototypeEntry[] = [
     page: "technicals",
     title: "What protection costs right now",
     production: "daily SPY chain snapshots from the EODHD options add-on, stored and versioned.",
+    shown: false,
   },
   {
     id: "options-hedge",
     page: "basket-hedge",
     title: "Hedge with options",
     production: "EODHD option chains for the hedge ETF and the names, and a dealer's quote for the basket put, stored with each basket.",
+    shown: false,
   },
   {
     id: "snowflake-sync",
     page: "data-pipeline",
     title: "Sync to Snowflake",
     production: "a job after each validated refresh: stage the changed rows, MERGE on each key, check counts and hashes.",
+    shown: false,
   },
 ];
 
@@ -43,10 +52,21 @@ export function prototype(id: string): PrototypeEntry {
   return e;
 }
 
+/** Whether a page draws this PROTOTYPE card (the registry's `shown`). */
+export function prototypeShown(id: string): boolean {
+  return prototype(id).shown;
+}
+
+/** The PROTOTYPE cards a page draws. */
+export function shownPrototypes(): PrototypeEntry[] {
+  return PROTOTYPES.filter((p) => p.shown);
+}
+
 /** §1.0.3 rule 4: the fixtures only modules under prototypes/ may read, by path. */
 export function isPrototypeFixture(path: string): boolean {
   return /\/fixtures\/desk\/(proto-[^/]+|vol)\.json$/.test(path);
 }
 
-/** The names a module outside prototypes/ may import from it: the cards themselves, which a page places. */
-export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard", "SnowflakeSyncCard"];
+/** The names a module outside prototypes/ may import from it: the cards themselves, which a page places, and
+ * `prototypeShown`, the registry flag that says whether the page draws one (it carries no prototype value). */
+export const PROTOTYPE_CARD_EXPORTS: readonly string[] = ["ProtectionCard", "OptionsHedgeCard", "SnowflakeSyncCard", "prototypeShown"];

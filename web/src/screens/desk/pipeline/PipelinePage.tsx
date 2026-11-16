@@ -7,7 +7,8 @@
  * a search that jumps to a series and opens its group; and the Snowflake
  * bridge: the three-layer schema as the board draws it, the current study's
  * events as CSV (§12.3) and the Snowflake DDL (GET /pipeline/ddl). Under
- * them, "Sync to Snowflake", a PROTOTYPE card (§1.0.3, ../prototypes/). The
+ * them, "Sync to Snowflake", a PROTOTYPE card (§1.0.3, ../prototypes/), when
+ * the registry draws it (not since the 2026-11-16 release). The
  * last refresh and its validation ride in the top bar (`./badge`).
  */
 
@@ -24,6 +25,7 @@ import { dayLong, grouped, monthYear } from "../kit/format";
 import { apiParams, askFromSearch, readLastStudy } from "../event-study/question";
 import { saveServed } from "../kit/download";
 import { SnowflakeSyncCard } from "../prototypes/SnowflakeSyncCard";
+import { prototypeShown } from "../prototypes/registry";
 import { PipelineBadge } from "./badge";
 import { Term } from "../kit/Term";
 
@@ -424,8 +426,9 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
           </FailedScope>
           <Bridge />
         </div>
-        {/* §11, §1.0.3: the sync the bridge card's schema is for, as a PROTOTYPE; the DDL and the CSV above are real. */}
-        <SnowflakeSyncCard />
+        {/* §11, §1.0.3: the sync the bridge card's schema is for, as a PROTOTYPE when the registry draws it (not since
+            the 2026-11-16 release); the DDL and the CSV above are real. */}
+        {prototypeShown("snowflake-sync") ? <SnowflakeSyncCard /> : null}
       </Unserved>
     </div>
   );

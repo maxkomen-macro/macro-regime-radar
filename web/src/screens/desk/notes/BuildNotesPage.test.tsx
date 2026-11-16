@@ -19,7 +19,7 @@ import { BUILT_AFTER, BUILT_ID, BUILT_PARAGRAPHS, BUILT_TITLE } from "./built";
 import { HELD_HEADING, HELD_MARK, holdBanned, readNotes, sentences } from "./notes";
 import { SCOPE_LISTS, SCOPE_TITLE } from "./scope";
 import { CLIENT_VIEW_NAME, scopeLink } from "./scope-links";
-import { PROTOTYPES } from "../prototypes/registry";
+import { PROTOTYPES, shownPrototypes } from "../prototypes/registry";
 
 const SPEC = Object.values(import.meta.glob<string>("../../../../../docs/desk/DESK_FRAME3_SPEC.md", { query: "?raw", import: "default", eager: true }))[0] ?? "";
 const BANNED_WORD = /(?<![\p{L}\p{N}])(established|significant)(?![\p{L}\p{N}])/iu;
@@ -397,14 +397,16 @@ describe("How this was built: the page's own section, mirrored in the notes file
 });
 
 describe("the notes' prototypes are the registry's (Codex S-06)", () => {
-  it("the count and the cards described under Prototypes are exactly the PROTOTYPE cards, so a served card leaves the notes when it leaves the registry", () => {
+  it("the count drawn is the registry's shown cards, and the cards described under Prototypes are exactly the PROTOTYPE cards, so a served card leaves the notes when it leaves the registry", () => {
     const words = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
     const start = NOTES_MD.indexOf(`## ${BUILT_AFTER}`);
     expect(start).toBeGreaterThan(-1);
     const rest = NOTES_MD.slice(start + 3);
     const section = rest.slice(0, rest.search(/\n## /) === -1 ? undefined : rest.search(/\n## /));
     const count = section.match(/(\w+) cards? (?:is|are) drawn as prototypes/i)?.[1]?.toLowerCase();
-    expect(count).toBe(words[PROTOTYPES.length]);
+    // The 2026-11-16 release draws none ("No cards are drawn as prototypes"); the registry's `shown` decides.
+    const drawn = shownPrototypes().length;
+    expect(count).toBe(drawn === 0 ? "no" : words[drawn]);
     const described = [...section.matchAll(/^\*\*(.+?) \(([^)]+)\)\.\*\*/gm)].map((m) => `${m[1]} (${m[2]})`);
     expect(described.sort()).toEqual(PROTOTYPES.map((p) => `${p.title} (${deskPageBySlug(p.page)!.label})`).sort());
   });

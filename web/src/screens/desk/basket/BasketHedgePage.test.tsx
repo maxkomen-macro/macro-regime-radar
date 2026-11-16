@@ -3,9 +3,11 @@
  * this browser (the baskets, their typed weights, Save, Export / Import JSON,
  * + New basket), and a saved basket at exactly 100% is priced by
  * /basket/price (§12.15): step 2, how the basket trades, from the fixture's
- * real answer. Step 3's options slot holds the PROTOTYPE "Hedge with
- * options" (§1.0.3), its inputs row read from the step's /basket/hedge
- * answer; with no answer to read, the slot's reason (§1.0.2). The header's
+ * real answer. Step 3's options slot prints its reason (§1.0.2): the
+ * 2026-11-16 release draws no PROTOTYPE (§1.0.3 rule 10). The PROTOTYPE
+ * "Hedge with options", its inputs row read from the step's /basket/hedge
+ * answer, is held with the registry drawing it in
+ * ./BasketHedgePage.prototype.test.tsx. The header's
  * Send to Position Monitor carries the basket, which Position Monitor reads
  * as a manual subject (§9).
  */
@@ -69,7 +71,7 @@ const loaded = async () => {
 };
 
 describe("Basket & Hedge tab", () => {
-  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot holding the PROTOTYPE (§10, §12.15, §12.16, §1.0.3)", async () => {
+  it("prices the saved basket: step 2 from /basket/price, step 3 from /basket/hedge, its badge; the options slot printing its reason (§10, §12.15, §12.16, §1.0.3 rule 10)", async () => {
     seed();
     const { calls } = stubDesk();
     renderTab();
@@ -106,16 +108,15 @@ describe("Basket & Hedge tab", () => {
     // Codex R-15: the card names the short it holds, the table's top row's.
     expect(stress).toHaveTextContent("Hedged holds the short the table above recommends, $1,384,473 of XLK (1.38× the basket), as it is under both shocks.");
     expect(calls).toContain("GET /api/desk/basket/hedge?legs=NVDA%3A22%2CAVGO%3A16%2CVRT%3A14%2CCRWV%3A12%2CANET%3A12%2CCEG%3A12%2CSMCI%3A12&method=hold&notional=1000000");
-    // §10, §1.0.3: the options slot holds the PROTOTYPE, its inputs row from this answer; its one control, Advanced,
-    // opens something (Codex R-14: no control that cannot act); no badge.
+    // §10, §1.0.3 rule 10: the 2026-11-16 release draws no PROTOTYPE, so the options slot prints its reason with its
+    // badge and holds no control (Codex R-14: no control that cannot act). ./BasketHedgePage.prototype.test.tsx holds
+    // the slot with the registry drawing the card.
     const h = optionsCard();
-    expect(h.closest('[data-slot="hedge-options"]')).not.toBeNull();
-    expect(h).toHaveAttribute("data-prototype", "options-hedge");
-    await waitFor(() => expect(h).toHaveTextContent(/Top hedge ETF\s*XLK/));
-    expect(within(h).getAllByRole("button")).toHaveLength(1);
-    expect(within(h).getByTestId("dk-advanced")).toBeEnabled();
-    expect(within(h).queryByTestId("dk-live")).toBeNull();
-    expect(within(hedge).queryAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(0);
+    expect(h).not.toHaveAttribute("data-prototype");
+    expect(hedge.querySelector('[data-slot="hedge-options"]')).not.toBeNull();
+    expect(within(hedge).getAllByText(OPTIONS_UNAVAILABLE.reason)).toHaveLength(1);
+    expect(within(h).queryAllByRole("button")).toHaveLength(0);
+    expect(h.textContent).not.toMatch(/from your basket · live|Illustrative values|Top hedge ETF/);
     expect(calls.some((c) => c.startsWith("POST"))).toBe(false);
   });
 
@@ -675,39 +676,7 @@ describe("Basket & Hedge tab", () => {
   });
 });
 
-describe("Hedge with options (PROTOTYPE, §1.0.3): step 3's options slot for the saved basket", () => {
-  it("reads the basket engine's inputs, live, and prices three routes three ways; no badge, its footnote last", async () => {
-    seed();
-    const { calls } = stubDesk();
-    renderTab();
-    await loaded();
-    const c = await screen.findByRole("region", { name: /^Hedge with options/ });
-    expect(c).toHaveAttribute("data-prototype", "options-hedge");
-    expect(c).toHaveTextContent("from your basket · live");
-    // §12.16's fields, the step's own /basket/hedge answer: notional; top, XLK; its row's hedge ratio and one-year R².
-    expect(c).toHaveTextContent(/Notional\s*\$1\.0M\s*AI infrastructure/);
-    expect(c).toHaveTextContent(/Top hedge ETF\s*XLK\s*first of 8 by R², ahead of SMH at 0\.68/);
-    expect(c).toHaveTextContent(/Hedge ratio\s*1\.38/);
-    expect(c).toHaveTextContent(/R²\s*0\.69\s*252 sessions to Sep 23/);
-    for (const t of ["(a) Puts on XLK, the top-ranked hedge ETF", "(b) Puts on the three largest names", "(c) An OTC basket put from a dealer"]) expect(within(c).getByRole("heading", { name: t })).toBeInTheDocument();
-    expect(within(c).getAllByRole("table")).toHaveLength(3);
-    expect(c).toHaveTextContent("strikes moved by it, so 95/85 is 96.4%/89.2% of XLK");
-    expect(c).toHaveTextContent(/1M 95 put\s*1\.90%\s*\$19,000\s*basket down 6\.9%\s*\$50,000 · 5\.00%/);
-    expect(c).toHaveTextContent("NVDA, AVGO, VRT, each sized to its weight: 52% of the basket");
-    expect(c).toHaveTextContent(/1M 95\/85 put spread\s*1\.83%\s*\$18,300\s*basket down 6\.8%\s*\$50,000 · 5\.00%/);
-    expect(c).toHaveTextContent("an R² of 0.69 leaves 31% of the basket's variance unhedged");
-    expect(within(c).getAllByText("Trade-off:")).toHaveLength(3);
-    expect(within(c).queryByTestId("dk-live")).toBeNull();
-    const foot = c.querySelector("[data-prototype-foot]")!;
-    expect(foot.textContent).toBe("Illustrative values · In production: EODHD option chains for the hedge ETF and the names, and a dealer's quote for the basket put, stored with each basket.");
-    fireEvent.click(within(c).getByTestId("dk-advanced"));
-    expect(c).toHaveTextContent("vol = XLK's at the strike × 1.38 ÷ √0.69, plus 1.5 points of dealer margin");
-    expect(c).toHaveTextContent("the engine's realized basket vol over the same window: 44.1%");
-    // Priced in the browser: the card asks nothing of its own; the one /basket/hedge request is the step's.
-    expect(calls.filter((x) => x.startsWith("GET /api/desk/basket/hedge"))).toHaveLength(1);
-    expect(calls.some((x) => x.startsWith("POST"))).toBe(false);
-  });
-
+describe("Hedge with options (§1.0.3): step 3's options slot for the saved basket", () => {
   it("a basket the engine has no answer for: the slot prints its reason, and no prototype is drawn in it", async () => {
     seed([{ ...BASKETS[0], legs: BASKETS[0].legs.map((l) => (l.symbol === "SMCI" ? { ...l, weight: 8 } : l.symbol === "NVDA" ? { ...l, weight: 26 } : l)) }]);
     renderTab();
