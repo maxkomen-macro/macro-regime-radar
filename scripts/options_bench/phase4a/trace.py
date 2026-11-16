@@ -177,12 +177,14 @@ def classify(x: Run, a: Run, c_run: Run | None, lens: str, c: str, b: str | None
     any_val = any(v["d_val"] != 0.0 for v in rows.values())
     if val_all and not any_in:
         return "explained by valuation", info
+    # an input effect on a row whose expiry's carry changed rests on a carry without a stated error (DR-03): it is
+    # never explained (or unexplained) by inputs, whatever the δσ·vega allowance says (B-7)
+    if any(v["carry"] and v["d_in"] != 0.0 for v in rows.values()):
+        return ("involves carry (conditioning not established)" if val_all else "unexplained"), info
     if in_all and not any_val:
         return "explained by inputs", info
     if val_all and in_all:
         return "explained by both", info
-    if any(v["carry"] for v in rows.values()) and val_all:
-        return "involves carry (conditioning not established)", info
     return "unexplained", info
 
 

@@ -2176,7 +2176,12 @@
    "rc": 0,
    "limit_s": 1800,
    "at": "2026-11-16T08:29:09Z"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 320.0,
+   "note": "review evidence after the main run: three runs of the options and bench test files (about 93 s each, measured) plus trace re-runs over the main run records"
   }
  ],
- "total_s": 13104.547
+ "total_s": 13424.547
 }

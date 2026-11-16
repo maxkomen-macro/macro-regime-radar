@@ -374,3 +374,15 @@ def test_a_pick_that_is_new_in_the_configuration_is_classed_as_added():
     assert out["classes"]["B:payoff"]["pick: removed or added"] == 1
     assert out["removed_or_added_causes"]["B"]["A: ranked out"] >= 1
     assert out["unexplained"] == []
+
+
+def test_an_input_effect_on_a_row_whose_carry_changed_is_never_explained_by_inputs():
+    # B-7: the same swap the δσ·vega allowance explains, but C's carry for the expiry differs from A's
+    a = _rec("A", {C1: 1000.0, C2: 995.0}, [C1], ctx_for=(C1,))
+    c = _rec("C", {C1: 990.0, C2: 995.0}, [C2], ctx_for=(C1,), d_sigma=0.01)
+    a["carry"] = [{"exp": "2026-12-18", "forward": 100.0, "source": "market"}]
+    c["carry"] = [{"exp": "2026-12-18", "forward": 101.0, "source": "market"}]
+    got = _payoff([a, c])["C:payoff"]
+    assert set(got) == {"pick: involves carry (conditioning not established)",
+                        "left: involves carry (conditioning not established)",
+                        "entered: involves carry (conditioning not established)"}
