@@ -547,3 +547,23 @@ def test_c2_q_runs_q_plus_plus_for_gamma_only_like_the_references(monkeypatch, k
         assert d1 in calls and got["status"] == "scored" and got["levels"][-1] == d1 and got["deep"]["q_plus_plus"]
     else:
         assert d1 not in calls and got["levels"][-1] == n5
+
+
+def test_c2_q_runs_gamma_s_q_plus_plus_after_every_quantity_s_study(monkeypatch):
+    """Code review S-AM7-1: a later quantity's study gets the budget it had before Q++ existed."""
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    d1 = qe.DEEP[0]
+    ex = 0.645
+    steps = {n1: 1.6, n2: 0.8, n3: 0.4, n4: 0.2, n5: 0.1, d1: 0.05}
+    calls = []
+
+    def fake(c, sp, n, american=True, half=False, cache=None, take=None):
+        calls.append((sp.name, n))
+        take(9.5 if n == d1 else 0.1)
+        return ex + GR._tol(sp.name, ex, c.spot) * (steps[n] - 0.05 if sp.name == G.GAMMA else 0.0)
+    monkeypatch.setattr(qe, "quantity", fake)
+    monkeypatch.setattr(C, "exact", lambda c, kk: ex)
+    got = C.c2_q(DIV_PUT, CFG, quantities=(G.GAMMA, G.VEGA), cap=10.0)
+    assert calls.index((G.GAMMA, d1)) > max(i for i, (k, _) in enumerate(calls) if k == G.VEGA)
+    assert got[G.VEGA]["status"] == "scored" and list(got) == [G.GAMMA, G.VEGA, "_work"]
+    assert got[G.GAMMA]["deep"]["deep3"] == GR.R_DEEP_CAP and got[G.GAMMA]["levels"][-1] == n5

@@ -220,6 +220,7 @@ def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUAN
     budget = GR.RefBudget(cap)
     cache: dict = {}
     out = {}
+    held = {}                                    # each quantity's study as Q+ leaves it, for pass 3
     for k in quantities:
         sp = GR.spec(c, k, cfg)
         if isinstance(sp, str) or c.days == 0:
@@ -238,11 +239,17 @@ def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUAN
                 q, deep = qe.study(c, sp, tol, False, budget.take, cache, extend=q), {"ran": True}
             except GR.CapHit as e:               # the shallow study stands, as in references' pass 2
                 deep = {"status": GR.R_DEEP_CAP, "detail": str(e)}
-        if k == G.GAMMA and qe.deep_eligible(q):   # P3-AM7 B.2/B.3: Q++ by the same test, after every Q+
-            try:
-                q, deep = qe.study(c, sp, tol, False, budget.take, cache, deepen=q), {**(deep or {}), "q_plus_plus": True}
-            except GR.CapHit as e:               # the study as Q+ left it stands, as in references' pass 3
-                deep = {**(deep or {}), "deep3": GR.R_DEEP_CAP, "detail3": str(e)}
+        held[k] = (sp, ex, tol, q, deep)
+    # P3-AM7 B.2/B.3: gamma's Q++ by the same test, after every quantity's study (as references' pass 3), so it
+    # never takes budget a later quantity's study would have used (code review S-AM7-1)
+    if G.GAMMA in held and qe.deep_eligible(held[G.GAMMA][3]):
+        sp, ex, tol, q, deep = held[G.GAMMA]
+        try:
+            q, deep = qe.study(c, sp, tol, False, budget.take, cache, deepen=q), {**(deep or {}), "q_plus_plus": True}
+        except GR.CapHit as e:                   # the study as Q+ left it stands, as in references' pass 3
+            deep = {**(deep or {}), "deep3": GR.R_DEEP_CAP, "detail3": str(e)}
+        held[G.GAMMA] = (sp, ex, tol, q, deep)
+    for k, (sp, ex, tol, q, deep) in held.items():
         if q["G"] is None or q["u_ref"] is None:
             out[k] = {"status": "unresolved: " + "; ".join(q["flags"]), "levels": q["levels"], "values": q["values"],
                       "deep": deep}
@@ -252,6 +259,7 @@ def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUAN
         out[k] = {"status": "scored", "G_Q": q["G"], "u_Q": u, "exact": ex, "err": err, "covered": err <= u,
                   "levels": q["levels"], "within_budget": q["u_ref"] <= GR.U_REF_MAX * tol
                   and q["u_bump"] <= GR.U_BUMP_MAX * tol, "deep": deep}
+    out = {k: out[k] for k in quantities if k in out}   # the quantities' own order, as before
     out["_work"] = {"used": budget.used}
     return out
 
