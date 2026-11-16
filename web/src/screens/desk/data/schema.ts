@@ -1155,9 +1155,9 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
           lenses: l("s!"),
           status: e(["checked", "not checked"], { req: true }),
           reason: "s?",
-          tier1: o({ value: "n", delta: "n" }),
+          tier1: o({ value: "n", delta: "n" }, { req: true }),
           tier2: o(
-            { route: "s", price_status: "s", value: "n", estimate: "n", reason: "s?", delta_status: "s", delta: "n", delta_estimate: "n", delta_reason: "s?" },
+            { route: "s!", price_status: "s!", value: "n", estimate: "n", reason: "s?", delta_status: "s", delta: "n", delta_estimate: "n", delta_reason: "s?" },
             { nul: true },
           ),
           difference: "n",
