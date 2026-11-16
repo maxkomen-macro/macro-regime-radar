@@ -9,7 +9,7 @@ what stays hidden, what the owner has to do before anyone can use it, and where 
 The owner approved listing the Finder on the Tier 1 engine on 2026-11-16. `OPTIONS_FINDER_LISTED` is now `true`:
 the Desk sidebar shows it under Trade between Basket & Hedge and Position Monitor, the command palette, the Options
 lens ("Find a contract for a view →") and an S&P 500 Event Study ("Express this view with options →") link to it,
-and the page drops its Preview badge and `noindex` tag. The idle page offers an example built from SPY's served
+and the page drops its Preview badge and `noindex` tag. The idle page offers an example that fills the form (nothing is priced until the visitor presses Price the chain), built from SPY's served
 close (5% above it, 35 days on, $1,500, a one-month scan window, which keeps a SPY chain inside the 300 M work
 limit; the default six months is refused for SPY), and its framing links to Build Notes' section "How the Options
 Finder prices a view". Licensing review is deferred by the owner's decision, not resolved. Tier 2 and Phase 3 are

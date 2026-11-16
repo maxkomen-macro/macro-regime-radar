@@ -27,7 +27,7 @@ import { useWidth } from "../kit/LineChart";
 import { MINUS, NOT_SERVED, dayLong, dayShort, grouped, isFiniteNumber, num, pctPlain, priceText, signed } from "../kit/format";
 import { premium } from "./premium";
 import { OPTIONS_FINDER_LISTED } from "./flag";
-import { ExampleLink, carriedNote } from "./entry";
+import { ExampleFill, carriedNote } from "./entry";
 import { FRAMING, LENSES, MARKET_IMPLIED, NOT_DEPLOYED, NO_EVENTS_WORDS, OCC_URL, PRICER_WORDS, SCREEN_WORDS, TIMING_WORDS, kindWord, viewWord } from "./finder-copy";
 import "./options.css";
 
@@ -166,11 +166,17 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function ThesisForm({ search, onRun }: { search: URLSearchParams; onRun: (d: Draft) => void }) {
+function ThesisForm({ search, onRun, prefill }: { search: URLSearchParams; onRun: (d: Draft) => void; prefill?: { values: Record<string, string>; n: number } | null }) {
   const key = search.toString();
   const [draft, setDraft] = useState<Draft>(() => draftOf(search));
   const [advanced, setAdvanced] = useState(() => OPTIONAL_KEYS.some((k) => search.get(k)));
   useEffect(() => setDraft(draftOf(new URLSearchParams(key))), [key]);
+  // The example fills the form only; the visitor still presses Price the chain (Codex R-01).
+  useEffect(() => {
+    if (!prefill) return;
+    setDraft(draftOf(new URLSearchParams(prefill.values)));
+    if (OPTIONAL_KEYS.some((k) => prefill.values[k])) setAdvanced(true);
+  }, [prefill]);
   const set = (k: keyof Draft) => (e: { target: { value: string } }) => setDraft((d) => ({ ...d, [k]: e.target.value }));
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -824,6 +830,8 @@ export default function OptionsFinderPage({ page }: { page: DeskPage }) {
 
   const run = (draft: Draft) => setSearch(searchOf(draft, search));
   const { pathTo } = useDeskView();
+  const [prefill, setPrefill] = useState<{ values: Record<string, string>; n: number } | null>(null);
+  const fill = (values: Record<string, string>) => setPrefill((p) => ({ values, n: (p?.n ?? 0) + 1 }));
 
   const d = q.data;
   let state: FinderState = "idle";
@@ -854,7 +862,7 @@ export default function OptionsFinderPage({ page }: { page: DeskPage }) {
           How it prices a view, and its limits →
         </Link>
       </p>
-      <ThesisForm search={search} onRun={run} />
+      <ThesisForm search={search} onRun={run} prefill={prefill} />
       {carriedNote(search) ? (
         <p className="of-note" data-testid="of-carried">
           {carriedNote(search)}
@@ -864,7 +872,7 @@ export default function OptionsFinderPage({ page }: { page: DeskPage }) {
         {state === "idle" ? (
           <>
             <p className="dk-await">Name a stock or ETF, the price you expect, the date and the budget, then price the chain.</p>
-            <ExampleLink />
+            <ExampleFill onFill={fill} />
           </>
         ) : null}
         {state === "loading" ? <p className="dk-await">Screening and pricing the contracts in the window against the last close… a full scan can take up to a minute.</p> : null}

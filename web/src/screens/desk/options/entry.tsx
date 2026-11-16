@@ -84,8 +84,9 @@ export function exampleThesis(close: number, closeDate: string): Record<string, 
   };
 }
 
-/** The idle page's example link, drawn once SPY's close is served. */
-export function ExampleLink() {
+/** The idle page's example, offered once SPY's close is served: the button fills the form, and nothing is priced
+ * until the visitor presses Price the chain (Codex R-01). */
+export function ExampleFill({ onFill }: { onFill: (values: Record<string, string>) => void }) {
   const t = useTechnicals({ symbol: EXAMPLE_SYMBOL });
   const close = t.data?.price;
   const date = t.data?.date;
@@ -94,11 +95,11 @@ export function ExampleLink() {
   if (!ex) return null;
   return (
     <p className="of-note" data-testid="of-example">
-      <Link className="dk-link" to={finderHref(ex)}>
-        Try an example →
-      </Link>{" "}
+      <button type="button" className="dk-link of-example-fill" onClick={() => onFill(ex)}>
+        Fill in an example
+      </button>{" "}
       {EXAMPLE_SYMBOL} rising {pctPlain(EXAMPLE_MOVE)} from its {dayLong(date)} close of ${priceText(close)} to ${ex.target} by {dayLong(ex.by)}, ${grouped(Number(EXAMPLE_BUDGET))} to
-      spend, comparing expiries up to a month past that date. Change any value before you price it.
+      spend, comparing expiries up to a month past that date. Nothing is priced until you press Price the chain, and any value can be changed first.
     </p>
   );
 }

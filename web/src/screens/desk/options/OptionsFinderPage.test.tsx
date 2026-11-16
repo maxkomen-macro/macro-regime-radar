@@ -118,21 +118,31 @@ describe("Options Finder: listed", () => {
 
   it("opens by its address without a Preview badge or a noindex tag, linked from the sidebar, with its method one link away", async () => {
     // An invented SPY close (the fixtures carry no SPY technicals): the example is built from whatever close is served.
-    stubDesk({ "/api/desk/technicals": (u) => ({ ...technicals, symbol: u.searchParams.get("symbol"), price: 100, date: "2026-09-23" }) });
+    const { calls } = stubDesk({ "/api/desk/technicals": (u) => ({ ...technicals, symbol: u.searchParams.get("symbol"), price: 100, date: "2026-09-23" }) });
     renderTab();
     await screen.findByRole("heading", { level: 1, name: "Options Finder" });
     expect(screen.queryByTestId("of-preview")).toBeNull();
     expect(document.head.querySelector('meta[name="robots"][data-options-finder]')).toBeNull();
     expect(screen.getByRole("link", { name: /^Options Finder/ })).toHaveAttribute("href", "/desk/options-finder");
     expect(screen.getByTestId("of-method-link")).toHaveAttribute("href", "/desk/build-notes#bn-how-the-options-finder-prices-a-view");
-    // The example is built from SPY's served close and runs only when clicked: no Finder request yet.
-    const ex = await screen.findByTestId("of-example");
-    expect(within(ex).getByRole("link", { name: "Try an example →" }).getAttribute("href")).toBe("/desk/options-finder?symbol=SPY&direction=up&target=105.00&by=2026-10-28&budget=1500&scan_months=1");
-    expect(ex).toHaveTextContent("Change any value before you price it.");
     expect(page()).toHaveAttribute("data-state", "idle");
     expect(screen.getByTestId("of-status")).toHaveTextContent("Name a stock or ETF");
     expect(screen.getByTestId("of-footer")).toHaveTextContent("Scenario calculator over end-of-day quotes, not a recommendation.");
     expect(within(screen.getByTestId("of-footer")).getByRole("link", { name: /Options risk disclosure \(OCC\)/ })).toHaveAttribute("href", expect.stringContaining("theocc.com"));
+    // The example is built from SPY's served close and only fills the form (Codex R-01).
+    const ex = await screen.findByTestId("of-example");
+    expect(ex).toHaveTextContent("Nothing is priced until you press Price the chain");
+    fireEvent.click(within(ex).getByRole("button", { name: "Fill in an example" }));
+    await waitFor(() => expect(screen.getByLabelText("Stock or ETF")).toHaveValue("SPY"));
+    expect(screen.getByLabelText("Target price, dollars")).toHaveValue("105.00");
+    expect(screen.getByLabelText("By")).toHaveValue("2026-10-28");
+    expect(screen.getByLabelText("Budget, dollars")).toHaveValue("1500");
+    expect(screen.getByLabelText("Months of expiries")).toHaveValue("1");
+    expect(page()).toHaveAttribute("data-state", "idle");
+    expect(screen.getByTestId("loc")).toHaveTextContent(/^\/desk\/options-finder$/);
+    expect(calls.filter((c) => c.includes("/options/finder"))).toEqual([]);
+    fireEvent.click(screen.getByTestId("of-run"));
+    await waitFor(() => expect(screen.getByTestId("loc")).toHaveTextContent("/desk/options-finder?symbol=SPY&direction=up&target=105.00&by=2026-10-28&budget=1500&scan_months=1"));
   });
 
   it("asks for nothing until the thesis is complete", async () => {
