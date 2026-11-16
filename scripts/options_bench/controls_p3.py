@@ -250,6 +250,7 @@ def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUAN
             deep = {**(deep or {}), "deep3": GR.R_DEEP_CAP, "detail3": str(e)}
         held[G.GAMMA] = (sp, ex, tol, q, deep)
     for k, (sp, ex, tol, q, deep) in held.items():
+        q = qe.conditioned(c, sp, q, tol, cache)   # P3-AM8: score Q's verdict, as rule D receives it
         if q["G"] is None or q["u_ref"] is None:
             out[k] = {"status": "unresolved: " + "; ".join(q["flags"]), "levels": q["levels"], "values": q["values"],
                       "deep": deep}
@@ -258,7 +259,8 @@ def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUAN
         err = abs(q["G"] - ex)
         out[k] = {"status": "scored", "G_Q": q["G"], "u_Q": u, "exact": ex, "err": err, "covered": err <= u,
                   "levels": q["levels"], "within_budget": q["u_ref"] <= GR.U_REF_MAX * tol
-                  and q["u_bump"] <= GR.U_BUMP_MAX * tol, "deep": deep}
+                  and q["u_bump"] <= GR.U_BUMP_MAX * tol, "deep": deep, "u_rule": q.get("u_rule"),
+                  "u_cond": q.get("u_cond"), "flags": q["flags"]}
     out = {k: out[k] for k in quantities if k in out}   # the quantities' own order, as before
     out["_work"] = {"used": budget.used}
     return out

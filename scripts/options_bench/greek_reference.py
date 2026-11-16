@@ -537,7 +537,9 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
 
     Pass 1 runs every quantity's shallow studies; pass 2 (P3-AM6, `extend`) the deeper FD space study and Q+;
     pass 3 (P3-AM7 B.3, `extend` and `pass3`) gamma's Part F and Q++, after pass 2 has finished for every
-    quantity, so nothing in passes 1 and 2 depends on it. `pass3=False` reproduces the P3-AM6 references."""
+    quantity, so nothing in passes 1 and 2 depends on it. `pass3=False` reproduces the P3-AM6 references.
+    P3-AM8: rule D receives Q's verdict (`ql_escrowed.conditioned`) in every pass; every pass's triggers read the
+    study as run, so levels, solves and charges are unchanged."""
     t0 = time.time()
     budget = RefBudget(cap)
     r = Runner(budget, american, smooth_divs)
@@ -579,10 +581,11 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
         except ReadOutside as e:            # P3-AM6 B.4: the FD side cannot read this quantity; never extrapolated
             out[name] = {"status": f"unresolved: {R_READ}", "detail": str(e)}
             continue
-        res = resolve(f["tol"], f, lat, qs)
+        qv = qe.conditioned(c, sp, qs, f["tol"], q_cache)    # P3-AM8: Q's verdict; `passes` keeps the study as run
+        res = resolve(f["tol"], f, lat, qv)
         out[name] = {**res, "fd": f, "lattice": lat}
-        if qs is not None:
-            out[name]["q"] = qs
+        if qv is not None:
+            out[name]["q"] = qv
         passes[name] = (sp, f, lat, qs)
     # P3-AM6 B.3 pass 2: the extensions, in quantity order, with whatever budget pass 1 left; a quantity whose
     # extension hits the cap keeps its pass-1 result
@@ -612,10 +615,11 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
         if not american:
             out[name] = _fd_only(f2)
             continue
-        res = resolve(f2["tol"], f2, lat, qs2)
+        qv2 = qe.conditioned(c, sp, qs2, f2["tol"], q_cache)
+        res = resolve(f2["tol"], f2, lat, qv2)
         out[name] = {**res, "fd": f2, "lattice": lat}
-        if qs2 is not None:
-            out[name]["q"] = qs2
+        if qv2 is not None:
+            out[name]["q"] = qv2
     if extend and pass3 and G.GAMMA in passes:
         _pass3(r, c, passes[G.GAMMA], after2[G.GAMMA], out, american, q_take, q_cache)
     out["_work"] = {"used": budget.used, "cap": budget.cap, "fd_solves": budget.fd_solves,
@@ -658,7 +662,8 @@ def _pass3(r: Runner, c: om.Context, p1: tuple, p2: tuple, out: dict, american: 
     if not american:
         out[name] = {**_fd_only(f3), **kept, "deep3": deep3}
         return
-    res = resolve(f3["tol"], f3, lat, qs3)
+    qv3 = qe.conditioned(c, sp, qs3, f3["tol"], q_cache)
+    res = resolve(f3["tol"], f3, lat, qv3)
     out[name] = {**res, "fd": f3, "lattice": lat, **kept, "deep3": deep3}
-    if qs3 is not None:
-        out[name]["q"] = qs3
+    if qv3 is not None:
+        out[name]["q"] = qv3

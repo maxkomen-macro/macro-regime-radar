@@ -567,3 +567,238 @@ def test_c2_q_runs_gamma_s_q_plus_plus_after_every_quantity_s_study(monkeypatch)
     assert calls.index((G.GAMMA, d1)) > max(i for i, (k, _) in enumerate(calls) if k == G.VEGA)
     assert got[G.VEGA]["status"] == "scored" and list(got) == [G.GAMMA, G.VEGA, "_work"]
     assert got[G.GAMMA]["deep"]["deep3"] == GR.R_DEEP_CAP and got[G.GAMMA]["levels"][-1] == n5
+
+
+# ── P3-AM8: the read-out conditioning term on Q's returned gamma ───────────────
+
+class _Locs:
+    def __init__(self, xs):
+        self.xs = list(xs)
+
+    def locations(self):
+        return self.xs
+
+
+def _fake_mesh(monkeypatch, xs):
+    built = []
+
+    def fake(c, n):
+        built.append(n)
+        return (_Locs(xs), c.strike)
+    monkeypatch.setattr(qe, "mesh", fake)
+    return built
+
+
+def _no_solve(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("u_cond must not solve")
+    monkeypatch.setattr(qe, "solve", boom)
+    monkeypatch.setattr(qe, "quantity", boom)
+
+
+@pytest.mark.parametrize("strike", [80.0, 100.0, 125.0])
+def test_u_cond_is_eps_max_s_k_sqrt_nt_over_h2_x02_from_the_cell_containing_x0(monkeypatch, strike):
+    c = om.Context(True, 100.0, strike, 90, 0.02, 0.0, 0.3, ())          # no dividend: X_0 = S
+    l0 = math.log(100.0)
+    _fake_mesh(monkeypatch, [l0 - 0.5, l0 - 0.03, l0 + 0.02, l0 + 0.4])   # ln X_0 inside the 0.05-wide cell
+    _no_solve(monkeypatch)
+    n = 1024
+    nt = 90 * qe.steps_per_day(90, n)
+    h = (l0 + 0.02) - (l0 - 0.03)
+    want = qe.EPS * max(100.0, strike) * math.sqrt(nt) / (h * h * 100.0 * 100.0)
+    assert qe.EPS == 2.0 ** -52
+    assert qe.u_cond(c, n) == pytest.approx(want, rel=1e-12)
+
+
+def test_u_cond_at_a_node_takes_the_smaller_of_its_two_cells(monkeypatch):
+    c = om.Context(False, 100.0, 105.0, 30, 0.02, 0.0, 0.3, ())
+    l0 = math.log(100.0)
+    _fake_mesh(monkeypatch, [l0 - 0.2, l0 - 0.04, l0, l0 + 0.01, l0 + 0.3])
+    _no_solve(monkeypatch)
+    nt = 30 * qe.steps_per_day(30, 512)
+    assert qe.u_cond(c, 512) == pytest.approx(qe.EPS * 105.0 * math.sqrt(nt) / (0.01 ** 2 * 1e4), rel=1e-9)
+
+
+def test_u_cond_reads_x0_net_of_the_dividends_owed():
+    c = DIV_PUT
+    pv, _ = qe._pv(c)
+    x0 = c.spot - pv(0.0)
+    lx = np.array(qe.mesh(c, 512)[0].locations())
+    i = int(np.searchsorted(lx, math.log(x0)))
+    h = lx[i] - lx[i - 1]
+    nt = c.days * qe.steps_per_day(c.days, 512)
+    assert qe.u_cond(c, 512) == pytest.approx(qe.EPS * max(c.spot, c.strike) * math.sqrt(nt) / (h * h * x0 * x0),
+                                              rel=1e-12)
+
+
+def test_u_cond_outside_the_mesh_is_an_error_never_a_number(monkeypatch):
+    c = om.Context(True, 100.0, 95.0, 30, 0.02, 0.0, 0.3, ())
+    _fake_mesh(monkeypatch, [math.log(200.0), math.log(300.0)])
+    with pytest.raises(ValueError):
+        qe.u_cond(c, 512)
+
+
+def test_u_cond_grows_four_root_two_per_level_and_uses_the_shared_mesh_cache(monkeypatch):
+    got = [qe.u_cond(DIV_PUT, n) for n in (512, 1024, 2048, 4096, 8192)]
+    for a, b in zip(got, got[1:]):
+        assert b / a == pytest.approx(4.0 * math.sqrt(2.0), rel=0.03)
+    cache = {("mesh", DIV_PUT, 2048): qe.mesh(DIV_PUT, 2048)}
+    built = []
+    monkeypatch.setattr(qe, "mesh", lambda c, n: built.append(n))
+    assert qe.u_cond(DIV_PUT, 2048, cache) == got[2] and built == []      # the mesh `quantity` cached is reused
+
+
+def _qs(u, flags=(), levels=(512, 1024, 2048), G_=0.5):
+    return {"G": G_, "u_ref": u, "u_bump": 0.0, "flags": list(flags), "levels": list(levels),
+            "values": [G_] * len(levels), "branch": None}
+
+
+def test_the_guard_is_for_gamma_only_and_leaves_a_study_without_u_rule_as_it_is(monkeypatch):
+    monkeypatch.setattr(qe, "u_cond", lambda c, n, cache=None: 0.05)
+    for k in [q for q in GR.QUANTITIES if q != G.GAMMA]:
+        sp = GR.spec(DIV_PUT, k, CFG)
+        qs = _qs(0.065)
+        assert qe.conditioned(DIV_PUT, sp, qs, 1.0) is qs
+    sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
+    assert qe.conditioned(DIV_PUT, sp, None, 1.0) is None
+    for qs in (_qs(None, [qe.R_NOT_CONVERGING]), {**_qs(None, [f"{qe.R_REFUSED}: boom"]), "G": None},
+               _qs(0.01, levels=())):
+        assert qe.conditioned(DIV_PUT, sp, qs, 1.0) is qs
+
+
+@pytest.mark.parametrize("u_rule,uc,flagged", [(0.05, 0.01, False), (0.065, 0.01, True), (0.07, 1e-12, True),
+                                               (0.069, 0.001, False)])
+def test_the_guard_adds_u_cond_at_n_ret_and_flags_only_a_crossing_of_the_budget(monkeypatch, u_rule, uc, flagged):
+    seen = []
+    monkeypatch.setattr(qe, "u_cond", lambda c, n, cache=None: seen.append(n) or uc)
+    sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
+    qs = _qs(u_rule, levels=list(qe.LEVELS) + [qe.ESCALATE])
+    got = qe.conditioned(DIV_PUT, sp, qs, 1.0)
+    assert seen == [qe.ESCALATE] and got["n_ret"] == qe.ESCALATE
+    assert got["u_rule"] == u_rule and got["u_cond"] == uc and got["u_ref"] == u_rule + uc
+    assert (qe.R_CONDITIONING in got["flags"]) is flagged and bool(got["flags"]) is flagged
+    for k in ("G", "u_bump", "levels", "values", "branch"):
+        assert got[k] == qs[k]
+    assert qs["u_ref"] == u_rule and qs["flags"] == []                       # the study as run is not changed
+
+
+def test_an_already_unqualified_study_keeps_its_flags_and_gains_no_conditioning_flag(monkeypatch):
+    monkeypatch.setattr(qe, "u_cond", lambda c, n, cache=None: 0.01)
+    sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
+    f = "Q refinement uncertainty above 0.07 tolerances"
+    got = qe.conditioned(DIV_PUT, sp, _qs(0.08, [f]), 1.0)
+    assert got["flags"] == [f] and got["u_ref"] == pytest.approx(0.09)
+
+
+def test_a_u_cond_that_cannot_be_computed_leaves_q_unqualified(monkeypatch):
+    def boom(c, n, cache=None):
+        raise ValueError("X_0 outside the mesh")
+    monkeypatch.setattr(qe, "u_cond", boom)
+    got = qe.conditioned(DIV_PUT, GR.spec(DIV_PUT, G.GAMMA, CFG), _qs(0.01), 1.0)
+    assert got["u_cond"] is None and got["flags"][-1].startswith(qe.R_CONDITIONING_NA) and got["G"] == 0.5
+
+
+def test_dr_am8_1_the_study_stops_where_it_stopped_and_the_guard_disqualifies_it(monkeypatch):
+    """Design review DR-AM8-1: gamma 0, 0.139, 0.2085, 0.2185 tolerances, exact 0.17, u_cond 0.001 at 2048 and
+    0.005657 at 4096. The fixed path stops at 2048 (u_rule 0.0695) and the guard turns that into 0.0705."""
+    n1, n2, n3, n4 = qe.LEVELS + (qe.ESCALATE,)
+    seqs = {n1: 0.0, n2: 0.139, n3: 0.2085, n4: 0.2185}
+    calls = []
+    _q_fake(monkeypatch, seqs, calls)
+    monkeypatch.setattr(qe, "u_cond", lambda c, n, cache=None: {n3: 0.001, n4: 0.005657}[n])
+    sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
+    qs = qe.study(DIV_PUT, sp, 1.0)
+    assert [n for n, _ in calls] == [n1, n2, n3] and qs["flags"] == []          # no 4096 solve
+    assert qs["G"] == 0.2085 and qs["u_ref"] == pytest.approx(0.0695)
+    got = qe.conditioned(DIV_PUT, sp, qs, 1.0)
+    assert got["u_ref"] == pytest.approx(0.0705) and got["flags"] == [qe.R_CONDITIONING] and got["G"] == 0.2085
+    assert abs(got["G"] - 0.17) <= got["u_ref"]                                # no miss
+    assert [n for n, _ in calls] == [n1, n2, n3]
+
+
+G5_95 = om.Context(True, 100.0, 77.1641, 5, 0.02876384, -0.02111457, 0.00631083, ((3, 1.5895),))
+G5_95_GAMMA = [-1.17e-08, 4.13e-09, -2.55e-08, 5.8646e-07, 1.29657e-05, 1.59023e-05, -1.55383e-05]  # 512..32768
+
+
+def test_g5_95_s_stored_values_with_its_own_u_cond(monkeypatch):
+    """The recorded C2-Q++ miss (A): forced to end at 16384, rule C qualified 1.59e-5 with u 2.94e-6 against an
+    exact 0 at tol 1e-4. With the guard, every end level where the noise rules (4096 and 16384) is unqualified,
+    the value is unchanged, and the built path's 2048 result stays qualified and covered."""
+    tol = 1e-4
+    levels = list(qe.LEVELS) + [qe.ESCALATE, qe.EXTRA] + list(qe.DEEP)
+    sp = GR.spec(G5_95, G.GAMMA, CFG)
+    for i, want_q in ((2, True), (3, False), (5, False)):
+        u = qe.estimate(G5_95_GAMMA[i - 2:i + 1], tol)
+        assert u is not None and u <= 0.07 * tol                                # qualified unguarded
+        qs = {"G": G5_95_GAMMA[i], "u_ref": u, "u_bump": 0.0, "flags": [], "levels": levels[:i + 1],
+              "values": G5_95_GAMMA[:i + 1], "branch": None}
+        got = qe.conditioned(G5_95, sp, qs, tol)
+        assert got["G"] == G5_95_GAMMA[i] and got["u_cond"] == qe.u_cond(G5_95, levels[i])
+        assert (not got["flags"]) is want_q, levels[i]
+        if i == 5:
+            assert abs(qs["G"]) > qs["u_ref"]                                    # A's miss, unguarded
+        if want_q:
+            assert abs(got["G"]) <= got["u_ref"]
+
+
+def _guarded(monkeypatch, q, uc=0.01):
+    monkeypatch.setattr(qe, "u_cond", lambda c, n, cache=None: uc)
+    return qe.conditioned(DIV_PUT, GR.spec(DIV_PUT, G.GAMMA, CFG), {**q, "levels": [2048]}, 1.0)
+
+
+def test_rule_d_i_q_the_only_agreeing_corroborator_disqualified_leaves_the_reference_unresolved(monkeypatch):
+    q = qq(1.02, u=0.065)
+    before = GR.resolve(1.0, fd(), lat(1.0, u=0.3), q)
+    assert before["status"] == GR.RESOLVED and before["corroborated_by"] == ["Q"]
+    after = GR.resolve(1.0, fd(), lat(1.0, u=0.3), _guarded(monkeypatch, q))
+    assert after["status"].startswith("unresolved") and qe.R_CONDITIONING in after["status"]
+
+
+def test_rule_d_ii_a_disqualified_dissenter_no_longer_blocks(monkeypatch):
+    q = qq(1.2, u=0.065)
+    before = GR.resolve(1.0, fd(), lat(1.0), q)
+    assert before["status"].startswith("unresolved: " + GR.R_DISAGREE)
+    after = GR.resolve(1.0, fd(), lat(1.0), _guarded(monkeypatch, q))
+    assert after["status"] == GR.RESOLVED and after["corroborated_by"] == ["lattice"]
+    assert after == GR.resolve(1.0, fd(), lat(1.0), qq(1.2, u=0.075, flags=[qe.R_CONDITIONING]))
+
+
+def test_rule_d_iii_q_agreeing_beside_the_lattice_keeps_r_and_u_becomes_the_lattice_s(monkeypatch):
+    q = qq(1.05, u=0.065)
+    before = GR.resolve(1.0, fd(u_ref=0.01), lat(1.03), q)
+    assert before["corroborated_by"] == ["lattice", "Q"] and before["u"] == pytest.approx(0.05)
+    after = GR.resolve(1.0, fd(u_ref=0.01), lat(1.03), _guarded(monkeypatch, q))
+    assert after["status"] == GR.RESOLVED and after["corroborated_by"] == ["lattice"]
+    assert after["R"] == before["R"] and after["u"] == pytest.approx(0.03)
+
+
+def test_a_guard_that_crosses_nothing_changes_nothing_in_rule_d(monkeypatch):
+    for args in ((fd(), lat(1.03)), (fd(), lat(1.0, u=0.3)), (fd(), lat(1.0))):
+        for gq in (1.02, 1.05, 1.2):
+            q = qq(gq, u=0.02)
+            g = _guarded(monkeypatch, q, uc=0.001)
+            assert not g["flags"]
+            assert GR.resolve(1.0, *args, g) == GR.resolve(1.0, *args, {**q, "u_ref": 0.021})
+
+
+@pytest.mark.parametrize("uc,want_q", [(1e-9, True), (10.0, False)])
+def test_c2_q_scores_the_guarded_view_of_gamma_and_leaves_every_other_quantity_alone(monkeypatch, uc, want_q):
+    ex = 0.645
+    calls = []
+
+    def fake(c, sp, n, american=True, half=False, cache=None, take=None):
+        calls.append((sp.name, n))
+        steps = {512: 0.16, 1024: 0.08, 2048: 0.04}                     # first order, u_rule 0.04 tol at 2048
+        return ex + GR._tol(sp.name, ex, c.spot) * steps[n]
+    monkeypatch.setattr(qe, "quantity", fake)
+    monkeypatch.setattr(C, "exact", lambda c, kk: ex)
+    monkeypatch.setattr(qe, "u_cond", lambda c, n, cache=None: uc * GR._tol(G.GAMMA, ex, c.spot))
+    got = C.c2_q(DIV_PUT, CFG, quantities=(G.GAMMA, G.VEGA))
+    g, v = got[G.GAMMA], got[G.VEGA]
+    tol = GR._tol(G.GAMMA, ex, DIV_PUT.spot)
+    assert g["status"] == "scored" and g["levels"][-1] == 2048 and v["levels"][-1] == 2048
+    assert g["u_rule"] == pytest.approx(0.04 * tol) and g["u_cond"] == pytest.approx(uc * tol)
+    assert g["u_Q"] == pytest.approx((0.04 + uc) * tol) and g["within_budget"] is want_q
+    assert (qe.R_CONDITIONING in g["flags"]) is (not want_q)
+    assert v["u_rule"] is None and v["u_cond"] is None and v["within_budget"] and not v["flags"]
+    assert set(calls) == {(k, n) for k in (G.GAMMA, G.VEGA) for n in qe.LEVELS}     # the same solves either way

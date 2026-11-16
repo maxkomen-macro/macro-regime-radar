@@ -901,3 +901,99 @@ def test_the_forced_c2_fd_f_control_reads_every_depth_at_the_finest_time_level(m
         assert row["u_T"] == pytest.approx(0.5 * 2 ** d / (8 * p0) * 1.0) and row["u"] >= row["u_T"]
     plain = C.c2_fd_forced(c, quantities=(G.GAMMA,))[G.GAMMA]
     assert all("u_T" not in row for row in plain["depths"].values())
+
+
+# ── P3-AM8: the guard on Q's returned gamma, on an unchanged path ─────────────
+
+from scripts.options_bench import ql_escrowed as qe     # noqa: E402
+
+_LV = list(qe.LEVELS) + [qe.ESCALATE, qe.EXTRA] + list(qe.DEEP)
+_NEVER = [0.0, 0.4, 0.72, 0.98, 1.19, 1.36, 1.50]                          # ratio ~0.8: never converging
+Q_SEQ = {                                                                   # gamma, in tolerances (tol 1)
+    "p1": [1.16, 1.08, 1.04, 1.02, 1.01, 1.005, 1.0025],                   # qualifies at 2048 (pass 1)
+    "p2": [0.0, 0.4, 0.72, 0.98, 1.03, 1.05, 1.06],                         # qualifies at 8192 (pass 2, Q+)
+    "p3": [-0.24, 0.16, 0.48, 0.74, 0.95, 1.0, 1.02],                      # qualifies at 16384 (pass 3, Q++)
+}
+N_RET = {"p1": qe.LEVELS[-1], "p2": qe.EXTRA, "p3": qe.DEEP[0]}
+
+
+def _am8_fakes(monkeypatch, gamma_seq, uc, unit=1.0, fd=None):
+    """Q on the real study over a fake kernel: gamma follows gamma_seq, every other quantity never converges
+    (so Q+ runs for each). Each Q solve charges `unit`; u_cond is the constant uc. Records every Q solve."""
+    solves = []
+
+    def fake_q(c, sp, n, american=True, half=False, cache=None, take=None):
+        take(unit)
+        solves.append((sp.name, n, half))
+        seq = gamma_seq if sp.name == G.GAMMA else _NEVER
+        return seq[_LV.index(n)]
+    monkeypatch.setattr(qe, "quantity", fake_q)
+    monkeypatch.setattr(qe, "u_cond", lambda c, n, cache=None: uc)
+    if fd is None:
+        monkeypatch.setattr(GR, "fd_study", lambda r, c, sp, escalate=True, extend=None, **kw:
+                            _f(u_ref=0.01, esc=(0, 0)))
+        monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0,
+                                                                       "flags": []})
+        monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    return solves
+
+
+_RULE_D = ("q", "status", "R", "u", "u_Q", "corroborated_by", "corroborators")
+_GUARD_KEYS = ("u_ref", "flags", "u_rule", "u_cond", "n_ret")
+
+
+def _as_run(q):
+    return {k: v for k, v in q.items() if k not in _GUARD_KEYS}
+
+
+def _work(out):
+    return {k: v for k, v in out["_work"].items() if k != "secs"}       # wall time is not part of the path
+
+
+@pytest.mark.parametrize("where", ["p1", "p2", "p3"])
+def test_the_guard_reaches_rule_d_in_the_pass_that_returns_gamma_s_q(monkeypatch, where):
+    runs = {}
+    for uc in (0.0, 10.0):
+        solves = _am8_fakes(monkeypatch, Q_SEQ[where], uc)
+        runs[uc] = (GR.references(ctx(), quantities=QS3), list(solves))
+    (off, s_off), (on, s_on) = runs[0.0], runs[10.0]
+    qo, qn = off[G.GAMMA]["q"], on[G.GAMMA]["q"]
+    assert qo["n_ret"] == qn["n_ret"] == N_RET[where] == qo["levels"][-1]
+    assert qo["flags"] == [] and qo["u_ref"] == qo["u_rule"]
+    assert qn["flags"] == [qe.R_CONDITIONING] and qn["u_ref"] == qn["u_rule"] + 10.0 and qn["u_rule"] == qo["u_rule"]
+    assert _as_run(qo) == _as_run(qn) and s_off == s_on and _work(off) == _work(on)
+    assert off[G.GAMMA]["corroborated_by"] == ["lattice", "Q"] and on[G.GAMMA]["corroborated_by"] == ["lattice"]
+    assert on[G.GAMMA]["R"] == off[G.GAMMA]["R"]
+    for k in (GR.PRICE, G.VEGA):
+        assert on[k] == off[k] and "u_cond" not in on[k]["q"]
+
+
+def test_a_pass_3_rollback_keeps_pass_2_s_guarded_view(monkeypatch):
+    _p3_fakes(monkeypatch, units=lambda name, kind: 100.0 if kind == "fine" else 0.0)
+    _am8_fakes(monkeypatch, Q_SEQ["p2"], 10.0, unit=0.0, fd=False)
+    out = GR.references(ctx(), quantities=QS3, cap=50.0)
+    assert out[G.GAMMA]["deep3"]["status"] == GR.R_DEEP_CAP and out[G.GAMMA]["deep3"]["part_f"]
+    q = out[G.GAMMA]["q"]
+    assert q["n_ret"] == qe.EXTRA and q["flags"] == [qe.R_CONDITIONING] and q["u_ref"] == q["u_rule"] + 10.0
+
+
+@pytest.mark.parametrize("where", ["p1", "p2", "p3"])
+def test_the_study_as_run_is_the_same_with_and_without_the_guard_near_the_cap(monkeypatch, where):
+    """DR-AM8-2: every level, solve, value and charge of every quantity, and where a later quantity hits the
+    cap, are the same for u_cond 0 and u_cond far above the budget."""
+    _am8_fakes(monkeypatch, Q_SEQ[where], 0.0)
+    full = GR.references(ctx(), quantities=QS3)["_work"]["used"]
+    for cap in (full, full - 1.0, full - 3.0, full - 8.0):
+        runs = {}
+        for uc in (0.0, 1e3):
+            solves = _am8_fakes(monkeypatch, Q_SEQ[where], uc)
+            runs[uc] = (GR.references(ctx(), quantities=QS3, cap=cap), list(solves))
+        (off, s_off), (on, s_on) = runs[0.0], runs[1e3]
+        assert s_off == s_on and _work(off) == _work(on), cap
+        for k in QS3:                      # rule D's outputs are C.3's to change; the sides and records are not
+            assert {kk: v for kk, v in off[k].items() if kk not in _RULE_D} == \
+                {kk: v for kk, v in on[k].items() if kk not in _RULE_D}, (cap, k)
+            if "q" in off[k]:
+                assert _as_run(off[k]["q"]) == _as_run(on[k]["q"]), (cap, k)
+            if k != G.GAMMA:
+                assert off[k] == on[k], (cap, k)

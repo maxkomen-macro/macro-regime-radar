@@ -14,7 +14,9 @@ PV_t = Σ_{d_i ≥ t} D_i·e^{−r(d_i − t)/365}, exercise value (sgn·(X_t + 
   8192 when 4096 and the alternating estimate still leave Q unqualified;
 - early exercise: a step condition projecting onto the exercise value after every step, through a zero-copy
   view of the QuantLib Array (layout-checked on every call, element-wise fallback, bit-identical);
-- read-out: CubicNaturalSpline in ln X; gamma = (V_xx − V_x)/X_0².
+- read-out: CubicNaturalSpline in ln X; gamma = (V_xx − V_x)/X_0²;
+- P3-AM8: the uncertainty stated for the gamma value a study returns gains the read-out's conditioning term
+  u_cond (`conditioned`), on the study's unchanged path; that guarded view is Q's verdict for rule D and C2-Q.
 
 Nothing here imports the production FD kernel (src/desk/options_fd.py), reference.py or the lattice; it shares
 only the model definition (design section 9) and the stencil (options_greeks.bumped / one_day_later, through
@@ -56,6 +58,9 @@ TODAY = None                 # QuantLib evaluation date, set on first use
 
 R_NOT_CONVERGING = "Q sequence not converging"
 R_REFUSED = "Q refused"
+R_CONDITIONING = "Q read-out conditioning: u_rule + u_cond above 0.07 tolerances"
+R_CONDITIONING_NA = "Q read-out conditioning not computable"
+EPS = float(np.finfo(float).eps)     # 2^-52, the double-precision unit roundoff used by u_cond (P3-AM8 C.1)
 
 
 def _today():
@@ -206,6 +211,58 @@ def quantity(c: om.Context, sp, n: int, american: bool = True, half: bool = Fals
     up, dn = (sp.states[2], sp.states[3]) if half else (sp.states[0], sp.states[1])
     h = sp.h / 2.0 if half else sp.h
     return (S(up)["value"] - S(dn)["value"]) / (2.0 * h) * G.UNIT[sp.name]
+
+
+def u_cond(c: om.Context, n: int, cache: dict | None = None) -> float:
+    """P3-AM8 C.1: the conditioning term of Q's gamma read-out at level n,
+    eps · max(S, K) · sqrt(N_t) / (h² · X_0²), N_t = days·spd(n) the solve's steps, h the ln X spacing of the
+    level-n mesh cell containing ln X_0 (the smaller of its two cells when ln X_0 is a node). Needs the mesh only
+    (taken from, or put in, `cache` under the key `quantity` uses); no solve and no work charged."""
+    key = ("mesh", c, n)
+    m = None if cache is None else cache.get(key)
+    if m is None:
+        m = mesh(c, n)
+        if cache is not None:
+            cache[key] = m
+    lx = np.array(m[0].locations())
+    pv, _ = _pv(c)
+    x0 = c.spot - pv(0.0)
+    if not x0 > 0.0:
+        raise ValueError("escrowed spot X_0 not positive")
+    l0 = math.log(x0)
+    i = int(np.searchsorted(lx, l0))
+    if i < len(lx) and lx[i] == l0:
+        cells = [lx[j + 1] - lx[j] for j in (i - 1, i) if 0 <= j and j + 1 < len(lx)]
+        if not cells:
+            raise ValueError("mesh has a single node")
+        h = min(cells)
+    elif 0 < i < len(lx):
+        h = lx[i] - lx[i - 1]
+    else:
+        raise ValueError("X_0 outside the mesh")
+    nt = c.days * steps_per_day(c.days, n)
+    return EPS * max(c.spot, c.strike) * math.sqrt(nt) / (h * h * x0 * x0)
+
+
+def conditioned(c: om.Context, sp, qs: dict | None, tol: float, cache: dict | None = None,
+                u_ref_max: float = 0.07) -> dict | None:
+    """P3-AM8 C.2: Q's verdict on a finished study. For gamma, the study as run (its levels, values, flags and
+    stopping point unchanged) with u_ref = u_rule + u_cond(n_ret), n_ret the level whose value it returns, and
+    flagged R_CONDITIONING when that sum, but not u_rule alone, is above u_ref_max·tol. Any other quantity, and a
+    study with no stated value or u_rule, is returned as it is. u_cond that cannot be computed leaves Q
+    unqualified (flagged), never qualified."""
+    if qs is None or sp.name != G.GAMMA or qs.get("G") is None or qs.get("u_ref") is None or not qs.get("levels"):
+        return qs
+    n = qs["levels"][-1]
+    out = {**qs, "u_rule": qs["u_ref"], "n_ret": n}
+    try:
+        uc = u_cond(c, n, cache)
+    except (RuntimeError, ValueError, TypeError) as e:
+        return {**out, "u_cond": None, "flags": list(qs["flags"]) + [f"{R_CONDITIONING_NA}: {str(e)[:80]}"]}
+    flags = list(qs["flags"])
+    if qs["u_ref"] <= u_ref_max * tol < qs["u_ref"] + uc:
+        flags.append(R_CONDITIONING)
+    return {**out, "u_cond": uc, "u_ref": qs["u_ref"] + uc, "flags": flags}
 
 
 def estimate(g: list[float], tol: float, f_q: float = F_Q) -> float | None:
