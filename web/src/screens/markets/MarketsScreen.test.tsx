@@ -1035,12 +1035,49 @@ describe("MarketsScreen, Iteration 1 (M3)", () => {
     expect(text(nvda)).toMatch(/Sep 19, 10:40 ET · 15m/);
     // One gainer slot has no name to fill: a marked slot, never a gap.
     expect(gainers.querySelectorAll("[data-empty='true']")).toHaveLength(1);
-    expect(text(gainers)).toContain("No other name up");
+    // Five of the twelve are priced, so the slot says so rather than "No other name up".
+    expect(text(gainers)).toContain("No other up · 5 of 12 priced");
+    expect(text(gainers)).not.toContain("No other name up");
     // The seven names with neither a stream change nor two closes are listed.
     await waitFor(() => expect(text(movers())).toContain("No day change on file for MSFT, GOOGL, AMZN, META, AVGO, TSM, COIN"));
     // The summary row reads the same leader and laggard.
     await waitFor(() => expect(text(ddFor("Single names · 1d"))).toBe("MU +3.00% leads · TSLA -1.84% lags"));
     expect(dts().slice(0, 4)).toEqual(["US 10Y", "Sectors · 1d", "Single names · 1d", "ETFs · 1w"]);
+  });
+
+  it("movers: with all twelve names streamed and every one down, the empty gainer slots say none of the 12 is up, and no candle is requested", async () => {
+    live.status = OPEN;
+    // Invented prices and changes (test-data rule): twelve live ticks, all negative.
+    const down = [-1.2, -0.9, -4.5, -3.8, -3.3, -2.6, -2.9, -4.2, -6.2, -7.3, -5.4, -5.6];
+    live.quotes = quotesOf(...SINGLE_NAMES.map((d, i) => wsTick(d.symbol, 100 + i, down[i], down[i])));
+    const { calls } = stubFetch(routes());
+    renderMarkets();
+    await awaitHero();
+    await waitFor(() => expect(tileSymbols(moverGroup("Top losers"))).toEqual(["MU", "TSM", "COIN"]));
+    const gainers = moverGroup("Top gainers");
+    expect(tileSymbols(gainers)).toEqual([]);
+    expect(gainers.querySelectorAll("[data-empty='true']")).toHaveLength(3);
+    expect(text(gainers)).toContain("None of the 12 up");
+    expect(text(gainers)).not.toContain("priced");
+    expect(text(movers())).not.toContain("No day change on file");
+    expect(text(movers())).not.toContain("Still loading");
+    expect(calls.filter((c) => c.startsWith("/api/market/candles/"))).toEqual([]);
+  });
+
+  it("movers: a name whose candles are still loading is named, and the empty slots count only the names priced, never 'none of the 12'", async () => {
+    live.status = OPEN;
+    // Eleven invented ticks, all down; AMD has no stream change and its candles never answer.
+    const others = SINGLE_NAMES.filter((d) => d.symbol !== "AMD");
+    live.quotes = quotesOf(...others.map((d, i) => wsTick(d.symbol, 50 + i, -1 - i / 10, -1)));
+    stubFetch(routes({ "/api/market/candles/AMD": PENDING }));
+    renderMarkets();
+    await awaitHero();
+    await waitFor(() => expect(text(movers())).toContain("Still loading the day change for AMD."));
+    const gainers = moverGroup("Top gainers");
+    expect(tileSymbols(gainers)).toEqual([]);
+    expect(text(gainers)).toContain("None up · 11 of 12 priced");
+    expect(text(gainers)).not.toContain("None of the 12 up");
+    expect(text(moverGroup("Top losers"))).not.toContain("priced");
   });
 
   it("movers: while a session trades, today's bars are left out, so the figure is still the last completed close", async () => {
