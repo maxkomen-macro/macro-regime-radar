@@ -1143,6 +1143,34 @@ export const SCHEMAS: Readonly<Record<string, Obj>> = {
     earnings_status: e(["known", "reconciled", "unknown", "not_checked"]),
     earnings_moves: l(o({ event_id: "s!", date: "s!", move_sd_pct: "n", expiries: t(["s!", "s!"], { nul: true }), reason: "s?" })),
     stale: "s?",
+    // The Tier 2 accuracy check (OPTIONS_TIER2_CHECK on only): a pick is read only with its contract and status.
+    engine_check: o({
+      engine: "s",
+      version: "s",
+      role: "s",
+      work: o({ used: "n", limit: "n", elapsed_ms: "n" }),
+      picks: l(
+        o({
+          contract: "s!",
+          lenses: l("s!"),
+          status: e(["checked", "not checked"], { req: true }),
+          reason: "s?",
+          tier1: o({ value: "n", delta: "n" }),
+          tier2: o(
+            { route: "s", price_status: "s", value: "n", estimate: "n", reason: "s?", delta_status: "s", delta: "n", delta_estimate: "n", delta_reason: "s?" },
+            { nul: true },
+          ),
+          difference: "n",
+          allowed: "n",
+          agree: "b?",
+          delta_difference: "n",
+          delta_allowed: "n",
+          delta_agree: "b?",
+        }),
+        { req: true },
+      ),
+      error: "s?",
+    }),
     work: o({ used: "n", limit: "n" }),
     method: o({ version: "s!", tolerances: m("*"), lattice: o({ n_min: "n", k_min: "n" }), notes: l("s!") }),
     scan: o({

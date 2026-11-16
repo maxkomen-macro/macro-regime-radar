@@ -580,3 +580,88 @@ describe("Options Finder: the response boundary and the page agree", () => {
     expect(screen.getByTestId("of-events-unreadable")).toHaveTextContent("1 event in the answer could not be read and is not listed.");
   });
 });
+
+// ── the Tier 2 accuracy check (docs/desk/OPTIONS_TIER2_CHECK.md): served only with the API's switch on ──
+
+describe("Options Finder: the Tier 2 accuracy check", () => {
+  const picks = UP.picks as Record<string, string>;
+  // Invented figures in the shape the check serves (the chain is the fixture's synthetic SYN chain).
+  const tier2 = (value: number | null, estimate: number | null, status = "estimated, cross-check pending", reason: string | null = null) => ({
+    route: value === null ? "lattice" : "lattice",
+    price_status: status,
+    value,
+    estimate,
+    reason,
+    delta_status: "served",
+    delta: 0.31,
+    delta_estimate: 0.0004,
+    delta_reason: null,
+  });
+  const block = {
+    engine: "adaptive",
+    version: "adaptive-p2.1",
+    role: "check only: every number the Finder serves is Tier 1's",
+    work: { used: 1285248, limit: 300000000, elapsed_ms: 29.1 },
+    picks: [
+      { contract: picks.payoff, lenses: ["payoff"], status: "checked", reason: null, tier1: { value: 0.875, delta: 0.31 }, tier2: tier2(0.8751, 0.0014), difference: 0.0001, allowed: 0.0114, agree: true, delta_difference: 0, delta_allowed: 0.0029, delta_agree: true },
+      { contract: picks.forgiving, lenses: ["forgiving"], status: "checked", reason: null, tier1: { value: 4.675, delta: 0.5 }, tier2: tier2(4.7, 0.0035), difference: 0.025, allowed: 0.0135, agree: false, delta_difference: 0, delta_allowed: 0.0029, delta_agree: true },
+      { contract: picks.time, lenses: ["time"], status: "not checked", reason: "work limit", tier1: { value: 18.165, delta: 0.9 }, tier2: null, difference: null, allowed: null, agree: null, delta_difference: null, delta_allowed: null, delta_agree: null },
+    ],
+    error: null,
+  };
+
+  it("without the block, the page says nothing about a check", async () => {
+    stubDesk({ [ROUTE]: () => ({ ...UP }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.queryByTestId("of-check-note")).toBeNull();
+    for (const l of ["payoff", "forgiving", "time"]) expect(screen.queryByTestId(`of-check-${l}`)).toBeNull();
+  });
+
+  it("each pick shows Tier 2's value, its error, its status and agreement, beside unchanged Tier 1 numbers", async () => {
+    stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: block }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.getByTestId("of-check-payoff")).toHaveTextContent(
+      "Accuracy check: Tier 2 $0.8751 ± $0.0014 (estimated, cross-check pending). Agrees with Tier 1's $0.875 within their stated accuracies ($0.0114).",
+    );
+    expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent(
+      "Accuracy check: Tier 2 $4.70 ± $0.0035 (estimated, cross-check pending). Differs from Tier 1's $4.675 by more than their stated accuracies ($0.0135); the page shows Tier 1's numbers.",
+    );
+    expect(screen.getByTestId("of-check-time")).toHaveTextContent("Accuracy check not run: work limit.");
+    const note = screen.getByTestId("of-check-note");
+    expect(note).toHaveTextContent("It is not a check of the market price, the implied volatility or the ranking.");
+    expect(note).toHaveTextContent("Every number on this page is Tier 1's.");
+    expect(page().textContent ?? "").not.toMatch(/independently cross-checked|\bvalidated\b/i);
+  });
+
+  it("the picks' Tier 1 cards read the same with and without the block", async () => {
+    stubDesk({ [ROUTE]: () => ({ ...UP }) });
+    const off = renderTab(UP_URL);
+    await stateOf("answered");
+    const before = ["payoff", "forgiving", "time"].map((l) => textOf(screen.getByTestId(`of-pick-${l}`)));
+    off.unmount();
+    stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: block }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const after = ["payoff", "forgiving", "time"].map((l) => {
+      const el = screen.getByTestId(`of-pick-${l}`).cloneNode(true) as Element;
+      el.querySelector(`[data-testid="of-check-${l}"]`)?.remove();
+      return textOf(el);
+    });
+    expect(after).toEqual(before);
+  });
+
+  it("a check that failed as a whole says so on every pick, and a pick with no Tier 2 value names its status and reason", async () => {
+    stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: { error: "not checked: error (ValueError)", picks: [] } }) });
+    const r = renderTab(UP_URL);
+    await stateOf("answered");
+    for (const l of ["payoff", "forgiving", "time"]) expect(screen.getByTestId(`of-check-${l}`)).toHaveTextContent("Accuracy check not run: error (ValueError).");
+    r.unmount();
+    const unresolved = { ...block.picks[0], tier2: tier2(null, null, "unresolved", "estimate above target"), difference: null, allowed: null, agree: null };
+    stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: { ...block, picks: [unresolved, ...block.picks.slice(1)] } }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.getByTestId("of-check-payoff")).toHaveTextContent("Accuracy check: Tier 2 gave no value (unresolved: estimate above target).");
+  });
+});

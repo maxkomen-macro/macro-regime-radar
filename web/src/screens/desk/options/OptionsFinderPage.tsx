@@ -26,6 +26,7 @@ import { DESK_ACCENTS } from "../kit/palette";
 import { useWidth } from "../kit/LineChart";
 import { MINUS, NOT_SERVED, dayLong, dayShort, grouped, isFiniteNumber, num, pctPlain, priceText, signed } from "../kit/format";
 import { premium } from "./premium";
+import { CHECK_NOTE, checkWords } from "./engine-check";
 import { OPTIONS_FINDER_LISTED } from "./flag";
 import { ExampleFill, carriedNote } from "./entry";
 import { FRAMING, LENSES, MARKET_IMPLIED, NOT_DEPLOYED, NO_EVENTS_WORDS, OCC_URL, PRICER_WORDS, SCREEN_WORDS, TIMING_WORDS, kindWord, viewWord } from "./finder-copy";
@@ -416,6 +417,11 @@ function PickCard({ lens, row, d, reason }: { lens: (typeof LENSES)[number]; row
               ))}
             </ul>
           ) : null}
+          {checkWords(d.engine_check, row.contract) ? (
+            <p className="of-note" data-testid={`of-check-${lens.id}`}>
+              {checkWords(d.engine_check, row.contract)}
+            </p>
+          ) : null}
           <SaveLink row={row} d={d} />
         </div>
       )}
@@ -802,6 +808,11 @@ export function Answer({ d }: { d: OptionsFinderResponse }) {
           <PickCard key={l.id} lens={l} row={d.picks?.[l.id] ? rowsBy.get(d.picks[l.id] as string) : undefined} d={d} reason={l.id === "time" ? d.lens_reasons?.time : null} />
         ))}
       </div>
+      {d.engine_check ? (
+        <p className="of-note" data-testid="of-check-note">
+          {CHECK_NOTE}
+        </p>
+      ) : null}
       <PayoffChart d={d} rowsBy={rowsBy} />
       <Events d={d} />
       <RowsTable d={d} />
