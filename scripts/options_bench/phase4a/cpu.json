@@ -11,7 +11,2172 @@
    "kind": "external",
    "cpu_s": 10.0,
    "note": "bench smoke, request 0 under A and C, budget limit (3.8 s measured) plus key inspection"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 30.0,
+   "note": "bench smokes: request 1 under B and D (12.3 s measured) and the bench test file's three runs"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 87.3,
+   "note": "review evidence: bench and options test files at cd6298d2 (user+sys measured)"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 45.0,
+   "note": "eligibility smokes (requests 2, 3, 5 under A and D: 22.6 s measured) and bench test file runs"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 77.2,
+   "note": "review evidence: the four unchanged options test files at BASE e2abd204"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 88.4,
+   "note": "review evidence: bench and options test files at f80268fb"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 260.0,
+   "note": "review evidence and smokes: tests at 77615254 (88.9 s) and b89c08f9 (88.9 s), per-file collection at HEAD and BASE, bench test runs, B and C smoke on request 0"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 110.0,
+   "note": "review evidence at 46ddd9d0 (91.5 s) and bench test runs for B-6"
+  },
+  {
+   "kind": "request",
+   "index": 0,
+   "cpu_s": 17.369,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:08:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 1,
+   "cpu_s": 65.044,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:09:16Z"
+  },
+  {
+   "kind": "request",
+   "index": 2,
+   "cpu_s": 34.392,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:09:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 3,
+   "cpu_s": 50.874,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:10:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 4,
+   "cpu_s": 32.877,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:11:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 5,
+   "cpu_s": 35.779,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:11:49Z"
+  },
+  {
+   "kind": "request",
+   "index": 6,
+   "cpu_s": 14.849,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:12:03Z"
+  },
+  {
+   "kind": "request",
+   "index": 7,
+   "cpu_s": 89.262,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:13:33Z"
+  },
+  {
+   "kind": "request",
+   "index": 8,
+   "cpu_s": 52.568,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:14:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 9,
+   "cpu_s": 8.337,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:14:33Z"
+  },
+  {
+   "kind": "request",
+   "index": 10,
+   "cpu_s": 12.779,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:14:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 11,
+   "cpu_s": 34.548,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:15:19Z"
+  },
+  {
+   "kind": "request",
+   "index": 12,
+   "cpu_s": 52.183,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:16:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 13,
+   "cpu_s": 19.93,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:16:31Z"
+  },
+  {
+   "kind": "request",
+   "index": 14,
+   "cpu_s": 101.813,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:18:12Z"
+  },
+  {
+   "kind": "request",
+   "index": 15,
+   "cpu_s": 44.324,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:18:56Z"
+  },
+  {
+   "kind": "request",
+   "index": 16,
+   "cpu_s": 32.749,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:19:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 17,
+   "cpu_s": 71.731,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:20:40Z"
+  },
+  {
+   "kind": "request",
+   "index": 18,
+   "cpu_s": 49.751,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:21:30Z"
+  },
+  {
+   "kind": "request",
+   "index": 19,
+   "cpu_s": 4.813,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:21:34Z"
+  },
+  {
+   "kind": "request",
+   "index": 20,
+   "cpu_s": 20.47,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:21:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 21,
+   "cpu_s": 30.85,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:22:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 22,
+   "cpu_s": 119.273,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:24:24Z"
+  },
+  {
+   "kind": "request",
+   "index": 23,
+   "cpu_s": 3.045,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:24:26Z"
+  },
+  {
+   "kind": "request",
+   "index": 24,
+   "cpu_s": 62.276,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:26:30Z"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 120.0,
+   "note": "request 25 child of the first main run, stopped unmetered when that run was stopped to add row contexts (upper estimate: the per-request maximum)"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 45.0,
+   "note": "pilot analysis, B failure reproduction (request 21) and bench test runs"
+  },
+  {
+   "kind": "request",
+   "index": 0,
+   "cpu_s": 17.712,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:27:58Z"
+  },
+  {
+   "kind": "request",
+   "index": 1,
+   "cpu_s": 62.794,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:29:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 2,
+   "cpu_s": 33.636,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:29:34Z"
+  },
+  {
+   "kind": "request",
+   "index": 3,
+   "cpu_s": 51.127,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:30:24Z"
+  },
+  {
+   "kind": "request",
+   "index": 4,
+   "cpu_s": 31.104,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:30:55Z"
+  },
+  {
+   "kind": "request",
+   "index": 5,
+   "cpu_s": 34.583,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:31:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 6,
+   "cpu_s": 15.632,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:31:44Z"
+  },
+  {
+   "kind": "request",
+   "index": 7,
+   "cpu_s": 90.178,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:33:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 8,
+   "cpu_s": 50.212,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:34:04Z"
+  },
+  {
+   "kind": "request",
+   "index": 9,
+   "cpu_s": 8.358,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:34:12Z"
+  },
+  {
+   "kind": "request",
+   "index": 10,
+   "cpu_s": 13.095,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:34:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 11,
+   "cpu_s": 34.02,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:34:58Z"
+  },
+  {
+   "kind": "request",
+   "index": 12,
+   "cpu_s": 51.719,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:35:50Z"
+  },
+  {
+   "kind": "request",
+   "index": 13,
+   "cpu_s": 18.839,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:36:08Z"
+  },
+  {
+   "kind": "request",
+   "index": 14,
+   "cpu_s": 100.09,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:37:48Z"
+  },
+  {
+   "kind": "request",
+   "index": 15,
+   "cpu_s": 42.718,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:38:30Z"
+  },
+  {
+   "kind": "request",
+   "index": 16,
+   "cpu_s": 30.167,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:39:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 17,
+   "cpu_s": 66.939,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:40:07Z"
+  },
+  {
+   "kind": "request",
+   "index": 18,
+   "cpu_s": 44.187,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:40:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 19,
+   "cpu_s": 5.022,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:40:55Z"
+  },
+  {
+   "kind": "request",
+   "index": 20,
+   "cpu_s": 19.614,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:41:15Z"
+  },
+  {
+   "kind": "request",
+   "index": 21,
+   "cpu_s": 29.21,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:41:43Z"
+  },
+  {
+   "kind": "request",
+   "index": 22,
+   "cpu_s": 119.038,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:43:42Z"
+  },
+  {
+   "kind": "request",
+   "index": 23,
+   "cpu_s": 3.218,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:43:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 24,
+   "cpu_s": 65.478,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:44:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 25,
+   "cpu_s": 5.495,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:44:56Z"
+  },
+  {
+   "kind": "request",
+   "index": 26,
+   "cpu_s": 39.183,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:45:35Z"
+  },
+  {
+   "kind": "request",
+   "index": 27,
+   "cpu_s": 15.445,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:45:50Z"
+  },
+  {
+   "kind": "request",
+   "index": 28,
+   "cpu_s": 35.327,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:46:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 29,
+   "cpu_s": 8.095,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:46:32Z"
+  },
+  {
+   "kind": "request",
+   "index": 30,
+   "cpu_s": 64.728,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:47:37Z"
+  },
+  {
+   "kind": "request",
+   "index": 31,
+   "cpu_s": 5.088,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:47:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 32,
+   "cpu_s": 99.281,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:49:21Z"
+  },
+  {
+   "kind": "request",
+   "index": 33,
+   "cpu_s": 49.868,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:50:10Z"
+  },
+  {
+   "kind": "request",
+   "index": 34,
+   "cpu_s": 41.127,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:50:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 35,
+   "cpu_s": 15.325,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:51:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 36,
+   "cpu_s": 34.168,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:51:39Z"
+  },
+  {
+   "kind": "request",
+   "index": 37,
+   "cpu_s": 46.7,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:52:26Z"
+  },
+  {
+   "kind": "request",
+   "index": 38,
+   "cpu_s": 30.512,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:52:56Z"
+  },
+  {
+   "kind": "request",
+   "index": 39,
+   "cpu_s": 5.567,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:53:01Z"
+  },
+  {
+   "kind": "request",
+   "index": 40,
+   "cpu_s": 44.717,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:53:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 41,
+   "cpu_s": 28.574,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:54:13Z"
+  },
+  {
+   "kind": "request",
+   "index": 42,
+   "cpu_s": 33.885,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:54:47Z"
+  },
+  {
+   "kind": "request",
+   "index": 43,
+   "cpu_s": 59.007,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:55:46Z"
+  },
+  {
+   "kind": "request",
+   "index": 44,
+   "cpu_s": 59.955,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:56:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 45,
+   "cpu_s": 44.057,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:57:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 46,
+   "cpu_s": 25.795,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:57:55Z"
+  },
+  {
+   "kind": "request",
+   "index": 47,
+   "cpu_s": 52.47,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:58:47Z"
+  },
+  {
+   "kind": "request",
+   "index": 48,
+   "cpu_s": 28.563,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:59:15Z"
+  },
+  {
+   "kind": "request",
+   "index": 49,
+   "cpu_s": 14.218,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T05:59:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 50,
+   "cpu_s": 153.407,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:02:03Z"
+  },
+  {
+   "kind": "request",
+   "index": 51,
+   "cpu_s": 1.123,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:02:03Z"
+  },
+  {
+   "kind": "request",
+   "index": 52,
+   "cpu_s": 1.597,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:02:04Z"
+  },
+  {
+   "kind": "request",
+   "index": 53,
+   "cpu_s": 76.435,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:03:21Z"
+  },
+  {
+   "kind": "request",
+   "index": 54,
+   "cpu_s": 34.646,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:03:55Z"
+  },
+  {
+   "kind": "request",
+   "index": 55,
+   "cpu_s": 99.973,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:05:35Z"
+  },
+  {
+   "kind": "request",
+   "index": 56,
+   "cpu_s": 1.332,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:05:36Z"
+  },
+  {
+   "kind": "request",
+   "index": 57,
+   "cpu_s": 30.348,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:06:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 58,
+   "cpu_s": 6.285,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:06:12Z"
+  },
+  {
+   "kind": "request",
+   "index": 59,
+   "cpu_s": 10.655,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:06:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 60,
+   "cpu_s": 4.311,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:06:26Z"
+  },
+  {
+   "kind": "request",
+   "index": 61,
+   "cpu_s": 17.384,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:06:43Z"
+  },
+  {
+   "kind": "request",
+   "index": 62,
+   "cpu_s": 0.984,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:06:43Z"
+  },
+  {
+   "kind": "request",
+   "index": 63,
+   "cpu_s": 89.83,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:08:13Z"
+  },
+  {
+   "kind": "request",
+   "index": 64,
+   "cpu_s": 36.059,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:08:48Z"
+  },
+  {
+   "kind": "request",
+   "index": 65,
+   "cpu_s": 2.971,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:08:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 66,
+   "cpu_s": 7.894,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:08:58Z"
+  },
+  {
+   "kind": "request",
+   "index": 67,
+   "cpu_s": 33.127,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:09:31Z"
+  },
+  {
+   "kind": "request",
+   "index": 68,
+   "cpu_s": 50.089,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:10:21Z"
+  },
+  {
+   "kind": "request",
+   "index": 69,
+   "cpu_s": 31.806,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:10:53Z"
+  },
+  {
+   "kind": "request",
+   "index": 70,
+   "cpu_s": 37.033,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:11:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 71,
+   "cpu_s": 16.709,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:11:46Z"
+  },
+  {
+   "kind": "request",
+   "index": 72,
+   "cpu_s": 73.571,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:12:59Z"
+  },
+  {
+   "kind": "request",
+   "index": 73,
+   "cpu_s": 12.152,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:13:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 74,
+   "cpu_s": 413.869,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:20:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 75,
+   "cpu_s": 27.899,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:20:34Z"
+  },
+  {
+   "kind": "request",
+   "index": 76,
+   "cpu_s": 17.957,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:20:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 77,
+   "cpu_s": 22.575,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:21:13Z"
+  },
+  {
+   "kind": "request",
+   "index": 78,
+   "cpu_s": 27.99,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:21:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 79,
+   "cpu_s": 3.706,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:21:44Z"
+  },
+  {
+   "kind": "request",
+   "index": 80,
+   "cpu_s": 23.0,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:22:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 81,
+   "cpu_s": 16.152,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:22:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 82,
+   "cpu_s": 29.973,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:22:52Z"
+  },
+  {
+   "kind": "request",
+   "index": 83,
+   "cpu_s": 109.909,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:24:42Z"
+  },
+  {
+   "kind": "request",
+   "index": 84,
+   "cpu_s": 28.303,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:25:10Z"
+  },
+  {
+   "kind": "request",
+   "index": 85,
+   "cpu_s": 25.132,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:25:35Z"
+  },
+  {
+   "kind": "request",
+   "index": 86,
+   "cpu_s": 51.208,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:26:26Z"
+  },
+  {
+   "kind": "request",
+   "index": 87,
+   "cpu_s": 45.478,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:27:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 88,
+   "cpu_s": 13.879,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:27:24Z"
+  },
+  {
+   "kind": "request",
+   "index": 89,
+   "cpu_s": 9.47,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:27:33Z"
+  },
+  {
+   "kind": "request",
+   "index": 90,
+   "cpu_s": 49.542,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:28:23Z"
+  },
+  {
+   "kind": "request",
+   "index": 91,
+   "cpu_s": 30.597,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:28:53Z"
+  },
+  {
+   "kind": "request",
+   "index": 92,
+   "cpu_s": 29.836,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:29:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 93,
+   "cpu_s": 32.298,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:29:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 94,
+   "cpu_s": 4.342,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:29:58Z"
+  },
+  {
+   "kind": "request",
+   "index": 95,
+   "cpu_s": 24.466,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:30:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 96,
+   "cpu_s": 31.717,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:30:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 97,
+   "cpu_s": 18.379,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:31:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 98,
+   "cpu_s": 26.462,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:31:38Z"
+  },
+  {
+   "kind": "request",
+   "index": 99,
+   "cpu_s": 23.586,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:32:01Z"
+  },
+  {
+   "kind": "request",
+   "index": 100,
+   "cpu_s": 44.679,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:32:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 101,
+   "cpu_s": 23.701,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:33:08Z"
+  },
+  {
+   "kind": "request",
+   "index": 102,
+   "cpu_s": 55.865,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:34:04Z"
+  },
+  {
+   "kind": "request",
+   "index": 103,
+   "cpu_s": 5.052,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:34:09Z"
+  },
+  {
+   "kind": "request",
+   "index": 104,
+   "cpu_s": 73.625,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:35:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 105,
+   "cpu_s": 37.535,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:35:59Z"
+  },
+  {
+   "kind": "request",
+   "index": 106,
+   "cpu_s": 29.001,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:36:28Z"
+  },
+  {
+   "kind": "request",
+   "index": 107,
+   "cpu_s": 133.17,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:38:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 108,
+   "cpu_s": 25.391,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:39:07Z"
+  },
+  {
+   "kind": "request",
+   "index": 109,
+   "cpu_s": 43.725,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:39:50Z"
+  },
+  {
+   "kind": "request",
+   "index": 110,
+   "cpu_s": 70.737,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:41:01Z"
+  },
+  {
+   "kind": "request",
+   "index": 111,
+   "cpu_s": 90.25,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:42:31Z"
+  },
+  {
+   "kind": "request",
+   "index": 112,
+   "cpu_s": 13.492,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:42:44Z"
+  },
+  {
+   "kind": "request",
+   "index": 113,
+   "cpu_s": 35.713,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:43:19Z"
+  },
+  {
+   "kind": "request",
+   "index": 114,
+   "cpu_s": 19.932,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:43:39Z"
+  },
+  {
+   "kind": "request",
+   "index": 115,
+   "cpu_s": 28.658,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:44:07Z"
+  },
+  {
+   "kind": "request",
+   "index": 116,
+   "cpu_s": 64.37,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:45:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 117,
+   "cpu_s": 55.757,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:46:07Z"
+  },
+  {
+   "kind": "request",
+   "index": 118,
+   "cpu_s": 46.853,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:46:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 119,
+   "cpu_s": 60.448,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:47:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 120,
+   "cpu_s": 1.141,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T06:49:16Z"
+  },
+  {
+   "kind": "request",
+   "index": 121,
+   "cpu_s": 719.745,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:01:19Z"
+  },
+  {
+   "kind": "request",
+   "index": 122,
+   "cpu_s": 28.875,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:01:47Z"
+  },
+  {
+   "kind": "request",
+   "index": 123,
+   "cpu_s": 23.551,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:02:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 124,
+   "cpu_s": 172.533,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:05:03Z"
+  },
+  {
+   "kind": "request",
+   "index": 125,
+   "cpu_s": 32.952,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:05:36Z"
+  },
+  {
+   "kind": "request",
+   "index": 126,
+   "cpu_s": 24.518,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:06:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 127,
+   "cpu_s": 29.631,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:06:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 128,
+   "cpu_s": 43.379,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:07:13Z"
+  },
+  {
+   "kind": "request",
+   "index": 129,
+   "cpu_s": 116.347,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:09:09Z"
+  },
+  {
+   "kind": "request",
+   "index": 130,
+   "cpu_s": 182.098,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:12:12Z"
+  },
+  {
+   "kind": "request",
+   "index": 131,
+   "cpu_s": 2.913,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:12:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 132,
+   "cpu_s": 125.437,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:14:20Z"
+  },
+  {
+   "kind": "request",
+   "index": 133,
+   "cpu_s": 36.324,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:14:56Z"
+  },
+  {
+   "kind": "request",
+   "index": 134,
+   "cpu_s": 0.739,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:14:56Z"
+  },
+  {
+   "kind": "request",
+   "index": 135,
+   "cpu_s": 6.681,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:15:03Z"
+  },
+  {
+   "kind": "request",
+   "index": 136,
+   "cpu_s": 24.608,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:15:27Z"
+  },
+  {
+   "kind": "request",
+   "index": 137,
+   "cpu_s": 13.498,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:15:40Z"
+  },
+  {
+   "kind": "request",
+   "index": 138,
+   "cpu_s": 76.464,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:16:56Z"
+  },
+  {
+   "kind": "request",
+   "index": 139,
+   "cpu_s": 61.06,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:17:57Z"
+  },
+  {
+   "kind": "request",
+   "index": 140,
+   "cpu_s": 54.284,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:18:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 141,
+   "cpu_s": 1.649,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:18:53Z"
+  },
+  {
+   "kind": "request",
+   "index": 142,
+   "cpu_s": 52.932,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:19:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 143,
+   "cpu_s": 52.493,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:20:38Z"
+  },
+  {
+   "kind": "request",
+   "index": 144,
+   "cpu_s": 51.137,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:21:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 145,
+   "cpu_s": 12.393,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:21:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 146,
+   "cpu_s": 23.271,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:22:04Z"
+  },
+  {
+   "kind": "request",
+   "index": 147,
+   "cpu_s": 45.854,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:22:49Z"
+  },
+  {
+   "kind": "request",
+   "index": 148,
+   "cpu_s": 32.396,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:23:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 149,
+   "cpu_s": 50.107,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:24:11Z"
+  },
+  {
+   "kind": "request",
+   "index": 150,
+   "cpu_s": 25.621,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:24:37Z"
+  },
+  {
+   "kind": "request",
+   "index": 151,
+   "cpu_s": 20.569,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:24:57Z"
+  },
+  {
+   "kind": "request",
+   "index": 152,
+   "cpu_s": 6.16,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:25:03Z"
+  },
+  {
+   "kind": "request",
+   "index": 153,
+   "cpu_s": 6.84,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:25:09Z"
+  },
+  {
+   "kind": "request",
+   "index": 154,
+   "cpu_s": 32.246,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:25:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 155,
+   "cpu_s": 44.183,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:26:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 156,
+   "cpu_s": 4.264,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:26:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 157,
+   "cpu_s": 82.073,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:27:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 158,
+   "cpu_s": 0.826,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:27:51Z"
+  },
+  {
+   "kind": "request",
+   "index": 159,
+   "cpu_s": 31.884,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:28:23Z"
+  },
+  {
+   "kind": "request",
+   "index": 160,
+   "cpu_s": 30.82,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:28:53Z"
+  },
+  {
+   "kind": "request",
+   "index": 161,
+   "cpu_s": 53.449,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:29:47Z"
+  },
+  {
+   "kind": "request",
+   "index": 162,
+   "cpu_s": 156.789,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:32:24Z"
+  },
+  {
+   "kind": "request",
+   "index": 163,
+   "cpu_s": 6.311,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:32:30Z"
+  },
+  {
+   "kind": "request",
+   "index": 164,
+   "cpu_s": 17.033,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:32:47Z"
+  },
+  {
+   "kind": "request",
+   "index": 165,
+   "cpu_s": 13.072,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:32:59Z"
+  },
+  {
+   "kind": "request",
+   "index": 166,
+   "cpu_s": 7.355,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:33:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 167,
+   "cpu_s": 123.841,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:35:10Z"
+  },
+  {
+   "kind": "request",
+   "index": 168,
+   "cpu_s": 11.494,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:35:21Z"
+  },
+  {
+   "kind": "request",
+   "index": 169,
+   "cpu_s": 4.011,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:35:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 170,
+   "cpu_s": 28.713,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:35:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 171,
+   "cpu_s": 36.717,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:36:30Z"
+  },
+  {
+   "kind": "request",
+   "index": 172,
+   "cpu_s": 44.164,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:37:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 173,
+   "cpu_s": 16.797,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:37:30Z"
+  },
+  {
+   "kind": "request",
+   "index": 174,
+   "cpu_s": 37.223,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:38:07Z"
+  },
+  {
+   "kind": "request",
+   "index": 175,
+   "cpu_s": 38.651,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:38:46Z"
+  },
+  {
+   "kind": "request",
+   "index": 176,
+   "cpu_s": 39.747,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:39:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 177,
+   "cpu_s": 10.094,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:39:35Z"
+  },
+  {
+   "kind": "request",
+   "index": 178,
+   "cpu_s": 10.841,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:39:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 179,
+   "cpu_s": 41.23,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:40:26Z"
+  },
+  {
+   "kind": "request",
+   "index": 180,
+   "cpu_s": 53.465,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:41:20Z"
+  },
+  {
+   "kind": "request",
+   "index": 181,
+   "cpu_s": 41.127,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:42:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 182,
+   "cpu_s": 4.62,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:42:05Z"
+  },
+  {
+   "kind": "request",
+   "index": 183,
+   "cpu_s": 27.145,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:42:31Z"
+  },
+  {
+   "kind": "request",
+   "index": 184,
+   "cpu_s": 57.172,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:43:28Z"
+  },
+  {
+   "kind": "request",
+   "index": 185,
+   "cpu_s": 226.953,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:47:16Z"
+  },
+  {
+   "kind": "request",
+   "index": 186,
+   "cpu_s": 79.992,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:48:36Z"
+  },
+  {
+   "kind": "request",
+   "index": 187,
+   "cpu_s": 61.329,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:49:37Z"
+  },
+  {
+   "kind": "request",
+   "index": 188,
+   "cpu_s": 6.384,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:49:43Z"
+  },
+  {
+   "kind": "request",
+   "index": 189,
+   "cpu_s": 71.784,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:50:55Z"
+  },
+  {
+   "kind": "request",
+   "index": 190,
+   "cpu_s": 53.937,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:51:49Z"
+  },
+  {
+   "kind": "request",
+   "index": 191,
+   "cpu_s": 32.467,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:52:21Z"
+  },
+  {
+   "kind": "request",
+   "index": 192,
+   "cpu_s": 45.958,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:53:06Z"
+  },
+  {
+   "kind": "request",
+   "index": 193,
+   "cpu_s": 30.363,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:53:36Z"
+  },
+  {
+   "kind": "request",
+   "index": 194,
+   "cpu_s": 48.188,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:54:24Z"
+  },
+  {
+   "kind": "request",
+   "index": 195,
+   "cpu_s": 215.529,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:58:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 196,
+   "cpu_s": 36.089,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:58:36Z"
+  },
+  {
+   "kind": "request",
+   "index": 197,
+   "cpu_s": 7.463,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T07:58:43Z"
+  },
+  {
+   "kind": "request",
+   "index": 198,
+   "cpu_s": 197.962,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:02:01Z"
+  },
+  {
+   "kind": "request",
+   "index": 199,
+   "cpu_s": 53.401,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:02:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 200,
+   "cpu_s": 3.131,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:02:57Z"
+  },
+  {
+   "kind": "request",
+   "index": 201,
+   "cpu_s": 48.52,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:03:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 202,
+   "cpu_s": 37.272,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:04:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 203,
+   "cpu_s": 52.576,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:05:15Z"
+  },
+  {
+   "kind": "request",
+   "index": 204,
+   "cpu_s": 84.157,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:06:39Z"
+  },
+  {
+   "kind": "request",
+   "index": 205,
+   "cpu_s": 66.637,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:07:45Z"
+  },
+  {
+   "kind": "request",
+   "index": 206,
+   "cpu_s": 26.599,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:08:12Z"
+  },
+  {
+   "kind": "request",
+   "index": 207,
+   "cpu_s": 4.863,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:08:16Z"
+  },
+  {
+   "kind": "request",
+   "index": 208,
+   "cpu_s": 42.769,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:08:58Z"
+  },
+  {
+   "kind": "request",
+   "index": 209,
+   "cpu_s": 43.022,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:09:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 210,
+   "cpu_s": 33.369,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:10:14Z"
+  },
+  {
+   "kind": "request",
+   "index": 211,
+   "cpu_s": 47.413,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:11:01Z"
+  },
+  {
+   "kind": "request",
+   "index": 212,
+   "cpu_s": 21.498,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:11:23Z"
+  },
+  {
+   "kind": "request",
+   "index": 213,
+   "cpu_s": 17.118,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:11:39Z"
+  },
+  {
+   "kind": "request",
+   "index": 214,
+   "cpu_s": 71.118,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:12:50Z"
+  },
+  {
+   "kind": "request",
+   "index": 215,
+   "cpu_s": 38.884,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:13:29Z"
+  },
+  {
+   "kind": "request",
+   "index": 216,
+   "cpu_s": 99.624,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:15:09Z"
+  },
+  {
+   "kind": "request",
+   "index": 217,
+   "cpu_s": 27.827,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:15:36Z"
+  },
+  {
+   "kind": "request",
+   "index": 218,
+   "cpu_s": 17.89,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:15:54Z"
+  },
+  {
+   "kind": "request",
+   "index": 219,
+   "cpu_s": 50.821,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:16:44Z"
+  },
+  {
+   "kind": "request",
+   "index": 220,
+   "cpu_s": 58.645,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:17:43Z"
+  },
+  {
+   "kind": "request",
+   "index": 221,
+   "cpu_s": 48.726,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:18:31Z"
+  },
+  {
+   "kind": "request",
+   "index": 222,
+   "cpu_s": 41.386,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:19:13Z"
+  },
+  {
+   "kind": "request",
+   "index": 223,
+   "cpu_s": 144.706,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:21:38Z"
+  },
+  {
+   "kind": "request",
+   "index": 224,
+   "cpu_s": 40.488,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:22:18Z"
+  },
+  {
+   "kind": "request",
+   "index": 225,
+   "cpu_s": 4.942,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:22:22Z"
+  },
+  {
+   "kind": "request",
+   "index": 226,
+   "cpu_s": 41.152,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:23:03Z"
+  },
+  {
+   "kind": "request",
+   "index": 227,
+   "cpu_s": 33.548,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:23:37Z"
+  },
+  {
+   "kind": "request",
+   "index": 228,
+   "cpu_s": 4.621,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:23:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 229,
+   "cpu_s": 19.719,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:24:00Z"
+  },
+  {
+   "kind": "request",
+   "index": 230,
+   "cpu_s": 4.488,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:24:04Z"
+  },
+  {
+   "kind": "request",
+   "index": 231,
+   "cpu_s": 29.588,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:24:33Z"
+  },
+  {
+   "kind": "request",
+   "index": 232,
+   "cpu_s": 34.388,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:25:07Z"
+  },
+  {
+   "kind": "request",
+   "index": 233,
+   "cpu_s": 17.497,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:25:25Z"
+  },
+  {
+   "kind": "request",
+   "index": 234,
+   "cpu_s": 39.555,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:26:04Z"
+  },
+  {
+   "kind": "request",
+   "index": 235,
+   "cpu_s": 51.481,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:26:55Z"
+  },
+  {
+   "kind": "request",
+   "index": 236,
+   "cpu_s": 46.7,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:27:41Z"
+  },
+  {
+   "kind": "request",
+   "index": 237,
+   "cpu_s": 1.764,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:27:43Z"
+  },
+  {
+   "kind": "request",
+   "index": 238,
+   "cpu_s": 82.197,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:29:05Z"
+  },
+  {
+   "kind": "request",
+   "index": 239,
+   "cpu_s": 4.466,
+   "rc": 0,
+   "limit_s": 1800,
+   "at": "2026-11-16T08:29:09Z"
   }
  ],
- "total_s": 310.0
+ "total_s": 13104.547
 }
