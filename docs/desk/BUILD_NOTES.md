@@ -128,9 +128,9 @@ Designed and drawn, not yet served, each for a stated reason:
 ## How the Options Finder prices a view
 
 The Finder is a scenario calculator, not a recommendation. It reads one
-end-of-day options chain from EODHD for the session named on the page, never
+end-of-day options chain from EODHD for the session named on the page, not
 a live quote, and the page says which session and when the quote was taken.
-What it observes and what it models are kept apart: the bid, the ask, the open
+What it observes and what it computes are kept apart: the bid, the ask, the open
 interest and the close are observed; every value on your date is modelled.
 
 - **Screens.** Each contract in the window is dropped, and counted, under the
@@ -145,7 +145,7 @@ interest and the close are observed; every value on your date is modelled.
   5-year); announced dividends are paid at their last cum-dividend close.
 - **Pricing.** Each contract gets one volatility, solved from its own mid. A
   European value is a closed form; an American contract that theory shows is
-  never worth exercising early is priced the same way; an early-exercise
+  not worth exercising early at any point is priced the same way; an early-exercise
   premium bounded below a fifth of the tolerance lets the European value
   stand; everything else goes to a binomial lattice with a step on every
   calendar day, smoothed on the last step and on the step into each
@@ -166,7 +166,7 @@ interest and the close are observed; every value on your date is modelled.
 - **Events.** Macro releases from the stored calendar, dividends and earnings
   dates are placed against the session, your date and each expiry. Where
   earnings coverage is not reconciled through your date the page says earnings
-  dates are unknown, never that there are none. A delta the lattice cannot
+  dates are unknown, not that there are none. A delta the lattice cannot
   state to its accuracy, near the exercise value or with a dividend in its
   first days, is withheld with the reason in its cell.
 - **Limits of the work.** One scan runs at a time, and a scan that would pass
@@ -187,7 +187,7 @@ research engine, Tier 2, not serving: it keeps refining the same lattice until
 its own error estimate meets the pricing tolerance and states that estimate for
 each contract; where a proved early-exercise interval is narrow enough it
 returns the interval's midpoint, and a candidate outside the interval is
-refused, never clipped. On a frozen held-out test of 17,207 synthetic contracts
+refused, not clipped. On a frozen held-out test of 17,207 synthetic contracts
 (attempt 2, seed 20261102) no stated price or delta estimate was exceeded and
 no returned value fell outside its proved interval; per group, the one-sided
 95% upper limit on the miss rate was 0.13% to 0.24%. Those are empirical

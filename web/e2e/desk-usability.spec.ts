@@ -311,7 +311,7 @@ test.describe("desk usability", () => {
       await expect(groups.locator(".dk-nav-group")).toHaveText(["Market", "Research", "Trade", "About this build"]);
       await expect(groups.nth(0).getByRole("link")).toHaveText(["Overview", "Technicals", "Sectors", "Macro", "Regime"]);
       await expect(groups.nth(1).getByRole("link")).toHaveText(["Event Study", "Signal Ledger"]);
-      await expect(groups.nth(2).getByRole("link")).toHaveText(["Basket & Hedge", "Position Monitor"]);
+      await expect(groups.nth(2).getByRole("link")).toHaveText(["Basket & Hedge", "Options Finder", "Position Monitor"]);
       await expect(groups.nth(3)).toContainText("Data Pipeline · Build Notes");
       const current = side.getByRole("link", { name: "Signal Ledger" });
       await expect(current).toHaveAttribute("aria-current", "page");

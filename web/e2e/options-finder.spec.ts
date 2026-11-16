@@ -34,7 +34,7 @@ test.describe("options finder", () => {
     await expect(page.getByTestId("of-page")).toHaveAttribute("data-state", "idle");
     await page.getByTestId("of-method-link").click();
     await expect(page).toHaveURL(/\/desk\/build-notes#bn-how-the-options-finder-prices-a-view$/);
-    await expect(page.getByRole("heading", { level: 2, name: "How the Options Finder prices a view" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 3, name: "How the Options Finder prices a view" })).toBeVisible();
   });
 
   test("answered: the palette, the language, the session's close, and no sideways scroll on a desktop or a phone", async ({ page }) => {
