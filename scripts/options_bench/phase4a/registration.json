@@ -1,0 +1,142 @@
+{
+  "dev_seed": 20261116,
+  "doc": "docs/desk/OPTIONS_PHASE4A.md",
+  "generator_sha256": "dc540154f89c71ca5c4724645e07c49bf6aae62bbeae12ac161a621f9c3b6838",
+  "registered": "2026-11-16, before any Phase 4a measurement. Before freezing, two smoke runs of the generator under development (6 and then 24 development requests, Tier 1 only, checking that each request builds and scans) were made; after the first, the strike step range was widened from 1%-5% to 0.2%-5% of spot so that dense chains like an index ETF's are represented, and the thesis was drawn before pricing so that only the scanned rows are priced. No Tier 2 run and no comparison has been made.",
+  "reserved_seed": 20261117,
+  "size_rule": "pilot = first 24 dev requests; main run = first N, N the largest multiple of 24 <= 240 whose forecast fits the remaining CPU allowance (10 h aggregate) with a 2 h margin; the pilot is part of N; nothing is re-drawn",
+  "spec": {
+    "budget_log_uniform": [
+      300.0,
+      100000.0
+    ],
+    "calendar_through": "2029-06-29",
+    "commission": 0.65,
+    "curve": {
+      "DGS2": [
+        [
+          "2026-10-23",
+          3.7
+        ]
+      ],
+      "DGS3MO": [
+        [
+          "2026-10-23",
+          4.1
+        ]
+      ],
+      "DGS5": [
+        [
+          "2026-10-23",
+          3.8
+        ]
+      ]
+    },
+    "difficult": {
+      "below_intrinsic": 0.02,
+      "cheap_wings": 0.05,
+      "near_intrinsic": 0.05
+    },
+    "difficult_share": 0.3,
+    "dividends": {
+      "high_quarterly": 0.15,
+      "monthly": 0.1,
+      "none": 0.3,
+      "quarterly": 0.45
+    },
+    "fill": {
+      "ask": 0.8,
+      "mid": 0.2
+    },
+    "horizon_days": {
+      "far": [
+        120,
+        420,
+        0.3
+      ],
+      "mid": [
+        30,
+        120,
+        0.4
+      ],
+      "near": [
+        7,
+        30,
+        0.3
+      ]
+    },
+    "move": [
+      0.02,
+      0.3
+    ],
+    "oi": [
+      50,
+      5000
+    ],
+    "pricing": "lattice pair (2N, 4N), 2\u00b7h(4N) \u2212 h(2N), no dividend smoothing; cents around it",
+    "residual_q": [
+      0.0,
+      0.005
+    ],
+    "scan_months": {
+      "1": 0.3,
+      "12": 0.15,
+      "3": 0.3,
+      "6": 0.25
+    },
+    "session": "2026-10-23",
+    "shape": {
+      "leaps": 0.25,
+      "monthly": 0.35,
+      "short": 0.15,
+      "weekly": 0.25
+    },
+    "spot_log_uniform": [
+      10.0,
+      800.0
+    ],
+    "spread": {
+      "normal": [
+        0.005,
+        0.06
+      ],
+      "wide": [
+        0.08,
+        0.15
+      ],
+      "wide_share": 0.1
+    },
+    "strike_range": [
+      0.4,
+      1.8
+    ],
+    "strike_step_share_log_uniform": [
+      0.002,
+      0.05
+    ],
+    "version": "phase4a-pop-1",
+    "view": {
+      "down": 0.5,
+      "up": 0.5
+    },
+    "vol_level": [
+      0.12,
+      0.9
+    ],
+    "yield_range": {
+      "high_quarterly": [
+        0.04,
+        0.08
+      ],
+      "monthly": [
+        0.02,
+        0.06
+      ],
+      "quarterly": [
+        0.003,
+        0.03
+      ]
+    }
+  },
+  "spec_sha256": "dd709352f19b6cb87f5142d02d2782c41047019365a3d6edf056f687ece5e7fc"
+}
