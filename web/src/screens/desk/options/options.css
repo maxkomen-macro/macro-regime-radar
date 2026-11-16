@@ -295,3 +295,24 @@
   line-height: 1.5;
   color: var(--dk-t3);
 }
+
+/* ── The symbol field's suggestions (the site's SymbolSearch, Desk colors from .dk-isearch) ──
+   The search draws its field and list with inline styles, so the field's size and the list's width are set here
+   with !important to match the Finder's other inputs; the list is wider than the narrow field so each row shows its
+   name and listing, and never wider than the screen. */
+.of-isearch input {
+  min-height: 32px !important;
+  height: 32px;
+  padding: 0 10px !important;
+  border: 1px solid var(--dk-box) !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
+}
+.of-isearch [role="listbox"] {
+  right: auto !important;
+  min-width: 100%;
+  width: min(440px, calc(100vw - 32px));
+}
+.of-symbol-note {
+  margin: 0;
+}
