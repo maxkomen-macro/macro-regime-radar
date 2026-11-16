@@ -242,3 +242,4 @@ def test_the_guard_keeps_completed_lines_of_a_killed_child_and_names_the_interru
         ("A", "budget", "answered"), ("A", "offline", "incomplete: CPU limit"),
         ("B", "budget", "not run: earlier configuration interrupted"),
         ("B", "offline", "not run: earlier configuration interrupted")]
+    assert recs[1]["cpu_s"] is None and "request_cpu_s" in recs[1]

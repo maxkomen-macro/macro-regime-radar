@@ -124,6 +124,14 @@ def _children_cpu() -> float:
     return r.ru_utime + r.ru_stime
 
 
+def _whole(line: str) -> bool:
+    try:
+        json.loads(line)
+        return True
+    except ValueError:
+        return False
+
+
 def guarded(start: int, n: int, configs: list[str], limits: list[str], out: Path, ledger: Path = LEDGER,
             allowance_s: float = ALLOWANCE_S) -> int:
     with out.open("a") as f:
@@ -164,10 +172,17 @@ def guarded(start: int, n: int, configs: list[str], limits: list[str], out: Path
             if proc.returncode != 0:
                 killed = proc.returncode in (-signal.SIGXCPU, -signal.SIGKILL)
                 todo = [(c, l) for c in configs for l in limits if (c, l) not in done]
+                done_cpu = sum(float(json.loads(x).get("cpu_s") or 0) for x in lines if _whole(x))
                 for c, l in todo[:1]:
+                    # the child's CPU is metered for the whole request; the interrupted run's own share is not
+                    # measured, so it is never reported as that configuration's CPU (B-3)
                     f.write(json.dumps({"index": i, "config": c, "limit_name": l,
                                         "outcome": "incomplete: CPU limit" if killed else "failed: child",
-                                        "rc": proc.returncode, "cpu_s": used}) + "\n")
+                                        "rc": proc.returncode, "cpu_s": None, "request_cpu_s": round(used, 3),
+                                        "completed_cpu_s": round(done_cpu, 3),
+                                        "cpu_note": "request_cpu_s includes generation, start-up and the completed "
+                                                    "configurations; the interrupted one's own CPU is not measured"})
+                            + "\n")
                 for c, l in todo[1:]:
                     f.write(json.dumps({"index": i, "config": c, "limit_name": l, "outcome": "not run: earlier "
                                         "configuration interrupted", "rc": proc.returncode}) + "\n")
