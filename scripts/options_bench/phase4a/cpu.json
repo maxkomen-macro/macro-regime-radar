@@ -1,0 +1,17 @@
+{
+ "allowance_s": 36000,
+ "reserve_s": 900.0,
+ "entries": [
+  {
+   "kind": "external",
+   "cpu_s": 300.0,
+   "note": "smoke runs before registration and generator checks (not metered; upper estimate, about 3 to 5 minutes)"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 10.0,
+   "note": "bench smoke, request 0 under A and C, budget limit (3.8 s measured) plus key inspection"
+  }
+ ],
+ "total_s": 310.0
+}

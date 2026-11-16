@@ -43,3 +43,155 @@ def test_the_requests_are_synthetic_and_well_formed():
     assert all(0.01 <= row["bid"] <= row["ask"] for row in r.rows)
     kind = "call" if r.params["view"] == "up" else "put"
     assert {row["type"] for row in r.rows} == {kind}
+
+
+# ── the bench (docs/desk/OPTIONS_PHASE4A.md, sections 2 and 3) ──
+
+import ast  # noqa: E402
+import inspect  # noqa: E402
+import math  # noqa: E402
+
+from scripts.options_bench.phase4a import bench, rootfinding as rf  # noqa: E402
+from src.desk import options_finder as of  # noqa: E402
+from src.desk import options_math as om  # noqa: E402
+
+PATCHED = [(of, "Pricer"), (of, "calibrate_all"), (of, "implied_vols"), (of, "value_rows"), (of, "curve_pnl"),
+           (of, "lens_order"), (of, "pair_forward_gen"), (of, "_breakeven_gen"), (om, "drive"), (om, "iv_american_gen")]
+
+
+def _originals():
+    return {(m.__name__, n): getattr(m, n) for m, n in PATCHED}
+
+
+def _plain(answer):
+    return json.loads(json.dumps(answer, default=str, sort_keys=True))
+
+
+def test_configuration_a_answers_exactly_as_the_unpatched_finder():
+    req = pop.request(pop.DEV_SEED, 0)
+    plain = req.run()
+    got = bench.run_one(req, "A", of.WORK_LIMIT)
+    assert got["outcome"] == "answered"
+    assert _plain(got["answer"]) == _plain(plain)
+    assert got["pricer"].t2_answer == {} and got["pricer"].rf == []
+
+
+@pytest.mark.parametrize("config", ["A", "C", "D"])
+def test_every_substituted_attribute_is_restored_after_a_run(config):
+    before = _originals()
+    bench.run_one(pop.request(pop.DEV_SEED, 0), config, 10 ** 6,   # a small limit: refused part way through
+                  wrappers={"lens_order": lambda fn: (lambda *a, **k: fn(*a, **k))})
+    assert _originals() == before and bench._CURRENT == []
+
+
+def test_attributes_are_restored_after_a_failure():
+    class Boom:
+        def run(self, **kw):
+            raise RuntimeError("boom")
+    before = _originals()
+    got = bench.run_one(Boom(), "D", of.WORK_LIMIT)
+    assert got["outcome"] == "failed" and "boom" in got["error"]
+    assert _originals() == before and bench._CURRENT == []
+
+
+def test_the_implied_vols_copy_differs_from_the_finder_s_in_its_exempt_call_only():
+    orig = ast.parse(inspect.getsource(of.implied_vols))
+    ours = ast.parse(inspect.getsource(of.implied_vols))
+    calls = [n for n in ast.walk(ours) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+             and n.func.attr == "iv_european"]
+    assert len(calls) == 1
+    calls[0].func = ast.copy_location(ast.Name(id="_bench_iv_exempt", ctx=ast.Load()), calls[0].func)
+    ast.fix_missing_locations(ours)
+    assert ast.dump(orig) != ast.dump(ours)
+    assert rf.implied_vols.__code__.co_names != of.implied_vols.__code__.co_names
+    assert set(rf.implied_vols.__code__.co_names) - set(of.implied_vols.__code__.co_names) == {"_bench_iv_exempt"}
+    code = next(k for k in compile(ours, "x", "exec").co_consts if hasattr(k, "co_code"))
+    assert rf.implied_vols.__code__.co_code == code.co_code
+
+
+def test_a_tier2_outside_domain_refusal_is_in_domain_s_own_reason():
+    c = om.Context(False, 100.0, 100.0, 60, 0.04, 0.5, 0.3)   # residual yield beyond the validated ±10%
+    assert om.in_domain(c) == om.Q_DOMAIN_REASON
+    p = bench.SitePricer(of.Work(of.WORK_LIMIT), bench.CONFIGS["D"], bench.SiteStats())
+    assert p._tier2(c, "carry") == om.Q_DOMAIN_REASON
+
+
+def _value(v):
+    def f(x):
+        if False:
+            yield
+        return v(x)
+    return f
+
+
+def _drain(gen):
+    try:
+        while True:
+            next(gen)
+    except StopIteration as stop:
+        return stop.value
+
+
+def test_the_slope_probe_points_inward_at_the_validated_range_s_end():
+    # DR-09: a first-point root at the top of the range is probed below it, never outside
+    s, rho, xp = _drain(rf.slope_gen(_value(lambda x: 0.5 * (x - 1999.9)), lambda x: 0.001, 1999.9, None,
+                                     5.0, 2000.0, 0.5, 2.0, 100.0, +1, lambda x: om.Context(True, x, 100.0, 30, 0.0, 0.0, 0.3), 1))
+    assert xp < 1999.9 and math.isclose(s, 0.5 * (1 - rho)) and rho < 0.5
+
+
+def test_the_slope_probe_is_sized_by_the_slope_s_magnitude():
+    # DR-12: a put's breakeven slope is negative; h_target uses |delta|
+    s, rho, xp = _drain(rf.slope_gen(_value(lambda x: -0.1 * (x - 100.0)), lambda x: 0.01, 100.0, None,
+                                     5.0, 2000.0, -0.1, 0.1, 5.0, -1, lambda x: om.Context(False, x, 100.0, 30, 0.0, 0.0, 0.3), 1))
+    assert math.isclose(abs(xp - 100.0), 0.8) and math.isclose(rho, 0.25)
+
+
+def test_the_noise_stop_bracket_is_resolved_by_a_wider_probe():
+    # DR-11: A(σ) = 10σ, E = 0.001, bracket [.19995, .20004] within noise; the probe may leave it
+    s, rho, xp = _drain(rf.slope_gen(_value(lambda x: 10 * x - 2.0), lambda x: 0.001, 0.2, (0.19995, 0.20004),
+                                     0.001, 5.0, 10.0, 0.002, 0.05, +1, lambda x: om.Context(True, 100.0, 100.0, 30, 0.0, 0.0, x), 1))
+    assert xp is not None and (0.001 + 0.001) / s < 0.001
+
+
+def test_no_second_probe_and_no_probe_past_the_cap():
+    with pytest.raises(rf.Refused, match="slope not resolved"):
+        _drain(rf.slope_gen(_value(lambda x: 0.0), lambda x: 0.01, 1.0, None, 0.5, 2.0, 1.0, 0.01, 0.1, +1,
+                            lambda x: om.Context(True, 100.0, 100.0, 30, 0.0, 0.0, x), 1))
+    with pytest.raises(rf.Refused, match="evaluation cap"):
+        _drain(rf.slope_gen(_value(lambda x: x), lambda x: 0.01, 1.0, None, 0.5, 2.0, 1.0, 0.01, 0.1, +1,
+                            lambda x: om.Context(True, 100.0, 100.0, 30, 0.0, 0.0, x), 0))
+
+
+def test_an_exactly_solved_pair_is_accepted_after_one_evaluation():
+    # pass 2's DR-03 case: zero rates, no residual yield, no dividends, both legs exempt
+    p = bench.SitePricer(of.Work(of.WORK_LIMIT), bench.CONFIGS["C"], bench.SiteStats())
+    p.site = "carry"
+    c = om.Context(True, 100.0, 100.0, 60, 0.0, 0.0, 0.25)
+    call = om.european(c)
+    put = om.european(om.Context(False, 100.0, 100.0, 60, 0.0, 0.0, 0.25))
+    bench._CURRENT.append(p)
+    try:
+        got = om.drive({0: rf.pair_forward_gen(100.0, 100.0, call, put, 60, 0.0, ())}, p.values)[0]
+    finally:
+        bench._CURRENT.pop()
+    assert got is not None and math.isclose(got[0], 100.0, rel_tol=1e-12)
+    assert p.rf[-1]["evals"] == 1 and p.rf[-1]["conditioning"] == "not established"
+
+
+def test_the_cpu_guard_stops_before_a_request_it_cannot_afford(tmp_path):
+    from scripts.options_bench.phase4a import runner
+    ledger, out = tmp_path / "cpu.json", tmp_path / "out.jsonl"
+    runner.write_ledger({"entries": [{"kind": "external", "cpu_s": 9.6 * 3600}]}, ledger)
+    assert runner.guarded(0, 3, ["A"], ["budget"], out, ledger) == 3
+    recs = [json.loads(x) for x in out.read_text().splitlines()]
+    assert [r["index"] for r in recs] == [0, 1, 2] and {r["outcome"] for r in recs} == {"stopped: CPU allowance"}
+
+
+def test_the_cpu_guard_meters_a_child_and_keeps_its_answer(tmp_path):
+    from scripts.options_bench.phase4a import runner
+    ledger, out = tmp_path / "cpu.json", tmp_path / "out.jsonl"
+    assert runner.guarded(0, 1, ["A"], ["budget"], out, ledger) == 0
+    led = runner.read_ledger(ledger)
+    assert led["entries"][0]["kind"] == "request" and led["entries"][0]["cpu_s"] > 0 and led["total_s"] > 0
+    (rec,) = [json.loads(x) for x in out.read_text().splitlines()]
+    assert rec["outcome"] == "answered" and rec["config"] == "A"
