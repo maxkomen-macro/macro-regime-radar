@@ -311,3 +311,66 @@ def test_each_passed_row_carries_its_on_date_contexts_at_its_own_sigma():
             assert all(math.isclose(c["sigma"], rec["rows"][contract]["iv"], rel_tol=1e-9) for c in ctxs.values())
     assert all(c["t2"] is None for ctxs in a["row_contexts"].values() for c in ctxs.values())
     assert all(c["t2"] is not None for ctxs in d["row_contexts"].values() for c in ctxs.values())
+
+
+# ── the ranking trace (section 4) on hand-built records ──────────────────────────────────────────────────────────
+
+from scripts.options_bench.phase4a import trace as tr  # noqa: E402
+
+C1, C2 = "T261218P00100000", "T261218P00095000"
+
+
+def _rec(cfg, pnl, top, *, iv=0.2, t2=None, ctx_for=(C1, C2), d_sigma=None, fate=None):
+    ctx = {"call": False, "spot": 100.0, "strike": 100.0, "days": 30, "rho": 0.04, "q": 0.0, "sigma": iv, "divs": [],
+           "t2": t2}
+    rows = {c: {"iv": iv, "n": 1, "cost": 100.0, "pnl": {"target": v, "half": v, "flat": v}} for c, v in pnl.items()}
+    return {"index": 0, "config": cfg, "limit_name": "offline", "outcome": "answered", "rows": rows,
+            "row_contexts": {c: {m: dict(ctx) for m in ("target", "half", "flat")} for c in ctx_for if c in rows},
+            "eligibility": {"fate": fate or {}}, "lens_order": {"payoff": top}, "picks": {"payoff": top[0]},
+            "carry": [], "rf": ([] if d_sigma is None else
+                                [{"site": "iv", "call": False, "strike": 100.0, "sigma": iv, "d_sigma": d_sigma}])}
+
+
+def _payoff(recs):
+    return {k: v for k, v in tr.trace(recs, "offline")["classes"].items() if k.endswith(":payoff")}
+
+
+def test_the_trace_names_a_removed_candidate_and_the_row_it_displaced():
+    a = _rec("A", {C1: 1000.0, C2: 900.0}, [C1])
+    b = _rec("B", {C2: 900.0}, [C2], fate={C1: "unpriceable"})
+    out = tr.trace([a, b], "offline")
+    assert out["classes"]["B:payoff"] == {"pick: removed or added": 1, "left: removed or added": 1,
+                                          f"entered: {tr.DISPLACED}": 1}
+    assert out["removed_or_added_causes"]["B"] == {"B: unpriceable": 2}
+    assert out["unexplained"] == []
+
+
+def test_a_swap_inside_tier_2_s_stated_error_is_a_tie_and_one_outside_it_is_unexplained():
+    t2 = {"status": "unresolved: estimate above target", "estimate": 0.01, "value": None, "route": "x"}
+    a = _rec("A", {C1: 1000.0, C2: 999.5}, [C1])
+    near = _rec("B", {C1: 999.0, C2: 999.6}, [C2], t2=t2)
+    assert set(_payoff([a, near])["B:payoff"]) == {"pick: tie", "left: tie", "entered: tie"}
+    a = _rec("A", {C1: 1000.0, C2: 900.0}, [C1])
+    far = _rec("B", {C1: 800.0, C2: 900.0}, [C2], t2=t2)
+    out = tr.trace([a, far], "offline")
+    assert set(out["classes"]["B:payoff"]) == {"pick: unexplained", "left: unexplained", "entered: unexplained"}
+    assert {u["contract"] for u in out["unexplained"]} == {C1, C2}
+
+
+def test_a_swap_inside_the_stated_input_error_is_explained_by_inputs_and_one_outside_it_is_not():
+    # C2 has no on-date context (an expiry on the target date), so C's tie test cannot be stated for the pair
+    a = _rec("A", {C1: 1000.0, C2: 995.0}, [C1], ctx_for=(C1,))
+    c = _rec("C", {C1: 990.0, C2: 995.0}, [C2], ctx_for=(C1,), d_sigma=0.01)
+    assert set(_payoff([a, c])["C:payoff"]) == {"pick: explained by inputs", "left: explained by inputs",
+                                                "entered: explained by inputs"}
+    c = _rec("C", {C1: 990.0, C2: 995.0}, [C2], ctx_for=(C1,), d_sigma=1e-4)
+    assert set(_payoff([a, c])["C:payoff"]) == {"pick: unexplained", "left: unexplained", "entered: unexplained"}
+
+
+def test_a_pick_that_is_new_in_the_configuration_is_classed_as_added():
+    a = _rec("A", {C1: 1000.0}, [C1], fate={C2: "ranked out"})
+    b = _rec("B", {C1: 1000.0, C2: 1100.0}, [C2, C1])
+    out = tr.trace([a, b], "offline")
+    assert out["classes"]["B:payoff"]["pick: removed or added"] == 1
+    assert out["removed_or_added_causes"]["B"]["A: ranked out"] >= 1
+    assert out["unexplained"] == []

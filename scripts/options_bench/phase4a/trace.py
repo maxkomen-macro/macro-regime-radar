@@ -133,9 +133,11 @@ def _carry_changed(a: Run, c_run: Run, contract: str) -> bool:
 def classify(x: Run, a: Run, c_run: Run | None, lens: str, c: str, b: str | None) -> tuple[str, dict]:
     """The class of a rank change of contract c against partner b (the row it swapped places with)."""
     info = {"contract": c, "partner": b}
-    for run, other in ((x, a), (a, x)):
-        if c not in run.rows:
-            return "removed or added", {**info, "missing_in": run.cfg, "cause": run.fate.get(c, "not a candidate")}
+    for r in (c, b) if b != DISPLACED else (c,):   # a pick's partner is the other pick, which may be new
+        for run in (x, a):
+            if r is not None and r not in run.rows:
+                return "removed or added", {**info, "missing": r, "missing_in": run.cfg,
+                                            "cause": run.fate.get(r, "not a candidate")}
     if lens == "time":
         for run in (x, a):
             if float(run.rows[c]["pnl"]["target"]) < float(run.rows[c]["cost"]):
