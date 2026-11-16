@@ -140,12 +140,14 @@ def c2_fd(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUA
 
 
 def c2_fd_forced(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUANTITIES,
-                 depths=(3, 4, 5), cap=GR.REF_WORK_CAP) -> dict:
+                 depths=(3, 4, 5), cap=GR.REF_WORK_CAP, fine_time: bool = False) -> dict:
     """P3-AM6 C.3, the forced C2-FD control: the European FD study of each quantity, then its space study forced
     (from the shallow study's grid, space only) to each total space depth in `depths`, scored against the closed
     form at each depth: err, u = u_ref + u_bump, covered, the space GCI's kind and order, and whether the study
     would resolve there (within budgets and unflagged). The work budget is per quantity (the cap each time), as the
-    control measures the estimator, not the reference budget; solves are shared across depths."""
+    control measures the estimator, not the reference budget; solves are shared across depths.
+
+    `fine_time` (P3-AM7 E.3, C2-FD-F; gamma only): the forced depths use Part F (space levels at p_T, u_T in u)."""
     out = {}
     for k in quantities:
         sp = GR.spec(c, k, cfg)
@@ -158,13 +160,15 @@ def c2_fd_forced(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities
         try:
             f0 = GR.fd_study(r, c, sp)
             for d in depths:
-                f = GR.fd_study(r, c, sp, extend=f0, space_max=d, force=True)
+                f = GR.fd_study(r, c, sp, extend=f0, space_max=d, force=True, fine_time=fine_time)
                 tol, u = f["tol"], f["u_ref"] + f["u_bump"]
                 rows[d] = {"R": f["R"], "u": u, "tol": tol, "err": abs(f["R"] - ex), "covered": abs(f["R"] - ex) <= u,
                            "depth": f["grid"]["escalations"]["space"], "kind": f["space"]["kind"],
                            "order": f["space"]["order"], "flags": f["flags"],
                            "resolves": not f["flags"] and f["u_ref"] <= GR.U_REF_MAX * tol
                            and f["u_bump"] <= GR.U_BUMP_MAX * tol}
+                if fine_time:
+                    rows[d]["u_T"] = f["u_T"]
         except (GR.CapHit, GR.ReadOutside) as e:
             out[k] = {"status": "stopped", "detail": str(e), "exact": ex, "depths": rows,
                       "used": r.budget.used}

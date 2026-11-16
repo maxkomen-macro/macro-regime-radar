@@ -628,6 +628,276 @@ def test_a_solve_cached_by_an_extension_that_hit_the_cap_still_flags_its_next_re
     monkeypatch.setattr(GR, "fd_study", fake_fd)
     monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []})
     monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
-    out = GR.references(ctx(), quantities=(GR.PRICE, G.GAMMA), corroborate_q=False)
+    # pass3=False (P3-AM7): this test is about pass 2; gamma's pass 3 would replace its pass-2 entry (see
+    # test_a_solve_cached_in_pass_2_flags_gamma_s_part_f below for the same check through pass 3)
+    out = GR.references(ctx(), quantities=(GR.PRICE, G.GAMMA), corroborate_q=False, pass3=False)
     assert out[GR.PRICE]["deep"]["status"] == GR.R_DEEP_CAP
     assert "penalty iteration cap hit on 3 steps (deeper study)" in out[G.GAMMA]["status"]
+
+
+def test_a_solve_cached_in_pass_2_flags_gamma_s_part_f(monkeypatch):
+    """DR-AM6-8 through pass 3 (P3-AM7 E.4): a pass-2 solve whose extension then hit the cap is a cache hit for
+    gamma's Part F, charged nothing, and its penalty misses still flag Part F."""
+    _fake_kernel(monkeypatch, 1600)
+    deep_key = GR.Key(1600, 4, 1.0, fd.PENALTY)
+
+    def fake_fd(r, c, sp, escalate=True, extend=None, fine_time=False, **kw):
+        if extend is None:
+            return _f(u_ref=0.08, tol=1.0)
+        if fine_time:
+            r.fd(c, deep_key)                                      # cached by price's pass 2
+            return _f(u_ref=0.01)
+        if sp.name == GR.PRICE:
+            r.fd(c, deep_key)
+            raise GR.CapHit("after the deep solve")
+        return _f(u_ref=0.09)
+    monkeypatch.setattr(GR, "fd_study", fake_fd)
+    monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []})
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    out = GR.references(ctx(), quantities=(GR.PRICE, G.GAMMA), corroborate_q=False)
+    assert out["_work"]["fd_solves"] == 1
+    assert "penalty iteration cap hit on 3 steps (fine-time study)" in out[G.GAMMA]["status"]
+    assert out[G.GAMMA]["deep3"]["status"] == "ran"
+
+
+# ── P3-AM7 B.1: Part F, gamma's extension at the finest time level ─────────────
+
+def _fine_fake(monkeypatch, c, a=0.03, t_coef=0.0):
+    """Gamma flat in width and penalty; a step of a (tolerances, _tol = 1) at every space doubling from m0/4, so the
+    space study never converges and the shallow study is extension-eligible; plus t_coef·(m/m0)/p, a time error
+    that grows with the space level, as at T1/55. Records every (m, p, plain width and penalty) read."""
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    m0, p0, w = fd.grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma, 0.0)
+    m0 -= m0 % 16
+    reads = []
+
+    def fake(r, c_, sp_, k, half=False):
+        plain = k.w == w and k.pen == fd.PENALTY
+        reads.append((k.m, k.p, plain))
+        m = k.m if k.w == w else m0 // 2
+        return 1.0 + a * int(round(np.log2(m / (m0 // 4)))) + t_coef * (m / m0) / k.p
+    monkeypatch.setattr(GR, "_fd_q", fake)
+    return m0, p0, reads
+
+
+def test_part_f_is_for_gamma_s_extension_only(monkeypatch):
+    c = ctx()
+    _fine_fake(monkeypatch, c)
+    r = GR.Runner(GR.RefBudget())
+    sg, sv = GR.spec(c, G.GAMMA, G.GreekConfig()), GR.spec(c, G.VEGA, G.GreekConfig())
+    with pytest.raises(ValueError):
+        GR.fd_study(r, c, sg, fine_time=True)                                  # not an extension
+    fv = GR.fd_study(r, c, sv)
+    with pytest.raises(ValueError):
+        GR.fd_study(r, c, sv, extend=fv, fine_time=True)                       # not gamma
+
+
+def test_part_f_solves_the_space_levels_at_the_finest_time_level_and_adds_u_t(monkeypatch):
+    c = ctx()
+    m0, p0, reads = _fine_fake(monkeypatch, c, t_coef=0.5)
+    sp = GR.spec(c, G.GAMMA, G.GreekConfig())
+    r = GR.Runner(GR.RefBudget())
+    f = GR.fd_study(r, c, sp)
+    assert GR.extension_eligible(f) and f["grid"]["time_levels"][-1] == 8 * p0
+    p_t = f["grid"]["time_levels"][-1]
+    reads.clear()
+    f3 = GR.fd_study(r, c, sp, extend=f, fine_time=True)
+    assert f3["grid"]["space_time_level"] == p_t and f3["grid"]["time_levels"] == f["grid"]["time_levels"]
+    assert f3["grid"]["escalations"]["space"] == GR.SPACE_ESCALATE_MAX              # the same space limit
+    m_l = f3["grid"]["space_levels"][-1]
+    assert m_l == 2 ** GR.SPACE_ESCALATE_MAX * m0
+    space = {(m, p) for m, p, plain in reads if plain and m > m0}
+    finest = set(f3["grid"]["space_levels"][len(f["grid"]["space_levels"]) - 1:])   # each assessment's m_L
+    assert {p for m, p in space} == {p_t, p_t // 2}                                 # the space study at p_T
+    assert {m for m, p in space if p == p_t // 2} == finest                         # u_T at each finest level
+    assert {p for m, p, plain in reads if not plain} == {p0}                        # width and penalty at p0
+    u_t = 0.5 * (m_l / m0) * abs(1.0 / p_t - 2.0 / p_t)
+    assert f3["u_T"] == pytest.approx(u_t) and f3["u_ref"] >= u_t
+    assert f3["shallow"]["R"] == f["R"]
+    reads.clear()
+    f2 = GR.fd_study(r, c, sp, extend=f)                                           # P3-AM6's extension: p0
+    assert "u_T" not in f2 and "space_time_level" not in f2["grid"]
+    assert {p for m, p, plain in reads if plain and m > m0} == {p0}
+
+
+def test_part_f_stops_when_the_fine_time_study_is_within_budget(monkeypatch):
+    c = ctx()
+    m0, p0, _ = _fine_fake(monkeypatch, c, a=0.03)
+    sp = GR.spec(c, G.GAMMA, G.GreekConfig())
+    r = GR.Runner(GR.RefBudget())
+    f = GR.fd_study(r, c, sp)
+
+    def settle(r_, c_, sp_, k, half=False):                                        # flat everywhere: in budget
+        return 1.0
+    monkeypatch.setattr(GR, "_fd_q", settle)
+    f3 = GR.fd_study(r, c, sp, extend=f, fine_time=True)
+    assert f3["grid"]["escalations"]["space"] == f["grid"]["escalations"]["space"]  # no further level needed
+    assert f3["u_T"] == 0.0 and not f3["flags"] and f3["u_ref"] == pytest.approx(GR.REF_FLOOR)
+
+
+# ── P3-AM7 B.3: pass 3 after every quantity's pass 2 ─────────────────────────
+
+def _p3_fakes(monkeypatch, units=lambda name, kind: 0.0, fine=None):
+    """Pass-1 FD studies over budget and eligible; pass 2's extension still over budget (u 0.09); Part F within
+    budget unless `fine(r)` says otherwise. Each fake study charges units(name, kind) through the budget first.
+    The lattice agrees and is qualified. Records (name, kind, the study it extends)."""
+    calls = []
+
+    def fake_fd(r, c, sp, escalate=True, extend=None, fine_time=False, **kw):
+        kind = "fine" if fine_time else ("deep" if extend is not None else "shallow")
+        calls.append((sp.name, kind, None if extend is None else extend.get("tag")))
+        r.budget.take(units(sp.name, kind))
+        if kind == "shallow":
+            return {**_f(u_ref=0.08), "tag": "shallow"}
+        if kind == "deep":
+            return {**_f(u_ref=0.09), "tag": "deep"}
+        return fine(r) if fine else {**_f(u_ref=0.01), "u_T": 0.001}
+    monkeypatch.setattr(GR, "fd_study", fake_fd)
+    monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []})
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    return calls
+
+
+QS3 = (GR.PRICE, G.GAMMA, G.VEGA)
+
+
+def _strip(entry):
+    return {k: v for k, v in entry.items() if k != "deep3"}
+
+
+def test_pass_3_runs_part_f_for_gamma_only_after_every_pass_2_and_from_the_shallow_study(monkeypatch):
+    calls = _p3_fakes(monkeypatch)
+    out = GR.references(ctx(), quantities=QS3, corroborate_q=False)
+    assert calls == [(n, "shallow", None) for n in QS3] + [(n, "deep", "shallow") for n in QS3] + \
+        [(G.GAMMA, "fine", "shallow")]                                  # Part F extends pass 1, not pass 2
+    assert out[G.GAMMA]["status"] == GR.RESOLVED and out[G.GAMMA]["fd"]["u_ref"] == 0.01
+    assert out[G.GAMMA]["deep3"] == {"status": "ran", "part_f": True, "q_plus_plus": False}
+    calls.clear()
+    off = GR.references(ctx(), quantities=QS3, corroborate_q=False, pass3=False)
+    assert (G.GAMMA, "fine", "shallow") not in calls and "deep3" not in off[G.GAMMA]
+    assert off[G.GAMMA]["fd"]["u_ref"] == 0.09 and off[G.GAMMA]["status"].startswith("unresolved")
+    for k in (GR.PRICE, G.VEGA):
+        assert out[k] == off[k]
+    calls.clear()
+    GR.references(ctx(), quantities=QS3, corroborate_q=False, extend=False)
+    assert all(kind == "shallow" for _, kind, _ in calls)               # extend=False: pass 1 only
+
+
+def test_pass_3_needing_more_than_the_residual_keeps_gamma_s_pass_2_result(monkeypatch):
+    """E.4 (i): every non-gamma result identical with pass 3 on and off; gamma keeps its pass-2 entry."""
+    _p3_fakes(monkeypatch, units=lambda name, kind: 10.0 if kind == "fine" else 1.0)
+    on = GR.references(ctx(), quantities=QS3, corroborate_q=False, cap=7.0)
+    off = GR.references(ctx(), quantities=QS3, corroborate_q=False, cap=7.0, pass3=False)
+    assert on[G.GAMMA]["deep3"]["status"] == GR.R_DEEP_CAP and _strip(on[G.GAMMA]) == off[G.GAMMA]
+    assert on[G.GAMMA]["fd"]["u_ref"] == 0.09
+    for k in (GR.PRICE, G.VEGA):
+        assert on[k] == off[k]
+    assert on["_work"]["used"] == off["_work"]["used"] == 6.0
+
+
+@pytest.mark.parametrize("fine_units", [0.0, 1.0, 100.0])
+def test_a_non_gamma_extension_using_nearly_all_the_residual_is_the_same_with_pass_3_on_and_off(monkeypatch,
+                                                                                               fine_units):
+    """E.4 (ii): vega's pass-2 extension, after gamma's, takes all that is left; pass 3 spends less, the same or
+    more than gamma's pass-2 extension, and vega's result is unchanged."""
+    def units(name, kind):
+        if kind == "fine":
+            return fine_units
+        return 5.0 if (name, kind) == (G.VEGA, "deep") else 1.0
+    _p3_fakes(monkeypatch, units=units)
+    cap = 3.0 + 1.0 + 1.0 + 5.0
+    on = GR.references(ctx(), quantities=QS3, corroborate_q=False, cap=cap)
+    off = GR.references(ctx(), quantities=QS3, corroborate_q=False, cap=cap, pass3=False)
+    assert "deep" not in off[G.VEGA] and off[G.VEGA]["fd"]["tag"] == "deep"         # vega's extension ran
+    for k in (GR.PRICE, G.VEGA):
+        assert on[k] == off[k]
+    want = "ran" if fine_units == 0.0 else GR.R_DEEP_CAP
+    assert on[G.GAMMA]["deep3"]["status"] == want
+
+
+def _q_fakes(monkeypatch, g_pp, cap_on_pp=False, take_units=0.0):
+    """Q unqualified after Q+ for every quantity; Q++ (gamma) returns g_pp qualified, or hits the cap."""
+    from scripts.options_bench import ql_escrowed as qe
+    seen = []
+    lv = list(qe.LEVELS) + [qe.ESCALATE]
+
+    def fake_study(c, sp, tol, american=True, take=None, cache=None, extend=None, deepen=None, **kw):
+        kind = "plus" if extend is not None else ("pp" if deepen is not None else "base")
+        seen.append((sp.name, kind))
+        if kind == "base":
+            return {"G": 1.3, "u_ref": None, "u_bump": 0.0, "flags": [qe.R_NOT_CONVERGING], "levels": lv,
+                    "values": [1.0] * 4, "branch": None}
+        if kind == "plus":
+            return {"G": 1.3, "u_ref": None, "u_bump": 0.0, "flags": [qe.R_NOT_CONVERGING],
+                    "levels": lv + [qe.EXTRA], "values": [1.0] * 5, "branch": None}
+        take(take_units)
+        if cap_on_pp:
+            raise GR.CapHit("Q++")
+        return {"G": g_pp, "u_ref": 0.02, "u_bump": 0.0, "flags": [], "levels": lv + [qe.EXTRA, qe.DEEP[0]],
+                "values": [1.0] * 5 + [g_pp], "branch": None}
+    monkeypatch.setattr(qe, "study", fake_study)
+    return seen
+
+
+@pytest.mark.parametrize("g_pp,want", [(1.05, "agree"), (1.2, "disagree")])
+def test_q_plus_plus_runs_for_gamma_only_after_q_plus_and_a_disagreeing_q_plus_plus_blocks(monkeypatch, g_pp,
+                                                                                          want):
+    from scripts.options_bench import ql_escrowed as qe
+    monkeypatch.setattr(GR, "fd_study", lambda r, c, sp, escalate=True, extend=None, **kw: _f(u_ref=0.01, esc=(0, 0)))
+    monkeypatch.setattr(GR, "lattice_seq", lambda r, c, sp, tol: {"G": 1.0, "u_seq": 0.01, "u_bump": 0.0, "flags": []})
+    monkeypatch.setattr(GR, "_tol", lambda name, value, spot: 1.0)
+    seen = _q_fakes(monkeypatch, g_pp)
+    out = GR.references(ctx(), quantities=(G.GAMMA, G.VEGA))
+    assert seen == [(G.GAMMA, "base"), (G.VEGA, "base"), (G.GAMMA, "plus"), (G.VEGA, "plus"), (G.GAMMA, "pp")]
+    assert out[G.GAMMA]["q"]["levels"][-1] == qe.DEEP[0] and out[G.VEGA]["q"]["levels"][-1] == qe.EXTRA
+    assert out[G.GAMMA]["deep3"] == {"status": "ran", "part_f": False, "q_plus_plus": True}
+    assert out[G.VEGA]["status"] == GR.RESOLVED and "deep3" not in out[G.VEGA]
+    if want == "agree":
+        assert out[G.GAMMA]["status"] == GR.RESOLVED and out[G.GAMMA]["u"] == pytest.approx(0.05)
+    else:
+        assert out[G.GAMMA]["status"].startswith("unresolved") and GR.R_DISAGREE in out[G.GAMMA]["status"]
+
+
+def test_every_pass_3_solve_is_charged_before_it_runs_even_when_pass_3_then_fails(monkeypatch):
+    """E.4 (iii): Part F's charge fits, Q++ then needs more than is left: pass 3 is discarded, gamma keeps its
+    pass-2 entry with R_DEEP_CAP, and the work Part F spent stays in the record."""
+    _p3_fakes(monkeypatch, units=lambda name, kind: 2.0 if kind == "fine" else 1.0)
+    _q_fakes(monkeypatch, 1.0, take_units=100.0)
+    on = GR.references(ctx(), quantities=(G.GAMMA, G.VEGA), cap=10.0)
+    off = GR.references(ctx(), quantities=(G.GAMMA, G.VEGA), cap=10.0, pass3=False)
+    assert on[G.GAMMA]["deep3"]["status"] == GR.R_DEEP_CAP
+    assert on[G.GAMMA]["deep3"]["part_f"] and on[G.GAMMA]["deep3"]["q_plus_plus"]
+    assert _strip(on[G.GAMMA]) == off[G.GAMMA] and on[G.VEGA] == off[G.VEGA]
+    assert on["_work"]["used"] == off["_work"]["used"] + 2.0                       # Part F's spent work counted
+
+
+def test_the_european_control_runs_part_f_for_gamma(monkeypatch):
+    calls = _p3_fakes(monkeypatch)
+    out = GR.references(ctx(), quantities=(G.GAMMA, G.VEGA), american=False)
+    assert (G.GAMMA, "fine", "shallow") in calls and (G.VEGA, "fine", "shallow") not in calls
+    assert out[G.GAMMA]["status"] == "FD only (European control)" and out[G.GAMMA]["fd"]["u_ref"] == 0.01
+    assert out[G.VEGA]["fd"]["u_ref"] == 0.09
+
+
+def test_pass_3_leaves_every_reference_of_a_real_context_unchanged_when_it_does_not_fire():
+    c = ctx(divs=((20, 1.0),))
+    on = GR.references(c, corroborate_q=False)
+    off = GR.references(c, corroborate_q=False, pass3=False)
+    for k in GR.QUANTITIES:
+        assert "deep3" not in on[k] or not on[k]["deep3"]["part_f"]
+        if "deep3" not in on[k]:
+            assert repr(on[k]) == repr(off[k])
+
+
+def test_the_forced_c2_fd_f_control_reads_every_depth_at_the_finest_time_level(monkeypatch):
+    from scripts.options_bench import controls_p3 as C
+    c = ctx()
+    m0, p0, reads = _fine_fake(monkeypatch, c, t_coef=0.5)
+    monkeypatch.setattr(C, "exact", lambda c_, k: 1.0)
+    out = C.c2_fd_forced(c, quantities=(G.GAMMA,), fine_time=True)[G.GAMMA]
+    assert out["status"] == "scored" and [out["depths"][d]["depth"] for d in (3, 4, 5)] == [3, 4, 5]
+    for d in (3, 4, 5):
+        row = out["depths"][d]
+        assert row["u_T"] == pytest.approx(0.5 * 2 ** d / (8 * p0) * 1.0) and row["u"] >= row["u_T"]
+    plain = C.c2_fd_forced(c, quantities=(G.GAMMA,))[G.GAMMA]
+    assert all("u_T" not in row for row in plain["depths"].values())

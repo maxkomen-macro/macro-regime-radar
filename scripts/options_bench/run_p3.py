@@ -134,7 +134,11 @@ def one(args) -> dict:
                            "shallow": {kk: ((v.get("fd") or {}).get("shallow") or {}).get(kk)
                                        for kk in ("R", "u_ref", "u_bump", "flags")}
                            if (v.get("fd") or {}).get("shallow") is not None else None,
-                           "deep": v.get("deep")}
+                           "deep": v.get("deep"),
+                           # P3-AM7: pass 3 (gamma's Part F and Q++), its fine-grid time term and space time level
+                           "deep3": v.get("deep3"),
+                           "u_T": (v.get("fd") or {}).get("u_T"),
+                           "space_time_level": ((v.get("fd") or {}).get("grid") or {}).get("space_time_level")}
                        for k, v in refs.items()}
         t0 = time.time()
         pr = reference.reference(case)

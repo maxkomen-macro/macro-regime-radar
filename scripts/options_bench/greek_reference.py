@@ -272,7 +272,7 @@ def _tol(name: str, value: float, spot: float) -> float:
 # ── the FD side: reference.py's study, run on the quantity itself ──────────
 
 def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True, extend: dict | None = None,
-             space_max: int = SPACE_ESCALATE_MAX, force: bool = False) -> dict:
+             space_max: int = SPACE_ESCALATE_MAX, force: bool = False, fine_time: bool = False) -> dict:
     """R_FD, u_FD,ref (time, space, width, penalty; GCI, the time order capped at 1 for American values),
     u_FD,bump and the flags. Raises CapHit when the budget runs out.
 
@@ -282,7 +282,16 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True, extend: 
     the final assessment's (the caller adds penalty misses), and the shallow result is kept under "shallow".
     `space_max` and `force` serve the forced C2-FD control only (controls_p3.c2_fd_forced): the extension runs to
     `space_max` space escalations in total whatever the trigger says (the width-and-penalty stop still applies).
-    References always use the defaults."""
+    References always use the defaults.
+
+    `fine_time` (P3-AM7 B.1, Part F; gamma only, and only with `extend`): the extension's space levels are solved
+    at the shallow study's finest time level p_T = t_levels[-1] instead of p0 (base and space correction at the
+    same level), and every assessment adds the fine-grid time term u_T = |G(m_L, p_T) − G(m_L, p_T/2)| at the
+    finest space level m_L to u_ref. Holding p0 while the space step halves raises the mesh ratio fourfold per
+    doubling, and Crank-Nicolson then lets gamma oscillate (T1/55); the time study, run at m0, cannot see it.
+    The width and penalty terms stay at p0; the trigger, the space limit, the stop and the flags are unchanged."""
+    if fine_time and (extend is None or sp.name != G.GAMMA):
+        raise ValueError("the fine-time extension (P3-AM7 Part F) is for gamma's extension only")
     m0, p0, w = fd.grid_rule(c.spot, c.strike, c.days, c.rho, c.q, c.sigma, fd.pv_owed(c.divs, c.rho, 0.0))
     m0 -= m0 % 16
     if extend is None:
@@ -291,6 +300,7 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True, extend: 
     else:
         g = extend["grid"]
         t_levels, s_levels, steps = list(g["time_levels"]), list(g["space_levels"]), dict(g["escalations"])
+    p_s = t_levels[-1] if fine_time else p0      # the time level the space study solves at (Part F: p_T)
 
     def q(m, p, ww=w, pen=fd.PENALTY):
         return _fd_q(r, c, sp, Key(m, p, ww, pen))
@@ -303,14 +313,18 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True, extend: 
         flat = 1e-12 * (c.spot if sp.name == PRICE else max(abs(base), _tol(sp.name, base, c.spot)))
         t = ref.gci(*(q(m0, x) for x in pt), flat,
                     cap=ref.ORDER_CAP_TIME_AMERICAN if r.american else ref.ORDER_CAP)
-        sp_ = ref.gci(*(q(x, p0) for x in ms), flat)
-        s_corr = q(ms[-1], p0) - q(m0, p0) + sp_["corr"]
+        sp_ = ref.gci(*(q(x, p_s) for x in ms), flat)
+        s_corr = q(ms[-1], p_s) - q(m0, p_s) + sp_["corr"]
         w1 = abs(q(3 * m0 // 4, p0, ref.WIDTH_FACTOR * w) - q(m0 // 2, p0, w))
         w2 = abs(q(9 * m0 // 8, p0, ref.WIDTH_FACTOR ** 2 * w) - q(3 * m0 // 4, p0, ref.WIDTH_FACTOR * w))
         u_p = abs(q(m0 // 4, p0, w, ref.PENALTY_LOW) - q(m0 // 4, p0, w)) / (fd.PENALTY / ref.PENALTY_LOW - 1.0)
         R = base + t["corr"] + s_corr
         tol = _tol(sp.name, R, c.spot)
-        u_ref = max(t["u"] + sp_["u"] + w1 + w2 + u_p, REF_FLOOR * tol)
+        if fine_time:   # Part F: the time-stepping error at the finest space level, which the time study misses
+            u_t = abs(q(ms[-1], p_s) - q(ms[-1], p_s // 2))
+            u_ref = max(t["u"] + sp_["u"] + w1 + w2 + u_p + u_t, REF_FLOOR * tol)
+        else:
+            u_ref = max(t["u"] + sp_["u"] + w1 + w2 + u_p, REF_FLOOR * tol)
         flags = [f"{sp.name} {x[1]['kind']} in {x[0]}" for x in (("time", t), ("space", sp_))
                  if x[1]["kind"] in ref.BAD_KINDS and x[1]["u"] > ref.NEGLIGIBLE * U_REF_MAX * tol]
         if w2 > ref.WIDTH_SETTLED * w1 and w2 > ref.NEGLIGIBLE * U_REF_MAX * tol:
@@ -326,8 +340,11 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True, extend: 
             # it measures the bump's own truncation
             mb, pb = s_levels[-1], t_levels[-1]
             u_bump = abs(q(mb, pb) - _fd_q(r, c, sp, Key(mb, pb, w, fd.PENALTY), half=True))
-        return {"R": R, "u_ref": u_ref, "u_bump": u_bump, "tol": tol, "time": t, "space": sp_,
-                "width_steps": [w1, w2], "u_penalty": u_p, "raw_finest": base, "flags": flags}
+        res = {"R": R, "u_ref": u_ref, "u_bump": u_bump, "tol": tol, "time": t, "space": sp_,
+               "width_steps": [w1, w2], "u_penalty": u_p, "raw_finest": base, "flags": flags}
+        if fine_time:
+            res["u_T"] = u_t
+        return res
 
     out = assess()
     if extend is not None:
@@ -338,6 +355,8 @@ def fd_study(r: Runner, c: om.Context, sp: Spec, escalate: bool = True, extend: 
             out = assess()
         out["grid"] = {"m": m0, "p": p0, "width": w, "time_levels": list(t_levels), "space_levels": list(s_levels),
                        "escalations": steps}
+        if fine_time:
+            out["grid"]["space_time_level"] = p_s
         out["shallow"] = {k: v for k, v in extend.items() if k != "shallow"}
         return out
     while escalate and (out["flags"] or out["u_ref"] > U_REF_MAX * out["tol"]
@@ -511,10 +530,14 @@ def _fd_only(f: dict) -> dict:
 
 def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=QUANTITIES, american: bool = True,
                cap: float = REF_WORK_CAP, smooth_divs: bool = False, corroborate_q: bool | None = None,
-               extend: bool = True) -> dict:
+               extend: bool = True, pass3: bool = True) -> dict:
     """Every requested quantity's reference for context c, under one aggregate budget. `american=False` is the
     C2 FD adequacy control: the FD study in European mode, no lattice side, scored against closed forms.
-    `corroborate_q` (default CORROBORATE_Q): Q runs for every quantity and section D of P3-AM2 resolves."""
+    `corroborate_q` (default CORROBORATE_Q): Q runs for every quantity and section D of P3-AM2 resolves.
+
+    Pass 1 runs every quantity's shallow studies; pass 2 (P3-AM6, `extend`) the deeper FD space study and Q+;
+    pass 3 (P3-AM7 B.3, `extend` and `pass3`) gamma's Part F and Q++, after pass 2 has finished for every
+    quantity, so nothing in passes 1 and 2 depends on it. `pass3=False` reproduces the P3-AM6 references."""
     t0 = time.time()
     budget = RefBudget(cap)
     r = Runner(budget, american, smooth_divs)
@@ -563,6 +586,7 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
         passes[name] = (sp, f, lat, qs)
     # P3-AM6 B.3 pass 2: the extensions, in quantity order, with whatever budget pass 1 left; a quantity whose
     # extension hits the cap keeps its pass-1 result
+    after2 = {name: (f, qs) for name, (sp, f, lat, qs) in passes.items()}   # each side as pass 2 leaves it
     for name, (sp, f, lat, qs) in passes.items():
         do_fd = extend and extension_eligible(f)
         do_q = extend and qs is not None and qe.extra_eligible(qs)
@@ -584,6 +608,7 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
             why = R_DEEP_CAP if isinstance(e, CapHit) else f"deeper study stopped: {R_READ}"
             out[name] = {**out[name], "deep": {"status": why, "detail": str(e)}}
             continue
+        after2[name] = (f2, qs2)
         if not american:
             out[name] = _fd_only(f2)
             continue
@@ -591,6 +616,49 @@ def references(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=Q
         out[name] = {**res, "fd": f2, "lattice": lat}
         if qs2 is not None:
             out[name]["q"] = qs2
+    if extend and pass3 and G.GAMMA in passes:
+        _pass3(r, c, passes[G.GAMMA], after2[G.GAMMA], out, american, q_take, q_cache)
     out["_work"] = {"used": budget.used, "cap": budget.cap, "fd_solves": budget.fd_solves,
                     "lattice_calls": budget.lattice_calls, "q_cells": q_cells[0], "secs": time.time() - t0}
     return out
+
+
+def _pass3(r: Runner, c: om.Context, p1: tuple, p2: tuple, out: dict, american: bool, q_take, q_cache: dict) -> None:
+    """P3-AM7 B.3, pass 3, gamma only, after pass 2 has finished for every quantity. Part F (B.1) when gamma's
+    pass-1 shallow study is extension-eligible, starting from that shallow study; then Q++ (B.2) when gamma's Q
+    after pass 2 is completed at 512..8192 and still unqualified; then rule D on (Part F's FD side if it ran, else
+    pass 2's; the lattice; Q after Q++ if it ran, else after pass 2). Every solve is charged before it runs. A
+    CapHit or ReadOutside anywhere in pass 3 discards all of it: gamma keeps its pass-2 entry with `deep3` naming
+    why; the spent work stays in the budget's record."""
+    name = G.GAMMA
+    sp, f, lat, _qs1 = p1
+    f2, qs2 = p2
+    do_f = extension_eligible(f)
+    do_qq = qs2 is not None and qe.deep_eligible(qs2)
+    if not (do_f or do_qq):
+        return
+    try:
+        if do_f:
+            r.track()
+            try:
+                f3 = fd_study(r, c, sp, extend=f, fine_time=True)
+            finally:
+                misses = r.penalty_in_tracked()
+            if misses:   # every solve Part F read, the shallow levels' included (DR-AM6-8)
+                f3["flags"].append(f"penalty iteration cap hit on {misses} steps (fine-time study)")
+        else:
+            f3 = f2
+        qs3 = qe.study(c, sp, f["tol"], True, q_take, q_cache, deepen=qs2) if do_qq else qs2
+    except (CapHit, ReadOutside) as e:
+        why = R_DEEP_CAP if isinstance(e, CapHit) else f"deeper study stopped: {R_READ}"
+        out[name] = {**out[name], "deep3": {"status": why, "detail": str(e), "part_f": do_f, "q_plus_plus": do_qq}}
+        return
+    deep3 = {"status": "ran", "part_f": do_f, "q_plus_plus": do_qq}
+    kept = {k: out[name][k] for k in ("deep",) if k in out[name]}     # a pass-2 rollback stays on the record
+    if not american:
+        out[name] = {**_fd_only(f3), **kept, "deep3": deep3}
+        return
+    res = resolve(f3["tol"], f3, lat, qs3)
+    out[name] = {**res, "fd": f3, "lattice": lat, **kept, "deep3": deep3}
+    if qs3 is not None:
+        out[name]["q"] = qs3
