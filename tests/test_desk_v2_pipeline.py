@@ -195,6 +195,19 @@ def test_each_row_carries_its_registry_or_raw_series_fields(hermetic, monkeypatc
             assert r["feeds"] == [] and r["note"].endswith(pipe.NO_LIVE_READER[sid]), (sid, r["note"])
 
 
+def test_no_note_calls_basket_and_hedge_unserved():
+    """Basket & Hedge is served (it reads EODHD when a basket is priced), so no row note, served or in the
+    web fixture, may still say it is not served (2026-11-16 release audit)."""
+    import json
+
+    fixture = Path(__file__).resolve().parents[1] / "web/src/fixtures/desk/pipeline.json"
+    notes = list(pipe.NO_LIVE_READER.values())
+    notes += [r.get("note") or "" for g in json.loads(fixture.read_text())["groups"] for r in g["series"]]
+    stale = [n for n in notes if re.search(r"Basket & Hedge (is )?not served|Basket & Hedge serves nothing", n)]
+    assert stale == []
+    assert "Basket & Hedge is not served" not in (pipe.tab_readers.__doc__ or "")
+
+
 def test_pipeline_providers_are_each_rows_declaration(tmp_path, install_worker, monkeypatch):
     """R-15: every row, stored or not (the tier-2 series, the prices, which this
     store lacks), names its registry source declaration; the stored rows' own
