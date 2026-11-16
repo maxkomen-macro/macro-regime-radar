@@ -234,6 +234,11 @@ def c2_q(c: om.Context, cfg: G.GreekConfig = G.GreekConfig(), quantities=GR.QUAN
                 q, deep = qe.study(c, sp, tol, False, budget.take, cache, extend=q), {"ran": True}
             except GR.CapHit as e:               # the shallow study stands, as in references' pass 2
                 deep = {"status": GR.R_DEEP_CAP, "detail": str(e)}
+        if k == G.GAMMA and qe.deep_eligible(q):   # P3-AM7 B.2/B.3: Q++ by the same test, after every Q+
+            try:
+                q, deep = qe.study(c, sp, tol, False, budget.take, cache, deepen=q), {**(deep or {}), "q_plus_plus": True}
+            except GR.CapHit as e:               # the study as Q+ left it stands, as in references' pass 3
+                deep = {**(deep or {}), "deep3": GR.R_DEEP_CAP, "detail3": str(e)}
         if q["G"] is None or q["u_ref"] is None:
             out[k] = {"status": "unresolved: " + "; ".join(q["flags"]), "levels": q["levels"], "values": q["values"],
                       "deep": deep}

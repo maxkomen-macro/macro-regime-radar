@@ -42,6 +42,9 @@ LEVELS = (512, 1024, 2048)   # mesh sizes n; spd = ceil(512 / days)·n/512 (P3-A
 ESCALATE = 4096              # the one extra level when LEVELS leave Q unqualified (section C)
 EXTRA = 8192                 # P3-AM6 B.2 (Q+): one more level when the escalation and the alternating estimate
                              # still leave Q unqualified; run as pass 2 of greek_reference.references (B.3)
+DEEP = (16384, 32768)        # P3-AM7 B.2 (Q++): up to two more levels for gamma only, when Q after Q+ is completed
+                             # at 512..8192 and still unqualified; run as pass 3 of greek_reference.references.
+                             # Never 65536: at that level G6/118's first-order sequence broke (ratio 1.19, A.3)
 DAMPING = 2
 FLOOR = 0.02                 # reference floor, of tol (= greek_reference.REF_FLOOR)
 RHO_MAX = 0.75               # slower than this is "not converging"
@@ -242,20 +245,48 @@ def extra_eligible(qs: dict) -> bool:
             and tuple(qs.get("levels") or ()) == LEVELS + (ESCALATE,))
 
 
+def deep_eligible(qs: dict) -> bool:
+    """P3-AM7 B.2, the Q++ test: a completed study (not refused) whose levels are 512..8192 (Q+ ran) and that
+    still left Q unqualified. Whether the reference resolved plays no part."""
+    return (bool(qs.get("flags")) and not any(f.startswith(R_REFUSED) for f in qs["flags"])
+            and tuple(qs.get("levels") or ()) == LEVELS + (ESCALATE, EXTRA))
+
+
+def _finish(seq: list, flags: list, u, tol: float, u_ref_max: float):
+    """(G, branch, flags, u) after rule C: when rule C left the refinement unqualified, P3-AM4's alternating
+    estimate on the last four levels; the bump flags stand either way."""
+    g, branch = seq[-1], None
+    bump_flags = [f for f in flags if f.startswith("Q bump")]
+    if len(flags) > len(bump_flags):       # rule C left the refinement unqualified: P3-AM4's two branches
+        got = estimate4(seq[-4:], tol)
+        if got is not None and got[2] <= u_ref_max * tol:
+            branch, g, u = got
+            flags = bump_flags
+    return g, branch, flags, u
+
+
 def study(c: om.Context, sp, tol: float, american: bool = True, take=None, cache: dict | None = None,
-          u_ref_max: float = 0.07, u_bump_max: float = 0.03, extend: dict | None = None) -> dict:
+          u_ref_max: float = 0.07, u_bump_max: float = 0.03, extend: dict | None = None,
+          deepen: dict | None = None) -> dict:
     """Q on one quantity (section C): levels LEVELS, then the one escalation to ESCALATE when unqualified.
     Returns G, u_ref, u_bump, flags (non-empty: Q is not qualified), the levels and values. A QuantLib error or a
     non-finite value is "Q refused"; the budget's CapHit propagates to the caller, as for the FD and lattice.
 
     `extend` (P3-AM6 B.2 step 3, Q+): a study of the same quantity that `extra_eligible` admits. Its levels and
     values are kept, the level EXTRA is added, rule C runs on 2048, 4096, 8192 with the bump term at 8192, then the
-    alternating estimate on the last four levels when rule C leaves Q unqualified. The result is Q's either way."""
+    alternating estimate on the last four levels when rule C leaves Q unqualified. The result is Q's either way.
+
+    `deepen` (P3-AM7 B.2, Q++; gamma only): a study that `deep_eligible` admits. Its levels and values are kept,
+    then the levels DEEP are added one at a time, each assessed exactly as Q+ (rule C on the last three levels,
+    then the alternating estimate on the last four), stopping at the first level where Q qualifies. Each new
+    solve is charged through `take` before it runs; a CapHit propagates to the caller."""
     if ql is None:
         return {"G": None, "u_ref": None, "u_bump": None, "flags": [f"{R_REFUSED}: QuantLib not installed"],
                 "levels": [], "values": []}
     if extend is not None and not extra_eligible(extend):     # a caller's error, never reported as "Q refused"
         raise ValueError("Q+ needs a completed study that escalated to 4096 and stayed unqualified")
+    if deepen is not None and (extend is not None or sp.name != G.GAMMA or not deep_eligible(deepen)):
+        raise ValueError("Q++ is for gamma, on a completed study through 8192 that stayed unqualified")
     cache = {} if cache is None else cache
     ns, seq = [], []
 
@@ -275,7 +306,7 @@ def study(c: om.Context, sp, tol: float, american: bool = True, take=None, cache
         return u, ub, flags
 
     try:
-        if extend is None:
+        if extend is None and deepen is None:
             for n in LEVELS:
                 seq.append(level(n))
                 ns.append(n)
@@ -284,19 +315,23 @@ def study(c: om.Context, sp, tol: float, american: bool = True, take=None, cache
                 seq.append(level(ESCALATE))
                 ns.append(ESCALATE)
                 u, ub, flags = assess(seq[-3:], ESCALATE)
-        else:
+        elif extend is not None:
             ns, seq = list(extend["levels"]), list(extend["values"])
             seq.append(level(EXTRA))
             ns.append(EXTRA)
             u, ub, flags = assess(seq[-3:], EXTRA)
+        else:
+            ns, seq = list(deepen["levels"]), list(deepen["values"])
+            for n in DEEP:
+                seq.append(level(n))
+                ns.append(n)
+                u, ub, flags = assess(seq[-3:], n)
+                g, branch, flags, u = _finish(seq, flags, u, tol, u_ref_max)
+                if not flags:
+                    break
+            return {"G": g, "u_ref": u, "u_bump": ub, "flags": flags, "levels": ns, "values": seq, "branch": branch}
     except (RuntimeError, ValueError, TypeError) as e:
         return {"G": None, "u_ref": None, "u_bump": None, "flags": [f"{R_REFUSED}: {str(e)[:120]}"],
                 "levels": ns, "values": seq, "branch": None}
-    g, branch = seq[-1], None
-    bump_flags = [f for f in flags if f.startswith("Q bump")]
-    if len(flags) > len(bump_flags):       # rule C left the refinement unqualified: P3-AM4's two branches
-        got = estimate4(seq[-4:], tol)
-        if got is not None and got[2] <= u_ref_max * tol:
-            branch, g, u = got
-            flags = bump_flags
+    g, branch, flags, u = _finish(seq, flags, u, tol, u_ref_max)
     return {"G": g, "u_ref": u, "u_bump": ub, "flags": flags, "levels": ns, "values": seq, "branch": branch}

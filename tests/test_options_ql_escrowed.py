@@ -446,3 +446,104 @@ def test_c2_q_extends_an_unqualified_study_with_q_plus_like_the_references(monke
         assert got["deep"]["status"] == GR.R_DEEP_CAP and got["levels"] == [n1, n2, n3, n4]   # the shallow study stands
     else:
         assert got["status"] == "scored" and got["levels"][-1] == n5 and got["within_budget"] and got["covered"]
+
+
+# ── P3-AM7 B.2: Q++, up to two more levels for gamma ───────────────────────────
+
+def _q_through_8192(values, flags=(qe.R_NOT_CONVERGING,)):
+    return {"G": values[-1], "u_ref": None, "u_bump": 0.0, "flags": list(flags),
+            "levels": list(qe.LEVELS) + [qe.ESCALATE, qe.EXTRA], "values": list(values), "branch": None}
+
+
+def test_steps_per_day_at_the_q_plus_plus_levels_keep_the_first_level_s_rule():
+    assert qe.DEEP == (16384, 32768) and qe.DEEP[0] == 2 * qe.EXTRA
+    assert [qe.steps_per_day(d, 16384) for d in (1, 511, 512, 513, 1464)] == [16384, 64, 32, 32, 32]
+    assert [qe.steps_per_day(d, 32768) for d in (1, 511, 512, 513, 1464)] == [32768, 128, 64, 64, 64]
+
+
+def test_q_plus_plus_is_eligible_only_after_an_unqualified_q_plus():
+    n = list(qe.LEVELS) + [qe.ESCALATE]
+    assert qe.deep_eligible({"flags": [qe.R_NOT_CONVERGING], "levels": n + [qe.EXTRA]})
+    assert qe.deep_eligible({"flags": ["Q refinement uncertainty above 0.07 tolerances"], "levels": n + [qe.EXTRA]})
+    assert not qe.deep_eligible({"flags": [], "levels": n + [qe.EXTRA]})                      # qualified at 8192
+    assert not qe.deep_eligible({"flags": [qe.R_NOT_CONVERGING], "levels": n})               # Q+ never ran
+    assert not qe.deep_eligible({"flags": [f"{qe.R_REFUSED}: boom"], "levels": n + [qe.EXTRA]})
+    assert not qe.deep_eligible({"flags": [qe.R_NOT_CONVERGING], "levels": n + [qe.EXTRA, qe.DEEP[0]]})
+
+
+def test_q_plus_plus_is_for_gamma_only_and_needs_an_eligible_study():
+    first = _q_through_8192([1.0, 1.1, 1.0, 1.1, 1.0])
+    with pytest.raises(ValueError):
+        qe.study(NODIV_CALL, GR.spec(NODIV_CALL, GR.PRICE, CFG), TOL, deepen=first)
+    with pytest.raises(ValueError):
+        qe.study(NODIV_CALL, GR.spec(NODIV_CALL, G.VEGA, CFG), TOL, deepen=first)
+    with pytest.raises(ValueError):
+        qe.study(NODIV_CALL, GR.spec(NODIV_CALL, G.GAMMA, CFG), TOL, deepen={**first, "flags": []})
+
+
+def test_q_plus_plus_stops_at_the_first_level_where_q_qualifies(monkeypatch):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    d1, d2 = qe.DEEP
+    seqs = {n1: 1.6, n2: 0.8, n3: 0.4, n4: 0.2, n5: 0.1, d1: 0.05, d2: 0.025}   # first order, in tolerances
+    calls = []
+    _q_fake(monkeypatch, seqs, calls)
+    sp = GR.spec(DIV_PUT, G.GAMMA, CFG)
+    first = _q_through_8192([seqs[n] for n in (n1, n2, n3, n4, n5)])
+    assert qe.estimate([seqs[n3], seqs[n4], seqs[n5]], 1.0) > 0.07                 # unqualified at 8192
+    out = qe.study(DIV_PUT, sp, 1.0, deepen=first)
+    assert [n for n, _ in calls] == [d1]                                          # 32768 is never solved
+    assert out["levels"] == [n1, n2, n3, n4, n5, d1] and out["values"][:5] == first["values"]
+    assert out["flags"] == [] and out["G"] == seqs[d1]
+    assert out["u_ref"] == qe.estimate([seqs[n4], seqs[n5], seqs[d1]], 1.0) == pytest.approx(0.05)
+
+
+def test_q_plus_plus_goes_to_32768_and_never_beyond(monkeypatch):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    d1, d2 = qe.DEEP
+    seqs = {n1: 0.0, n2: 0.4, n3: 0.72, n4: 0.98, n5: 1.19, d1: 1.36, d2: 1.50}   # ratio 0.8: never converging
+    calls = []
+    _q_fake(monkeypatch, seqs, calls)
+    out = qe.study(DIV_PUT, GR.spec(DIV_PUT, G.GAMMA, CFG), 1.0,
+                   deepen=_q_through_8192([seqs[n] for n in (n1, n2, n3, n4, n5)]))
+    assert [n for n, _ in calls] == [d1, d2]
+    assert out["levels"][-1] == d2 and qe.R_NOT_CONVERGING in out["flags"] and out["G"] == seqs[d2]
+
+
+def test_q_plus_plus_at_32768_takes_the_alternating_estimate_on_the_last_four_levels(monkeypatch):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    d1, d2 = qe.DEEP
+    seqs = {n1: 0.0, n2: 0.0, n3: 0.0, n4: 0.3, n5: 0.1, d1: 0.25, d2: 0.20}   # 8192..32768 alternate and shrink
+    _q_fake(monkeypatch, seqs)
+    out = qe.study(DIV_PUT, GR.spec(DIV_PUT, G.GAMMA, CFG), 1.0,
+                   deepen=_q_through_8192([seqs[n] for n in (n1, n2, n3, n4, n5)]))
+    assert out["levels"][-1] == d2 and out["branch"] == "alternating" and out["flags"] == []
+    assert out["G"] == seqs[d2] and out["u_ref"] == pytest.approx(0.05)
+
+
+def test_q_plus_plus_is_charged_before_its_solve():
+    budget = GR.RefBudget(1e5)
+    sp = GR.spec(NODIV_CALL, G.GAMMA, CFG)
+    with pytest.raises(GR.CapHit):
+        qe.study(NODIV_CALL, sp, TOL, take=budget.take, deepen=_q_through_8192([1.0, 1.1, 1.0, 1.1, 1.0]))
+    assert budget.used == 0.0
+
+
+@pytest.mark.parametrize("k", [G.GAMMA, G.VEGA])
+def test_c2_q_runs_q_plus_plus_for_gamma_only_like_the_references(monkeypatch, k):
+    n1, n2, n3, n4, n5 = qe.LEVELS + (qe.ESCALATE, qe.EXTRA)
+    d1 = qe.DEEP[0]
+    ex = 0.645
+    tol = GR._tol(k, ex, DIV_PUT.spot)
+    steps = {n1: 1.6, n2: 0.8, n3: 0.4, n4: 0.2, n5: 0.1, d1: 0.05}          # first order, qualifies at 16384
+    calls = []
+
+    def fake(c, sp, n, american=True, half=False, cache=None, take=None):
+        calls.append(n)
+        return ex + tol * (steps[n] - 0.05) + (0.0 if not half else 0.0)
+    monkeypatch.setattr(qe, "quantity", fake)
+    monkeypatch.setattr(C, "exact", lambda c, kk: ex)
+    got = C.c2_q(DIV_PUT, CFG, quantities=(k,))[k]
+    if k == G.GAMMA:
+        assert d1 in calls and got["status"] == "scored" and got["levels"][-1] == d1 and got["deep"]["q_plus_plus"]
+    else:
+        assert d1 not in calls and got["levels"][-1] == n5
