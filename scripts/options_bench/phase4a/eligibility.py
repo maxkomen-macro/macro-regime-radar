@@ -27,6 +27,7 @@ class Trace:
         self.iv: dict[str, object] = {}
         self.sent_to_iv: set[str] = set()
         self.valued: dict[str, str | None] = {}
+        self.row_ctx: dict[str, dict] = {}   # contract -> {scenario: the on-date context at the row's sigma}
 
     def wrappers(self) -> dict:
         tr = self
@@ -72,6 +73,10 @@ class Trace:
 
         def value_rows(fn):
             def inner(rc, sized):
+                for z in sized:   # the on-date contexts value_rows builds at the row's own sigma (ranking trace)
+                    if z.q.exp != rc.t.by:
+                        tr.row_ctx[z.q.contract] = {name: of._context_on(rc, z.q, z.sigma, rc.t.by, float(rc.prices[name]))
+                                                    for name in rc.prices}
                 got = fn(rc, sized)
                 for key, (reason, row) in got.items():
                     if reason is None and not of._finite(row):

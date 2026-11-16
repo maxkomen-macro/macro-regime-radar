@@ -72,13 +72,16 @@ def _compact(res: dict, captured: dict, trace: eligibility.Trace, req) -> dict:
     out["rows"] = {r["contract"]: {"iv": r["iv"], "delta": r["delta"], "pnl": r["pnl"], "n": r["n"], "cost": r["cost"],
                                    "be": r["breakeven_on_date"], "be_note": r["breakeven_on_date_note"],
                                    "model": r["model"], "european": r["european_value"]} for r in a["rows"]}
-    # Tier 2's stated errors on the contexts of every row that reached a lens's top 20 (the ranking trace reads them)
-    top = {(r["type"] == "call", float(r["strike"])) for r in a["rows"]
-           if any(r["contract"] in v for v in (captured.get("lens_order") or {}).values())}
-    out["t2_errors"] = [
-        {"call": c.is_call, "strike": c.strike, "days": c.days, "sigma": c.sigma, "spot": c.spot, "value": ans.value,
-         "estimate": ans.estimate, "route": ans.route, "status": ans.price_status}
-        for c, ans in p.t2_answer.items() if (c.is_call, float(c.strike)) in top]
+    # each passed row's on-date contexts at its own sigma, with Tier 2's answer where Tier 2 valued them: the
+    # ranking trace's allowances and any repricing (Tier 2 or the reference) read these
+    t2 = p.t2_answer
+    out["row_contexts"] = {
+        contract: {name: {"call": c.is_call, "spot": c.spot, "strike": c.strike, "days": c.days, "rho": c.rho,
+                          "q": c.q, "sigma": c.sigma, "divs": [list(d) for d in c.divs],
+                          "t2": (None if c not in t2 else {"value": t2[c].value, "estimate": t2[c].estimate,
+                                                           "route": t2[c].route, "status": t2[c].price_status})}
+                   for name, c in ctxs.items()}
+        for contract, ctxs in trace.row_ctx.items() if contract in out["rows"]}
     return out
 
 

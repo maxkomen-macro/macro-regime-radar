@@ -299,3 +299,15 @@ def test_an_exempt_quote_is_counted_as_a_solve_under_either_engine():
             of._context_on = orig
         (rec,) = p.solves
         assert rec["exempt"] and rec["engine"] == engine and rec["exit"] == "solved"
+
+
+def test_each_passed_row_carries_its_on_date_contexts_at_its_own_sigma():
+    from scripts.options_bench.phase4a import runner
+    (a, d) = list(runner.run_request(0, ["A", "D"], ["offline"]))
+    for rec in (a, d):
+        assert rec["row_contexts"] and set(rec["row_contexts"]) <= set(rec["rows"])
+        for contract, ctxs in rec["row_contexts"].items():
+            assert set(ctxs) == {"target", "half", "flat"}
+            assert all(math.isclose(c["sigma"], rec["rows"][contract]["iv"], rel_tol=1e-9) for c in ctxs.values())
+    assert all(c["t2"] is None for ctxs in a["row_contexts"].values() for c in ctxs.values())
+    assert all(c["t2"] is not None for ctxs in d["row_contexts"].values() for c in ctxs.values())
