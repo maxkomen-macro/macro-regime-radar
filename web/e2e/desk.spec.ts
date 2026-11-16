@@ -101,12 +101,15 @@ test.describe("desk v2", () => {
   // §1.0.3: a PROTOTYPE card is drawn finished with illustrative values: no badge, its footnote its last line,
   // and none of its values printed outside it. Run this against a preview of `vite build` too (E2E_BASE_URL):
   // routeDesk answers in the browser, so the production bundle reads the same fixtures.
-  test("PROTOTYPE cards (§1.0.3): each ends with its footnote and carries no badge; no prototype value is printed outside one", async ({ page }) => {
+  // §1.0.3 rule 10: a page draws a card only when its registry row is shown; the 2026-11-16 release shows none, so
+  // this holds that no page draws one and no prototype value is printed anywhere (vitest's prototypes-shown suite
+  // holds the cards drawn).
+  test("PROTOTYPE cards (§1.0.3): each drawn card ends with its footnote and carries no badge; no prototype value is printed outside one", async ({ page }) => {
     // A first visit: Basket & Hedge seeds the AI Infrastructure 10 preset, the basket the prototypes are drawn for.
     const all = Object.values(PROTOTYPE_MARKERS).flat();
     for (const slug of BUILT) {
       await open(page, `/desk/${slug}`);
-      const here = PROTOTYPES.filter((p) => p.page === slug);
+      const here = PROTOTYPES.filter((p) => p.page === slug && p.shown);
       await expect(page.locator("[data-prototype]"), slug).toHaveCount(here.length);
       for (const p of here) {
         const card = page.locator(`[data-prototype="${p.id}"]`);
@@ -319,18 +322,19 @@ test.describe("desk v2", () => {
     await expect(back).toHaveCSS("color", "rgb(232, 230, 225)");
   });
 
-  test("technicals: the vol column is the PROTOTYPE; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §1.0.3, §12.7, §12.14)", async ({ page }) => {
+  test("technicals: the vol column prints its served reason; the sector bars and the RSI, MACD and seasonality cards are served (§1.0, §1.0.3 rule 10, §12.7, §12.14)", async ({ page }) => {
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await open(page, "/desk/technicals");
-      // §1.0.3: the vol block is served awaiting as not yet served, so its PROTOTYPE stands there: finished, no badge, its footnote last.
+      // §1.0.3 rule 10: the vol block is served awaiting as not yet served, and the 2026-11-16 release draws no
+      // PROTOTYPE, so the LIVE card keeps its labels and prints the served reason with its badge.
       const vol = page.getByRole("region", { name: /^What protection costs right now/ });
-      await expect(vol).toHaveAttribute("data-prototype", "protection");
+      await expect(vol).not.toHaveAttribute("data-prototype");
       await expect(vol).toContainText("PUTS vs CALLS · 1 MONTH OUT");
-      await expect(vol).not.toContainText("needs stored SPY option snapshots");
-      await expect(vol.getByTestId("dk-live")).toHaveCount(0);
-      await expect(vol.getByTestId("dk-advanced")).toBeEnabled();
-      await expect(vol.getByRole("img")).toHaveCount(2);
+      await expect(vol).toContainText("needs stored SPY option snapshots and a versioned skew method.");
+      await expect(vol.getByTestId("dk-live")).toContainText("Not yet served");
+      await expect(vol.locator("[data-prototype-foot]")).toHaveCount(0);
+      await expect(vol).not.toContainText("Illustrative values");
       // desk/fill-etf: the sector leadership is served, seven bars from the API's answer on the fixture store.
       const sect = page.getByRole("region", { name: /^Sector leadership/ });
       await expect(sect.getByRole("list", { name: /top three/ }).getByRole("listitem")).toHaveCount(7);
@@ -763,7 +767,7 @@ test.describe("desk v2", () => {
     await expect(page.getByRole("main")).not.toContainText("7,625");
   });
 
-  test("basket & hedge: the saved basket priced (step 2) and hedged (step 3), the options slot holding the PROTOTYPE, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
+  test("basket & hedge: the saved basket priced (step 2) and hedged (step 3), the options slot printing its reason, the weights kept in the browser, the hand-off; every width", async ({ page }) => {
     const asked: string[] = [];
     page.on("request", (r) => {
       if (/\/api\/desk\/(basket|hedge)/.test(r.url())) asked.push(`${r.method()} ${new URL(r.url()).pathname}${new URL(r.url()).search}`);
@@ -789,14 +793,14 @@ test.describe("desk v2", () => {
     await expect(basket.locator("[data-unserved] button", { hasText: "Cap-weight" })).toHaveCount(1);
     await expect(basket).toContainText("Cap weight is unavailable. It needs a stored share count for every name: SMCI has none (counts are stored for the preset baskets' names).");
     await expect(step3.getByRole("region", { name: /^Stress test/ })).toContainText("With the table's hedge, short $1,384,473 of XLK: if QQQ falls 10% the basket loses $170,542 unhedged");
-    // §10, §1.0.3: step 3's options slot holds the PROTOTYPE for the saved basket: the engine's inputs, live; three
-    // routes; its one control (Advanced) opens something (Codex R-14: no control that cannot act).
-    await expect(page.locator('[data-slot="hedge-options"] [data-prototype="options-hedge"]')).toHaveCount(1);
-    await expect(hedge.getByRole("button")).toHaveCount(1);
-    await expect(hedge).toContainText("from your basket · live");
-    await expect(hedge.getByRole("heading", { level: 3 })).toHaveText(["(a) Puts on XLK, the top-ranked hedge ETF", "(b) Puts on the three largest names", "(c) An OTC basket put from a dealer"]);
-    await expect(hedge.getByRole("table")).toHaveCount(3);
-    await expect(hedge.getByTestId("dk-live")).toHaveCount(0);
+    // §10, §1.0.3 rule 10: the 2026-11-16 release draws no PROTOTYPE, so step 3's options slot prints its reason with
+    // its badge and holds no control (Codex R-14: no control that cannot act).
+    await expect(page.locator('[data-slot="hedge-options"]')).toHaveCount(1);
+    await expect(page.locator("[data-prototype]")).toHaveCount(0);
+    await expect(hedge).toContainText("Option structures for a basket are not yet defined in the engine.");
+    await expect(hedge.getByTestId("dk-live")).toContainText("Not yet served");
+    await expect(hedge.getByRole("button")).toHaveCount(0);
+    await expect(hedge).not.toContainText("from your basket · live");
     expect(await auditPalette(page)).toEqual([]);
     expect(await bannedWordsOnPage(page)).toEqual([]);
     // §12.20 (Desk P4): Positioning is served for every basket: the five macro futures from the stored CFTC reports
@@ -946,28 +950,24 @@ test.describe("desk v2", () => {
     }
   });
 
-  test("data pipeline: Sync to Snowflake, a PROTOTYPE, replays connect → stage → merge → verify beside the real DDL and CSV (§11, §1.0.3)", async ({ page }) => {
+  test("data pipeline: no Sync to Snowflake card since the 2026-11-16 release; the real DDL and CSV stay (§11, §1.0.3 rule 10)", async ({ page }) => {
     await open(page, "/desk/data-pipeline");
-    const sync = page.getByRole("region", { name: /^Sync to Snowflake/ });
-    await expect(sync).toHaveAttribute("data-prototype", "snowflake-sync");
-    await expect(sync.getByRole("table").getByRole("row")).toHaveCount(7);
-    await expect(sync).toContainText("Verified: 6 of 6 tables match the snapshot");
-    await sync.getByRole("button", { name: "Sync to Snowflake" }).click();
-    await expect(sync.getByRole("button", { name: "Syncing…" })).toBeDisabled();
-    await expect(sync).toContainText("Verified: 6 of 6 tables match the snapshot", { timeout: 10_000 });
     await expect(page.getByRole("button", { name: "Generate Snowflake DDL" })).toBeEnabled();
+    await expect(page.getByRole("region", { name: /^Sync to Snowflake/ })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Sync to Snowflake" })).toHaveCount(0);
+    await expect(page.locator("[data-prototype]")).toHaveCount(0);
+    await expect(page.locator(".dk")).not.toContainText("Verified: 6 of 6 tables match the snapshot");
     await expect(page.getByRole("button", { name: "Export current study → CSV" })).toBeEnabled();
     for (const width of [1440, 390]) {
       await page.setViewportSize({ width, height: 900 });
       expect(await auditPalette(page)).toEqual([]);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(1);
     }
-    // Under reduced motion the replay completes at once, and nothing animates.
+    // Under reduced motion nothing animates.
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.emulateMedia({ reducedMotion: "reduce" });
     await open(page, "/desk/data-pipeline");
-    await page.getByRole("region", { name: /^Sync to Snowflake/ }).getByRole("button", { name: "Sync to Snowflake" }).click();
-    await expect(page.getByRole("region", { name: /^Sync to Snowflake/ })).toContainText("Verified: 6 of 6 tables match the snapshot");
+    await expect(page.getByRole("button", { name: "Generate Snowflake DDL" })).toBeEnabled();
     expect(await page.evaluate(() => [...document.querySelectorAll(".dk *")].filter((el) => getComputedStyle(el).animationName !== "none").length)).toBe(0);
   });
 

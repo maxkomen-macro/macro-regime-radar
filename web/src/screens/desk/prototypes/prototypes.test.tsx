@@ -20,7 +20,7 @@ import { stubDesk } from "../../../test/desk";
 import { SAVED_BASKETS_KEY } from "../basket/weights";
 import { PrototypeCard, PrototypeFootnote, PROTOTYPE_LEAD } from "../kit/Prototype";
 import { AdvancedPanel, Unserved, useAdvanced } from "../kit/ui";
-import { isPrototypeFixture, prototype, PROTOTYPE_CARD_EXPORTS, PROTOTYPES } from "./registry";
+import { isPrototypeFixture, prototype, PROTOTYPE_CARD_EXPORTS, PROTOTYPES, prototypeShown, shownPrototypes } from "./registry";
 import { PROTOTYPE_MARKERS } from "./markers";
 
 const PROTO_DIR = "/src/screens/desk/prototypes/";
@@ -175,7 +175,19 @@ describe("§1.0.3 rule 4: no LIVE module imports a prototype fixture", () => {
   });
 });
 
-describe("§1.0.3: every PROTOTYPE card on its page, and no prototype value outside one", () => {
+describe("§1.0.3 rule 10: the 2026-11-16 release draws no PROTOTYPE card", () => {
+  it("every registry row is not shown, so each page shows its unavailable state (./prototypes-shown.test.tsx holds the cards drawn)", () => {
+    expect(PROTOTYPES.map((p) => [p.id, p.shown])).toEqual([
+      ["protection", false],
+      ["options-hedge", false],
+      ["snowflake-sync", false],
+    ]);
+    expect(shownPrototypes()).toEqual([]);
+    for (const p of PROTOTYPES) expect(prototypeShown(p.id)).toBe(false);
+  });
+});
+
+describe("§1.0.3: every PROTOTYPE card the registry draws on its page, and no prototype value outside one", () => {
   const realFetch = globalThis.fetch;
   // A first visit: no basket store, so Basket & Hedge seeds the AI Infrastructure 10 preset the prototypes are drawn for.
   beforeEach(() => {
@@ -192,14 +204,14 @@ describe("§1.0.3: every PROTOTYPE card on its page, and no prototype value outs
   const allMarkers = Object.values(PROTOTYPE_MARKERS).flat();
 
   for (const page of pages)
-    it(`${page}: each card ends with its footnote, carries no badge and holds its values`, async () => {
+    it(`${page}: each drawn card ends with its footnote, carries no badge and holds its values; no value outside one`, async () => {
       const { container } = renderWithProviders(
         <Routes>
           <Route path="/desk/:page?" element={<DeskShell />} />
         </Routes>,
         { route: `/desk/${page}` },
       );
-      const here = PROTOTYPES.filter((p) => p.page === page);
+      const here = PROTOTYPES.filter((p) => p.page === page && p.shown);
       // A page renders from a lazy chunk: under a loaded machine its first heading can take longer than findBy's 1 s.
       await screen.findByRole("heading", { level: 1 }, { timeout: 8000 });
       await waitFor(() => expect(container.querySelectorAll("[data-prototype]")).toHaveLength(here.length), { timeout: 8000 });
