@@ -779,3 +779,35 @@ def test_an_unreadable_stored_row_for_the_symbol_is_counted_and_never_read_as_ab
     d = world.serve(earnings=[naive]).ok(**UP)
     assert d["coverage"][0] == "Earnings dates unknown for SYN: no usable dates are available from the stored calendar."
     assert "1 earnings rows were unusable and were ignored." in d["method"]["notes"]
+
+
+# ── the Tier 2 accuracy check switch (src/desk/options_check.py; candidate A) ─
+
+def test_the_tier2_check_switch_adds_its_block_and_changes_nothing_else(served, monkeypatch):
+    monkeypatch.delenv(desk_options.CHECK_ENV, raising=False)
+    off = served.ok(**UP)
+    assert "engine_check" not in off
+    monkeypatch.setenv(desk_options.CHECK_ENV, "1")
+    market.clear_caches()   # the same provider requests both times: the check sends none of its own
+    on = served.ok(**UP)
+    block = on.pop("engine_check")
+    assert on == off   # every Tier 1 field, the scan's provider request count included
+    assert block["role"] == "check only: every number the Finder serves is Tier 1's"
+    picks = [c for c in dict.fromkeys(off["picks"][lens] for lens in of.LENSES) if c]
+    assert [r["contract"] for r in block["picks"]] == picks
+    assert all(r["status"] == "checked" and r["agree"] is True for r in block["picks"])
+
+
+def test_the_tier2_check_runs_inside_the_finder_lock(served, monkeypatch):
+    from src.desk import options_check
+    held = []
+    real = options_check.check
+
+    def spy(picks):
+        held.append(desk_options._lock.locked())
+        return real(picks)
+
+    monkeypatch.setattr(options_check, "check", spy)
+    monkeypatch.setenv(desk_options.CHECK_ENV, "1")
+    served.ok(**UP)
+    assert held == [True]
