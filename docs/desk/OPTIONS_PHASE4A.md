@@ -88,6 +88,10 @@ after (`scripts/options_bench/phase4a/bench.py`, `patched`):
   `options_finder.pair_forward_gen` and `options_finder._breakeven_gen`. They receive values from
   `Pricer.values()` as floats, as today, and read each evaluated context's stated error from the `SitePricer`
   (the transport for uncertainty).
+- In configurations C and D only, `options_finder.implied_vols` → a bench copy that differs from the Finder's in
+  one statement: its exempt branch calls the Tier 2 exempt solve of 3.1 instead of `om.iv_european` (DR-05). A test
+  compares the two functions' parse trees and fails on any other difference. The copy is then wrapped for its
+  site like the original.
 - Instrumentation only records: the implied vols `implied_vols` returns and the top 20 `lens_order` returns per
   lens.
 
@@ -124,13 +128,33 @@ a proved bound. The bench reports these as stated errors with that caveat, never
 - *The error of one evaluation.* E is Tier 2's stated estimate for that context. It is 0 only for the exact
   routes (status "exact": intrinsic at expiry, or an exempt context's European value), where Tier 2 states none.
   Any other value of E that is missing, negative or not finite refuses the solve ("Tier 2 stated no error").
-- *The slope.* Each solve needs a local slope at its returned point. It is the secant through the last two
-  evaluated points that bracket or approach the root. When the solve returned after a single valuation (a first
-  point that already matches), or the two points coincide, the solver makes one more Tier 2 valuation at a nearby
-  point (σ̂ + max(10⁻³, 0.01·σ̂) for the IV; x̂·(1 + 10⁻³) for the breakeven), counted in the same evaluation cap.
-  A slope that is not finite, or not of the sign monotonicity requires, refuses the solve.
+- *The slope (DR-02, DR-03, DR-09).* Each solve needs a local slope of its function f (A₂ − P for the IV,
+  G(F) − F for carry, V₂ − target for the breakeven) at its returned point x̂.
+  - A secant through two evaluated points x₁ ≠ x₂ has the noise ratio ρ = (E₁ + E₂)/|f₁ − f₂| (for carry, E is
+    δG at each point). It is usable when both f are finite, its sign is the one monotonicity requires (for carry:
+    any sign), and ρ < 0.5. The slope used in every error formula is the conservative s = |secant|·(1 − ρ).
+  - The candidate is the current bracket's two ends when the solve brackets its root, else the last two
+    evaluated points. When the candidate is unusable (a first point that already matched, coincident points, too
+    noisy, or the noise stop, whose bracket is by definition within noise), the solver makes **one** probe
+    valuation at x̂ ± h and takes the secant through x̂ and the probe.
+  - *Direction:* inward, into the intersection of the current search range (the bracket, or for a first-point
+    exit the solver's validated range) and the pricing domain (`in_domain` of the probe's context); when both
+    sides have room, the side with more. *Step:* h = min(max(h_target, h_min), h_max, room), where room is the
+    distance to that intersection's end on the chosen side, h_target = 8·E₂(x̂)/s₀ with s₀ a closed-form slope
+    needing no valuation (the European vega for the IV, the European delta at the date for the breakeven, 1 for
+    carry), h_min = max(10⁻³, 0.01·σ̂), 10⁻³·x̂ or 10⁻⁴·F̂, and h_max = 0.25·σ̂, 0.05·x̂ or 0.01·F̂. h_target
+    makes ρ ≈ 0.25 when s₀ is right.
+  - Refusal only when no usable probe exists: no room on either side, or the probe's secant still fails the
+    usability test ("slope not resolved within Tier 2's error"). There is never a second probe.
+- *The evaluation cap (DR-10).* Uncertainty is part of acceptance: a solve has not succeeded until its slope is
+  usable. Each Tier 2 solve reserves one evaluation of its cap for the probe, so the search proper stops one
+  short of today's cap (IV: 40 valuations in all, including the floor test of 3.1; carry: 24 evaluations of G;
+  breakeven: Brent's 40), and no solve ever makes an evaluation past its cap. A search that has not met its
+  criterion when only the reserved evaluation is left is nonconvergence, as today's cap. Because the reserve is
+  always held, "uncertainty unresolved at the evaluation cap" cannot occur; the bench asserts it never does.
 - *Every exit is recorded:* by value (|f| within the solver's tolerance), by bracket width, by the Tier 2 noise rule,
-  at the evaluation cap, or refused, with the evaluations used, the stated input error and the reason.
+  at the evaluation cap, or refused, with the evaluations used, whether a probe was made, ρ, the stated input error
+  and the reason.
 
 ### 3.1 Implied volatility (site iv)
 
@@ -149,25 +173,46 @@ Solve A₂(σ) = P for the mid P, where A₂ is Tier 2's value, with the Finder'
 3. **Monotonicity.** A₂ need not be monotone in σ at the scale of E. A bracket whose ends contradict monotonicity
    (A₂(b) < A₂(a) for b > a) by more than E₂(a) + E₂(b) refuses the quote, "not identifiable"; a smaller contradiction
    is within Tier 2's error and the search continues.
-4. **Stated IV error.** δσ = (E₂(σ̂) + |A₂(σ̂) − P|)/v̂, v̂ the slope of the common rules.
+4. **Stated IV error.** δσ = (E₂(σ̂) + |A₂(σ̂) − P|)/s, s the conservative slope of the common rules.
 5. **Too uncertain.** δσ > max(0.01, 0.10·σ̂) refuses the quote, "IV too uncertain". The threshold is a design
    parameter, not a published tolerance (the Finder states no IV accuracy today); the bench reports the
    distribution of δσ so a different threshold can be chosen from evidence.
 6. Tier 2 refusing a valuation inside the search makes the quote "unpriceable", and no convergence within the 40
    evaluations makes it "bad_iv", as today, each counted under its own reason.
+7. **Exempt quotes (DR-05).** Today `implied_vols` inverts an exempt quote (one never exercised early, `om.exempt`,
+   which does not depend on σ) by the European formula, with no lattice. In C and D the bench's copy sends it
+   through the same rules, with Tier 2 as the engine:
+   - *Domain first.* Tier 2 checks `in_domain` before its exempt route, so the context is checked at the floor;
+     a reason other than the volatility makes the quote "unpriceable" with that reason, counted as a coverage
+     change against Tier 1.
+   - *Engine.* For an in-domain exempt context, Tier 2's value is `om.european` exactly (route "exempt", status
+     "exact", E = 0) at every σ. The search is therefore `om.iv_european` as today (closed form, its own counter),
+     and then one Tier 2 valuation at σ̂ (in the cap and charged to the request's work) confirms it: a route other
+     than "exempt", a status other than "exact", or a value different from `om.european` at σ̂ refuses the quote,
+     "Tier 2 disagrees with the exempt route".
+   - *Identifiability* is rule 1 with E = 0: P ≤ `om.european` at σ_min refuses the quote "IV not identifiable".
+   - *Error.* δσ = |A₂(σ̂) − P|/v, v the European vega at σ̂ in closed form (exact, E = 0, so no probe and no
+     noise ratio); rule 5 applies.
 
 ### 3.2 Carry (site carry)
 
 The pair's forward is the fixed point of G(F) (`pair_forward_gen`); each evaluation of G values both legs and
 re-inverts their volatilities, so G includes the coupled volatility updates. With Tier 2, each leg's early-exercise
 premium carries E_c or E_p, so G is known only to within δG = (E_c + E_p)/df.
-- **Stopping.** Accept when |G(F) − F| ≤ max(10⁻⁹·S₀, δG), and only after at least two evaluations of G (the
-  Finder's 10⁻⁹·S₀ alone is below Tier 2's noise and would exhaust the 24 evaluations). Aitken acceleration is
-  unchanged. The returned forward is G(F), as today.
-- **Conditioning (DR-03).** G′ is estimated by the secant through the last two evaluations of G along the iteration
-  (a local, scalar reduction of the coupled map). The stated forward error is
-  δF = (δG + |G(F) − F|)/|1 − G′|. When |1 − G′| < 0.1 (the map contracts by more than 0.9 a step, so a small
-  residual can hide a large error) or G′ is not finite, the pair is refused, "ill-conditioned".
+- **Stopping.** Accept when |G(F) − F| ≤ max(10⁻⁹·S₀, δG) (the Finder's 10⁻⁹·S₀ alone is below Tier 2's
+  noise and would exhaust the evaluations) and the slope of r is usable (below); one evaluation of the 24 is
+  reserved for its probe. Aitken acceleration is unchanged. The returned forward is G(F_n), as today, and its
+  stated error is δF below.
+- **Conditioning (DR-03).** The slope of r(F) = G(F) − F, which is G′ − 1, comes from the common slope rule:
+  the secant of r through the last two inputs of G along the iteration, else one probe. G here is the reduced,
+  scalar map the iteration follows: at an input F the volatilities are re-inverted from the previous
+  evaluation's de-Americanized prices under q(F) (`sigmas`, closed form) and then both legs are valued, so the
+  coupled volatility update is inside the secant. The probe is one evaluation of G at F_n ± h (F_n the last
+  input), built the same way, inward so that q stays within the domain. Coincident inputs (an iteration that
+  repeats its forward) are exactly the case the probe resolves: when both legs are exempt or exact, r's values are
+  exact (ρ = 0) and a constant map gives G′ = 0, so an exactly solved pair is accepted as today, after its probe.
+  The stated forward error is δF = (δG + |r(F_n)|)/s, s the conservative slope of r. When s < 0.1 (G′ above 0.9:
+  a small residual can hide a large error) the pair is refused, "ill-conditioned".
 - **The expiry's forward (DR-04).** The forward is the median of the usable pairs' forwards, as today. Its stated
   interval is [median of (Fᵢ − δFᵢ), median of (Fᵢ + δFᵢ)]: the median is non-decreasing in each pair's forward, so
   if every pair's true forward lies within its stated interval, the true median lies within this one. That premise
@@ -189,9 +234,13 @@ Solve V₂(x; date) = target for the price x (`_breakeven_gen`), conditional on 
 carry as solved (their own errors are reported at 3.1 and 3.2, not added here). Unchanged except:
 - **Stopping and acceptance.** The final check |V₂(root) − target| ≤ tol(target, root) is kept; the search also
   stops when the bracket satisfies |b − a|·|Δ̂| ≤ E₂(a) + E₂(b), Δ̂ the bracket's secant in price.
-- **Stated breakeven error.** δx = (E₂(root) + |V₂(root) − target|)/|Δ̂|, with Δ̂ the slope of the common rules.
-- **Refusals.** A slope of zero, or δx larger than 1% of the root ("too uncertain", a design parameter reported as
-  a distribution), make the breakeven "unresolved" with the reason; the existing "beyond the validated range"
+- **Stated breakeven error.** δx = (E₂(root) + |V₂(root) − target|)/s, s the conservative slope of the common rules.
+- **Range.** Tier 2 checks the domain before its exempt route, so for an exempt row the Tier 2 search uses the
+  validated range of a non-exempt one (`q.strike/KS_HI` and the dividend limits to `q.strike/KS_LO`) instead of
+  the model's range up to 10⁹; a breakeven beyond it is "beyond the validated range", counted as a coverage
+  change. The probe of the common rules stays inside this range.
+- **Refusals.** No usable slope, or δx larger than 1% of the root ("too uncertain", a design parameter reported
+  as a distribution), make the breakeven "unresolved" with the reason; the existing "beyond the validated range"
   reasons are kept.
 
 ## 4. Measures and how ranking changes are traced
