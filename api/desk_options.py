@@ -539,12 +539,31 @@ def engine_check():
     true, on or yes, read on every request. Off, the module is not imported and the answer is as before; on, the
     answer gains "engine_check" and every other field is unchanged (every served number stays Tier 1's)."""
     import os
+    import time
 
     if os.environ.get(CHECK_ENV, "").strip().lower() not in ("1", "true", "on", "yes"):
         return None
-    from src.desk import options_check
+    try:
+        from src.desk import options_check
+    except Exception as err:   # never a failed scan: the Finder's backstop answers "not checked: error (<type>)"
+        log.warning("Tier 2 check unavailable: %s", type(err).__name__, exc_info=True)
 
-    return options_check.check
+        def unavailable(picks, _err=err):
+            raise _err
+
+        return unavailable
+
+    def timed(picks):
+        """The check, timed: work.elapsed_ms is its wall time in this process (the added latency the owner's
+        rollback rule measures), also logged with its picks and units."""
+        t0 = time.perf_counter()
+        out = options_check.check(picks)
+        ms = round((time.perf_counter() - t0) * 1000.0, 1)
+        out["work"]["elapsed_ms"] = ms
+        log.info("Tier 2 check: %d picks, %d units, %.1f ms", len(out["picks"]), out["work"]["used"], ms)
+        return out
+
+    return timed
 
 
 def _now() -> datetime:

@@ -796,6 +796,7 @@ def test_the_tier2_check_switch_adds_its_block_and_changes_nothing_else(served, 
     picks = [c for c in dict.fromkeys(off["picks"][lens] for lens in of.LENSES) if c]
     assert [r["contract"] for r in block["picks"]] == picks
     assert all(r["status"] == "checked" and r["agree"] is True for r in block["picks"])
+    assert 0.0 <= block["work"]["elapsed_ms"] < 3000.0   # the owner's rollback line is 3 s added
 
 
 def test_the_tier2_check_runs_inside_the_finder_lock(served, monkeypatch):

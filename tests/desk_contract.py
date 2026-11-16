@@ -700,7 +700,7 @@ ENGINE_CHECK = OneOf((
         evidence=obj(engine_version=STR, attempt=INT, freeze=STR, held_out_seed=INT, cases=INT, population=STR,
                      estimate=STR),
         config=obj(estimator=STR, schedule=STR, F=NUM, F_d=NUM, tau=NUM, force_lattice=BOOL),
-        work=obj(used=INT, limit=INT), picks=Arr(ENGINE_CHECK_PICK, max=3), error=null(STR)),
+        work=obj(used=INT, limit=INT, elapsed_ms=F(NUM, opt=True)), picks=Arr(ENGINE_CHECK_PICK, max=3), error=null(STR)),
     obj(error=STR, picks=Arr(ENGINE_CHECK_PICK, max=0)),
 ))
 OPTIONS_FINDER = obj(

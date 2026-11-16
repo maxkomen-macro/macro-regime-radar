@@ -57,8 +57,10 @@ in development, and needs its own evidence and serving approval before any value
   context), and each lattice level is charged before it is computed. A pick past it is "not checked: work limit"
   with no value, and nothing more is computed for it. A refused or failed pick is charged its reserve and the levels
   it computed. The largest single context in attempt 2 (95.7 M units) is an observation, not a runtime bound.
+- **Latency.** The route times the check: `work.elapsed_ms` is its wall time in the API process, the latency it adds
+  to the scan, and each check logs one line, "Tier 2 check: <picks> picks, <units> units, <ms> ms".
 - **Failure isolation.** An error inside Tier 2 is that pick's "not checked: error (<type>)", logged; a failure of
-  the check as a whole is `{error, picks: []}`. Neither fails the scan.
+  the check as a whole, the check module failing to import included, is `{error, picks: []}`. Neither fails the scan.
 - **Concurrency.** The check runs inside the Finder lock, so one scan is priced at a time as before.
 - **No provider calls.** The check reads only the contexts the scan already built.
 

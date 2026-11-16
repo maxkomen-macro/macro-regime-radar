@@ -311,7 +311,36 @@ def test_the_route_switch_is_off_unless_set(monkeypatch):
         assert desk_options.engine_check() is None
     for v in ("1", "true", "on", "yes", " ON "):
         monkeypatch.setenv(desk_options.CHECK_ENV, v)
-        assert desk_options.engine_check() is ock.check
+        assert callable(desk_options.engine_check())
+
+
+def test_the_route_s_check_is_the_check_timed_and_logged(monkeypatch, caplog):
+    from api import desk_options
+    monkeypatch.setenv(desk_options.CHECK_ENV, "1")
+    c = om.Context(True, 100.0, 105.0, 90, 0.04, 0.0, 0.3)
+    picks = [{"lens": "payoff", "contract": "X", "context": c, "value": 3.0, "delta": 0.5}]
+    with caplog.at_level("INFO", logger="mrr.desk"):
+        got = desk_options.engine_check()(picks)
+    want = ock.check(picks)
+    ms = got["work"].pop("elapsed_ms")
+    assert isinstance(ms, float) and ms >= 0.0
+    assert got == want   # the same answer as the check itself, plus its time
+    assert any(m.startswith("Tier 2 check: 1 picks,") and m.endswith(" ms") for m in caplog.messages)
+
+
+def test_a_check_module_that_fails_to_import_is_not_checked_never_a_failed_scan(monkeypatch, caplog):
+    from api import desk_options
+    monkeypatch.setenv(desk_options.CHECK_ENV, "1")
+    import src.desk
+    monkeypatch.delattr(src.desk, "options_check")
+    monkeypatch.setitem(sys.modules, "src.desk.options_check", None)   # the import raises (ModuleNotFoundError)
+    with caplog.at_level("WARNING", logger="mrr.desk"):
+        check = desk_options.engine_check()
+    assert any("Tier 2 check unavailable: ModuleNotFoundError" in m for m in caplog.messages)
+    off = syn.scan("up", 120.0, BY)
+    on = syn.scan("up", 120.0, BY, check=check)
+    assert _without_check(on) == off
+    assert on["engine_check"] == {"error": "not checked: error (ModuleNotFoundError)", "picks": []}
 
 
 def test_only_the_finder_route_reaches_tier2_and_only_through_the_check():
