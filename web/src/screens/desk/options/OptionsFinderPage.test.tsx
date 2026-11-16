@@ -666,6 +666,19 @@ describe("Options Finder: the Tier 2 accuracy check", () => {
     expect(screen.getByTestId("of-check-payoff")).toHaveTextContent("Accuracy check: Tier 2 gave no value (unresolved: estimate above target).");
   });
 
+  it("a checked pick without an agreement verdict is not compared, never read as a disagreement (Codex S-9)", async () => {
+    const { agree: _agree, ...noVerdict } = block.picks[0];
+    const nullVerdict = { ...block.picks[1], agree: null };
+    const noTier1 = { ...block.picks[0], contract: block.picks[2].contract, lenses: ["time"], tier1: { value: null, delta: null }, agree: null };
+    stubDesk({ [ROUTE]: () => ({ ...UP, engine_check: { ...block, picks: [noVerdict, nullVerdict, noTier1] } }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    expect(screen.getByTestId("of-check-payoff")).toHaveTextContent("No comparison with Tier 1's $0.875 was given.");
+    expect(screen.getByTestId("of-check-forgiving")).toHaveTextContent("No comparison with Tier 1's $4.675 was given.");
+    expect(screen.getByTestId("of-check-time")).toHaveTextContent("Tier 1's value of this contract was not available, so the two are not compared.");
+    for (const l of ["payoff", "forgiving", "time"]) expect(screen.getByTestId(`of-check-${l}`).textContent ?? "").not.toMatch(/Differs|Agrees/);
+  });
+
   it("each route says what kind of error Tier 2 stated: exact, a proved interval, or an estimate (Codex S-6)", async () => {
     const at = (i: number, t: ReturnType<typeof tier2>) => ({ ...block.picks[i], status: "checked", reason: null, tier2: t, difference: 0, allowed: 0.01, agree: true });
     const routed = [

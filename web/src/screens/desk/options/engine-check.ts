@@ -45,7 +45,9 @@ export function checkWords(block: EngineCheck | undefined, contract: string): st
   if (!isFiniteNumber(t.value)) return `Accuracy check: Tier 2 gave no value (${t.price_status}${t.reason ? `: ${t.reason}` : ""}).`;
   const err = isFiniteNumber(t.estimate) ? ` ± ${dollars(t.estimate)}` : "";
   const head = `Accuracy check: Tier 2 ${dollars(t.value)}${err} (${t.price_status}).${errorKind(t.route, t.price_status)}`;
-  if (!isFiniteNumber(p.tier1.value) || p.agree === null) return `${head} Tier 1's value of this contract was not available, so the two are not compared.`;
+  if (!isFiniteNumber(p.tier1.value)) return `${head} Tier 1's value of this contract was not available, so the two are not compared.`;
+  // only an explicit verdict is read as one: an absent or null `agree` is no comparison, never a disagreement (Codex S-9)
+  if (typeof p.agree !== "boolean") return `${head} No comparison with Tier 1's ${dollars(p.tier1.value)} was given.`;
   const allowed = isFiniteNumber(p.allowed) ? ` (${dollars(p.allowed)})` : "";
   const value =
     p.agree === true
