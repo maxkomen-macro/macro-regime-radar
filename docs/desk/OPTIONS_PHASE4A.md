@@ -137,19 +137,22 @@ a proved bound. The bench reports these as stated errors with that caveat, never
     evaluated points. When the candidate is unusable (a first point that already matched, coincident points, too
     noisy, or the noise stop, whose bracket is by definition within noise), the solver makes **one** probe
     valuation at x̂ ± h and takes the secant through x̂ and the probe.
-  - *Direction:* inward, into the intersection of the current search range (the bracket, or for a first-point
-    exit the solver's validated range) and the pricing domain (`in_domain` of the probe's context); when both
-    sides have room, the side with more. *Step:* h = min(max(h_target, h_min), h_max, room), where room is the
-    distance to that intersection's end on the chosen side, h_target = 8·E₂(x̂)/s₀ with s₀ a closed-form slope
-    needing no valuation (the European vega for the IV, the European delta at the date for the breakeven, 1 for
-    carry), h_min = max(10⁻³, 0.01·σ̂), 10⁻³·x̂ or 10⁻⁴·F̂, and h_max = 0.25·σ̂, 0.05·x̂ or 0.01·F̂. h_target
-    makes ρ ≈ 0.25 when s₀ is right.
+  - *Range (DR-11).* The probe estimates a slope; it does not locate the root, so it is not confined to the
+    root's bracket. It stays inside the intersection of the solver's validated range (`IV_BRACKET` for the IV;
+    the breakeven search's [lo, hi] of 3.3) and the pricing domain (`in_domain` of the probe's context). The
+    bracket still decides the root and σ̂ or x̂.
+  - *Direction and step (DR-12).* Toward the side of x̂ with more room in that range. h = min(max(h_target,
+    h_min), h_max, room), where room is the distance to the range's end on the chosen side,
+    h_target = 8·E₂(x̂)/|s₀| with s₀ a closed-form slope needing no valuation (the European vega for the IV, the
+    European delta at the date for the breakeven, by magnitude), h_min = max(10⁻³, 0.01·σ̂) or 10⁻³·x̂, and
+    h_max = 0.25·σ̂ or 0.05·x̂. When s₀ is zero or not finite, h_target is h_max (no division). h_target makes
+    ρ ≈ 0.25 when s₀ is right.
   - Refusal only when no usable probe exists: no room on either side, or the probe's secant still fails the
     usability test ("slope not resolved within Tier 2's error"). There is never a second probe.
 - *The evaluation cap (DR-10).* Uncertainty is part of acceptance: a solve has not succeeded until its slope is
-  usable. Each Tier 2 solve reserves one evaluation of its cap for the probe, so the search proper stops one
-  short of today's cap (IV: 40 valuations in all, including the floor test of 3.1; carry: 24 evaluations of G;
-  breakeven: Brent's 40), and no solve ever makes an evaluation past its cap. A search that has not met its
+  usable. Each Tier 2 IV and breakeven solve reserves one evaluation of its cap for the probe, so the search
+  proper stops one short of today's cap (IV: 40 valuations in all, including the floor test of 3.1; breakeven:
+  Brent's 40; carry has no probe while 3.2's conditioning is unresolved), and no solve ever makes an evaluation past its cap. A search that has not met its
   criterion when only the reserved evaluation is left is nonconvergence, as today's cap. Because the reserve is
   always held, "uncertainty unresolved at the evaluation cap" cannot occur; the bench asserts it never does.
 - *Every exit is recorded:* by value (|f| within the solver's tolerance), by bracket width, by the Tier 2 noise rule,
@@ -200,33 +203,34 @@ The pair's forward is the fixed point of G(F) (`pair_forward_gen`); each evaluat
 re-inverts their volatilities, so G includes the coupled volatility updates. With Tier 2, each leg's early-exercise
 premium carries E_c or E_p, so G is known only to within δG = (E_c + E_p)/df.
 - **Stopping.** Accept when |G(F) − F| ≤ max(10⁻⁹·S₀, δG) (the Finder's 10⁻⁹·S₀ alone is below Tier 2's
-  noise and would exhaust the evaluations) and the slope of r is usable (below); one evaluation of the 24 is
-  reserved for its probe. Aitken acceleration is unchanged. The returned forward is G(F_n), as today, and its
-  stated error is δF below.
-- **Conditioning (DR-03).** The slope of r(F) = G(F) − F, which is G′ − 1, comes from the common slope rule:
-  the secant of r through the last two inputs of G along the iteration, else one probe. G here is the reduced,
-  scalar map the iteration follows: at an input F the volatilities are re-inverted from the previous
-  evaluation's de-Americanized prices under q(F) (`sigmas`, closed form) and then both legs are valued, so the
-  coupled volatility update is inside the secant. The probe is one evaluation of G at F_n ± h (F_n the last
-  input), built the same way, inward so that q stays within the domain. Coincident inputs (an iteration that
-  repeats its forward) are exactly the case the probe resolves: when both legs are exempt or exact, r's values are
-  exact (ρ = 0) and a constant map gives G′ = 0, so an exactly solved pair is accepted as today, after its probe.
-  The stated forward error is δF = (δG + |r(F_n)|)/s, s the conservative slope of r. When s < 0.1 (G′ above 0.9:
-  a small residual can hide a large error) the pair is refused, "ill-conditioned".
-- **The expiry's forward (DR-04).** The forward is the median of the usable pairs' forwards, as today. Its stated
-  interval is [median of (Fᵢ − δFᵢ), median of (Fᵢ + δFᵢ)]: the median is non-decreasing in each pair's forward, so
-  if every pair's true forward lies within its stated interval, the true median lies within this one. That premise
-  is empirical, as E is. The stated forward error is the larger distance from the forward to the interval's ends,
-  and δq ≈ δF/(F·τ).
+  noise and would exhaust the evaluations), within the 24 evaluations. Aitken acceleration is unchanged. The
+  returned forward is G(F_n), as today. A pair whose legs are exact (E = 0) stops exactly as today.
+- **Conditioning (DR-03): unresolved, and returned to the owner.** Design review pass 3 (the last allowed) found
+  that G is not a function of F alone: the iteration's state is (F, σ_c, σ_p), the volatilities are re-inverted
+  from the previous evaluation's premiums, and Aitken moves F while keeping them, so a secant in F along the
+  iteration does not define the fixed point's conditioning, and a probe either freezes the premiums' feedback or
+  confounds it with another step. Until the owner decides, the bench (provisionally, and reversibly):
+  - states **no** forward or carry error for a Tier 2 pair, and refuses no pair as ill-conditioned;
+  - records per pair, as raw facts only, the final residual |G(F_n) − F_n|, δG, the evaluations used and the exit;
+  - marks every Tier 2 carry figure in the report "conditioning not established", so no forward, residual yield
+    or ranking change traced to carry under C or D is presented as within a stated error.
+  The alternatives put to the owner: a full-state conditioning (the 3×3 Jacobian of the map on (F, σ_c, σ_p) by
+  finite differences, three more evaluations of G per pair inside the 24, which needs a design pass beyond the
+  three approved), or keeping carry on Tier 1 in C and D, which changes the approved configurations.
+- **The expiry's forward (DR-04).** The forward is the median of the usable pairs' forwards, as today. When pair
+  errors δFᵢ exist (a resolved conditioning), the expiry's interval is [median of (Fᵢ − δFᵢ), median of
+  (Fᵢ + δFᵢ)]: the median is non-decreasing in each pair's forward, so if every pair's true forward lies within its
+  interval, the true median lies within this one, a premise as empirical as E. While DR-03 is unresolved no
+  interval is stated.
 - **Refusals and fallbacks (DR-06).** Each keeps its own reason and count:
   - a leg Tier 2 refuses "outside the domain" carries `in_domain`'s reason, so an expiry whose pairs fail for a
     residual yield outside the validated range is "outside domain" and its contracts are excluded, exactly as today;
-  - a pair refused as ill-conditioned, not meeting the criterion within 24 evaluations, or with a leg Tier 2 refused
-    for any other reason is unusable;
+  - a pair not meeting the criterion within 24 evaluations, or with a leg Tier 2 refused for any other reason, is
+    unusable;
   - an expiry with no usable pair and no domain reason takes the Finder's existing fallback ("dividends only" or
     "none"); the report counts each fallback by the reason its pairs failed, and how many rows it reaches.
-- The carry error is not propagated into the row values in Phase 4a; the report gives its size beside each expiry
-  so a later design can decide whether it must be.
+- No carry error is propagated into the row values in Phase 4a (none is stated while the conditioning is
+  unresolved).
 
 ### 3.3 Breakevens (site breakeven)
 
@@ -264,7 +268,8 @@ screen, a Tier 2 valuation refusal, or an uncertainty refusal of section 3, each
 the bench reprices X's row contexts with A's engine at X's inputs (its σ and carry). Then
 - the *input effect* is A's engine at X's inputs minus A's answer (what the changed IV or carry did), compared with
   the P&L effect of the stated input errors (δσ times the row's vega, δF times its forward sensitivity; a local
-  approximation);
+  approximation). While 3.2's conditioning is unresolved there is no δF: a carry input effect is reported
+  as measured and marked "conditioning not established", never as within or outside a stated error;
 - the *valuation effect* is X's answer minus A's engine at X's inputs, compared with the P&L effect of
   E₂ + tol(V₁) on the values the metric reads.
 
