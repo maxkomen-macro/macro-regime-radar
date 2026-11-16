@@ -366,8 +366,9 @@ and the skip count are environmental; no financial tolerance was changed for any
   is not a claim about real chains, whole requests, or any later attempt.
 - The references' uncertainty is a GCI estimate, not a proved bound. The interval check means a usable output
   outside a proved interval fails the gate; it does not mean every value is proved correct.
-- Tier 2 is not served. Phase 3 (cross-check, finite differences and Greeks), Phase 4 (materiality and request
-  budgets), the worker, the UI and the Phase 7 switch keep their own gates.
+- Tier 2 serves no number. Its one use is the accuracy check on the Finder's picks behind `OPTIONS_TIER2_CHECK`,
+  off by default (`docs/desk/OPTIONS_TIER2_CHECK.md`). Phase 3 (cross-check, finite differences and Greeks), Phase 4
+  (materiality and request budgets), the worker, the UI and the Phase 7 switch keep their own gates.
 
 ## Files
 

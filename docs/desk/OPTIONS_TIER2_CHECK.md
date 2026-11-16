@@ -51,10 +51,12 @@ in development, and needs its own evidence and serving approval before any value
 ## Work, failures and concurrency
 
 - **Additional computation.** The check has its own budget of 300 M work units per scan, on top of the scan's
-  own 300 M, which it never charges (the answer's `work` is unchanged). It is enforced before each lattice level
-  is solved; the closed-form and bound work Tier 2 does before its first level is counted when the solve
-  returns, and an answer whose total passes the budget is discarded. A pick past it is "not checked: work limit"
-  with no value. The largest single context in attempt 2 (95.7 M units) is an observation, not a runtime bound.
+  own 300 M, which it never charges (the answer's `work` is unchanged). It is enforced before any work is done: a
+  pick's solve starts only when the budget left covers `prelattice_reserve`, an upper bound on the closed-form and
+  bound work Tier 2 does before its first lattice level (a test pins it above the actual figure on every golden
+  context), and each lattice level is charged before it is computed. A pick past it is "not checked: work limit"
+  with no value, and nothing more is computed for it. A refused or failed pick is charged its reserve and the levels
+  it computed. The largest single context in attempt 2 (95.7 M units) is an observation, not a runtime bound.
 - **Failure isolation.** An error inside Tier 2 is that pick's "not checked: error (<type>)", logged; a failure of
   the check as a whole is `{error, picks: []}`. Neither fails the scan.
 - **Concurrency.** The check runs inside the Finder lock, so one scan is priced at a time as before.

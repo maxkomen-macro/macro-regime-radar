@@ -43,10 +43,11 @@ EVIDENCE = {
 }
 
 # Work units for the whole check, across every pick: additional computation beyond the scan's own 300 M budget, which
-# the check never charges (owner, 2026-11-16). Enforced before each lattice level is solved; the closed-form and bound
-# work Tier 2 does before its first level is counted when the solve returns, and an answer whose total passes the
-# limit is discarded as "work limit". The largest single context in Phase 2's held-out run (95.7 M) is an observation,
-# not a runtime bound.
+# the check never charges (owner, 2026-11-16). Enforced before any work is done: a solve starts only when the budget
+# left covers `prelattice_reserve`, an upper bound on the closed-form and bound work Tier 2 does before its first
+# lattice level, and each lattice level is charged before it is computed. A pick refused this way is "work limit"
+# with no value, and nothing more is computed for it. The largest single context in Phase 2's held-out run (95.7 M)
+# is an observation, not a runtime bound.
 CHECK_LIMIT = 300_000_000
 
 CHECKED = "checked"
@@ -57,6 +58,17 @@ ROLE = "check only: every number the Finder serves is Tier 1's"
 
 class _OverBudget(Exception):
     pass
+
+
+def prelattice_reserve(c: om.Context) -> int:
+    """An upper bound on the work units Tier 2 charges before its first lattice level (options_adaptive._price): the
+    European value, one closed form per dividend, and the early-exercise bound at its most (one initial batch and
+    BOUND_PASSES refinement batches, at most max(initial pieces, BOUND_PIECES_MAX) pieces). A test pins it at or
+    above the work Tier 2 reports less its lattice levels, on every golden context."""
+    nd = len(c.divs)
+    pieces = max(om.BOUND_PIECES * (nd + 1), om.BOUND_PIECES_MAX)
+    return (om.UNITS_CLOSED_FORM * (1 + nd) + om.UNITS_BOUND_BATCH * (1 + om.BOUND_PASSES)
+            + om.UNITS_BOUND_PIECE * pieces)
 
 
 def _finite(x: Any) -> float | None:
@@ -110,12 +122,21 @@ def check(picks: Sequence[Mapping[str, Any]], limit: int = CHECK_LIMIT) -> dict:
         seen[key] = row
         rows.append(row)
         c = p["context"]
+        try:
+            reserve = prelattice_reserve(c)
+        except Exception as err:   # a context the reserve cannot read is refused before any work
+            log.warning("Tier 2 check failed on %s: %s", key, type(err).__name__, exc_info=True)
+            row["reason"] = f"error ({type(err).__name__})"
+            continue
+        if used + reserve > limit:   # not started: the budget left cannot cover the work before the first level
+            row["reason"] = WORK_LIMIT_REASON
+            continue
         base = used
         charged = [0]
 
-        def level(cx: om.Context, m: int, _c=charged, _base=base) -> oa.Level:
+        def level(cx: om.Context, m: int, _c=charged, _base=base + reserve) -> oa.Level:
             u = oa.units(om.steps_for(cx.days) * m)
-            if _base + _c[0] + u > limit:
+            if _base + _c[0] + u > limit:   # charged before the level is computed
                 raise _OverBudget
             _c[0] += u
             return oa.lattice_level(cx, m)
@@ -124,17 +145,20 @@ def check(picks: Sequence[Mapping[str, Any]], limit: int = CHECK_LIMIT) -> dict:
             a = oa.price(c, FROZEN, level)
         except _OverBudget:
             row["reason"] = WORK_LIMIT_REASON
-            used = base + charged[0]
+            used = base + reserve + charged[0]   # the reserve stands in for the bound work actually done
             continue
         except Exception as err:   # the check must never fail the scan; the failure is shown and logged
             log.warning("Tier 2 check failed on %s: %s", key, type(err).__name__, exc_info=True)
             row["reason"] = f"error ({type(err).__name__})"
-            used = base + charged[0]
+            used = base + reserve + charged[0]
             continue
-        used = base + max(int(a.units), charged[0])
-        if used > limit:   # the closed-form and bound work before the first level, counted once the solve returns
-            row["reason"] = WORK_LIMIT_REASON
-            continue
+        used = base + int(a.units)
+        if int(a.units) > reserve + charged[0]:   # a backstop: the reserve fell short of Tier 2's own count
+            log.warning("Tier 2 check on %s: %d units reported, %d reserved and charged", key, int(a.units),
+                        reserve + charged[0])
+            if used > limit:
+                row["reason"] = WORK_LIMIT_REASON
+                continue
         row["status"] = CHECKED
         row["tier2"] = _tier2(a)
         if row["tier1"]["value"] is not None:

@@ -212,6 +212,56 @@ def test_the_budget_is_shared_across_picks_in_lens_order():
     assert got["work"]["used"] <= got["work"]["limit"]
 
 
+def test_the_reserve_covers_tier2_s_work_before_its_first_level():
+    """The reserve must be at least the work Tier 2 reports less the lattice levels it computed, on every golden
+    context, so a solve that starts cannot pass the budget through its closed-form and bound work."""
+    worst = 0
+    for case in golden.golden_cases():
+        c = om.Context(case.is_call, case.spot, case.strike, case.days, case.rho, case.q, case.sigma, tuple(case.divs))
+        lattice = [0]
+
+        def level(cx, m, _l=lattice):
+            lv = oa.lattice_level(cx, m)
+            _l[0] += lv.units
+            return lv
+
+        a = oa.price(c, ock.FROZEN, level)
+        pre = int(a.units) - lattice[0]
+        assert 0 <= pre <= ock.prelattice_reserve(c), c
+        worst = max(worst, pre)
+    assert worst > 0   # the bound route ran somewhere, so the comparison is not vacuous
+
+
+def test_no_solve_starts_when_the_budget_left_cannot_cover_its_reserve(monkeypatch):
+    calls = []
+    real = oa.price
+    monkeypatch.setattr(oa, "price", lambda *a, **k: calls.append(1) or real(*a, **k))
+    c = om.Context(True, 100.0, 105.0, 90, 0.04, 0.0, 0.3)
+    picks = [{"lens": lens, "contract": f"C{i}", "context": c, "value": 3.0, "delta": 0.5}
+             for i, lens in enumerate(of.LENSES)]
+    got = ock.check(picks, limit=ock.prelattice_reserve(c) - 1)
+    assert calls == []
+    assert [r["reason"] for r in got["picks"]] == [ock.WORK_LIMIT_REASON] * len(picks)
+    assert got["work"]["used"] == 0
+
+
+@pytest.mark.parametrize("limit", [0, 150, 60_000, 1_000_000, 5_000_000, 20_000_000])
+def test_the_work_used_never_passes_the_limit(limit, monkeypatch):
+    seen = []
+    real = oa.lattice_level
+    monkeypatch.setattr(oa, "lattice_level", lambda cx, m: seen.append(oa.units(om.steps_for(cx.days) * m)) or real(cx, m))
+    short = om.Context(True, 100.0, 105.0, 90, 0.04, 0.0, 0.3)
+    v = oe.baseline(LONG)
+    picks = [{"lens": "payoff", "contract": "L", "context": LONG, "value": v.value, "delta": v.delta},
+             {"lens": "forgiving", "contract": "S", "context": short, "value": 3.0, "delta": 0.5},
+             {"lens": "time", "contract": "L2", "context": LONG, "value": v.value, "delta": v.delta}]
+    got = ock.check(picks, limit=limit)
+    assert got["work"]["used"] <= limit
+    assert sum(seen) <= limit   # the lattice work actually computed, not only the work reported
+    for r in got["picks"]:
+        assert (r["status"] == ock.CHECKED) == (r["tier2"] is not None)
+
+
 def test_a_failure_inside_tier2_is_that_pick_s_answer_and_is_logged(monkeypatch, caplog):
     def boom(*a, **k):
         raise RuntimeError("synthetic failure")
