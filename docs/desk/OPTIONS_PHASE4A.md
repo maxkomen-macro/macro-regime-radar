@@ -7,10 +7,10 @@ Architecture approval, broader numerical acceptance and activation are separate 
 
 The bench lives in `scripts/options_bench/phase4a/`. Nothing served imports it: `api/` and `src/` are unchanged,
 and `options_finder.run()` is the served function, called unmodified. The bench chooses the engine per call site by
-handing `run()` a different pricer, in its own process only.
+substituting module attributes for the length of one call, in its own process only (section 2).
 
 Status: section 1 is registered (frozen); section 3 is the root-finding design, under Codex design review (at most
-three passes); no measurement has been made.
+three passes; pass 1's findings DR-01 to DR-08 are addressed in this revision); no measurement has been made.
 
 ## 1. Registration (frozen before any measurement)
 
@@ -73,13 +73,38 @@ same under every configuration.
 B and C are mixed-engine configurations, studied here only; this does not authorize serving them.
 
 Each engine keeps its own memo (a context priced by Tier 1 at one site is never returned as Tier 2's value at
-another). Tier 2 is `options_adaptive.price(c, FROZEN)` under the configuration the accuracy check uses. A Tier 2
-answer with no value is that context's refusal with Tier 2's status and reason, which the Finder handles as it
-handles a context outside Tier 1's domain at that site.
+another). Tier 2 is `options_adaptive.price(c, FROZEN)` under the configuration the accuracy check uses.
 
-**Work and the budget.** Every Tier 2 lattice level is charged to the request's own `Work` before it is computed,
-and a solve starts only when its pre-lattice reserve fits, as in the accuracy check. Each configuration runs twice
-on every request:
+**How the bench reaches the sites (bench process only; DR-05).** `run()` takes no pricer and builds
+`Pricer(work)` itself, so the bench substitutes module attributes for the duration of one call and restores them
+after (`scripts/options_bench/phase4a/bench.py`, `patched`):
+- `options_finder.Pricer` → a factory returning the bench's `SitePricer` bound to the run's own `Work`. It
+  dispatches `many`, `values` and `deltas` to Tier 1 (the Finder's own code, `super()`) or Tier 2 by the current
+  site, and keeps each Tier 2 answer by context (its value, stated error, route and status).
+- `calibrate_all`, `implied_vols`, `value_rows` and `curve_pnl` → the same functions wrapped to set the site;
+  `options_math.drive` → wrapped so that a solve run from inside `value_rows` is the breakeven site.
+- In configurations C and D only, the three solver generators are replaced by Tier 2-aware copies in
+  `scripts/options_bench/phase4a/rootfinding.py` (section 3): `options_math.iv_american_gen`,
+  `options_finder.pair_forward_gen` and `options_finder._breakeven_gen`. They receive values from
+  `Pricer.values()` as floats, as today, and read each evaluated context's stated error from the `SitePricer`
+  (the transport for uncertainty).
+- Instrumentation only records: the implied vols `implied_vols` returns and the top 20 `lens_order` returns per
+  lens.
+
+Configuration A substitutes nothing that computes: a test pins that A's answer equals an unpatched `run()` on the
+same requests, and that every substituted attribute is the original after a run, including after a failure.
+
+**Tier 2's refusals at a site.** A context Tier 2 gives no value for becomes a reason string, which the Finder
+handles as it handles a context outside Tier 1's domain at that site (an IV "unpriceable", a carry pair unusable,
+a breakeven "unresolved", a row "unpriceable"). Where Tier 2's status is "outside the domain" the string is
+`options_math.in_domain`'s own reason, verbatim, so the Finder's existing "outside domain" carry branch (a residual
+yield outside the validated range) is taken exactly as today (DR-06). Tier 2 checks the domain before its exempt
+route, so a context Tier 1 prices by the European formula outside the lattice's domain is a Tier 2 refusal; the
+report counts these as coverage changes.
+
+**Work and the budget.** Every Tier 2 lattice level is checked against the request's own `Work` before it is
+computed, a solve starts only when its pre-lattice reserve fits, and Tier 2's own unit count is charged after
+it, as in the accuracy check. Each configuration runs twice on every request:
 - **Under the serving budget:** `work_limit` = 300 M, unchanged. A request that passes it is the Finder's "Too much
   to price at once" refusal and is counted as such.
 - **Offline diagnostic:** no limit, to measure the work a scan needs to finish. This is never a serving figure.
@@ -91,66 +116,83 @@ values as exact would stop on noise or chase it. The rules below apply only wher
 carry, iv and breakeven in configurations C and D). Tier 1's solvers are unchanged.
 
 **Local approximation, not a bound.** Every error below converts a value error into an input error by dividing by
-a local slope (vega, the forward's sensitivity, delta). That is a first-order approximation at the solution. It is
-not a guaranteed bound: the slope can change across the interval, and E itself is an empirical estimate, not a
-proved bound. The bench reports these as stated errors with that caveat, never as bounds.
+a local slope (vega, the fixed point's conditioning, delta). That is a first-order approximation at the solution.
+It is not a guaranteed bound: the slope can change across the interval, and E itself is an empirical estimate, not
+a proved bound. The bench reports these as stated errors with that caveat, never as bounds.
+
+**Common rules for a Tier 2 solve (DR-02).**
+- *The error of one evaluation.* E is Tier 2's stated estimate for that context. It is 0 only for the exact
+  routes (status "exact": intrinsic at expiry, or an exempt context's European value), where Tier 2 states none.
+  Any other value of E that is missing, negative or not finite refuses the solve ("Tier 2 stated no error").
+- *The slope.* Each solve needs a local slope at its returned point. It is the secant through the last two
+  evaluated points that bracket or approach the root. When the solve returned after a single valuation (a first
+  point that already matches), or the two points coincide, the solver makes one more Tier 2 valuation at a nearby
+  point (σ̂ + max(10⁻³, 0.01·σ̂) for the IV; x̂·(1 + 10⁻³) for the breakeven), counted in the same evaluation cap.
+  A slope that is not finite, or not of the sign monotonicity requires, refuses the solve.
+- *Every exit is recorded:* by value (|f| within the solver's tolerance), by bracket width, by the Tier 2 noise rule,
+  at the evaluation cap, or refused, with the evaluations used, the stated input error and the reason.
 
 ### 3.1 Implied volatility (site iv)
 
 Solve A₂(σ) = P for the mid P, where A₂ is Tier 2's value, with the Finder's bracket and Brent search
-(`iv_american_gen`), and these changes:
-- **Stopping.** The Finder stops at |A − P| ≤ 10⁻³·tol(P) or a bracket under 10⁻¹⁰. With Tier 2 the search also
-  stops when the bracket [a, b] satisfies |b − a|·v̂ ≤ E₂, where v̂ is the secant slope (A₂(b) − A₂(a))/(b − a):
-  inside that bracket the values cannot be told apart from Tier 2's own error, so more evaluations add no
-  information. The returned σ̂ is the end with the smaller |A₂ − P|.
-- **Stated IV error.** δσ = (E₂(σ̂) + |A₂(σ̂) − P|)/v̂, with v̂ the last bracket's secant slope (Tier 2's own
-  values, so it includes the early-exercise premium's sensitivity). Reported per quote.
-- **Refusals** (each the quote's "bad_iv" with a named reason, counted per reason):
-  1. *Not identifiable (low vega):* v̂ ≤ 0, or P − A₂(σ_lo) ≤ E₂(σ_lo) at the bracket's low end σ_lo
-     (the price is within Tier 2's error of its smallest value: deep in the money at intrinsic). Tier 1 today
-     returns the lowest σ that reprices it; under this rule Tier 2 refuses instead, and the report counts the
-     coverage this costs.
-  2. *Too uncertain:* δσ > max(0.01, 0.10·σ̂). The threshold is a design parameter, not a published tolerance:
-     the Finder states no IV accuracy today. The bench reports the distribution of δσ so a different threshold
-     can be chosen from evidence.
-  3. *Tier 2 refused a valuation* inside the search (no value at some σ): the quote is "unpriceable" as today.
-  4. *No convergence* within the Finder's 40 evaluations: "bad_iv" as today, counted separately.
-- **Monotonicity.** Tier 2's values need not be monotone in σ at the scale of E (adjacent σ may take different
-  routes or levels). A sign change inside a bracket is accepted as found; a bracket whose ends' values contradict
-  monotonicity by more than E₂(a) + E₂(b) is refused as "not identifiable" and counted.
+(`iv_american_gen`), and these changes, in this order of precedence:
+1. **Identifiability first (DR-01).** Before the search, value the context once at the bracket's global floor
+   σ_min = 0.001 (`IV_BRACKET`'s low end; one evaluation, counted in the cap). When P − A₂(σ_min) ≤ E₂(σ_min), the
+   price is within Tier 2's error of the smallest value any volatility gives it (a deep in-the-money quote at
+   intrinsic), and the quote is refused, "IV not identifiable within Tier 2's stated error". Tier 1 today returns
+   the lowest σ that reprices it; the report counts what this refusal costs in coverage. The test is applied at the
+   global floor only, never at the moving lower end of the search bracket.
+2. **Search and stopping.** The Finder's search as today, stopping at |A₂ − P| ≤ 10⁻³·tol(P), at a bracket under
+   10⁻¹⁰, or (Tier 2 only) when the current bracket [a, b] satisfies |b − a|·v̂ ≤ E₂(a) + E₂(b), v̂ the bracket's
+   secant: inside it the values cannot be told apart within Tier 2's own error. σ̂ is the end with the smaller
+   |A₂ − P|.
+3. **Monotonicity.** A₂ need not be monotone in σ at the scale of E. A bracket whose ends contradict monotonicity
+   (A₂(b) < A₂(a) for b > a) by more than E₂(a) + E₂(b) refuses the quote, "not identifiable"; a smaller contradiction
+   is within Tier 2's error and the search continues.
+4. **Stated IV error.** δσ = (E₂(σ̂) + |A₂(σ̂) − P|)/v̂, v̂ the slope of the common rules.
+5. **Too uncertain.** δσ > max(0.01, 0.10·σ̂) refuses the quote, "IV too uncertain". The threshold is a design
+   parameter, not a published tolerance (the Finder states no IV accuracy today); the bench reports the
+   distribution of δσ so a different threshold can be chosen from evidence.
+6. Tier 2 refusing a valuation inside the search makes the quote "unpriceable", and no convergence within the 40
+   evaluations makes it "bad_iv", as today, each counted under its own reason.
 
 ### 3.2 Carry (site carry)
 
-The pair's forward is the fixed point of G(F) (`pair_forward_gen`), whose early-exercise premiums come from
-lattice values. With Tier 2 each premium carries E_c or E_p, so G is known only to within
-δG = (E_c + E_p)/df.
-- **Stopping.** Accept when |G(F) − F| ≤ max(10⁻⁹·S₀, δG) (the Finder's 10⁻⁹·S₀ alone is below Tier 2's noise and
-  would exhaust the 24 iterations). Aitken acceleration is unchanged.
-- **Stated forward error.** δF = δG + |G(F) − F|. The expiry's forward is the median of its pairs, as today; its
-  stated error is the median of the pairs' δF (the median's error is bounded by the pairs' errors when at least two
-  pairs agree within their errors, and otherwise is reported as the largest δF). The implied carry error is
-  δq ≈ δF/(F·τ).
-- **Refusals.** A pair whose iteration does not meet the criterion within 24 evaluations, or where Tier 2 refused a
-  leg, is unusable, as today; an expiry with no usable pair takes the Finder's existing fallback ("dividends only"
-  or "none"), counted per reason.
-- The carry error is not propagated into the row values in Phase 4a; the report gives its size beside each
-  expiry so that a later design can decide whether it must be.
+The pair's forward is the fixed point of G(F) (`pair_forward_gen`); each evaluation of G values both legs and
+re-inverts their volatilities, so G includes the coupled volatility updates. With Tier 2, each leg's early-exercise
+premium carries E_c or E_p, so G is known only to within δG = (E_c + E_p)/df.
+- **Stopping.** Accept when |G(F) − F| ≤ max(10⁻⁹·S₀, δG), and only after at least two evaluations of G (the
+  Finder's 10⁻⁹·S₀ alone is below Tier 2's noise and would exhaust the 24 evaluations). Aitken acceleration is
+  unchanged. The returned forward is G(F), as today.
+- **Conditioning (DR-03).** G′ is estimated by the secant through the last two evaluations of G along the iteration
+  (a local, scalar reduction of the coupled map). The stated forward error is
+  δF = (δG + |G(F) − F|)/|1 − G′|. When |1 − G′| < 0.1 (the map contracts by more than 0.9 a step, so a small
+  residual can hide a large error) or G′ is not finite, the pair is refused, "ill-conditioned".
+- **The expiry's forward (DR-04).** The forward is the median of the usable pairs' forwards, as today. Its stated
+  interval is [median of (Fᵢ − δFᵢ), median of (Fᵢ + δFᵢ)]: the median is non-decreasing in each pair's forward, so
+  if every pair's true forward lies within its stated interval, the true median lies within this one. That premise
+  is empirical, as E is. The stated forward error is the larger distance from the forward to the interval's ends,
+  and δq ≈ δF/(F·τ).
+- **Refusals and fallbacks (DR-06).** Each keeps its own reason and count:
+  - a leg Tier 2 refuses "outside the domain" carries `in_domain`'s reason, so an expiry whose pairs fail for a
+    residual yield outside the validated range is "outside domain" and its contracts are excluded, exactly as today;
+  - a pair refused as ill-conditioned, not meeting the criterion within 24 evaluations, or with a leg Tier 2 refused
+    for any other reason is unusable;
+  - an expiry with no usable pair and no domain reason takes the Finder's existing fallback ("dividends only" or
+    "none"); the report counts each fallback by the reason its pairs failed, and how many rows it reaches.
+- The carry error is not propagated into the row values in Phase 4a; the report gives its size beside each expiry
+  so a later design can decide whether it must be.
 
 ### 3.3 Breakevens (site breakeven)
 
-Solve V₂(x; date) = target for the price x (`_breakeven_gen`), unchanged except:
+Solve V₂(x; date) = target for the price x (`_breakeven_gen`), conditional on the row's volatility and its expiry's
+carry as solved (their own errors are reported at 3.1 and 3.2, not added here). Unchanged except:
 - **Stopping and acceptance.** The final check |V₂(root) − target| ≤ tol(target, root) is kept; the search also
-  stops when the bracket satisfies |b − a|·|Δ̂| ≤ E₂, with Δ̂ the secant slope in price.
-- **Stated breakeven error.** δx = (E₂(root) + |V₂(root) − target|)/|Δ̂|.
-- **Refusals.** Δ̂ = 0, or δx larger than 1% of the root ("too uncertain", a design parameter reported as a
-  distribution), become "unresolved" with the reason; the existing "beyond the validated range" reasons are kept.
-
-### 3.4 What the bench records for root-finding
-
-For each solve: the engine, evaluations used, whether it stopped by value, by bracket, by the Tier 2 rule or by
-the evaluation cap, the stated input error (Tier 2 only), and the refusal reason. Summaries per site and per
-configuration: evaluations (p50, p95, max), refusal counts by reason, and the IV, forward and breakeven
-differences between configurations on the same quote, beside the stated errors.
+  stops when the bracket satisfies |b − a|·|Δ̂| ≤ E₂(a) + E₂(b), Δ̂ the bracket's secant in price.
+- **Stated breakeven error.** δx = (E₂(root) + |V₂(root) − target|)/|Δ̂|, with Δ̂ the slope of the common rules.
+- **Refusals.** A slope of zero, or δx larger than 1% of the root ("too uncertain", a design parameter reported as
+  a distribution), make the breakeven "unresolved" with the reason; the existing "beyond the validated range"
+  reasons are kept.
 
 ## 4. Measures and how ranking changes are traced
 
@@ -158,26 +200,49 @@ Per request and configuration, under the budget and offline:
 - work units, CPU seconds (`time.process_time`) and wall seconds, request-level p50, p95 and maximum;
 - the outcome: answered, refused by the work budget, refused by a Finder rule, or failed;
 - per site: contexts priced per engine, memo reuse (hits over lookups), Tier 2 refusals by status and reason;
+- root-finding: per site, evaluations (p50, p95, max), exits by kind, refusals by reason, and the stated input
+  errors;
 - coverage: candidates, rows that reached a lens, and the screens that removed the rest;
 - per lens: the pick, the top 20, and each change against configuration A.
 
 A ranking need not be identical when both engines are within tolerance. Each changed pick or top-20 member is
-assigned the first of these that applies, using the rows' values in both configurations:
-1. **Removed or added candidate:** the row is absent in one configuration (named screen or refusal).
-2. **Pricing difference within the engines' stated accuracies:** the metric moved by no more than the P&L effect of
-   E₂ + tol(V₁) on the values it reads.
-3. **Tie:** the swapped rows' metrics differ by less than that combined allowance in either configuration.
-4. **Uncertainty refusal:** a value or solve was refused under section 3.
-5. **Unexplained:** none of the above. Each is listed with the values, errors and contexts behind it. Neither engine
-   is assumed to be the correct reference; where an unexplained change appears, the bench prices the contexts it
-   rests on with the Phase 2 finite-difference reference (`scripts/options_bench/reference.py`) to say which
-   engine, if either, was outside its stated accuracy.
+traced in two independent parts (DR-08):
 
-## 5. Compute
+**Eligibility, recorded for every row whatever its rank:** present in both, or absent in one with its cause (the
+screen, a Tier 2 valuation refusal, or an uncertainty refusal of section 3, each named).
 
-The allowance is 10 aggregate CPU hours (the owner's limit). The forecast and the actual usage are recorded in
-`scripts/options_bench/phase4a/cpu.json` after the pilot and after each batch; a forecast above the remaining
-allowance stops the run and returns an adjustment decision before it is exceeded.
+**The metric change of a row present in both,** split by repricing at common inputs: for configuration X against A,
+the bench reprices X's row contexts with A's engine at X's inputs (its σ and carry). Then
+- the *input effect* is A's engine at X's inputs minus A's answer (what the changed IV or carry did), compared with
+  the P&L effect of the stated input errors (δσ times the row's vega, δF times its forward sensitivity; a local
+  approximation);
+- the *valuation effect* is X's answer minus A's engine at X's inputs, compared with the P&L effect of
+  E₂ + tol(V₁) on the values the metric reads.
+
+Each changed rank is then assigned the first that applies: a removed or added candidate (with its cause); a tie
+(the swapped rows' metrics differ by less than their combined allowances in either configuration); explained by
+valuation within allowance; explained by inputs within their stated errors; explained by both together within the
+sum of the two allowances; or **unexplained**. Each unexplained change is listed with the values, errors and contexts
+behind it. Neither engine is assumed to be the correct reference: the bench prices the contexts an unexplained
+change rests on with the Phase 2 finite-difference reference (`scripts/options_bench/reference.py`), at the inputs
+of each configuration, to say which engine, if either, was outside its stated accuracy.
+
+## 5. Compute (DR-07)
+
+The allowance is 10 aggregate CPU hours (the owner's limit) and covers everything Phase 4a runs: the pre-registration
+smoke runs, generation, all four configurations under both limits, the common-input repricing, and any reference
+repricing. The guard:
+- **One ledger.** `scripts/options_bench/phase4a/cpu.json` records every process's CPU (user plus system, its own
+  and its children's, from `resource.getrusage`) as each request finishes, and is read before each one starts.
+- **Before each request:** it starts only if the ledger's total plus a forecast for it (the 95th percentile of the
+  per-request CPU measured so far, times 1.5; for the pilot's first requests, a fixed 0.25 h) plus a 0.25 h reserve
+  stays within 10 h. Otherwise the run stops and writes a "stopped: CPU allowance" record for every request not run.
+- **During each request:** it runs in a child process whose CPU limit (`RLIMIT_CPU`) is the smaller of 0.5 h and
+  what the allowance has left less the reserve. A request killed at that limit is recorded as "incomplete: CPU
+  limit", counted in the ledger, and never re-run silently.
+- **The forecast** for the main run is written after the pilot (per-request CPU, p50, p95, max, by configuration and
+  limit), with N chosen by section 1's rule. A forecast past the allowance returns an adjustment decision before the
+  main run starts.
 
 ## 6. What the report returns
 
