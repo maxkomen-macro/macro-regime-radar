@@ -94,7 +94,7 @@ export function deskGroups(listed: boolean): DeskGroup[] {
           slug: "data-pipeline",
           label: "Data Pipeline",
           title: "Where every number comes from",
-          blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote, and what Basket & Hedge and the Options Finder read on request; prototype cards are marked. The browser computes only from served numbers: a position's room, a basket's weights, and the VIX tile's gap against that quote.",
+          blurb: "Every panel in Desk resolves to a row here. Every live number comes from stored data except the VIX tile, which shows the relay's delayed quote, and what Basket & Hedge and the Options Finder read on request. The browser computes only from served numbers: a position's room, a basket's weights, and the VIX tile's gap against that quote.",
           toggle: false,
         },
         { slug: "build-notes", label: "Build Notes", blurb: "What this Desk is, how it was checked, and what comes next.", action: "link" },

@@ -52,10 +52,10 @@ The Desk turns a macro view into a testable trade idea.
 
 - **Market:** Overview (what fired, and what is closest to being wrong), Technicals for the S&P 500 or any US stock, sector leadership and breadth, Macro & Correlations, and the regime with the data prints that would change it.
 - **Research:** an **Event Study** engine that answers "what did markets do after this kind of shock?" with a scored verdict (Reliable, Suggestive, No edge or Too few), and a **Signal Ledger** of every scored signal.
-- **Trade:** **Basket & Hedge** prices a basket from real prices and sizes an ETF hedge; **Position Monitor** tracks how far each position is from being wrong.
+- **Trade:** **Basket & Hedge** prices a basket from real prices and sizes an ETF hedge; the **Options Finder** takes a view on a US stock or ETF (up or down to a target by a date, with a budget) and shows what each listed call or put would be worth if it plays out, from the last end-of-day options chain; **Position Monitor** tracks how far each position is from being wrong.
 - **About this build:** a Data Pipeline page that traces every panel to its source, and Build Notes.
 
-A few Desk cards (options hedging, positioning, an event study on your basket, the volatility column on Technicals, and a Snowflake sync) are **prototypes**: they are drawn finished with illustrative values and say so in a footnote. They will be wired to live data over the coming weeks.
+Three Desk cards need data that isn't built yet: what protection costs on Technicals (stored SPY option snapshots), options hedging on Basket & Hedge, and a Snowflake sync on Data Pipeline. The first two show as not yet served, with the reason, and the sync isn't shown; Build Notes says how each would be built.
 
 ![Event Study: what the S&P 500 did after gold rose two standard deviations while the S&P was weak](docs/images/desk-event-study.png)
 

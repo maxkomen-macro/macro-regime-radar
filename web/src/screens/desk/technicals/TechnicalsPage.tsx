@@ -5,9 +5,10 @@
  * sectors block the sector leadership /sectors serves, §12.14) and /ledger
  * (§12.5, the rows in `signals_allowlist` order). Grid:
  * the vol card spans the left column; price and signals on top; sector
- * leadership and RSI below; MACD and seasonality in a third row (desk/fill-compute). The vol column is a
+ * leadership and RSI below; MACD and seasonality in a third row (desk/fill-compute). The vol column can be a
  * PROTOTYPE card (§1.0.3, ../prototypes/ProtectionCard) while a ready /technicals serves its vol
- * block awaiting as not yet served, and the LIVE card in every other state. Every number is a served field, formatted, and
+ * block awaiting as not yet served, when the registry draws it; it is the LIVE card in every other state. The
+ * registry has not drawn it since the 2026-11-16 release, so the LIVE card prints the served reason. Every number is a served field, formatted, and
  * dated by its own served dates; the trend's words spell the served
  * `trend.state` (§3).
  * A card stays quiet while its first answer is on its way, and keeps its
@@ -40,6 +41,7 @@ import TrendChart, { drawable, monthTicks, RangeChips } from "../kit/TrendChart"
 import RankBars from "../kit/RankBars";
 import { Advanced, AdvancedPanel, Awaiting, DroppedNote, isAwaitingRefresh, LiveBadge, NotServedBadge, Signed, Stat, StatRow, Unserved, UnservedCard, useAdvanced, useUnserved, VerdictPill, VerdictWord, LoadingLine, FailedScope, eitherFailed } from "../kit/ui";
 import { ProtectionCard } from "../prototypes/ProtectionCard";
+import { prototypeShown } from "../prototypes/registry";
 import { SPX_SYMBOLS, symbolOf } from "./symbol";
 import "./technicals.css";
 import { Term, defineTerms } from "../kit/Term";
@@ -873,9 +875,10 @@ export default function TechnicalsPage({ page }: { page: DeskPage }) {
         <FailedScope q={tq}>
         <div className="te-grid">
           {/* §12.0: a card whose answer is served awaiting keeps its labels and prints the reason (§1.0.2). */}
-          {/* §1.0.3 (desk/prototypes): the PROTOTYPE stands in the vol column until the vol block is served; a
-              served block's card keeps its labels and prints its reason when awaiting (§1.0.2). */}
-          {volIsPrototype(t, routeOff, tq.isError) ? (
+          {/* §1.0.3 (desk/prototypes): the PROTOTYPE stands in the vol column until the vol block is served, while the
+              registry draws it; a served block's card keeps its labels and prints its reason when awaiting (§1.0.2).
+              Since the 2026-11-16 release the registry does not draw it: the card prints the served reason. */}
+          {volIsPrototype(t, routeOff, tq.isError) && prototypeShown("protection") ? (
             <ProtectionCard />
           ) : (
             <Unserved block={volOff}>

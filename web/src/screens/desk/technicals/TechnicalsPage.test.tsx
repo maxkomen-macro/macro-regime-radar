@@ -3,8 +3,10 @@
  * fixtures: every number is a served field, the signals are the Ledger's S&P
  * group in the Ledger's order, the sector card shows the top three, the
  * middle one and the bottom three, and a card whose endpoint fails keeps its
- * labels and says "Awaiting refresh" (§1.7). The vol column is the PROTOTYPE
- * card (§1.0.3) until /technicals serves its vol block.
+ * labels and says "Awaiting refresh" (§1.7). The vol column is the LIVE card:
+ * the registry draws no PROTOTYPE since the 2026-11-16 release (§1.0.3 rule
+ * 10), so a vol block served awaiting prints its reason. The PROTOTYPE's own
+ * tests, with the registry drawing it, are in ./TechnicalsPage.prototype.test.tsx.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { act, fireEvent, screen, waitFor, within } from "@testing-library/react";
@@ -380,42 +382,18 @@ describe("Technicals tab", () => {
     expect(card).toHaveTextContent("20 sessions have not passed yet");
   });
 
-  it("/technicals serves the vol block awaiting and the sectors block ready: the vol column is the PROTOTYPE (§1.0.3), the sector card reads its bars", async () => {
+  it("/technicals serves the vol block awaiting and the sectors block ready: the vol card prints the served reason (§1.0.3 rule 10: the PROTOTYPE is not drawn), the sector card reads its bars", async () => {
     renderTab();
-    // The cards remount from their loading state to the answered one: query them afresh.
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection"));
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("needs stored SPY option snapshots and a versioned skew method."));
     const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
+    expect(vol).not.toHaveAttribute("data-prototype");
     expect(vol).toHaveTextContent("PUTS vs CALLS · 1 MONTH OUT");
-    expect(vol).not.toHaveTextContent("needs stored SPY option snapshots");
-    expect(within(vol).queryByTestId("dk-live")).toBeNull();
-    expect(vol).toHaveTextContent("Illustrative values · In production: daily SPY chain snapshots from the EODHD options add-on, stored and versioned.");
-    expect(vol).not.toHaveTextContent("Awaiting refresh");
+    expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
+    expect(vol.textContent).not.toMatch(/\+6\.8 pts|0\.84%|96\.7%|74th percentile|Illustrative values/);
     const sect = screen.getByRole("region", { name: /^Sector leadership/ });
     await waitFor(() => expect(within(sect).getByRole("list", { name: /top three/ })).toBeInTheDocument());
     expect(within(sect).getByTestId("dk-advanced")).toBeEnabled();
   });
-
-  it("the PROTOTYPE vol column prints its illustrative numbers, and its Advanced opens the assumed volatilities (§1.0.3)", async () => {
-    renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection"));
-    const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
-    expect(vol).toHaveTextContent("+6.8 pts");
-    // desk/pdf-polish 3a: "richer", never "dearer".
-    expect(vol).toHaveTextContent("Puts are 6.8 vol points richer than calls.");
-    expect(vol).not.toHaveTextContent("dearer");
-    // Black-Scholes at 19.2% and 12.4% vol, 30 days: the 25-delta strikes and what each costs.
-    expect(vol).toHaveTextContent(/25Δ put\s*19\.2%\s*96\.7%\s*0\.84%/);
-    expect(vol).toHaveTextContent(/25Δ call\s*12\.4%\s*102\.7%\s*0\.52%/);
-    expect(vol).toHaveTextContent("15.4 vs 11.9");
-    expect(vol).toHaveTextContent("74th percentile of two years");
-    expect(vol).toHaveTextContent("Rising since June.");
-    const adv = within(vol).getByTestId("dk-advanced");
-    expect(adv).toBeEnabled();
-    fireEvent.click(adv);
-    expect(vol).toHaveTextContent("Black-Scholes on SPY, 30 days to expiry, a 4.10% rate and a 1.20% dividend yield");
-    expect(vol).toHaveTextContent("78 of 105");
-  });
-
   it("LAST 20 DAYS is the served σ on its own date, with no word (§3, §12.7 serve none)", async () => {
     stubDesk({ "/api/desk/technicals": () => ({ ...technicals, move_20d_date: null }) });
     renderTab();
@@ -469,12 +447,12 @@ describe("Technicals tab", () => {
 });
 
 describe("routes served awaiting (§12.0, §1.0.2)", () => {
-  it("the vol block served awaiting: the PROTOTYPE stands in its place (§1.0.3), without the reason or a badge", async () => {
+  it("the vol block served awaiting: the LIVE card, its reason and its badge; the PROTOTYPE is not drawn (§1.0.3 rule 10)", async () => {
     renderTab();
-    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveAttribute("data-prototype", "protection"));
+    await waitFor(() => expect(screen.getByRole("region", { name: /^What protection costs right now/ })).toHaveTextContent("needs stored SPY option snapshots"));
     const vol = screen.getByRole("region", { name: /^What protection costs right now/ });
-    expect(vol).not.toHaveTextContent("needs stored SPY option snapshots");
-    expect(within(vol).queryByTestId("dk-live")).toBeNull();
+    expect(vol).not.toHaveAttribute("data-prototype");
+    expect(within(vol).getByTestId("dk-live")).toHaveTextContent("Not yet served");
   });
   it("a live vol block awaiting a refresh takes the column back: the LIVE card, its reason and its badge (§1.0.3 rule 6)", async () => {
     const refresh = { status: "awaiting", data: null, unavailable: { reason: "Awaiting refresh: this could not be computed from the current data.", until: null } };

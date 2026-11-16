@@ -46,7 +46,7 @@ drawn finished with illustrative values and a footnote saying so.
 | Overview: VIX "gap vs realized" and the vol band word | LIVE (desk/fill-compute) | the S&P's 21-day realized volatility (`src/analytics/technicals.realized_vol`) and the home page's VIX words (§12.1 `tiles.vol`) |
 | Overview: Monitored rows | LIVE from the browser's position store (§9) | no server position store (v2 D-21) |
 | Technicals: price, 50- and 200-day averages, trend, cross, chart, 1-year return, day change, last 20 days in σ, signals (the §3 allowlist) | LIVE | — |
-| Technicals: vol column ("What protection costs right now") | PROTOTYPE (§1.0.3) while a ready `/technicals` serves its vol block awaiting as not yet served; otherwise the LIVE card in its own state (UNAVAILABLE, awaiting); UNAVAILABLE for an instrument other than the S&P | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
+| Technicals: vol column ("What protection costs right now") | UNAVAILABLE with the served reason since 2026-11-16 (the PROTOTYPE is not drawn, §1.0.3 rule 10). When drawn: PROTOTYPE (§1.0.3) while a ready `/technicals` serves its vol block awaiting as not yet served; otherwise the LIVE card in its own state (UNAVAILABLE, awaiting); UNAVAILABLE for an instrument other than the S&P | needs stored SPY option snapshots and a versioned skew method (v2 D-17) |
 | Technicals: sector bars | LIVE (desk/fill-etf): the eleven sector ETFs' 60-session log returns less SPY's, `/technicals` `sectors` (§12.14) | — |
 | Technicals: RSI card | LIVE (desk/fill-compute) | Wilder's RSI(14) on the stored ^GSPC closes, `src/analytics/technicals.rsi` (the shared, symbol-agnostic copy) (§12.7) |
 | Technicals: MACD card | LIVE (desk/fill-compute) | MACD(12, 26, 9) on the stored ^GSPC closes, `src/analytics/technicals.macd` (the shared, symbol-agnostic copy) (§12.7 `macd`) |
@@ -74,13 +74,13 @@ drawn finished with illustrative values and a footnote saying so.
 | Basket & Hedge: a basket kept in this browser priced as one index (buy-and-hold or monthly), its technicals against the Nasdaq 100 (QQQ) and the S&P 500 (SPY), contribution, concentration, liquidity | LIVE, computed on request from EODHD's daily bars (§12.15); the baskets stay in the browser (§1.8) | desk/books |
 | Basket & Hedge: the ETF hedge (SMH SOXX QQQ XLK IGV XLU SPY IWM ranked by R², hedge ratio, dollars to short, residual vol) and the linear stress test | LIVE, computed on request (§12.16) | desk/books |
 | Basket & Hedge: cap weight, each name's market value at the basket's start from the stored share counts; the preset's default, Equal-weight beside it | LIVE (§12.15 `weighting=cap`, §12.18; desk/cap-weight) for a basket whose every name has a stored count (the preset baskets' names); any other basket, or a database the full refresh has not reached, shows it unavailable with the reason and is priced at its own weights | share counts come from Yahoo through the full refresh: this EODHD plan carries no fundamentals |
-| Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
+| Basket & Hedge: "Hedge with options" (step 3's options slot, §10) | UNAVAILABLE with the slot's reason since 2026-11-16 (the PROTOTYPE is not drawn, §1.0.3 rule 10). When drawn: PROTOTYPE (§1.0.3) for a saved basket; its inputs row LIVE from the basket engine | option structures for a basket not yet defined in the engine (v2 D-25–D-28) |
 | Basket & Hedge: "Positioning", futures (step 3, below the event study, §10) | LIVE (§12.20, Desk P4; method `docs/desk/POSITIONING_SPEC.md`) from the stored CFTC Commitments of Traders for five macro futures; awaiting, with the reason, on a database without them | a lagged weekly disclosure, labelled so; FINRA short interest deferred (D7), OCC put/call out of D7's scope, no crowding verdict |
 | Basket & Hedge: "Positioning", 13F holders of the basket's names (§10) | LIVE (§12.20 `holdings`, Desk P4; POSITIONING_SPEC §3) from the stored SEC Form 13F data sets, for the names the page asks for; awaiting, with the reason, on a database without them | a lagged quarterly disclosure of long positions only, labelled so; a ticker whose CUSIP pairing is not settled says why |
 | Basket & Hedge: "Event study on this basket" (step 3, above Positioning, §10) | LIVE (§12.19, desk P1a): the event-study engine on the saved basket's own index, computed on request from EODHD's daily closes since 1995; a basket whose index is too short for the question says so | the index's history is a backtest of names chosen today (hindsight); by-regime rows read revised regime history |
 | Options Finder (Trade, between Basket & Hedge and Position Monitor) | LIVE, listed 2026-11-16: computed on request from EODHD's end-of-day options chain (`GET /api/desk/options/finder`; method `docs/desk/OPTIONS_FINDER_MODEL.md`) | end-of-day quotes of a named session, never live; values on the date modelled at each contract's own volatility held flat; one long call or put on a US stock or ETF |
 | Data Pipeline | LIVE, inventory from the registry | v2 D-33 |
-| Data Pipeline: "Sync to Snowflake" (§11) | PROTOTYPE (§1.0.3); the bridge's "Generate Snowflake DDL" and "Export current study → CSV" stay LIVE | no Snowflake account or sync job exists; the schema is proposed |
+| Data Pipeline: "Sync to Snowflake" (§11) | Not drawn since 2026-11-16 (§1.0.3 rule 10); when drawn, PROTOTYPE (§1.0.3); the bridge's "Generate Snowflake DDL" and "Export current study → CSV" stay LIVE | no Snowflake account or sync job exists; the schema is proposed |
 | Build Notes | LIVE (the authored file, plus the list in §1.0.1) | — |
 | Client view | LIVE for Event Study's current study, at h = 20 | — |
 
@@ -169,6 +169,15 @@ is not served; its numbers are illustrative, and it says so in one place.
    carries no badge; no module outside `prototypes/` imports a prototype
    fixture; no prototype value is printed outside a PROTOTYPE card, on the
    fixture dev server and on a preview of the production build.
+10. **Drawn only when the registry says so.** Each card's registry row
+   (`web/src/screens/desk/prototypes/registry.ts`) carries `shown`; a page
+   draws the card only when it is true. The owner's release decision of
+   2026-11-16 set all three to false: no completed implementation answers
+   their questions, so each page shows the block's unavailable state with its
+   reason instead (Technicals: the served vol reason; Basket & Hedge: the
+   options slot's reason; Data Pipeline: no card, the DDL and the CSV stay).
+   The cards, their fixtures and their tests stay, so a card returns by
+   setting `shown` once its source is built.
 
 ### 1.1 Navigation
 - The sidebar is the ONLY navigation. No top tab strip. Width 176px, background #0f1216.
@@ -415,7 +424,9 @@ Signals; bottom-middle = Sector leadership; bottom-right = RSI; a third row
 (desk/fill-compute) = MACD across the vol column and the middle, seasonality
 on the right.
 
-**What protection costs right now** (vol column): PROTOTYPE (§1.0.3), for
+**What protection costs right now** (vol column): since 2026-11-16 the LIVE
+card in every state, so a vol block served awaiting prints its reason with `○
+Not yet served` (§1.0.3 rule 10). When the registry draws it: PROTOTYPE (§1.0.3), for
 the S&P only, when `/technicals` answers ready and serves its `vol` block
 awaiting as not yet served (Monday). Every other state draws the LIVE card
 below in that state: loading (quiet), the route awaiting (its reason, `○ Not
@@ -1093,7 +1104,9 @@ sessions, step 3 says so in amber (Codex R-08).
 
 **Hedge with options** (step 3's options slot, across the step under the two
 cards, for a saved basket whose `/basket/hedge` answer is on its way or has
-answered; otherwise the slot's reason, above): PROTOTYPE (§1.0.3). An inputs
+answered; otherwise the slot's reason, above): PROTOTYPE (§1.0.3), when the
+registry draws it; since 2026-11-16 it does not, and the slot prints its reason
+for every basket (§1.0.3 rule 10). An inputs
 row labelled `from your basket · live` reads the fields of that answer, the
 one the ETF hedge and the stress test print (§12.16,
 `web/src/screens/desk/prototypes/basket-inputs.ts`, `inputsFrom`): NOTIONAL
@@ -1180,7 +1193,10 @@ Header `● Last full refresh <last_refresh_utc> · validation <passed|failed>`,
 or "unknown" for either when not served (v2 D-33). Title "Where every number
 comes from" · "Every panel in Desk resolves to a row here. Every live
 number comes from stored data; prototype cards are marked. No live number
-is re-derived in the browser." Lineage strip: 1 SOURCES
+is re-derived in the browser." (The served blurb since 2026-11-16 is
+`web/src/screens/desk/desk-sections.ts`'s, which names the VIX tile and what
+Basket & Hedge and the Options Finder read on request, and no longer mentions
+prototype cards.) Lineage strip: 1 SOURCES
 (FRED API, Yahoo Finance, EODHD) → 2 FETCH (GitHub Actions) → 3 VALIDATE
 (schema + range checks, as-of ≤ today, gap detection) → 4 TRANSFORM
 (z-scores, MAs, regime labels, forward returns) → 5 STORE (SQLite snapshot,
@@ -1198,7 +1214,9 @@ gold & dollar ETFs (TLT, IEF, HYG, LQD, GLD, UUP). The bridge
 card is titled "Proposed export schema (not the current SQLite layout)", with
 the DDL block and the buttons **Export current study → CSV** (§12.4) and
 **Generate Snowflake DDL** (`/pipeline/ddl`). Under the two cards, **Sync to
-Snowflake**: PROTOTYPE (§1.0.3), from `proto-snowflake-sync.json`. The
+Snowflake**: PROTOTYPE (§1.0.3), from `proto-snowflake-sync.json`, when the
+registry draws it; since 2026-11-16 it does not, and the page ends with the
+bridge (§1.0.3 rule 10). The
 target (account, database, warehouse, role); the flow CONNECT → STAGE →
 MERGE → VERIFY, each step with what it does and how long it took; a table of
 the proposed schema's six tables with their key and row counts (STAGED,
