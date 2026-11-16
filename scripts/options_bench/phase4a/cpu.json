@@ -2511,7 +2511,22 @@
    "kind": "external",
    "cpu_s": 10.0,
    "note": "post-fix reanalysis: summary and both traces over the combined records (8.2 s user+sys measured)"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 145.0,
+   "note": "closeout review evidence: the five options and bench test files plus test_desk_options_finder.py at a3ab08ca (2m19s user+sys measured)"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 1600.0,
+   "note": "B-13 evidence: full Python suite at a3ab08ca (24m55s wall, single process; upper estimate)"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 400.0,
+   "note": "B-13 evidence: web typecheck and vitest suite at a3ab08ca (not metered; upper estimate)"
   }
  ],
- "total_s": 17174.591
+ "total_s": 19319.591
 }
