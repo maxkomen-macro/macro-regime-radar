@@ -12,7 +12,8 @@
  */
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+import { useDeskView } from "../desk-view";
 import { deskUrl, unavailableOf, usePipeline } from "../data/api";
 import { droppedOf } from "../data/schema";
 import type { PipelineGroup, PipelineSeries } from "../data/types";
@@ -32,13 +33,28 @@ import "./pipeline.css";
 
 /** The six steps a number takes (§11), fixed copy. */
 export const LINEAGE: readonly { step: string; lines: readonly string[] }[] = [
-  { step: "Sources", lines: ["FRED API", "Yahoo Finance", "EODHD (live tape)"] },
+  { step: "Sources", lines: ["FRED API", "Yahoo Finance", "EODHD (live tape, end-of-day options)"] },
   // The full refresh runs at 11:17 UTC daily and 00:23 UTC Tuesday to Saturday (the audit's §10 #21).
   { step: "Fetch", lines: ["GitHub Actions", "full refresh daily", "news-only hourly"] },
   { step: "Validate", lines: ["schema + range checks", "as-of ≤ today", "gap detection"] },
   { step: "Transform", lines: ["z-scores, MAs", "regime labels", "forward returns"] },
   { step: "Store", lines: ["SQLite snapshot", "published as release asset", "Snowflake-ready schema"] },
   { step: "Serve", lines: ["FastAPI · /api/desk/*", "one number, one truth", "Desk panels"] },
+];
+
+/** The two pages that read the provider when a visitor asks, beside the stored series below (fixed copy). */
+export const ON_REQUEST: readonly { page: string; slug: string; words: string }[] = [
+  {
+    page: "Basket & Hedge",
+    slug: "basket-hedge",
+    words: "prices a saved basket from EODHD's daily bars when it is opened, and reads the stored share counts for cap weight.",
+  },
+  {
+    page: "Options Finder",
+    slug: "options-finder",
+    words:
+      "reads one EODHD end-of-day options chain, with its dividends, for the scan a visitor runs, and the stored Treasury yields (DGS3MO, DGS2, DGS5), the stored macro release calendar and the stored earnings dates.",
+  },
 ];
 
 /** The bridge card's schema, as the board draws it (§11: "exactly as on the board"). */
@@ -279,6 +295,7 @@ function Bridge() {
 
 export default function PipelinePage({ page }: { page: DeskPage }) {
   const q = usePipeline();
+  const { pathTo } = useDeskView();
   const p = q.data;
   const groups = useMemo(() => (Array.isArray(p?.groups) ? p.groups : []), [p]);
   const [search, setSearch] = useSearchParams();
@@ -357,6 +374,21 @@ export default function PipelinePage({ page }: { page: DeskPage }) {
               </li>
             ))}
           </ol>
+        </section>
+        <section className="dk-card pl-on-request" aria-labelledby="pl-onreq-title" data-testid="pl-on-request">
+          <h2 className="dk-card-title" id="pl-onreq-title">
+            Read on request
+          </h2>
+          <ul>
+            {ON_REQUEST.map((r) => (
+              <li key={r.slug}>
+                <Link className="dk-link" to={pathTo(r.slug)}>
+                  {r.page}
+                </Link>{" "}
+                {r.words}
+              </li>
+            ))}
+          </ul>
         </section>
         <div className="pl-grid">
           <FailedScope q={q}>

@@ -112,7 +112,7 @@ describe("Pipeline words", () => {
   });
   it("has the six lineage steps of §11 and the board's schema lines", () => {
     expect(LINEAGE.map((s) => s.step)).toEqual(["Sources", "Fetch", "Validate", "Transform", "Store", "Serve"]);
-    expect(LINEAGE[0].lines).toEqual(["FRED API", "Yahoo Finance", "EODHD (live tape)"]);
+    expect(LINEAGE[0].lines).toEqual(["FRED API", "Yahoo Finance", "EODHD (live tape, end-of-day options)"]);
     expect(SCHEMA_PREVIEW.split("\n")[0]).toBe("-- RAW: exact copy of source, never edited");
     expect(SCHEMA_PREVIEW).toContain("-- Every MART row carries run_at + inputs_hash → reproducible.");
   });
