@@ -2181,7 +2181,12 @@
    "kind": "external",
    "cpu_s": 320.0,
    "note": "review evidence after the main run: three runs of the options and bench test files (about 93 s each, measured) plus trace re-runs over the main run records"
+  },
+  {
+   "kind": "external",
+   "cpu_s": 520.0,
+   "note": "review evidence for the trace fixes B-8 to B-12: five runs of the options and bench test files (about 93 s each, measured) plus trace and summary re-runs over the main run records"
   }
  ],
- "total_s": 13424.547
+ "total_s": 13944.547
 }
