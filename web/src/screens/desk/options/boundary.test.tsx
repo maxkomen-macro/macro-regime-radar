@@ -65,7 +65,31 @@ for (const key of Object.keys(ANSWERS)) {
   // One row: the first pick's, moved to the front so its card, the chart and the table's first page all read it.
   const top = (base.rows as J[]).find((r) => r.contract === picks[0]) as J;
   const rest = (base.rows as J[]).filter((r) => r.contract === picks[1] || r.contract === picks[2]);
-  const one = { ...clone(base), rows: [clone(top), ...clone(rest)] };
+  // With the Tier 2 check's block (OPTIONS_TIER2_CHECK on; Codex S-7): one checked pick, one with no Tier 2 value
+  // and one not checked, so every field the check's line reads is mutated too. Invented figures.
+  const tier2 = { route: "lattice", price_status: "estimated, cross-check pending", value: 1.25, estimate: 0.002, reason: null, delta_status: "served", delta: 0.4, delta_estimate: 0.001, delta_reason: null };
+  const engine_check = {
+    engine: "adaptive",
+    version: "adaptive-p2.1",
+    role: "check only: every number the Finder serves is Tier 1's",
+    work: { used: 1000, limit: 300000000, elapsed_ms: 12.5 },
+    picks: picks.map((contract, i) => ({
+      contract,
+      lenses: ["payoff"],
+      status: i === 2 ? "not checked" : "checked",
+      reason: i === 2 ? "work limit" : null,
+      tier1: { value: 1.25, delta: 0.4 },
+      tier2: i === 0 ? tier2 : i === 1 ? { ...tier2, price_status: "unresolved", value: null, estimate: null, reason: "estimate above target" } : null,
+      difference: i === 0 ? 0 : null,
+      allowed: i === 0 ? 0.01 : null,
+      agree: i === 0 ? true : null,
+      delta_difference: i === 0 ? 0 : null,
+      delta_allowed: i === 0 ? 0.003 : null,
+      delta_agree: i === 0 ? false : null,
+    })),
+    error: null,
+  };
+  const one = { ...clone(base), rows: [clone(top), ...clone(rest)], engine_check };
   const cases = paths(one).filter((p) => !(p[0] === "rows" && p[1] !== 0) && p[0] !== "as_of");
   describe(`the Finder's boundary and renderer agree: ${key.split("&").slice(0, 2).join(" ")}`, () => {
     it(`no field of the answer, removed or of the wrong kind, makes the page throw (${cases.length} fields × ${BAD.length})`, () => {

@@ -1335,6 +1335,44 @@ export interface OptionCarry {
   atm_vol: number | null;
 }
 
+/** Tier 2's answer on one pick's session context (api/desk_options.py with OPTIONS_TIER2_CHECK on; docs/desk/OPTIONS_TIER2_CHECK.md). */
+export interface EngineCheckTier2 {
+  route: string;
+  price_status: string;
+  value: number | null;
+  estimate: number | null;
+  reason: string | null;
+  delta_status: string;
+  delta: number | null;
+  delta_estimate: number | null;
+  delta_reason: string | null;
+}
+
+export interface EngineCheckPick {
+  contract: string;
+  lenses: string[];
+  status: "checked" | "not checked";
+  reason: string | null;
+  tier1: { value: number | null; delta: number | null };
+  tier2: EngineCheckTier2 | null;
+  difference: number | null;
+  allowed: number | null;
+  agree: boolean | null;
+  delta_difference: number | null;
+  delta_allowed: number | null;
+  delta_agree: boolean | null;
+}
+
+/** The Tier 2 accuracy check on the picks: a comparison only; every number the page shows stays Tier 1's. */
+export interface EngineCheck {
+  engine?: string;
+  version?: string;
+  role?: string;
+  work?: { used: number | null; limit: number | null; elapsed_ms?: number | null };
+  picks: EngineCheckPick[];
+  error?: string | null;
+}
+
 export interface OptionsFinderResponse extends Envelope {
   symbol?: string;
   inputs?: {
@@ -1378,6 +1416,8 @@ export interface OptionsFinderResponse extends Envelope {
   earnings_moves?: { event_id: string; date: string; move_sd_pct: number | null; expiries: string[] | null; reason: string | null }[];
   /** Served when the quotes are one session behind the newest completed session. */
   stale?: string | null;
+  /** Present only with the API's OPTIONS_TIER2_CHECK switch on. */
+  engine_check?: EngineCheck;
   work?: { used: number | null; limit: number | null };
   method?: { version: string; tolerances: Record<string, unknown>; lattice: { n_min: number | null; k_min: number | null }; notes: string[] };
   scan?: {
