@@ -27,7 +27,7 @@ from pathlib import Path
 
 from src.desk import options_finder as of
 
-from . import bench, population as pop
+from . import bench, eligibility, population as pop
 
 OFFLINE = 10 ** 13
 LIMITS = {"budget": of.WORK_LIMIT, "offline": OFFLINE}
@@ -41,15 +41,9 @@ FORECAST_MIN_SAMPLES = 5
 
 # ── one request (in the child) ──
 
-def capture_wrappers(captured: dict) -> dict:
-    """Record the implied vols and each lens's top 20 as run() computes them; changes nothing."""
-    def implied_vols(fn):
-        def inner(rc, quotes):
-            got = fn(rc, quotes)
-            captured.setdefault("iv", {}).update(got)
-            return got
-        return inner
-
+def capture_wrappers(captured: dict, trace: eligibility.Trace) -> dict:
+    """Record each lens's top 20 and every candidate's fate (eligibility.py) as run() computes them; changes
+    nothing."""
     def lens_order(fn):
         def inner(rows, lens, view):
             got = fn(rows, lens, view)
@@ -57,19 +51,20 @@ def capture_wrappers(captured: dict) -> dict:
             return got
         return inner
 
-    return {"implied_vols": implied_vols, "lens_order": lens_order}
+    return {"lens_order": lens_order, **trace.wrappers()}
 
 
-def _compact(res: dict, captured: dict) -> dict:
+def _compact(res: dict, captured: dict, trace: eligibility.Trace, req) -> dict:
     a = res["answer"]
     out = {k: res[k] for k in ("config", "limit", "outcome", "error", "units", "cpu_s", "wall_s", "sites")}
-    out["iv"] = captured.get("iv")
+    out["iv"] = trace.iv
     out["lens_order"] = captured.get("lens_order")
     p = res["pricer"]
     out["rf"] = p.rf
     out["t2_answers"] = len(p.t2_answer)
     if a is None:
         return out
+    out["eligibility"] = eligibility.fates(trace, req, a)
     out["picks"] = a["picks"]
     out["universe"] = {k: a["universe"][k] for k in ("seen", "passed", "dropped", "ranked_out") if k in a["universe"]}
     out["carry"] = [{k: c.get(k) for k in ("exp", "forward", "q", "pairs", "source")} for c in a["carry"]]
@@ -86,18 +81,19 @@ def _compact(res: dict, captured: dict) -> dict:
     return out
 
 
-def run_request(i: int, configs: list[str], limits: list[str]) -> list[dict]:
+def run_request(i: int, configs: list[str], limits: list[str]):
+    """One record per (configuration, limit), yielded as each finishes, so a later one's failure or CPU limit never
+    loses an earlier one's measurement."""
     t0 = time.process_time()
     req = pop.request(pop.DEV_SEED, i)
     gen_cpu = time.process_time() - t0
-    out = []
     for cfg in configs:
         for lim in limits:
             captured: dict = {}
-            res = bench.run_one(req, cfg, LIMITS[lim], wrappers=capture_wrappers(captured))
-            out.append(_compact(res, captured) | {"index": i, "limit_name": lim, "params": req.params,
-                                                  "gen_cpu_s": gen_cpu})
-    return out
+            trace = eligibility.Trace()
+            res = bench.run_one(req, cfg, LIMITS[lim], wrappers=capture_wrappers(captured, trace))
+            yield _compact(res, captured, trace, req) | {"index": i, "limit_name": lim, "params": req.params,
+                                                         "gen_cpu_s": gen_cpu}
 
 
 # ── the ledger and the guard (in the parent) ──
@@ -157,13 +153,24 @@ def guarded(start: int, n: int, configs: list[str], limits: list[str], out: Path
             write_ledger(led, ledger)
             lines = tmp_path.read_text().splitlines() if tmp_path.exists() else []
             tmp_path.unlink(missing_ok=True)
-            if proc.returncode == 0:
-                for line in lines:
-                    f.write(line + "\n")
-            else:
+            done = []
+            for line in lines:   # every completed (configuration, limit) is kept, whatever happened after it
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue      # a line cut off by the kill
+                done.append((rec.get("config"), rec.get("limit_name")))
+                f.write(line + "\n")
+            if proc.returncode != 0:
                 killed = proc.returncode in (-signal.SIGXCPU, -signal.SIGKILL)
-                f.write(json.dumps({"index": i, "outcome": "incomplete: CPU limit" if killed else "failed: child",
-                                    "rc": proc.returncode, "cpu_s": used, "partial_lines": len(lines)}) + "\n")
+                todo = [(c, l) for c in configs for l in limits if (c, l) not in done]
+                for c, l in todo[:1]:
+                    f.write(json.dumps({"index": i, "config": c, "limit_name": l,
+                                        "outcome": "incomplete: CPU limit" if killed else "failed: child",
+                                        "rc": proc.returncode, "cpu_s": used}) + "\n")
+                for c, l in todo[1:]:
+                    f.write(json.dumps({"index": i, "config": c, "limit_name": l, "outcome": "not run: earlier "
+                                        "configuration interrupted", "rc": proc.returncode}) + "\n")
             f.flush()
     return 0
 

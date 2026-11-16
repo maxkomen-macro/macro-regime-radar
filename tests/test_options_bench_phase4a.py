@@ -195,3 +195,50 @@ def test_the_cpu_guard_meters_a_child_and_keeps_its_answer(tmp_path):
     assert led["entries"][0]["kind"] == "request" and led["entries"][0]["cpu_s"] > 0 and led["total_s"] > 0
     (rec,) = [json.loads(x) for x in out.read_text().splitlines()]
     assert rec["outcome"] == "answered" and rec["config"] == "A"
+
+
+@pytest.mark.parametrize("config", ["A", "C"])
+def test_every_candidate_s_fate_adds_up_to_the_answer_s_own_counts(config):
+    from scripts.options_bench.phase4a import runner
+    (rec,) = list(runner.run_request(0, [config], ["budget"]))
+    el = rec["eligibility"]
+    assert el["consistent"], el["diff"]
+    assert sum(1 for v in el["fate"].values() if v == "passed") == len(rec["rows"])
+
+
+def test_a_later_configuration_s_failure_keeps_the_earlier_record(monkeypatch):
+    from scripts.options_bench.phase4a import runner
+    real = bench.run_one
+
+    def run_one(req, config, limit, wrappers=None):
+        if config == "B":
+            raise MemoryError("stand-in for a kill")
+        return real(req, config, limit, wrappers=wrappers)
+
+    monkeypatch.setattr(bench, "run_one", run_one)
+    gen = runner.run_request(0, ["A", "B"], ["budget"])
+    first = next(gen)
+    assert first["config"] == "A" and first["outcome"] == "answered"
+    with pytest.raises(MemoryError):
+        next(gen)
+
+
+def test_the_guard_keeps_completed_lines_of_a_killed_child_and_names_the_interrupted_one(tmp_path, monkeypatch):
+    import signal
+    import subprocess
+    from scripts.options_bench.phase4a import runner
+    ledger, out = tmp_path / "cpu.json", tmp_path / "out.jsonl"
+
+    def fake_run(cmd, **kw):
+        path = Path(cmd[cmd.index("--out") + 1])
+        path.write_text(json.dumps({"index": 0, "config": "A", "limit_name": "budget", "outcome": "answered"})
+                        + "\n" + '{"index": 0, "config": "A", "limit_na')
+        return subprocess.CompletedProcess(cmd, -signal.SIGXCPU)
+
+    monkeypatch.setattr(runner.subprocess, "run", fake_run)
+    assert runner.guarded(0, 1, ["A", "B"], ["budget", "offline"], out, ledger) == 0
+    recs = [json.loads(x) for x in out.read_text().splitlines()]
+    assert [(r["config"], r["limit_name"], r["outcome"]) for r in recs] == [
+        ("A", "budget", "answered"), ("A", "offline", "incomplete: CPU limit"),
+        ("B", "budget", "not run: earlier configuration interrupted"),
+        ("B", "offline", "not run: earlier configuration interrupted")]
