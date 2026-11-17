@@ -1,8 +1,8 @@
 {
-  "generated_at": "2026-11-17T08:11:29.813915",
-  "as_of": "2026-09-01",
+  "generated_at": "2026-11-17T19:55:38.305367",
+  "as_of": "2026-10-01",
   "regime": "Overheating",
-  "confidence": 0.5456,
+  "confidence": 0.499,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
     "Because 10Y Treasury rate momentum is extreme in the latest reading (week of 2026-11-13, z=+2.61), the 10Y Treasury signal is significantly elevated versus 2-year norms.",
@@ -10,7 +10,7 @@
     "Because today 10Y real yield is positive at 2.91%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.88%."
   ],
-  "summary": "Regime: Overheating (confidence 55%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because 10Y Treasury rate momentum is extreme in the latest reading (week of 2026-11-13, z=+2.61), the 10Y Treasury signal is significantly elevated versus 2-year norms. Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99). Because today 10Y real yield is positive at 2.91%, real rates are restrictive — a headwind for equities and gold.",
+  "summary": "Regime: Overheating (confidence 50%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because 10Y Treasury rate momentum is extreme in the latest reading (week of 2026-11-13, z=+2.61), the 10Y Treasury signal is significantly elevated versus 2-year norms. Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99). Because today 10Y real yield is positive at 2.91%, real rates are restrictive — a headwind for equities and gold.",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
