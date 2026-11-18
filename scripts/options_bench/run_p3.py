@@ -12,7 +12,8 @@ dev-only lattice gamma by delta differences (P3-A7) and QuantLib's Greeks. The r
 (a run stopped part way loses at most the cases in flight; a partial last line is dropped). The resumed run must
 use the same seed, sizes and settings: the manifest from the first run is checked and kept.
 `--config` overrides the Greek configuration (h_sigma, h_r, h_d_frac, m_frac, p_frac, factors, bump_factors) for
-production, the references (h_ref is the production bump halved), the exact controls and C1 alike.
+production, the references (h_ref is the production bump halved), the exact controls and C1 alike; `f_p` sets the
+cross-check's F_P (options_adaptive.XConfig) and `smooth_divs` the lattice side's dividend smoothing.
 Development seed only until the freeze: the held-out run is a separate, frozen procedure.
 """
 
@@ -63,6 +64,7 @@ def delta_difference_gamma(c: om.Context, mults=(1, 2, 3, 4, 5, 6)) -> dict:
 
 FD_KEYS = ("m_frac", "p_frac", "work_cap", "penalty")
 REF_KEYS = ("smooth_divs",)   # reference settings, not GreekConfig: the lattice side's dividend smoothing (V-3)
+XC_KEYS = ("f_p",)            # the cross-check's settings (options_adaptive.XConfig), frozen on dev (section 10)
 
 
 def greek_config(over: dict | None) -> G.GreekConfig:
@@ -74,11 +76,16 @@ def greek_config(over: dict | None) -> G.GreekConfig:
     from src.desk import options_fd as fd
     fd_over = {k: v for k, v in over.items() if k in FD_KEYS}
     rest = {k: (tuple(tuple(x) for x in v) if k in ("factors", "bump_factors") else v)
-            for k, v in over.items() if k not in FD_KEYS + REF_KEYS}
+            for k, v in over.items() if k not in FD_KEYS + REF_KEYS + XC_KEYS}
     unknown = set(rest) - {f for f in G.GreekConfig.__dataclass_fields__ if f != "fd"}
     if unknown:
         raise ValueError(f"unknown Greek config keys {sorted(unknown)}")
     return replace(base, fd=replace(base.fd, **fd_over) if fd_over else base.fd, **rest)
+
+
+def x_config(over: dict | None) -> oa.XConfig:
+    """The cross-check's XConfig with the given overrides (`f_p`); the module default when none is given."""
+    return oa.XConfig(**{k: float(v) for k, v in (over or {}).items() if k in XC_KEYS})
 
 
 def one(args) -> dict:
@@ -86,12 +93,13 @@ def one(args) -> dict:
     over = more[0] if more else None
     cfg = greek_config(over)
     smooth = bool((over or {}).get("smooth_divs", False))
+    xcfg = x_config(over)
     case = cases.Case.from_json(case_json)
     c = C.to_ctx(case)
     regions = None if regions_json is None else Regions.from_json(regions_json)
     rec: dict = {"case": case.to_json(), "versions": {"tier2": oa.VERSION, "greeks": G.VERSION}}
     t0 = time.time()
-    p3 = oa.phase3(c, gcfg=cfg, x_region=None if regions is None else regions.fd_role_region,
+    p3 = oa.phase3(c, gcfg=cfg, xcfg=xcfg, x_region=None if regions is None else regions.fd_role_region,
                    g_region=None if regions is None else regions.greek_region)
     rec["secs_phase3"] = time.time() - t0
     rec["tier2"] = golden.answer_json(p3.tier2)
@@ -146,6 +154,8 @@ def one(args) -> dict:
         rec["secs_price_ref"] = time.time() - t0
         rec["price_ref"] = {"status": pr["value"]["status"], "ref": pr["value"]["ref"], "u": pr["value"]["u"],
                             "tol": pr["value"]["tol"]}
+        # the same study's delta reference (no extra solve): Tier 2's delta row, reported beside the price
+        rec["delta_ref"] = {k: pr["delta"].get(k) for k in ("status", "ref", "u", "tol")}
     if diagnostics and in_domain and c.days > 0:
         t0 = time.time()
         rec["diag_delta_difference_gamma"] = delta_difference_gamma(c)
@@ -208,7 +218,7 @@ def main(argv=None) -> int:
     (out / "manifest-p3.json").write_text(json.dumps({
         "seed": a.seed, "per_group": a.per_group, "named": a.named, "cases": len(todo), "secs": time.time() - t0,
         "versions": {"tier2": oa.VERSION, "greeks": G.VERSION}, "regions": regions,
-        "greek_config": asdict(gcfg), "config_overrides": over, "x_config": asdict(oa.XConfig()),
+        "greek_config": asdict(gcfg), "config_overrides": over, "x_config": asdict(x_config(over)),
         "ref_work_cap": GR.REF_WORK_CAP, "resumed_after": len(done)}, indent=1, default=str))
     print(f"{len(todo)} cases in {time.time() - t0:.0f} s -> {path}")
     return 0

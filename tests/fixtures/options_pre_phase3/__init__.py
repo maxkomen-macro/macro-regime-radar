@@ -7,8 +7,9 @@
   cross-check; it imports the current options_math and options_engine.
 
 Tests load them with `load`, which first checks each file's git blob id, so a copy cannot drift from its commit.
-They are test references only: nothing outside tests imports them. A bit-identical guarantee is checked by running
-the old and the current code in the same process, because a recorded float.hex value is specific to the platform's
+They are references only: tests import them, and so does the Phase 3 held-out runner (scripts/options_bench/
+heldout_p3.py, for its Phase 2 rows); the engine never does. A bit-identical guarantee is checked by running the
+old and the current code in the same process, because a recorded float.hex value is specific to the platform's
 numpy and libm (the pattern of tests/fixtures/options_pre_dividend_smoothing/)."""
 
 from __future__ import annotations
