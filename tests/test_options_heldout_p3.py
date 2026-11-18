@@ -440,3 +440,35 @@ def test_a_targeted_pair_no_record_reached_is_not_established(tmp_path, clean_gi
     rep = R.report(fp, out)
     assert rep["rows"][f"pair {G.GAMMA}|G1-nodiv"] == "not established"
     assert rep["by_the_frozen_rules"] == "not accepted by the frozen rules"
+
+
+def test_main_refuses_before_drawing_any_case(tmp_path, monkeypatch, clean_git):
+    """Code review S-F-3: the file-hash, seed and checkout refusals run before population() in both modes."""
+    drawn = []
+
+    def sentinel(freeze):
+        drawn.append(freeze["held_out"]["seed"])
+        raise RuntimeError("population drawn")
+
+    monkeypatch.setattr(H, "population", sentinel)
+    fp = tmp_path / "freeze.json"
+    changed = tiny_freeze()
+    changed["files_sha256"] = {**changed["files_sha256"], "scripts/options_bench/score_p3.py": "0" * 64}
+    for mode in ([], ["--population-only"]):
+        argv = ["--freeze", str(fp), "--out", str(tmp_path / "run")] + mode
+        fp.write_text(json.dumps(changed))
+        with pytest.raises(SystemExit, match="differ from the freeze"):
+            H.main(argv)
+        fp.write_text(json.dumps(tiny_freeze(held_out={**tiny_freeze()["held_out"], "seed": F.DEV_SEED})))
+        with pytest.raises(SystemExit, match="registered seed"):
+            H.main(argv)
+        fp.write_text(json.dumps(tiny_freeze()))
+        with monkeypatch.context() as m:
+            m.setattr(H, "git_state", lambda: {"head": "f" * 40, "tracked_changes": " M src/desk/options_fd.py"})
+            with pytest.raises(SystemExit, match="tracked changes"):
+                H.main(argv)
+        assert drawn == []
+        with pytest.raises(RuntimeError, match="population drawn"):
+            H.main(argv)                 # a clean freeze reaches the draw
+        drawn.clear()
+    assert not (tmp_path / "run").exists()

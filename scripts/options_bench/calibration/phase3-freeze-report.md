@@ -68,7 +68,8 @@ reference is reported, not gated.
 
 ## 6. Run mechanics (P3-A21)
 
-- From an immutable checkout of the freeze commit (`git worktree add --detach`), output outside it; refusals:
+- From an immutable checkout of the freeze commit (`git worktree add --detach`), output outside it; refusals (the
+  file hashes, seed and checkout before any case is drawn, freeze review F-2):
   changed file, tracked change, registered seed, a directory started under another freeze or population,
   results without a manifest, a result whose case is not its job's.
 - Fixed interleaved order (each stream at the same fraction of its length); one JSON line per finished job; a

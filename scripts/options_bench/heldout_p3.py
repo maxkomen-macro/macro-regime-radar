@@ -335,8 +335,9 @@ def git_state() -> dict:
     return {"head": head, "tracked_changes": dirty}
 
 
-def preflight(freeze: dict, freeze_path: Path, out: Path, jobs: list[dict]) -> dict:
-    """Every refusal before work; the manifest to write (new, or the prior one with this session appended)."""
+def guard(freeze: dict) -> dict:
+    """The refusals that need no held-out case: the frozen files' hashes, the seed, a clean checkout. main() runs
+    them before population() draws a single case (code review S-F-3); returns the checkout's state."""
     bad = F.check_freeze(freeze)
     if bad:
         raise SystemExit("files differ from the freeze: " + ", ".join(bad))
@@ -346,6 +347,15 @@ def preflight(freeze: dict, freeze_path: Path, out: Path, jobs: list[dict]) -> d
     gs = git_state()
     if gs["tracked_changes"]:
         raise SystemExit("the checkout has tracked changes: run from an immutable checkout of the freeze")
+    return gs
+
+
+def preflight(freeze: dict, freeze_path: Path, out: Path, jobs: list[dict], gs: dict | None = None) -> dict:
+    """Every refusal before work (guard's, unless main() ran it already, then the run directory's); the manifest to
+    write (new, or the prior one with this session appended)."""
+    if gs is None:
+        gs = guard(freeze)
+    seed = freeze["held_out"]["seed"]
     man = {"runner": "scripts/options_bench/heldout_p3.py", "freeze": str(freeze_path),
            "freeze_sha256": F.sha(freeze_path), "files_sha256": F.file_hashes(), "git_head": gs["head"],
            "seed": seed, "sizes": freeze["held_out"]["sizes"], "jobs": len(jobs), "population_sha256": fingerprint(jobs),
@@ -374,10 +384,7 @@ def main(argv=None) -> int:
     freeze_path = Path(a.freeze)
     freeze = json.loads(freeze_path.read_text())
     out = Path(a.out)
-    if a.population_only:
-        bad = F.check_freeze(freeze)
-        if bad:
-            raise SystemExit("files differ from the freeze: " + ", ".join(bad))
+    gs = guard(freeze)          # before any held-out case is drawn, in both modes
     jobs, short = population(freeze)
     if a.population_only:
         from collections import Counter
@@ -385,7 +392,7 @@ def main(argv=None) -> int:
                           "short": short}, indent=1))
         return 0
     out.mkdir(parents=True, exist_ok=True)
-    man = preflight(freeze, freeze_path, out, jobs)
+    man = preflight(freeze, freeze_path, out, jobs, gs)
     want = {j["key"]: case_key(j["case"]) for j in jobs}
     prev = read_results(out / RESULTS)
     foreign = [r["key"] for r in prev if want.get(r["key"]) != case_key(job_case(r))]
