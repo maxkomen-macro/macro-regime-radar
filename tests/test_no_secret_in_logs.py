@@ -240,11 +240,39 @@ def test_a_failed_signed_download_keeps_the_url_out_of_status(monkeypatch, caplo
     assert "503" in str(bootstrap.status()["last_error"])
 
 
+UVICORN_LOGGERS = ("uvicorn", "uvicorn.error", "uvicorn.access")
+
+
 def test_uvicorns_own_formatters_still_work_with_the_filter(secrets, capsys):
     """Item 3 verify loop 2: clearing record.args broke uvicorn's access
     formatter (it unpacks five args) on every request, and its coloured
     startup lines printed raw placeholders. The filter keeps the args' shape
     and redacts inside them."""
+    _check_uvicorns_formatters(secrets, capsys)
+
+
+def test_the_uvicorn_check_holds_after_another_library_reconfigured_uvicorn_error(secrets, capsys):
+    """The check above once failed in full runs wherever Streamlit is
+    installed (backlog B-2): reading ``st.secrets`` (through
+    ``src.analytics.chat.get_secret`` in test_chat_sql_guard.py) runs
+    Streamlit's ``init_uvicorn_logs``, which gives ``uvicorn.error`` its own
+    handler and ``propagate = False``. uvicorn's LOGGING_CONFIG names no
+    ``propagate`` for that logger, so dictConfig removed the handler but kept
+    the flag, and the startup line reached no handler. This puts the logger
+    in that state without Streamlit and runs the same check."""
+    stray = logging.StreamHandler()
+    err = logging.getLogger("uvicorn.error")
+    saved = (err.propagate, list(err.handlers))
+    err.propagate = False
+    err.addHandler(stray)
+    try:
+        _check_uvicorns_formatters(secrets, capsys)
+    finally:
+        err.removeHandler(stray)
+        err.propagate, err.handlers[:] = saved[0], saved[1]
+
+
+def _check_uvicorns_formatters(secrets, capsys):
     import copy
     import io
     import logging.config
@@ -256,6 +284,14 @@ def test_uvicorns_own_formatters_still_work_with_the_filter(secrets, capsys):
     for h in cfg["handlers"].values():
         h["class"] = "logging.StreamHandler"
         h["stream"] = buf
+    # Start the uvicorn loggers as a fresh process has them (no handlers,
+    # propagating), so a library or an earlier test that reconfigured them
+    # cannot decide where the lines go; put them back afterwards.
+    saved = {n: (lg.propagate, lg.level, list(lg.handlers)) for n in UVICORN_LOGGERS for lg in [logging.getLogger(n)]}
+    for n in UVICORN_LOGGERS:
+        lg = logging.getLogger(n)
+        lg.handlers.clear()
+        lg.propagate = True
     logging.config.dictConfig(cfg)
     try:
         logsafe.install()
@@ -270,6 +306,9 @@ def test_uvicorns_own_formatters_still_work_with_the_filter(secrets, capsys):
             extra={"color_message": "Uvicorn running on %s://%s:%d (Press CTRL+C to quit)"})
     finally:
         logging.config.dictConfig({"version": 1, "disable_existing_loggers": False})
+        for n, (propagate, level, handlers) in saved.items():
+            lg = logging.getLogger(n)
+            lg.propagate, lg.level, lg.handlers[:] = propagate, level, handlers
     out = buf.getvalue()
     err = capsys.readouterr().err
     assert "Logging error" not in err and "TypeError" not in err, err
