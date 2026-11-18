@@ -1,0 +1,1001 @@
+{
+ "rates": {
+  "G0-exempt": {
+   "gamma": [
+    120,
+    0.9833333333333333
+   ],
+   "vega": [
+    120,
+    0.9833333333333333
+   ],
+   "rho": [
+    120,
+    0.9833333333333333
+   ],
+   "theta": [
+    120,
+    0.9833333333333333
+   ],
+   "dividend": [
+    0,
+    0.0
+   ],
+   "cross-check": [
+    0,
+    0.0
+   ]
+  },
+  "G1-nodiv": {
+   "gamma": [
+    120,
+    0.7166666666666667
+   ],
+   "vega": [
+    120,
+    0.7166666666666667
+   ],
+   "rho": [
+    120,
+    0.7083333333333334
+   ],
+   "theta": [
+    120,
+    0.7083333333333334
+   ],
+   "dividend": [
+    0,
+    0.0
+   ],
+   "cross-check": [
+    118,
+    0.95
+   ]
+  },
+  "G2-dividends": {
+   "gamma": [
+    120,
+    0.9166666666666666
+   ],
+   "vega": [
+    120,
+    0.9083333333333333
+   ],
+   "rho": [
+    120,
+    0.9083333333333333
+   ],
+   "theta": [
+    120,
+    0.85
+   ],
+   "dividend": [
+    120,
+    0.8166666666666667
+   ],
+   "cross-check": [
+    116,
+    0.95
+   ]
+  },
+  "G3-carry-itm": {
+   "gamma": [
+    120,
+    0.5166666666666667
+   ],
+   "vega": [
+    120,
+    0.5166666666666667
+   ],
+   "rho": [
+    120,
+    0.5083333333333333
+   ],
+   "theta": [
+    120,
+    0.44166666666666665
+   ],
+   "dividend": [
+    51,
+    0.30833333333333335
+   ],
+   "cross-check": [
+    118,
+    0.975
+   ]
+  },
+  "G4-negrate": {
+   "gamma": [
+    120,
+    0.8416666666666667
+   ],
+   "vega": [
+    120,
+    0.8333333333333334
+   ],
+   "rho": [
+    120,
+    0.825
+   ],
+   "theta": [
+    120,
+    0.8083333333333333
+   ],
+   "dividend": [
+    47,
+    0.2916666666666667
+   ],
+   "cross-check": [
+    109,
+    0.9
+   ]
+  },
+  "G5-extreme-vol": {
+   "gamma": [
+    120,
+    0.85
+   ],
+   "vega": [
+    120,
+    0.8416666666666667
+   ],
+   "rho": [
+    120,
+    0.8583333333333333
+   ],
+   "theta": [
+    120,
+    0.8166666666666667
+   ],
+   "dividend": [
+    55,
+    0.4166666666666667
+   ],
+   "cross-check": [
+    111,
+    0.7833333333333333
+   ]
+  },
+  "G6-long": {
+   "gamma": [
+    120,
+    0.9416666666666667
+   ],
+   "vega": [
+    120,
+    0.9
+   ],
+   "rho": [
+    120,
+    0.8583333333333333
+   ],
+   "theta": [
+    120,
+    0.9416666666666667
+   ],
+   "dividend": [
+    88,
+    0.6583333333333333
+   ],
+   "cross-check": [
+    110,
+    0.9083333333333333
+   ]
+  },
+  "T1-near-boundary": {
+   "gamma": [
+    120,
+    0.6
+   ],
+   "vega": [
+    120,
+    0.5833333333333334
+   ],
+   "rho": [
+    120,
+    0.575
+   ],
+   "theta": [
+    120,
+    0.5166666666666667
+   ],
+   "dividend": [
+    59,
+    0.39166666666666666
+   ],
+   "cross-check": [
+    120,
+    1.0
+   ]
+  }
+ },
+ "sizes": {
+  "pairs": {
+   "gamma|G0-exempt": {
+    "standing": "targeted",
+    "pi": 0.9833333333333333,
+    "n": 382,
+    "applicable": 120
+   },
+   "vega|G0-exempt": {
+    "standing": "targeted",
+    "pi": 0.9833333333333333,
+    "n": 382,
+    "applicable": 120
+   },
+   "rho|G0-exempt": {
+    "standing": "targeted",
+    "pi": 0.9833333333333333,
+    "n": 382,
+    "applicable": 120
+   },
+   "theta|G0-exempt": {
+    "standing": "targeted",
+    "pi": 0.9833333333333333,
+    "n": 382,
+    "applicable": 120
+   },
+   "dividend|G0-exempt": {
+    "standing": "not applicable"
+   },
+   "cross-check|G0-exempt": {
+    "standing": "not applicable"
+   },
+   "gamma|G1-nodiv": {
+    "standing": "targeted",
+    "pi": 0.7166666666666667,
+    "n": 524,
+    "applicable": 120
+   },
+   "vega|G1-nodiv": {
+    "standing": "targeted",
+    "pi": 0.7166666666666667,
+    "n": 524,
+    "applicable": 120
+   },
+   "rho|G1-nodiv": {
+    "standing": "targeted",
+    "pi": 0.7083333333333334,
+    "n": 530,
+    "applicable": 120
+   },
+   "theta|G1-nodiv": {
+    "standing": "targeted",
+    "pi": 0.7083333333333334,
+    "n": 530,
+    "applicable": 120
+   },
+   "dividend|G1-nodiv": {
+    "standing": "not applicable"
+   },
+   "cross-check|G1-nodiv": {
+    "standing": "targeted",
+    "pi": 0.95,
+    "n": 395,
+    "applicable": 118
+   },
+   "gamma|G2-dividends": {
+    "standing": "targeted",
+    "pi": 0.9166666666666666,
+    "n": 410,
+    "applicable": 120
+   },
+   "vega|G2-dividends": {
+    "standing": "targeted",
+    "pi": 0.9083333333333333,
+    "n": 413,
+    "applicable": 120
+   },
+   "rho|G2-dividends": {
+    "standing": "targeted",
+    "pi": 0.9083333333333333,
+    "n": 413,
+    "applicable": 120
+   },
+   "theta|G2-dividends": {
+    "standing": "targeted",
+    "pi": 0.85,
+    "n": 442,
+    "applicable": 120
+   },
+   "dividend|G2-dividends": {
+    "standing": "targeted",
+    "pi": 0.8166666666666667,
+    "n": 460,
+    "applicable": 120
+   },
+   "cross-check|G2-dividends": {
+    "standing": "targeted",
+    "pi": 0.95,
+    "n": 395,
+    "applicable": 116
+   },
+   "gamma|G3-carry-itm": {
+    "standing": "targeted",
+    "pi": 0.5166666666666667,
+    "n": 726,
+    "applicable": 120
+   },
+   "vega|G3-carry-itm": {
+    "standing": "targeted",
+    "pi": 0.5166666666666667,
+    "n": 726,
+    "applicable": 120
+   },
+   "rho|G3-carry-itm": {
+    "standing": "targeted",
+    "pi": 0.5083333333333333,
+    "n": 738,
+    "applicable": 120
+   },
+   "theta|G3-carry-itm": {
+    "standing": "targeted",
+    "pi": 0.44166666666666665,
+    "n": 850,
+    "applicable": 120
+   },
+   "dividend|G3-carry-itm": {
+    "standing": "targeted",
+    "pi": 0.30833333333333335,
+    "n": 1217,
+    "applicable": 51
+   },
+   "cross-check|G3-carry-itm": {
+    "standing": "targeted",
+    "pi": 0.975,
+    "n": 385,
+    "applicable": 118
+   },
+   "gamma|G4-negrate": {
+    "standing": "targeted",
+    "pi": 0.8416666666666667,
+    "n": 446,
+    "applicable": 120
+   },
+   "vega|G4-negrate": {
+    "standing": "targeted",
+    "pi": 0.8333333333333334,
+    "n": 450,
+    "applicable": 120
+   },
+   "rho|G4-negrate": {
+    "standing": "targeted",
+    "pi": 0.825,
+    "n": 455,
+    "applicable": 120
+   },
+   "theta|G4-negrate": {
+    "standing": "targeted",
+    "pi": 0.8083333333333333,
+    "n": 464,
+    "applicable": 120
+   },
+   "dividend|G4-negrate": {
+    "standing": "targeted",
+    "pi": 0.2916666666666667,
+    "n": 1286,
+    "applicable": 47
+   },
+   "cross-check|G4-negrate": {
+    "standing": "targeted",
+    "pi": 0.9,
+    "n": 417,
+    "applicable": 109
+   },
+   "gamma|G5-extreme-vol": {
+    "standing": "targeted",
+    "pi": 0.85,
+    "n": 442,
+    "applicable": 120
+   },
+   "vega|G5-extreme-vol": {
+    "standing": "targeted",
+    "pi": 0.8416666666666667,
+    "n": 446,
+    "applicable": 120
+   },
+   "rho|G5-extreme-vol": {
+    "standing": "targeted",
+    "pi": 0.8583333333333333,
+    "n": 437,
+    "applicable": 120
+   },
+   "theta|G5-extreme-vol": {
+    "standing": "targeted",
+    "pi": 0.8166666666666667,
+    "n": 460,
+    "applicable": 120
+   },
+   "dividend|G5-extreme-vol": {
+    "standing": "targeted",
+    "pi": 0.4166666666666667,
+    "n": 900,
+    "applicable": 55
+   },
+   "cross-check|G5-extreme-vol": {
+    "standing": "targeted",
+    "pi": 0.7833333333333333,
+    "n": 479,
+    "applicable": 111
+   },
+   "gamma|G6-long": {
+    "standing": "targeted",
+    "pi": 0.9416666666666667,
+    "n": 399,
+    "applicable": 120
+   },
+   "vega|G6-long": {
+    "standing": "targeted",
+    "pi": 0.9,
+    "n": 417,
+    "applicable": 120
+   },
+   "rho|G6-long": {
+    "standing": "targeted",
+    "pi": 0.8583333333333333,
+    "n": 437,
+    "applicable": 120
+   },
+   "theta|G6-long": {
+    "standing": "targeted",
+    "pi": 0.9416666666666667,
+    "n": 399,
+    "applicable": 120
+   },
+   "dividend|G6-long": {
+    "standing": "targeted",
+    "pi": 0.6583333333333333,
+    "n": 570,
+    "applicable": 88
+   },
+   "cross-check|G6-long": {
+    "standing": "targeted",
+    "pi": 0.9083333333333333,
+    "n": 413,
+    "applicable": 110
+   },
+   "gamma|T1-near-boundary": {
+    "standing": "targeted",
+    "pi": 0.6,
+    "n": 625,
+    "applicable": 120
+   },
+   "vega|T1-near-boundary": {
+    "standing": "targeted",
+    "pi": 0.5833333333333334,
+    "n": 643,
+    "applicable": 120
+   },
+   "rho|T1-near-boundary": {
+    "standing": "targeted",
+    "pi": 0.575,
+    "n": 653,
+    "applicable": 120
+   },
+   "theta|T1-near-boundary": {
+    "standing": "targeted",
+    "pi": 0.5166666666666667,
+    "n": 726,
+    "applicable": 120
+   },
+   "dividend|T1-near-boundary": {
+    "standing": "targeted",
+    "pi": 0.39166666666666666,
+    "n": 958,
+    "applicable": 59
+   },
+   "cross-check|T1-near-boundary": {
+    "standing": "targeted",
+    "pi": 1.0,
+    "n": 375,
+    "applicable": 120
+   }
+  },
+  "groups": {
+   "G0-exempt": 400,
+   "G1-nodiv": 530,
+   "G2-dividends": 460,
+   "G3-carry-itm": 1217,
+   "G4-negrate": 1286,
+   "G5-extreme-vol": 900,
+   "G6-long": 570,
+   "T1-near-boundary": 958
+  },
+  "decisions": []
+ },
+ "targeted": {
+  "cross-check": [
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "dividend": [
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "gamma": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "rho": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "theta": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "vega": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ]
+ },
+ "controls_dev": {
+  "c2_fd|G0-exempt": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.0
+   },
+   "dividend_applicable": 0,
+   "base": 375,
+   "dividend": 0
+  },
+  "c2_fd|G1-nodiv": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.0
+   },
+   "dividend_applicable": 0,
+   "base": 375,
+   "dividend": 0
+  },
+  "c2_fd|G2-dividends": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9333333333333333,
+    "dividend": 1.0
+   },
+   "dividend_applicable": 120,
+   "base": 402,
+   "dividend": 375
+  },
+  "c2_fd|G3-carry-itm": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9333333333333333,
+    "dividend": 0.425
+   },
+   "dividend_applicable": 51,
+   "base": 402,
+   "dividend": 375
+  },
+  "c2_fd|G4-negrate": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.975,
+    "dividend": 0.39166666666666666
+   },
+   "dividend_applicable": 47,
+   "base": 385,
+   "dividend": 375
+  },
+  "c2_fd|G5-extreme-vol": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 0.975,
+    "rho": 1.0,
+    "theta": 0.9583333333333334,
+    "dividend": 0.4583333333333333
+   },
+   "dividend_applicable": 55,
+   "base": 392,
+   "dividend": 375
+  },
+  "c2_fd|G6-long": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.7333333333333333
+   },
+   "dividend_applicable": 88,
+   "base": 375,
+   "dividend": 375
+  },
+  "c2_fd|T1-near-boundary": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9166666666666666,
+    "dividend": 0.49166666666666664
+   },
+   "dividend_applicable": 59,
+   "base": 410,
+   "dividend": 375
+  },
+  "c2_lattice|E-div": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.975,
+    "dividend": 1.0
+   },
+   "dividend_applicable": 120,
+   "base": 385,
+   "dividend": 375
+  },
+  "c2_lattice|E-long": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9833333333333333,
+    "dividend": 0.24166666666666667
+   },
+   "dividend_applicable": 29,
+   "base": 382,
+   "dividend": 375
+  },
+  "c2_lattice|E-nodiv": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 0.9083333333333333,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.0
+   },
+   "dividend_applicable": 0,
+   "base": 413,
+   "dividend": 0
+  },
+  "c2_lattice|E-vol": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 0.9666666666666667,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9916666666666667,
+    "dividend": 0.10833333333333334
+   },
+   "dividend_applicable": 13,
+   "base": 388,
+   "dividend": 375
+  },
+  "c2_lattice|G0-exempt": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 0.9583333333333334,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.0
+   },
+   "dividend_applicable": 0,
+   "base": 392,
+   "dividend": 0
+  },
+  "c2_q|G0-exempt": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.0
+   },
+   "dividend_applicable": 0,
+   "base": 375,
+   "dividend": 0
+  },
+  "c2_q|G1-nodiv": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.0
+   },
+   "dividend_applicable": 0,
+   "base": 375,
+   "dividend": 0
+  },
+  "c2_q|G2-dividends": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9333333333333333,
+    "dividend": 1.0
+   },
+   "dividend_applicable": 120,
+   "base": 402,
+   "dividend": 375
+  },
+  "c2_q|G3-carry-itm": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9333333333333333,
+    "dividend": 0.425
+   },
+   "dividend_applicable": 51,
+   "base": 402,
+   "dividend": 375
+  },
+  "c2_q|G4-negrate": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.975,
+    "dividend": 0.39166666666666666
+   },
+   "dividend_applicable": 47,
+   "base": 385,
+   "dividend": 375
+  },
+  "c2_q|G5-extreme-vol": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 0.975,
+    "rho": 1.0,
+    "theta": 0.9583333333333334,
+    "dividend": 0.4583333333333333
+   },
+   "dividend_applicable": 55,
+   "base": 392,
+   "dividend": 375
+  },
+  "c2_q|G6-long": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 1.0,
+    "dividend": 0.7333333333333333
+   },
+   "dividend_applicable": 88,
+   "base": 375,
+   "dividend": 375
+  },
+  "c2_q|T1-near-boundary": {
+   "contexts": 120,
+   "rates": {
+    "price": 1.0,
+    "gamma": 1.0,
+    "vega": 1.0,
+    "rho": 1.0,
+    "theta": 0.9166666666666666,
+    "dividend": 0.49166666666666664
+   },
+   "dividend_applicable": 59,
+   "base": 410,
+   "dividend": 375
+  }
+ },
+ "controls": {
+  "c2": {
+   "G0-exempt": {
+    "base": 375,
+    "dividend": 0
+   },
+   "G1-nodiv": {
+    "base": 375,
+    "dividend": 0
+   },
+   "G2-dividends": {
+    "base": 402,
+    "dividend": 375
+   },
+   "G3-carry-itm": {
+    "base": 402,
+    "dividend": 375
+   },
+   "G4-negrate": {
+    "base": 385,
+    "dividend": 375
+   },
+   "G5-extreme-vol": {
+    "base": 392,
+    "dividend": 375
+   },
+   "G6-long": {
+    "base": 375,
+    "dividend": 375
+   },
+   "T1-near-boundary": {
+    "base": 410,
+    "dividend": 375
+   }
+  },
+  "e_strata": {
+   "E-nodiv": {
+    "proposals": 3827,
+    "base": 413,
+    "dividend": 0,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 4317,
+     "kept_with_dividends": 0
+    }
+   },
+   "E-div": {
+    "proposals": 15354,
+    "base": 385,
+    "dividend": 375,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 1003,
+     "kept_with_dividends": 1003
+    }
+   },
+   "E-long": {
+    "proposals": 20690,
+    "base": 382,
+    "dividend": 375,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 2748,
+     "kept_with_dividends": 725
+    }
+   },
+   "E-vol": {
+    "proposals": 27473,
+    "base": 388,
+    "dividend": 375,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 3572,
+     "kept_with_dividends": 546
+    }
+   },
+   "G0-exempt": {
+    "proposals": 784,
+    "base": 392,
+    "dividend": 0,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 20000,
+     "kept_with_dividends": 0
+    }
+   }
+  }
+ },
+ "regions": {
+  "support": {
+   "ks_call": [
+    0.55699330495,
+    1.7470138760499991
+   ],
+   "ks_put": [
+    0.5348309403999999,
+    1.9248942538499891
+   ],
+   "rho": [
+    -0.04924702,
+    0.11943137
+   ],
+   "q": [
+    -0.09993151,
+    0.09989247
+   ],
+   "n_divs_max": 16,
+   "pv_over_s_max": 0.22641550695048185,
+   "days": [
+    1,
+    1464
+   ],
+   "sigma_bands": [
+    [
+     0.001,
+     1.5
+    ],
+    [
+     2.0,
+     5.0
+    ]
+   ]
+  },
+  "carves": {},
+  "fd_carves": [
+   {
+    "name": "sigma < 0.01",
+    "feature": "sigma",
+    "op": "<",
+    "value": 0.01,
+    "kind": null
+   }
+  ]
+ },
+ "inputs": {
+  "refs": "71a93d4a7b3afe17200c695f33d6f1e48eb00223f19c2e87e7215af9a4a3bb82",
+  "prod": "ae1148f8da8c5a838fc373fbb362de9713d920680fb0ffa3f8e286756a609486",
+  "controls": "0e54b567b647e249936a917fa648c3f974d7709a4413b435fbff97bc1e90c4db",
+  "regions": "c255d69618005961948e92eca299dc099f38561059998b32e94f231bfe6b6dc4"
+ }
+}

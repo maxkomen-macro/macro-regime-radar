@@ -1,0 +1,132 @@
+{
+ "regions": {
+  "support": {
+   "ks_call": [
+    0.55699330495,
+    1.7470138760499991
+   ],
+   "ks_put": [
+    0.5348309403999999,
+    1.9248942538499891
+   ],
+   "rho": [
+    -0.04924702,
+    0.11943137
+   ],
+   "q": [
+    -0.09993151,
+    0.09989247
+   ],
+   "n_divs_max": 16,
+   "pv_over_s_max": 0.22641550695048185,
+   "days": [
+    1,
+    1464
+   ],
+   "sigma_bands": [
+    [
+     0.001,
+     1.5
+    ],
+    [
+     2.0,
+     5.0
+    ]
+   ]
+  },
+  "carves": {},
+  "fd_carves": [
+   {
+    "name": "sigma < 0.01",
+    "feature": "sigma",
+    "op": "<",
+    "value": 0.01,
+    "kind": null
+   }
+  ]
+ },
+ "fd_role_rule": {
+  "groups": {
+   "G0-exempt": {
+    "resolved": 118,
+    "agree": 118,
+    "refused": 0,
+    "failures": [],
+    "disagree": [],
+    "share": 1.0
+   },
+   "G1-nodiv": {
+    "resolved": 116,
+    "agree": 116,
+    "refused": 0,
+    "failures": [],
+    "disagree": [],
+    "share": 1.0
+   },
+   "G2-dividends": {
+    "resolved": 117,
+    "agree": 117,
+    "refused": 0,
+    "failures": [],
+    "disagree": [],
+    "share": 1.0
+   },
+   "G3-carry-itm": {
+    "resolved": 118,
+    "agree": 118,
+    "refused": 0,
+    "failures": [],
+    "disagree": [],
+    "share": 1.0
+   },
+   "G4-negrate": {
+    "resolved": 119,
+    "agree": 119,
+    "refused": 0,
+    "failures": [],
+    "disagree": [],
+    "share": 1.0
+   },
+   "G5-extreme-vol": {
+    "resolved": 102,
+    "agree": 101,
+    "refused": 0,
+    "failures": [],
+    "disagree": [
+     {
+      "id": "G5-extreme-vol/87",
+      "err_over_tol": 0.10470556424756995
+     }
+    ],
+    "share": 0.9901960784313726
+   },
+   "G6-long": {
+    "resolved": 120,
+    "agree": 120,
+    "refused": 0,
+    "failures": [],
+    "disagree": [],
+    "share": 1.0
+   },
+   "T1-near-boundary": {
+    "resolved": 120,
+    "agree": 120,
+    "refused": 0,
+    "failures": [],
+    "disagree": [],
+    "share": 1.0
+   }
+  },
+  "holds": true
+ },
+ "greek_evidence": {
+  "blocking": {},
+  "coverage_misses": {},
+  "clean": true
+ },
+ "inputs": {
+  "records": "71a93d4a7b3afe17200c695f33d6f1e48eb00223f19c2e87e7215af9a4a3bb82",
+  "fd_role": "0ac01d8f34a1f117ed9881c5bdef3a5c81d1a1790eafea69b4aee434d51152f8",
+  "carves": "1188063edd6b81b101f29ba459c2cf3f200818777d85a7f0b20cb1fe619a91e5"
+ }
+}

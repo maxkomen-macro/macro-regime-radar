@@ -1,0 +1,2 @@
+{"greeks": {},
+ "fd": [{"name": "sigma < 0.01", "feature": "sigma", "op": "<", "value": 0.01}]}

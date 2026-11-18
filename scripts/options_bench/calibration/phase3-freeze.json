@@ -1,0 +1,322 @@
+{
+ "about": "Phase 3 held-out freeze (design-P3-approved.md 8.5 step 2; P3-A21). heldout_p3.py refuses any file, seed or plan that differs.",
+ "held_out": {
+  "seed": 1861184458,
+  "seed_note": "drawn 2026-11-18T19:22:57Z with secrets.randbelow(2**31) after the plan was fixed; checked against the registered seeds; no held-out case drawn before the freeze review",
+  "sizes": {
+   "G0-exempt": 400,
+   "G1-nodiv": 530,
+   "G2-dividends": 460,
+   "G3-carry-itm": 1217,
+   "G4-negrate": 1286,
+   "G5-extreme-vol": 900,
+   "G6-long": 570,
+   "T1-near-boundary": 958,
+   "X1-outside": 400
+  },
+  "named": true,
+  "order": "seed order within each group (regions_p3.held_out); named cases first"
+ },
+ "used_seeds": [
+  20261026,
+  20261029,
+  20261102,
+  20261111,
+  20261117
+ ],
+ "config": {
+  "h_sigma": 0.00125,
+  "h_r": 0.00025,
+  "h_d_frac": 0.0025,
+  "m_frac": 0.5,
+  "p_frac": 0.25,
+  "factors": [
+   [
+    "gamma",
+    2.0
+   ],
+   [
+    "vega",
+    2.0
+   ],
+   [
+    "rho",
+    2.0
+   ],
+   [
+    "theta",
+    2.0
+   ],
+   [
+    "dividend",
+    2.0
+   ]
+  ],
+  "bump_factors": [
+   [
+    "vega",
+    1.3333333333333333
+   ],
+   [
+    "rho",
+    1.3333333333333333
+   ],
+   [
+    "dividend",
+    1.3333333333333333
+   ]
+  ],
+  "smooth_divs": true,
+  "f_p": 2.0
+ },
+ "regions": {
+  "support": {
+   "ks_call": [
+    0.55699330495,
+    1.7470138760499991
+   ],
+   "ks_put": [
+    0.5348309403999999,
+    1.9248942538499891
+   ],
+   "rho": [
+    -0.04924702,
+    0.11943137
+   ],
+   "q": [
+    -0.09993151,
+    0.09989247
+   ],
+   "n_divs_max": 16,
+   "pv_over_s_max": 0.22641550695048185,
+   "days": [
+    1,
+    1464
+   ],
+   "sigma_bands": [
+    [
+     0.001,
+     1.5
+    ],
+    [
+     2.0,
+     5.0
+    ]
+   ]
+  },
+  "carves": {},
+  "fd_carves": [
+   {
+    "name": "sigma < 0.01",
+    "feature": "sigma",
+    "op": "<",
+    "value": 0.01,
+    "kind": null
+   }
+  ]
+ },
+ "targeted": {
+  "cross-check": [
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "dividend": [
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "gamma": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "rho": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "theta": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ],
+  "vega": [
+   "G0-exempt",
+   "G1-nodiv",
+   "G2-dividends",
+   "G3-carry-itm",
+   "G4-negrate",
+   "G5-extreme-vol",
+   "G6-long",
+   "T1-near-boundary"
+  ]
+ },
+ "cross_check_required": [
+  "G1-nodiv",
+  "G2-dividends",
+  "G3-carry-itm",
+  "G4-negrate",
+  "G5-extreme-vol",
+  "G6-long",
+  "T1-near-boundary"
+ ],
+ "controls": {
+  "c2": {
+   "G0-exempt": {
+    "base": 375,
+    "dividend": 0
+   },
+   "G1-nodiv": {
+    "base": 375,
+    "dividend": 0
+   },
+   "G2-dividends": {
+    "base": 402,
+    "dividend": 375
+   },
+   "G3-carry-itm": {
+    "base": 402,
+    "dividend": 375
+   },
+   "G4-negrate": {
+    "base": 385,
+    "dividend": 375
+   },
+   "G5-extreme-vol": {
+    "base": 392,
+    "dividend": 375
+   },
+   "G6-long": {
+    "base": 375,
+    "dividend": 375
+   },
+   "T1-near-boundary": {
+    "base": 410,
+    "dividend": 375
+   }
+  },
+  "e_strata": {
+   "E-nodiv": {
+    "proposals": 3827,
+    "base": 413,
+    "dividend": 0,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 4317,
+     "kept_with_dividends": 0
+    }
+   },
+   "E-div": {
+    "proposals": 15354,
+    "base": 385,
+    "dividend": 375,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 1003,
+     "kept_with_dividends": 1003
+    }
+   },
+   "E-long": {
+    "proposals": 20690,
+    "base": 382,
+    "dividend": 375,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 2748,
+     "kept_with_dividends": 725
+    }
+   },
+   "E-vol": {
+    "proposals": 27473,
+    "base": 388,
+    "dividend": 375,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 3572,
+     "kept_with_dividends": 546
+    }
+   },
+   "G0-exempt": {
+    "proposals": 784,
+    "base": 392,
+    "dividend": 0,
+    "dev_acceptance": {
+     "proposals": 20000,
+     "kept": 20000,
+     "kept_with_dividends": 0
+    }
+   }
+  }
+ },
+ "repeat_every": 50,
+ "cpu": {
+  "cap_hours": 130.0,
+  "stop_margin_hours": 0.05,
+  "no_submit_margin_hours": 0.5,
+  "sample_seconds": 15.0,
+  "unclean_session_surcharge": "workers x sample_seconds"
+ },
+ "workers": 4,
+ "plan_sha256": "daffb20cf4bf1973603fa6ed238f407cb7fee69a6d722492921eb731f0cbad32",
+ "frozen_utc": "2026-11-18T19:25:05+00:00",
+ "files_sha256": {
+  "src/desk/options_math.py": "4ff115274e6f70ede9314370b84366f8129a702c951f3ffef51664cb0c1142fc",
+  "src/desk/options_finder.py": "38356ffa2aaba7beb36bc72b3a12ce1d5137035efa4e92443dc8edc80de5aac7",
+  "src/desk/options_engine.py": "f9db0d169ce1dbf0a94c92f9bf503a71f10a1db4fec3758aa501b447a1930f62",
+  "src/desk/options_adaptive.py": "bb22f62c72ac986073f6282cafaa7f777be8eaaaa94687ba479f2b8802fabdec",
+  "src/desk/options_fd.py": "ce5ab8dc27101c7aff6afa1c9fb2011769ef1e27dd580c6354bed52779616531",
+  "src/desk/options_greeks.py": "a37f63019761f2234283097c1b78c89fc5bce11cbe29b544581fe5baeb3318e9",
+  "src/market_data/session.py": "935f925f162d8a8eae93322f10d9c3de300fcd083cd3de5d8eadc0f7ed34470d",
+  "tests/fixtures/options_pre_phase3/__init__.py": "08cfedbbe7cb11dea0c1921e8f65a41b1dc943e0740b6a10bd22572d19717bac",
+  "tests/fixtures/options_pre_phase3/options_adaptive_2ff3e8b.py": "5184e7f251484ad869da85c970b2df77d6362e06667d30ecf0c9cfee3e295070",
+  "scripts/options_bench/__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "scripts/options_bench/adaptive.py": "989c026e9285b3983f7d52fa76e88124316e30ac9f806158d98a4531da4fe2f3",
+  "scripts/options_bench/calibrate.py": "c287965acc3d7a5672e1d457bdf44c972b4b69eb266dfb32d322b08f9eaaf9ac",
+  "scripts/options_bench/calibrate_p3.py": "09d52c1fcc5dc74d87cc725ac1c871899a643e773cfa9e6f06f17ca87f79740a",
+  "scripts/options_bench/cases.py": "054625e8da94cc2bb0064766bbec0b975c5de97b585076de2f9d5d6f29c3795f",
+  "scripts/options_bench/controls_p3.py": "81fed216a964c711f3e75bd767275c9bac74042b65870a868567ac1f486903ca",
+  "scripts/options_bench/crosscheck.py": "a6fe56e5cca3a5ddd36d6d1f663d4cc3937a526081e7584acc8ad40c9a2c6405",
+  "scripts/options_bench/engine.py": "5b1afb1d529bffdaa34cfeba0d57b8d0fe5407a3e44840e05fd747c4fe4d65b9",
+  "scripts/options_bench/fd.py": "44ceaf023a4c74e8da3c0d2434d3595ee4314cb9628cfbceb8c3848c0b5f44e9",
+  "scripts/options_bench/freeze_p3.py": "0273429837369d8eb30974c2a40e68f9e239dc0596f99d6d3fb1c35858cd2369",
+  "scripts/options_bench/golden.py": "90badcb0d9dddd5b7cdb3017beb7c6caa8cda39f632983d4ac63a5d341214171",
+  "scripts/options_bench/greek_reference.py": "a425768286f0bcd465973ffd71ea0dddc4c37337ebdd1f74c310f834e46826da",
+  "scripts/options_bench/heldout_p3.py": "ee0af043596b49709c16111162c3a154e256c93c5a0fbefdea6e4c333f090288",
+  "scripts/options_bench/phase2.py": "d60d93eb1501da0456f81c03825c7d944c5203f33b45b63696ecb5d21a32f94f",
+  "scripts/options_bench/pilot_p3.py": "87d5b7b20e30fe52ce32818201218490cb4ca7e556564f6e542f349dba3434fc",
+  "scripts/options_bench/ql_escrowed.py": "9324c6b4cc57dfc1d12e12686970b9a9e10e4f969adc85ae343bba3bf4ababab",
+  "scripts/options_bench/reference.py": "3a5fd7fd490c27949a8c108af091c7e1782fd6e970564ae443620bc9a129c305",
+  "scripts/options_bench/regions_p3.py": "a4c98968e5a33c838fbb9470808f1b7ac3e1cf396840a28d5fbe656a7fc8fd60",
+  "scripts/options_bench/report_p3.py": "b7f634eac1050f87348661543d69b954ec40b541f89dedd2bb4597bf7c8785d0",
+  "scripts/options_bench/requests.py": "f740aae45cefdb2cac69a202e60d674fed204a161feb017491e926473b52e763",
+  "scripts/options_bench/routine.py": "261b624c3936440f4467a04f181a9564e42b75b8ea569160653cdc27c69cdd5f",
+  "scripts/options_bench/run.py": "9d034fa5210e87f82df6a763268839ba97405aa8ba85719b448fd0ee87396c75",
+  "scripts/options_bench/run_p3.py": "f03b7ce1f0094db244651456f54e650c4c07ef0798db6177201c93f7e3b21471",
+  "scripts/options_bench/score.py": "37a69b90160e902bc3537d41dabbc145b0a33e2dced8ed626f0b18ac8803dfdf",
+  "scripts/options_bench/score2.py": "17270c4239abb1bb46ca2479b6c0adbbdf10401e396982959db19494a78f15ee",
+  "scripts/options_bench/score_p3.py": "efdf8562b1eefcce688c13f5a3a49014911f3234c76c4129c53560ba78c0c7bd"
+ }
+}
