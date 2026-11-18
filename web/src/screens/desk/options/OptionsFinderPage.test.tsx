@@ -250,6 +250,23 @@ describe("Options Finder: the answer", () => {
     expect(screen.getByTestId("of-no-events")).toHaveTextContent(words);
   });
 
+  it("an earnings move that is not priced names its report, so two reports with the same reason never print the same bare line twice", async () => {
+    const reason = "Earnings dates past the stored ones are unknown, so another report before the second expiry cannot be ruled out.";
+    const earnings_moves = [
+      { event_id: "earnings-2026-12-09-0", date: "2026-12-09", move_sd_pct: null, expiries: null, reason },
+      { event_id: "earnings-2027-03-02-1", date: "2027-03-02", move_sd_pct: null, expiries: null, reason },
+    ];
+    stubDesk({ [ROUTE]: () => ({ ...UP, earnings_moves }) });
+    renderTab(UP_URL);
+    await stateOf("answered");
+    const lines = screen.getAllByTestId("of-move-reason").map((p) => p.textContent);
+    expect(lines).toEqual([
+      `No priced move is shown for the report on Dec 9, 2026. ${reason}`,
+      `No priced move is shown for the report on Mar 2, 2027. ${reason}`,
+    ]);
+    expect(screen.queryByText(reason, { exact: true })).toBeNull();
+  });
+
   // the earnings cache (design EC section 6): the route's words and sources, shown as served
   const CACHE_WORDS = {
     reconciled:

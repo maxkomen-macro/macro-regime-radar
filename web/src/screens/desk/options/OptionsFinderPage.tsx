@@ -584,7 +584,9 @@ function Events({ d }: { d: OptionsFinderResponse }) {
             {m.expiries?.length ? `, from the ${m.expiries.map((e) => dayLong(e)).join(" and ")} expiries` : ""}.
           </p>
         ) : m.reason ? (
-          <p key={m.event_id} className="of-note">
+          // each report's own line: two reports can carry the same reason, and a bare reason printed twice named neither
+          <p key={m.event_id} className="of-note" data-testid="of-move-reason">
+            {m.date ? `No priced move is shown for the report on ${dayLong(m.date)}. ` : ""}
             {m.reason}
           </p>
         ) : null,
