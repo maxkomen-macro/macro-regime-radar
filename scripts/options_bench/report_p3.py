@@ -20,7 +20,7 @@ from pathlib import Path
 
 from src.desk import options_greeks as G
 
-from . import cases, controls_p3 as C, heldout_p3 as H, score_p3 as S
+from . import cases, controls_p3 as C, freeze_p3 as F, heldout_p3 as H, score_p3 as S
 
 NAMED = "named"
 
@@ -63,9 +63,34 @@ def judge_price(rec: dict) -> str | None:
     return S.judge(v, pr["ref"], pr["u"], pr["tol"])
 
 
-def report(freeze: dict, run: Path) -> dict:
+def check_run(freeze_path: Path, freeze: dict, run: Path, jobs: list[dict], results: list[dict]) -> None:
+    """Refuse to score a run that is not this freeze's: the run's manifest must name this freeze file (its
+    SHA-256), its seed, sizes and population fingerprint; every result must be a job of the population with that
+    job's own case inputs, once (job keys repeat across seeds, so keys alone never establish the population)."""
+    mp_ = run / H.MANIFEST
+    if not mp_.exists():
+        raise SystemExit(f"{run} has no manifest: not a held-out run of this freeze")
+    man = json.loads(mp_.read_text())
+    want = {"freeze_sha256": F.sha(freeze_path), "seed": freeze["held_out"]["seed"],
+            "sizes": freeze["held_out"]["sizes"], "population_sha256": H.fingerprint(jobs), "jobs": len(jobs)}
+    diff = [k for k, v in want.items() if man.get(k) != json.loads(json.dumps(v))]
+    if diff:
+        raise SystemExit(f"{run} was not run under this freeze ({', '.join(diff)})")
+    expected = {j["key"]: H.case_key(j["case"]) for j in jobs}
+    keys = [r["key"] for r in results]
+    if len(set(keys)) != len(keys):
+        raise SystemExit("duplicate results: refusing to score")
+    foreign = [r["key"] for r in results if expected.get(r["key"]) != H.case_key(H.job_case(r))]
+    if foreign:
+        raise SystemExit(f"{len(foreign)} results are not jobs of this population (e.g. {foreign[0]})")
+
+
+def report(freeze_path: Path, run: Path) -> dict:
+    freeze_path = Path(freeze_path)
+    freeze = json.loads(freeze_path.read_text())
     jobs, short = H.population(freeze)
     results = H.read_results(run / H.RESULTS)
+    check_run(freeze_path, freeze, run, jobs, results)
     keys = {j["key"] for j in jobs}
     got = {r["key"] for r in results}
     missing = sorted(keys - got)
@@ -103,14 +128,18 @@ def report(freeze: dict, run: Path) -> dict:
             p2["repeat_differs"] += not r["repeat_identical"]
     t2 = Counter(judge_price(r) for r in sampled)
     rows = {}
-    for key, p in greeks["pairs"].items():
-        g, grp = key.split("|")
-        if grp in targeted.get(g, []):
-            rows[f"pair {key}"] = p["verdict"]
+    # every targeted pair has a row, whether or not any record reached it (a pair with no records is not established)
+    for g, grps in targeted.items():
+        for grp in grps:
+            rows[f"pair {g}|{grp}"] = greeks["pairs"].get(f"{g}|{grp}", {}).get("verdict", "not established")
     for g, v in cross_required.items():
         rows[f"cross-check {g}"] = v
     rows["C1"] = c1["verdict"]
     rows["X1"] = x1["verdict"]
+    # 8.2: any confirmed failure, straddle or proved-bound violation inside Ω_G, from any group, stratum or named
+    # case, blocks the Greek, whatever its pairs show (code review S-F-1)
+    for g in G.GREEKS:
+        rows[f"no blocking result in Ω_G: {g}"] = "failed" if greeks["blocking"].get(g) else "pass"
     for stage, units in c2.items():
         for unit, v in units.items():
             for k, row in v["quantities"].items():
@@ -148,7 +177,7 @@ def main(argv=None) -> int:
     ap.add_argument("--run", required=True)
     ap.add_argument("--out")
     a = ap.parse_args(argv)
-    rep = report(json.loads(Path(a.freeze).read_text()), Path(a.run))
+    rep = report(Path(a.freeze), Path(a.run))
     text = json.dumps(rep, indent=1, default=str, allow_nan=True)
     if a.out:
         Path(a.out).write_text(text)

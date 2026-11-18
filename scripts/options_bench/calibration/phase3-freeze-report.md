@@ -15,7 +15,7 @@ has been drawn or inspected. Design: `designs/design-P3-approved.md` (8.2, 8.3, 
 | Sizes | G0 400, G1 530, G2 460, G3 1,217, G4 1,286, G5 900, G6 570, T1 958, X1 400 (6,721 draws) + 23 named | `held_out.sizes` |
 | Targeted | every Greek in every group with applicable dev contexts (dividend: G2-G6, T1); cross-check pair in G1-G6, T1 | `targeted`, `cross_check_required` |
 | Controls | C2-FD and C2-Q per group, C2-lattice + C1 per E-stratum (below) | `controls` |
-| Scoring | score_p3.py, controls_p3.c2_verdict, report_p3.py (hashed) | |
+| Scoring | score_p3.py, controls_p3.c2_verdict, report_p3.py (hashed). The report refuses a run whose manifest does not name this freeze file, seed, sizes and population, and any result that is not a job of it (foreign case, unknown key, duplicate). Every targeted pair has a row; any failure, straddle or bound violation inside Ω_G, sampled or named, fails that Greek's row (freeze review F-1) | |
 | CPU | cap 130 h aggregate; no submission within 0.5 h of it; stop within 0.05 h of it | `cpu` |
 
 ## 2. Claim regions (8.2, 10), from dev evidence

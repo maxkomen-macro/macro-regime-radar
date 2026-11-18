@@ -293,7 +293,7 @@ def test_end_to_end_on_a_test_seed_every_job_kind_resume_and_the_report(tmp_path
     assert H.main(["--freeze", str(fp), "--out", str(out)]) == 0
     assert (out / H.RESULTS).read_text() == before
     assert len(json.loads((out / H.MANIFEST).read_text())["sessions"]) == 2
-    rep = R.report(fr, out)
+    rep = R.report(fp, out)
     assert rep["complete"] and rep["finished"] == len(jobs)
     assert rep["rows"]["X1"] == "pass" and rep["rows"]["Phase 2 rows: Tier 2 bit-identical to adaptive-p2.1"] == "pass"
     assert rep["rows"]["pair gamma|G0-exempt"] == "not established"      # one context: fewer than 300 scored
@@ -323,3 +323,120 @@ def test_report_marks_a_short_control_and_a_partial_run():
     assert not R.is_short({"c2|G5-extreme-vol|dividend": {}}, "c2_fd", "G5-extreme-vol", G.GAMMA)
     assert R.is_short({"e|E-vol|base": {}}, "c2_lattice", "E-vol", G.GAMMA)
     assert not R.is_short({"e|E-vol|base": {}}, "c2_fd", "E-vol", G.GAMMA)
+
+
+# ── the report refuses what is not this freeze's run, and every blocking result fails it (code review F-1) ──
+
+def _g0_run(tmp_path, **over):
+    fp = tmp_path / "freeze.json"
+    fr = tiny_freeze(controls={"c2": {}, "e_strata": {}},
+                     held_out={"seed": TEST_SEED, "sizes": {"G0-exempt": 1}, "named": False}, **over)
+    fp.write_text(json.dumps(fr))
+    out = tmp_path / "run"
+    assert H.main(["--freeze", str(fp), "--out", str(out)]) == 0
+    return fp, fr, out
+
+
+def test_the_report_refuses_a_run_that_is_not_this_freezes(tmp_path, clean_git):
+    fp, fr, out = _g0_run(tmp_path)
+    assert R.report(fp, out)["complete"]
+    good = (out / H.RESULTS).read_text()
+    man = (out / H.MANIFEST).read_text()
+    # another freeze file over the same population: its hash is not the run's
+    other = tmp_path / "other.json"
+    other.write_text(json.dumps({**fr, "repeat_every": 51}))
+    with pytest.raises(SystemExit, match="not run under this freeze .*freeze_sha256"):
+        R.report(other, out)
+    # a manifest naming another seed
+    (out / H.MANIFEST).write_text(json.dumps({**json.loads(man), "seed": TEST_SEED + 1}))
+    with pytest.raises(SystemExit, match="not run under this freeze .*seed"):
+        R.report(fp, out)
+    # no manifest at all
+    (out / H.MANIFEST).unlink()
+    with pytest.raises(SystemExit, match="no manifest"):
+        R.report(fp, out)
+    (out / H.MANIFEST).write_text(man)
+    # a result whose case comes from another seed under the same job key (keys repeat across seeds)
+    r = json.loads(good.splitlines()[0])
+    assert r["key"] == "case|G0-exempt/0"
+    r["rec"]["case"] = cases.case(TEST_SEED + 1, "G0-exempt", 0).to_json()
+    (out / H.RESULTS).write_text(json.dumps(r) + "\n")
+    with pytest.raises(SystemExit, match="not jobs of this population"):
+        R.report(fp, out)
+    # an unexpected key, and the same job twice
+    (out / H.RESULTS).write_text(good + json.dumps({**json.loads(good.splitlines()[0]), "key": "case|G0-exempt/7"}) + "\n")
+    with pytest.raises(SystemExit, match="not jobs of this population"):
+        R.report(fp, out)
+    (out / H.RESULTS).write_text(good + good)
+    with pytest.raises(SystemExit, match="duplicate results"):
+        R.report(fp, out)
+    (out / H.RESULTS).write_text(good)
+    assert R.report(fp, out)["complete"]
+
+
+def _passing_scorers(monkeypatch, blocking=None):
+    """Every sampled-population scorer reports a pass, so only what the test adds can fail the run."""
+    monkeypatch.setattr(R.S, "score_greeks", lambda recs, targeted: {
+        "pairs": {f"{g}|{grp}": {"verdict": "validated"} for g, grps in targeted.items() for grp in grps},
+        "blocking": dict(blocking or {}), "standing": {}})
+    monkeypatch.setattr(R.S, "score_cross_check", lambda recs: {})
+    monkeypatch.setattr(R.S, "score_c1", lambda recs: {"verdict": "pass"})
+    monkeypatch.setattr(R.S, "score_x1", lambda recs: {"verdict": "pass"})
+
+
+def _add_named(out, defect):
+    """Append a named-case record (a copy of the G0 case's own record, renamed) carrying one gamma defect, and
+    let the report accept the extra job (identity checks are covered above)."""
+    lines = (out / H.RESULTS).read_text().splitlines()
+    r = json.loads(lines[0])
+    rec = r["rec"]
+    rec["case"] = {**rec["case"], "id": "named/test", "kind": "named", "expect": "test"}
+    a = rec["greeks"][G.GAMMA]
+    assert a["status"] in R.S.RETURNED and rec.get("regions", {}).get(G.GAMMA) is None
+    t = G.tolerance(G.GAMMA, a["value"], rec["case"]["spot"])
+    rec.get("exact", {}).pop(G.GAMMA, None)
+    if defect == "fail":
+        rec.setdefault("refs", {})[G.GAMMA] = {"status": "resolved", "R": a["value"] + 10 * t, "u": 0.0}
+    elif defect == "straddle":
+        rec.setdefault("refs", {})[G.GAMMA] = {"status": "resolved", "R": a["value"] + t, "u": 0.5 * t}
+    else:
+        rec.setdefault("refs", {})[G.GAMMA] = {"status": "resolved", "R": a["value"], "u": 0.0}
+        rec["bounds"] = [f"{G.GAMMA}: test bound"]
+    r["key"] = "case|named/test"
+    (out / H.RESULTS).write_text("\n".join(lines + [json.dumps(r)]) + "\n")
+
+
+@pytest.mark.parametrize("defect", ["fail", "straddle", "bound"])
+def test_a_named_case_blocking_result_fails_an_otherwise_passing_run(tmp_path, monkeypatch, clean_git, defect):
+    fp, fr, out = _g0_run(tmp_path)
+    _passing_scorers(monkeypatch)
+    base = R.report(fp, out)
+    assert base["rows_not_passing"] == [] and base["by_the_frozen_rules"] == "accepted by the frozen rules"
+    _add_named(out, defect)
+    monkeypatch.setattr(R, "check_run", lambda *a: None)
+    rep = R.report(fp, out)
+    assert S_result(rep) == ("straddle" if defect == "straddle" else "fail")
+    assert rep["rows"][f"no blocking result in Ω_G: {G.GAMMA}"] == "failed"
+    assert rep["rows_not_passing"] == [f"no blocking result in Ω_G: {G.GAMMA}"]
+    assert rep["by_the_frozen_rules"] == "not accepted by the frozen rules"
+
+
+def S_result(rep):
+    (b,) = rep["greeks"]["blocking"][G.GAMMA]
+    assert b["case"] == "named/test"
+    return b["result"]
+
+
+def test_a_sampled_blocking_result_in_an_untargeted_pair_fails_the_run(tmp_path, monkeypatch, clean_git):
+    fp, fr, out = _g0_run(tmp_path)
+    _passing_scorers(monkeypatch, blocking={G.VEGA: [{"case": "G0-exempt/0", "result": "fail"}]})
+    rep = R.report(fp, out)
+    assert rep["rows"][f"no blocking result in Ω_G: {G.VEGA}"] == "failed"
+    assert rep["by_the_frozen_rules"] == "not accepted by the frozen rules"
+
+
+def test_a_targeted_pair_no_record_reached_is_not_established(tmp_path, clean_git):
+    fp, fr, out = _g0_run(tmp_path, targeted={G.GAMMA: ["G0-exempt", "G1-nodiv"]})
+    rep = R.report(fp, out)
+    assert rep["rows"][f"pair {G.GAMMA}|G1-nodiv"] == "not established"
+    assert rep["by_the_frozen_rules"] == "not accepted by the frozen rules"

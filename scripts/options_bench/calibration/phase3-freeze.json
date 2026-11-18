@@ -281,7 +281,7 @@
  },
  "workers": 4,
  "plan_sha256": "daffb20cf4bf1973603fa6ed238f407cb7fee69a6d722492921eb731f0cbad32",
- "frozen_utc": "2026-11-18T19:25:05+00:00",
+ "frozen_utc": "2026-11-18T20:09:00+00:00",
  "files_sha256": {
   "src/desk/options_math.py": "4ff115274e6f70ede9314370b84366f8129a702c951f3ffef51664cb0c1142fc",
   "src/desk/options_finder.py": "38356ffa2aaba7beb36bc72b3a12ce1d5137035efa4e92443dc8edc80de5aac7",
@@ -310,7 +310,7 @@
   "scripts/options_bench/ql_escrowed.py": "9324c6b4cc57dfc1d12e12686970b9a9e10e4f969adc85ae343bba3bf4ababab",
   "scripts/options_bench/reference.py": "3a5fd7fd490c27949a8c108af091c7e1782fd6e970564ae443620bc9a129c305",
   "scripts/options_bench/regions_p3.py": "a4c98968e5a33c838fbb9470808f1b7ac3e1cf396840a28d5fbe656a7fc8fd60",
-  "scripts/options_bench/report_p3.py": "b7f634eac1050f87348661543d69b954ec40b541f89dedd2bb4597bf7c8785d0",
+  "scripts/options_bench/report_p3.py": "6f9362bd14e1044142f75fba554a86250466e9c565f51088c5b41396fabdb8af",
   "scripts/options_bench/requests.py": "f740aae45cefdb2cac69a202e60d674fed204a161feb017491e926473b52e763",
   "scripts/options_bench/routine.py": "261b624c3936440f4467a04f181a9564e42b75b8ea569160653cdc27c69cdd5f",
   "scripts/options_bench/run.py": "9d034fa5210e87f82df6a763268839ba97405aa8ba85719b448fd0ee87396c75",
