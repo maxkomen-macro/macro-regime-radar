@@ -4,7 +4,9 @@
  * regime changes" rows hold their own text. Those rows were a fixed 29 px:
  * at 390 px the change ("Goldilocks → Overheating · from Aug data") wraps to
  * two or three lines and ran over the next row. Every request is answered
- * from the §12 fixtures (e2e/lib/desk-fixtures.ts).
+ * from the §12 fixtures (e2e/lib/desk-fixtures.ts). Every visible Desk button
+ * is at least 44 px tall there (web/DESIGN.md, "Touch and hit areas"); at
+ * desk width the buttons keep their own sizes (desk.spec.ts holds the rest).
  *
  * Run against a dev server: E2E_BASE_URL=http://127.0.0.1:5174 npx playwright test e2e/desk-mobile.spec.ts
  */
@@ -14,6 +16,19 @@ import { routeDesk } from "./lib/desk-fixtures";
 import { DESK_PAGES } from "../src/screens/desk/desk-sections";
 
 test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+/** Every visible `.dk-btn` shorter than `min` px, as "label: height". */
+async function shortButtons(page: Page, min: number): Promise<string[]> {
+  return page.locator(".dk-btn").evaluateAll(
+    (els, m) =>
+      els
+        .map((el) => ({ el, r: el.getBoundingClientRect() }))
+        .filter(({ el, r }) => r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden")
+        .filter(({ r }) => r.height < m - 0.5)
+        .map(({ el, r }) => `${(el.textContent ?? "").trim().slice(0, 40)}: ${Math.round(r.height)} px`),
+    min,
+  );
+}
 
 async function open(page: Page, route: string): Promise<void> {
   await routeDesk(page);
@@ -51,6 +66,12 @@ test.describe("Desk at 390 px", () => {
   });
 
   for (const p of DESK_PAGES) {
+    test(`every Desk button meets the 44 px touch floor: /desk/${p.slug}`, async ({ page }) => {
+      await open(page, `/desk/${p.slug}`);
+      const short = await shortButtons(page, 44);
+      expect(short, `/desk/${p.slug}: buttons under 44 px at 390 px`).toEqual([]);
+    });
+
     test(`no page scrolls sideways: /desk/${p.slug}`, async ({ page }) => {
       await open(page, `/desk/${p.slug}`);
       const { scroll, width } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: window.innerWidth }));
