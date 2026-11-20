@@ -148,7 +148,7 @@
     },
     "2026-11-19": {
       "memo_run_id": 44696320842,
-      "note": "",
+      "note": "2.0.0 OK  1795160351 d2e1a72fcca58-8c872e4c43bsm1055200b3a.26 - gsmtp",
       "output_artifact": "memo-outcome-daily-2026-11-19-44696320842-1",
       "overrides": [],
       "paid_generation": {
@@ -167,9 +167,9 @@
         "validated_at": "2026-11-20T07:36:10Z",
         "validation_sha256": "dc7545a7d329f58219438c7432fc6d6d2ed75beaba403dc6e2cb288235a48a38"
       },
-      "state": "sending",
+      "state": "sent",
       "tries": 1,
-      "updated_at": "2026-11-20T07:39:07Z"
+      "updated_at": "2026-11-20T07:39:13Z"
     }
   },
   "kind": "daily",
