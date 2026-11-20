@@ -1,16 +1,17 @@
 {
-  "generated_at": "2026-11-19T19:33:56.509696",
+  "generated_at": "2026-11-20T07:33:02.484339",
   "as_of": "2026-10-01",
   "regime": "Overheating",
   "confidence": 0.499,
   "baseline": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
   "because_today": [
-    "Because SPY equity momentum is below trend in the latest reading (week of 2026-11-20, z=-1.64).",
+    "Because SPY equity momentum is below trend in the latest reading (week of 2026-11-20, z=-2.50).",
+    "Because VIX volatility is above trend in the latest reading (week of 2026-11-20, z=+2.29).",
     "Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99).",
-    "Because today 10Y real yield is positive at 2.89%, real rates are restrictive — a headwind for equities and gold.",
+    "Because today 10Y real yield is positive at 2.88%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.88%."
   ],
-  "summary": "Regime: Overheating (confidence 50%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because SPY equity momentum is below trend in the latest reading (week of 2026-11-20, z=-1.64). Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99). Because today 10Y real yield is positive at 2.89%, real rates are restrictive — a headwind for equities and gold.",
+  "summary": "Regime: Overheating (confidence 50%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because SPY equity momentum is below trend in the latest reading (week of 2026-11-20, z=-2.50). Because VIX volatility is above trend in the latest reading (week of 2026-11-20, z=+2.29). Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99).",
   "all_baselines": {
     "Goldilocks": "Risk-on. Overweight equities, underweight bonds. Carry strategies work well. Prefer cyclicals over defensives. Credit spreads typically tightening — HYG/LQD favorable.",
     "Overheating": "Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech.",
