@@ -443,6 +443,14 @@
   cursor: not-allowed;
   opacity: 0.55;
 }
+/* Touch floor (web/DESIGN.md "Touch and hit areas": 44px below 768). min-height, not height, so it
+   also lifts the pages' own smaller buttons (the basket's leg tools, the Overview monitor's action)
+   without touching their desk-width sizes. */
+@media (max-width: 767.98px) {
+  .dk-btn {
+    min-height: 44px;
+  }
+}
 .dk-page {
   flex: 1;
   display: flex;
