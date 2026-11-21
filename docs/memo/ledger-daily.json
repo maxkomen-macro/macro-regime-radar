@@ -170,6 +170,27 @@
       "state": "sent",
       "tries": 1,
       "updated_at": "2026-11-20T07:39:13Z"
+    },
+    "2026-11-20": {
+      "memo_run_id": 44880691463,
+      "note": "",
+      "output_artifact": "memo-outcome-daily-2026-11-20-44880691463-1",
+      "overrides": [],
+      "paid_generation": null,
+      "run_attempt": 1,
+      "source": {
+        "db_sha256": "fabd7fd4acb9b0da0c1c96501c89e1db8687952ed65bd2a4dec926691154f09e",
+        "origin_attempt": 1,
+        "origin_run_id": 44880146855,
+        "pin_session": "2026-11-20",
+        "reason": null,
+        "state": "source",
+        "validated_at": "2026-11-21T07:30:59Z",
+        "validation_sha256": "773019ccc7abe8660d2a448b8244f12d711486e41546d9f58de419bb47cc90f8"
+      },
+      "state": "attempt",
+      "tries": 1,
+      "updated_at": "2026-11-21T07:33:45Z"
     }
   },
   "kind": "daily",
