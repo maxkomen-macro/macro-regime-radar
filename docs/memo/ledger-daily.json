@@ -243,7 +243,11 @@
       "note": "",
       "output_artifact": "memo-outcome-daily-2026-11-25-45786310389-1",
       "overrides": [],
-      "paid_generation": null,
+      "paid_generation": {
+        "at": "2026-11-26T08:50:26Z",
+        "run": 45786310389,
+        "run_attempt": 1
+      },
       "run_attempt": 1,
       "source": {
         "db_sha256": "6be93c8be0c52ff4a26589294561179f16205b5b604e51a45ab9a03e288f4fd1",
