@@ -284,12 +284,12 @@
         "validated_at": "2026-11-27T20:03:13Z",
         "validation_sha256": "1dd8224a374239ec629ceb2f367050ddf80d8cc2275ad32720c772305fa50edf"
       },
-      "state": "attempt",
+      "state": "sending",
       "tries": 1,
-      "updated_at": "2026-11-27T20:05:54Z"
+      "updated_at": "2026-11-27T20:06:09Z"
     }
   },
   "kind": "daily",
-  "published": "2026-11-25",
+  "published": "2026-11-27",
   "version": 1
 }
