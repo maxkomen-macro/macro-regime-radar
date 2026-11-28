@@ -29,12 +29,19 @@ Market alerts (from derived_metrics):
                     on file (else by the W-FRI bucket, and the message says the dates are missing),
                     and the message names both closes, the NYSE sessions between them and
                     whether the week is complete (only where api/calendar knows the year)
-    credit_stress:  HYG_weekly_ret - SPY_weekly_ret < -3% → watch
-    VIX_shock:      VIX_weekly_chg_z > 3 → risk; > 2 → watch (week-over-week, daily closes),
+    credit_stress:  HYG_weekly_ret - SPY_weekly_ret < -3% → watch, only when both returns are
+                    the same W-FRI week over the same two closes; dated by that close and the
+                    message names the span like SPY_drawdown's (no observation rows → not raised)
+    VIX_shock:     VIX_weekly_chg_z > 3 → risk; > 2 → watch (week-over-week, daily closes),
                     only when the VIX rose that week; dated by VIX_weekly_chg_obs
     VIX_daily_jump: VIX_daily_chg_z > 3 → risk; > 2 → watch (one session, dated by it),
                     only when the VIX rose and only for the newest session's move
-    USD_breakout:   UUP_weekly_ret_z > 2 → watch
+    USD_breakout:   UUP_weekly_ret_z > 2 → watch; dated by UUP_weekly_ret_obs, with its span
+                    (no observation row → not raised)
+
+Weekly market alerts are dated by an observed close, not by the W-FRI bucket label: a week
+still under way is labelled by its coming Friday, and validate_db fails a future-dated row.
+The one fallback is SPY_drawdown without observation rows, whose message says so.
 
 Re-runs: replace every alert_feed row (no UNIQUE constraint); a run with no
 alerts leaves the feed empty.
@@ -201,6 +208,28 @@ def weekly_return_period(conn: sqlite3.Connection, sym: str, week: str) -> tuple
     return end, f"over {n} NYSE session{'' if n == 1 else 's'}, {span} ({status})"
 
 
+def _shared_weekly_span(conn: sqlite3.Connection, spy_week: str | None,
+                        hyg_week: str | None) -> tuple[date, str] | None:
+    """(the close, the span phrase) when SPY's and HYG's newest weekly returns are the same
+    W-FRI week and read the same two closes, else None (logged): a spread of two returns over
+    different sessions measures nothing, and without observation rows the only date is the
+    bucket label, which runs ahead of a week still under way."""
+    if spy_week is None or spy_week != hyg_week:
+        logger.warning("[alerts] SPY and HYG weekly returns are different weeks (%s, %s): credit_stress not raised.",
+                       spy_week, hyg_week)
+        return None
+    spy_end = date_from_ordinal(_derived_at(conn, "SPY_weekly_ret_obs", spy_week))
+    hyg_end = date_from_ordinal(_derived_at(conn, "HYG_weekly_ret_obs", hyg_week))
+    spy_start = _obs_before(conn, "SPY_weekly_ret_obs", spy_week)
+    hyg_start = _obs_before(conn, "HYG_weekly_ret_obs", hyg_week)
+    if spy_end is None or hyg_end is None or (spy_start, spy_end) != (hyg_start, hyg_end):
+        logger.warning("[alerts] SPY and HYG weekly returns do not read the same closes (SPY %s-%s, HYG %s-%s): "
+                       "credit_stress not raised.", spy_start, spy_end, hyg_start, hyg_end)
+        return None
+    close, period = weekly_return_period(conn, "SPY", spy_week)
+    return (close, period) if close is not None else None
+
+
 # How many months back to look for recently-triggered (but currently inactive) signals.
 LOOKBACK_MONTHS = 6
 
@@ -317,14 +346,19 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
             _add(when, "SPY_drawdown", "watch", spy_ret, -0.03, "below",
                  f"SPY return {spy_ret:.2%} {period} — below -3% watch threshold.")
 
-    # Credit stress: HYG underperforms SPY
-    hyg_ret, hyg_date = _get_latest_derived(conn, "HYG_weekly_ret")
+    # Credit stress: HYG underperforms SPY. Raised only when both returns cover the same
+    # sessions, and dated by the close they read, never by the W-FRI bucket: a week still
+    # under way is labelled by a Friday that has not happened yet (Refresh Data #2499/#2501
+    # failed validation on credit_stress dated 2026-11-27 from Monday 2026-11-23's closes)
+    hyg_ret, hyg_week = _get_latest_derived(conn, "HYG_weekly_ret")
     if spy_ret is not None and hyg_ret is not None:
-        spread  = hyg_ret - spy_ret
-        dt_str  = hyg_date or spy_date
+        spread = hyg_ret - spy_ret
         if spread < -0.03:
-            _add(dt_str, "credit_stress", "watch", spread, -0.03, "below",
-                 f"HYG underperformed SPY by {spread:.2%} — credit stress watch.")
+            span = _shared_weekly_span(conn, spy_date, hyg_week)
+            if span is not None:
+                close, period = span
+                _add(close.isoformat(), "credit_stress", "watch", spread, -0.03, "below",
+                     f"HYG underperformed SPY by {spread:.2%} {period} — credit stress watch.")
 
     # VIX shock: a weekly change far outside its range, raised only for a rise
     # and dated by the session the week's level came from, never by the W-FRI bucket
@@ -351,11 +385,15 @@ def build_market_alerts(conn: sqlite3.Connection) -> list:
             _add(vix_day, "VIX_daily_jump", level, vix_dz, threshold, "above",
                  f"VIX one-day change ({rise:+.2f} pts) z-score={vix_dz:.2f} — above {threshold:.1f} {level} threshold.")
 
-    # USD breakout
-    uup_z, uup_date = _get_latest_derived(conn, "UUP_weekly_ret_z")
+    # USD breakout: dated by the close the week's return read, never by the W-FRI bucket
+    uup_z, uup_week = _get_latest_derived(conn, "UUP_weekly_ret_z")
     if uup_z is not None and uup_z > 2.0:
-        _add(uup_date, "USD_breakout", "watch", uup_z, 2.0, "above",
-             f"UUP weekly return z-score={uup_z:.2f} — USD breakout watch.")
+        close, period = weekly_return_period(conn, "UUP", uup_week)
+        if close is None:
+            logger.warning("[alerts] UUP_weekly_ret_obs missing at %s: USD_breakout not raised.", uup_week)
+        else:
+            _add(close.isoformat(), "USD_breakout", "watch", uup_z, 2.0, "above",
+                 f"UUP weekly return z-score={uup_z:.2f} {period} — USD breakout watch.")
 
     return rows_out
 

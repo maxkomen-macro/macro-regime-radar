@@ -440,3 +440,97 @@ def test_a_stored_jump_is_cleared_when_the_newest_move_is_ineligible(tmp_path, m
     alerts.run()
     with sqlite3.connect(path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM alert_feed").fetchone()[0] == 0
+
+
+# ── credit_stress and USD_breakout: dated by the close, never the W-FRI label ──
+# Refresh Data #2499 (2026-11-23) and #2501 (2026-11-24) failed validation with
+# "alert_feed: max date 2026-11-27 is in the future": the week of Monday 2026-11-23 is
+# labelled by Friday 2026-11-27, and credit_stress took that label as its date.
+
+def _market_alert(path, rows, name):
+    _derived(path, rows)
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [(r[0], r[3], r[4], r[5], r[7]) for r in alerts.build_market_alerts(conn) if r[2] == name]
+    finally:
+        conn.close()
+
+
+def _week(sym, label, ret, obs):
+    return [(f"{sym}_weekly_ret", label, ret), (f"{sym}_weekly_ret_obs", label, ORD(obs))]
+
+
+PRIOR_WEEK = _week("SPY", "2026-11-20", -0.0856, "2026-11-20") + _week("HYG", "2026-11-20", -0.0079, "2026-11-20")
+
+
+def test_credit_stress_in_a_week_under_way_is_dated_by_its_close_not_the_coming_friday(tmp_path):
+    # the #2501 numbers: Monday's SPY +4.71%, HYG +0.25%, spread -4.46%
+    rows = PRIOR_WEEK + _week("SPY", "2026-11-27", 0.04708540117380822, "2026-11-23") \
+        + _week("HYG", "2026-11-27", 0.002489123640167623, "2026-11-23")
+    got = _market_alert(tmp_path / "a.db", rows, "credit_stress")
+    assert len(got) == 1
+    when, level, value, threshold, message = got[0]
+    assert (when, level, threshold) == ("2026-11-23", "watch", -0.03)
+    assert value == pytest.approx(-0.0446, abs=1e-4)
+    assert message == ("HYG underperformed SPY by -4.46% over 1 NYSE session, from the Fri 2026-11-20 close to the "
+                       "Mon 2026-11-23 close (partial week, later sessions not stored) — credit stress watch.")
+
+
+def test_credit_stress_threshold_is_unchanged(tmp_path):
+    def level(name, spy, hyg):
+        rows = PRIOR_WEEK + _week("SPY", "2026-11-27", spy, "2026-11-23") + _week("HYG", "2026-11-27", hyg, "2026-11-23")
+        return [a[1] for a in _market_alert(tmp_path / name, rows, "credit_stress")]
+    assert level("a.db", 0.03, 0.0) == []        # -3.00%: strictly below the line only
+    assert level("b.db", 0.0301, 0.0) == ["watch"]
+    assert level("c.db", 0.0, 0.05) == []        # HYG ahead of SPY
+
+
+def test_credit_stress_needs_both_returns_over_the_same_closes(tmp_path):
+    spy = _week("SPY", "2026-11-27", 0.05, "2026-11-23")
+    # HYG's newest week is an older bucket
+    assert _market_alert(tmp_path / "a.db", PRIOR_WEEK + spy, "credit_stress") == []
+    # same bucket, different newest close
+    assert _market_alert(tmp_path / "b.db", PRIOR_WEEK + spy + _week("HYG", "2026-11-27", 0.0, "2026-11-24"),
+                         "credit_stress") == []
+    # same bucket and close, different starting close
+    other_start = _week("SPY", "2026-11-20", -0.0856, "2026-11-20") + _week("HYG", "2026-11-20", -0.0079, "2026-11-19")
+    assert _market_alert(tmp_path / "c.db", other_start + spy + _week("HYG", "2026-11-27", 0.0, "2026-11-23"),
+                         "credit_stress") == []
+    # no observation rows (an older store): the only date would be the label, so no alert
+    bare = [("SPY_weekly_ret", "2026-11-27", 0.05), ("HYG_weekly_ret", "2026-11-27", 0.0)]
+    assert _market_alert(tmp_path / "d.db", bare, "credit_stress") == []
+
+
+def test_usd_breakout_is_dated_by_its_close_not_the_coming_friday(tmp_path):
+    rows = _week("UUP", "2026-11-20", 0.004, "2026-11-20") + _week("UUP", "2026-11-27", 0.02, "2026-11-24") \
+        + [("UUP_weekly_ret_z", "2026-11-27", 2.4)]
+    got = _market_alert(tmp_path / "a.db", rows, "USD_breakout")
+    assert got == [("2026-11-24", "watch", 2.4, 2.0,
+                    "UUP weekly return z-score=2.40 over 2 NYSE sessions, from the Fri 2026-11-20 close to the "
+                    "Tue 2026-11-24 close (partial week, later sessions not stored) — USD breakout watch.")]
+    # thresholds unchanged
+    at_line = _week("UUP", "2026-11-27", 0.02, "2026-11-24") + [("UUP_weekly_ret_z", "2026-11-27", 2.0)]
+    assert _market_alert(tmp_path / "b.db", at_line, "USD_breakout") == []
+    # no observation row: never dated by the bucket
+    assert _market_alert(tmp_path / "c.db", [("UUP_weekly_ret_z", "2026-11-27", 2.4)], "USD_breakout") == []
+
+
+def test_no_market_alert_is_dated_after_the_close_it_read(tmp_path):
+    """Every market alert a Monday-of-the-week store can raise is dated on or before Monday,
+    so validate_db's future-date check cannot fail on a W-FRI label again."""
+    week = lambda sym, ret: _week(sym, "2026-11-27", ret, "2026-11-23")  # noqa: E731
+    rows = (PRIOR_WEEK + _week("UUP", "2026-11-20", 0.004, "2026-11-20")
+            + week("SPY", -0.08) + week("HYG", -0.12) + week("UUP", 0.03)
+            + [("UUP_weekly_ret_z", "2026-11-27", 2.5),
+               ("VIX_weekly_chg_z", "2026-11-27", 3.5), ("VIX_weekly_chg", "2026-11-27", 8.0),
+               ("VIX_weekly_chg_obs", "2026-11-27", ORD("2026-11-23"))])
+    _derived(tmp_path / "a.db", rows)
+    conn = sqlite3.connect(tmp_path / "a.db")
+    conn.row_factory = sqlite3.Row
+    try:
+        got = {r[2]: r[0] for r in alerts.build_market_alerts(conn)}
+    finally:
+        conn.close()
+    assert got == {"SPY_drawdown": "2026-11-23", "credit_stress": "2026-11-23",
+                   "VIX_shock": "2026-11-23", "USD_breakout": "2026-11-23"}
