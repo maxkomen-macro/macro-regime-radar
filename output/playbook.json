@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-27T20:02:56.538077",
+  "generated_at": "2026-11-28T08:07:19.842800",
   "as_of": "2026-10-01",
   "regime": "Overheating",
   "confidence": 0.4892,
@@ -8,7 +8,7 @@
     "Because SPY equity momentum is above trend in the latest reading (week of 2026-11-27, z=+2.34).",
     "Because VIX volatility is extreme in the latest reading (week of 2026-11-27, z=-2.81), the VIX signal is significantly depressed versus 2-year norms.",
     "Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99).",
-    "Because today 10Y real yield is positive at 2.79%, real rates are restrictive — a headwind for equities and gold.",
+    "Because today 10Y real yield is positive at 2.73%, real rates are restrictive — a headwind for equities and gold.",
     "Policy rate (FEDFUNDS) is at 3.88%."
   ],
   "summary": "Regime: Overheating (confidence 49%). Inflation risk elevated. Prefer real assets (GLD, commodities) and TIPS. Shorten duration — TLT headwinds. USD may strengthen. Value over growth; energy/materials over tech. Because SPY equity momentum is above trend in the latest reading (week of 2026-11-27, z=+2.34). Because VIX volatility is extreme in the latest reading (week of 2026-11-27, z=-2.81), the VIX signal is significantly depressed versus 2-year norms. Because unemployment labor conditions is below trend in the latest reading (week of 2026-10-02, z=-1.99).",
